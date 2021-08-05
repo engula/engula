@@ -1,0 +1,36 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="161px" height="161px" viewBox="-0.5 -0.5 161 161" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;jZNLc4IwEIB/DcfO8GjRq6+2F6cHDz1HskKmIUtjEOyv78YkAlpneoHk23d2N8pWdf+mWVNtkYOM0pj3UbaO0nQ+T+lrwdmB2WzmQKkFdygZwE78gIexp63gcJwoGkRpRDOFBSoFhZkwpjV2U7UDymnUhpVwB3YFk/f0U3BT+bJe4oG/gyirEDmJvaRmQdmDY8U4diOUbaJspRGNO9X9CqR9u/Auzu71gfSamAZl/mPgG3FisvW1RWkuyXR5QPJAb8MKJ8i/W5vU8qMBzQxqkm1R4SCw1YROBZaMxXnp/xf/e6tvznJqYKM+OTcLUniOm/6xizaAjSpbyQKmattbVWL7P5grMuB0klJqoLe8MrUkkNDxaDR+wQollZ+tFSqwKQspbxCTolR0LagLQHx5Am0Ezc/CC2rBuQ2z7CphYNe4R+5oWYhpbBUH26D4mpZ1AP3DJifX0aGVA6zB6DOpdMNwJrmfuGo8mAEyvxDl1XaYGTr4sQnXYTwvstGOZ5tf&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <rect x="0" y="0" width="160" height="160" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 158px; height: 1px; padding-top: 80px; margin-left: 1px;">
+                        <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                <font face="Operator Mono" size="1">
+                                    <b style="font-size: 40px">
+                                        <u>
+                                            Engula
+                                        </u>
+                                    </b>
+                                </font>
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="80" y="84" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                    Engula
+                </text>
+            </switch>
+        </g>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://www.diagrams.net/doc/faq/svg-export-text-problems" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Viewer does not support full SVG 1.1
+            </text>
+        </a>
+    </switch>
+</svg>
