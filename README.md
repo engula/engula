@@ -1,6 +1,6 @@
 # Engula
 
-![Gitter](https://badges.gitter.im/engula/engula.png)
+[![Gitter](https://badges.gitter.im/engula/contributors.svg)](https://gitter.im/engula/contributors?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 Engula is a cloud-native storage engine for next-generation data infrastructures.
 
