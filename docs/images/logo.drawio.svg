@@ -1,6 +1,7 @@
-<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="161px" height="161px" viewBox="-0.5 -0.5 161 161" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;jZNLc4IwEIB/DcfO8GjRq6+2F6cHDz1HskKmIUtjEOyv78YkAlpneoHk23d2N8pWdf+mWVNtkYOM0pj3UbaO0nQ+T+lrwdmB2WzmQKkFdygZwE78gIexp63gcJwoGkRpRDOFBSoFhZkwpjV2U7UDymnUhpVwB3YFk/f0U3BT+bJe4oG/gyirEDmJvaRmQdmDY8U4diOUbaJspRGNO9X9CqR9u/Auzu71gfSamAZl/mPgG3FisvW1RWkuyXR5QPJAb8MKJ8i/W5vU8qMBzQxqkm1R4SCw1YROBZaMxXnp/xf/e6tvznJqYKM+OTcLUniOm/6xizaAjSpbyQKmattbVWL7P5grMuB0klJqoLe8MrUkkNDxaDR+wQollZ+tFSqwKQspbxCTolR0LagLQHx5Am0Ezc/CC2rBuQ2z7CphYNe4R+5oWYhpbBUH26D4mpZ1AP3DJifX0aGVA6zB6DOpdMNwJrmfuGo8mAEyvxDl1XaYGTr4sQnXYTwvstGOZ5tf&lt;/diagram&gt;&lt;/mxfile&gt;">
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="161px" height="161px" viewBox="-0.5 -0.5 161 161" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;zZVNT8MwDIZ/TY9I/RjbrusYcEEcduCcNVkbkcYlS2nHr8chSb/WSQiBxGVrH9ux8zpOg2Rbtg+KVMUTUCaCOKRtkNwFcbxex/hrwNmC1WplQa44tSjqwZ5/MAdDR2tO2WnkqAGE5tUYZiAly/SIEaWgGbsdQYyzViRnF2CfEXFJXzjVhdvWbdjzR8bzwmeOQmcpiXd24FQQCs0AJbsg2SoAbZ/KdsuE0c7rYuPur1i7whST+jsBCxvwTkTt9ubq0me/WQW1pMz4R0GSNgXXbF+RzFgb7C6yQpfCmU9awWsnSk+2IEAhkSAxMHVZmdKsvVp51OmB54hBybQ6o4sLWDgFz+PXpu9HtHSsGPbCQ+LOQN6t3MuED06pedXiGdWWAjOkR8Dq8URZfZC+1aaV6XPFFNEoQRw+gYTeYLT259uzaGhe5u7/a/1TReSoPd7RJL6xK23QIYmr9voqhwEgpWmhGJpx+4dpCDKb+2f1LNZz9ex+afX53cq8FuRPM1zXc6rdd/VEbI+Qx5NhxHnRcxM3ma8jF2KCiOC5xNcM54shT830cbzTNs5QckpNmtkR7y+BsCvrYlZnJvo/jC++9hfql23wVUp2nw==&lt;/diagram&gt;&lt;/mxfile&gt;">
     <defs/>
     <g>
+        <rect x="0" y="0" width="160" height="160" rx="24" ry="24" fill="#ffffff" stroke="none" pointer-events="all"/>
         <rect x="0" y="0" width="160" height="160" fill="none" stroke="none" pointer-events="all"/>
         <g transform="translate(-0.5 -0.5)">
             <switch>
@@ -9,18 +10,29 @@
                         <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
                             <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
                                 <font face="Operator Mono" size="1">
-                                    <b style="font-size: 40px">
-                                        <u>
-                                            Engula
-                                        </u>
-                                    </b>
+                                    <span style="font-size: 32px">
+                                        <b>
+                                            &lt;
+                                        </b>
+                                    </span>
+                                    <span style="font-size: 48px">
+                                        E
+                                    </span>
+                                    <span style="font-size: 32px">
+                                        ngula
+                                    </span>
+                                    <span style="font-size: 32px">
+                                        <b>
+                                            &gt;
+                                        </b>
+                                    </span>
                                 </font>
                             </div>
                         </div>
                     </div>
                 </foreignObject>
                 <text x="80" y="84" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
-                    Engula
+                    &lt;Engula&gt;
                 </text>
             </switch>
         </g>
