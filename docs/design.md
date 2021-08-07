@@ -56,6 +56,8 @@ A unit is a lightweight container that runs on a node and possesses a certain am
 Different units have varied resource characteristics.
 For example, some are CPU-bound while some are IO-bound.
 The decomposition allows Engula to allocate optimal combinations of resources to different units according to their characteristics.
+It is also possible to extend Engula with custom units and let Engula take care of the deployment.
+That said, Engula can be considered as a unit orchestration system.
 
 A group of units can form a replication group to provide reliable service.
 A replication group runs the Paxos consensus algorithm and elects a leader to process commands.
@@ -123,6 +125,7 @@ The journal unit employs asynchronous IO and group commit to process logs with m
 
 A group of compute units is responsible for the command execution of one or more shards.
 The leader compute unit acts as the distinguished proposer in the consensus algorithm.
+If a shard has no leader, for example, on restart, the central unit assigns a leader to it.
 
 Shards can be split, merged, and transferred between compute units for load balance.
 
@@ -146,9 +149,13 @@ Note that there is no data movement during a split because the compute unit mana
 
 **To transfer a shard between two groups:**
 
-- The leader compute unit of the source group updates the metadata of the shard, notifies the target group, and then resigns the leadership of the shard.
-- The leader compute unit of the target group starts an election to take over the shard.
-- If the target group misses the notification from the source group for some reason, the central unit will notice that the shard has no leader and tell the target group to take it over.
+- The leader compute unit of the source group (the source) notifies the leader compute unit of the target group (the target) about the transfer.
+- If the memtable of the shard is small, the source replicates it to the target.
+- If the memtable of the shard is large, the source flushes it to the storage.
+- In either case, the source forwards new updates to the target until the memtable has been replicated or flushed.
+- When the target catches up, the source pulls the trigger, notifies the target to take over, and resigns the leadership of the shard.
+- Then the target starts an election to become the leader of the shard.
+- If the target misses the notification for some reason, the central unit will notice that the shard has no leader and assign a new one to it.
 
 #### Storage
 
@@ -191,15 +198,23 @@ The command execution flow is as follow:
 ![Compute Architecture](images/2021-08-01-compute-architecture.drawio.svg)
 
 To handle writes, the compute unit replicates the updates to journal units of the corresponding shard.
-Then the compute unit applies the updates to the memtable.
+Then updates are applied to the memtable and forwarded to followers for fast fail-over.
 When the size of the memtable reaches a threshold, the memtable is flushed to the storage and a memtable is created.
 
 To handle reads, the compute unit merges updates in the write buffer with data from the local cache or the remote storage.
 The compute unit queries data from the local cache first.
 If the required data is not in the local cache, the compute unit reads from the remote storage instead and then fills the local cache.
+Followers can also serve as read replicas to share read traffics.
 
 To further improve performance, the following optimizations can be introduced:
 
+- Introduce a dedicated cache tier to address read hotspots.
 - Aggregate concurrent commands of a single record and execute them at once to deal with single-point hotspots.
 
+#### Transaction
+
 **TODO: transaction**
+
+Engula supports causal snapshot isolation.
+
+More strict isolation levels are possible, but for most web-scale applications, causal snapshot isolation should be good enough.
