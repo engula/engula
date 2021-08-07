@@ -35,7 +35,7 @@ Engula is designed to be a cross-platform and vendor-independent storage engine.
 While the detailed designs for different platforms are varied, this document describes the general cloud-native architecture of Engula.
 In this document, we assume that the running platform supplies elastic resources and provides APIs to provision and de-provision different types of nodes.
 
-For more details about the design and implementation of Engula for a specific platform, see the following documents:
+For more details about the design and implementation of Engula for a specific platform, see the following documents (TODO):
 
 - Embedded Engine
 - Amazon Web Services
@@ -55,7 +55,7 @@ Engula decomposes its functionalities into different kinds of units:
 A unit is a lightweight container that runs on a node and possesses a certain amount of resources on that node.
 Different units have varied resource characteristics.
 For example, some are CPU-bound while some are IO-bound.
-The decomposition allows Engula to allocate optimal combination of resources to different units according to their characteristics.
+The decomposition allows Engula to allocate optimal combinations of resources to different units according to their characteristics.
 
 A group of units can form a replication group to provide reliable service.
 A replication group runs the Paxos consensus algorithm and elects a leader to process commands.
@@ -100,7 +100,7 @@ The leader central unit is responsible for the database and manages the metadata
 
 Although the central unit manages different kinds of units in different ways, there are some common principles:
 
-- Auto scale units that are overloaded or underloaded.
+- Scale units that are overloaded or underloaded.
 - Monitor the health of individual units and replace broken ones.
 
 While the central unit serves as the housekeeper of a database, other units are responsible for client data storage and command execution.
@@ -113,18 +113,42 @@ The journal architecture is as follow:
 
 ![Journal Architecture](images/2021-08-01-journal-architecture.drawio.svg)
 
-Logs of a database can be divided into one or more shards.
-Each shard manages one or more hash or range partitions of the database.
+The journal of a database can be divided into one or more shards.
+Each shard manages one or more hash or range partitions of the journal.
 
 A group of journal units is responsible for the storage of one shard.
 These journal units act as acceptors and learners in the consensus algorithm.
-A journal unit stores logs on the local file system and exposes APIs to manipulate the logs.
-The journal unit employs asynchronous IO and group commit to persist logs with minimal CPU consumption.
+A journal unit stores logs on the local file system and exposes APIs to manipulate them.
+The journal unit employs asynchronous IO and group commit to process logs with minimal CPU consumption.
 
-A group of compute units is responsible for the compute of one or more shards.
+A group of compute units is responsible for the command execution of one or more shards.
 The leader compute unit acts as the distinguished proposer in the consensus algorithm.
 
-**TODO: split, merge, transfer**
+Shards can be split, merged, and transferred between compute units for load balance.
+
+**To split a shard:**
+
+- Assume that shard A is the shard to be split. After the split, shard A keeps one part of the origin shard and a new shard B contains the other part.
+- The central unit provisions a new group of journal units for shard B and hands it over to the leader compute unit of shard A.
+- The compute unit chooses a split point based on the load distribution of shard A and executes a transaction on both shards.
+- Once the transaction has been committed, the compute unit split traffics of the origin shard to the two shards.
+- On failure, the compute unit retries or aborts the transaction according to the situation.
+
+Note that there is no data movement during a split because the compute unit manages data of both shards and previous logs of the origin shard will be discarded or archived when the corresponding data has been flushed. The data flow will be described in the execution section later.
+
+**To merge two shards in the same group:**
+
+- To merge shard B into shard A, the leader compute unit executes a transaction on both shards.
+- Once the transaction has been committed, the compute unit merge traffics of the origin shards to shard A.
+- On failure, the compute unit retries or aborts the transaction according to the situation.
+- After the merge, shard B is kept alive until all its logs have been discarded or archived. Then the central unit can de-provision the journal units of shard B.
+- To merge shards in different groups, transfer these shards into one group first.
+
+**To transfer a shard between two groups:**
+
+- The leader compute unit of the source group updates the metadata of the shard, notifies the target group, and then resigns the leadership of the shard.
+- The leader compute unit of the target group starts an election to take over the shard.
+- If the target group misses the notification from the source group for some reason, the central unit will notice that the shard has no leader and tell the target group to take it over.
 
 #### Storage
 
@@ -134,7 +158,7 @@ The storage architecture is as follow:
 
 Files of a database include a manifest and a set of data files organized into collections.
 The manifest records the file layout of each collection in the database.
-Collections can choose varied file structures to optimize for different workloads.
+Collections can choose appropriate file structures to optimize for different workloads.
 
 A manifest consists of a manifest file and a manifest journal.
 The manifest file records the base version of the manifest.
@@ -144,16 +168,16 @@ When the size of the manifest journal reaches a threshold, the manifest journal 
 The manifest file and all data files are immutable and replicated in the storage units, while the manifest journal is replicated in the central units for incremental updates.
 The leader central unit is responsible to maintain the manifest and distribute files among storage units.
 
-A storage unit stores immutable files on the local file system and exposes APIs to add, drop, and read these files.
-The storage unit relies on the cache of the file system and doesn't introduce an additional cache.
+A storage unit stores immutable files on the local file system and exposes APIs to add, drop, and read files.
 The storage unit is designed to be as reliable and cost-effective as possible.
-We leave performance optimization to the upper level, which has more application context to make better strategies.
+The storage unit relies on the cache of the file system and doesn't introduce an additional cache.
+We leave performance optimization to the upper level, which has more application context to make better decisions.
 
 The storage unit also records access statistics for each file and reports them to the central unit.
-The central unit can calculate the hotness of files from these statistics to balance file distribution.
+The central unit calculates the hotness of files from these statistics to balance file distribution.
 For example, the central unit can add more replicas for hot files in the fast storage tier to share traffics, while keeping cool files in the slow storage tier to save cost.
 
-In addition, the central unit can schedule background jobs to reorganize files in storage units.
+In addition, the central unit schedules background jobs to reorganize files in storage units.
 For example, the central unit can schedule compactions to merge files with overlapped ranges to improve read performance.
 The central unit can also schedule compressions or garbage collections to reduce storage usage.
 When a background job is scheduled, the central unit provisions a background unit to run it.

@@ -1,37 +1,38 @@
-<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="161px" height="161px" viewBox="-0.5 -0.5 161 161" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;zZVNT8MwDIZ/TY9I/RjbrusYcEEcduCcNVkbkcYlS2nHr8chSb/WSQiBxGVrH9ux8zpOg2Rbtg+KVMUTUCaCOKRtkNwFcbxex/hrwNmC1WplQa44tSjqwZ5/MAdDR2tO2WnkqAGE5tUYZiAly/SIEaWgGbsdQYyzViRnF2CfEXFJXzjVhdvWbdjzR8bzwmeOQmcpiXd24FQQCs0AJbsg2SoAbZ/KdsuE0c7rYuPur1i7whST+jsBCxvwTkTt9ubq0me/WQW1pMz4R0GSNgXXbF+RzFgb7C6yQpfCmU9awWsnSk+2IEAhkSAxMHVZmdKsvVp51OmB54hBybQ6o4sLWDgFz+PXpu9HtHSsGPbCQ+LOQN6t3MuED06pedXiGdWWAjOkR8Dq8URZfZC+1aaV6XPFFNEoQRw+gYTeYLT259uzaGhe5u7/a/1TReSoPd7RJL6xK23QIYmr9voqhwEgpWmhGJpx+4dpCDKb+2f1LNZz9ex+afX53cq8FuRPM1zXc6rdd/VEbI+Qx5NhxHnRcxM3ma8jF2KCiOC5xNcM54shT830cbzTNs5QckpNmtkR7y+BsCvrYlZnJvo/jC++9hfql23wVUp2nw==&lt;/diagram&gt;&lt;/mxfile&gt;">
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="201px" height="201px" viewBox="-0.5 -0.5 201 201" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;1ZXBcoIwEIafhmNnEFr1Wqy1l04PHnpOSYRMQ5bGINin70YWA0pHp+2lFyXfbnY3/7IhiBdFszKszJ+BCxVEIW+C+CGIovk8wl8H9i2YzWYtyIzkLZp4sJafgmBItJJcbAeOFkBZWQ5hClqL1A4YMwbqodsG1DBryTJxBtYpU+f0VXKb07HuQs+fhMzyLvMkJEvBOmcC25xxqHsoXgbxwgDY9qloFkI57Tpd2n2P31iPhRmh7TUbbtsNO6YqOhvVZffdYQ1UmgvnPwnipM6lFeuSpc5aY3eR5bZQZN5aA+9HUTxZgAKDRIPGjcl5mVT5Thgrmh6islcCCmHNHl3IeksK7ofL2vcj6lTPe704QkbvQHaM7GXCB1JqXLVoRLWpwgzJBvBA+Ea1+iD9qFwrk5dSGGZRgih8Bg3egE8Z/R8CvJ0Ciugb0u10hpvtYTbu0SGels1oWFa4Hql+TDxfG3aYCvGP08+isfTLCxl/dzidVYpdyPD2K+3+sgPDssyI+Nf25Mz1ZGJxguzYWJ4M4UYqdYKYkpnGZYpzKZAnbh4lXnz3ZCgk5y7N6D3gb4rw3804Lv2te7D1Pl3x8gs=&lt;/diagram&gt;&lt;/mxfile&gt;">
     <defs/>
     <g>
-        <rect x="0" y="0" width="160" height="160" rx="24" ry="24" fill="#ffffff" stroke="none" pointer-events="all"/>
-        <rect x="0" y="0" width="160" height="160" fill="none" stroke="none" pointer-events="all"/>
+        <rect x="0" y="0" width="200" height="200" rx="30" ry="30" fill="#ffffff" stroke="none" pointer-events="all"/>
+        <rect x="0" y="0" width="200" height="200" fill="none" stroke="none" pointer-events="all"/>
         <g transform="translate(-0.5 -0.5)">
             <switch>
                 <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 158px; height: 1px; padding-top: 80px; margin-left: 1px;">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 198px; height: 1px; padding-top: 100px; margin-left: 1px;">
                         <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
                             <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                <font face="Operator Mono" size="1">
-                                    <span style="font-size: 32px">
-                                        <b>
+                                <font face="Operator Mono">
+                                    <b>
+                                        <font style="font-size: 36px">
                                             &lt;
-                                        </b>
-                                    </span>
-                                    <span style="font-size: 48px">
+                                        </font>
+                                    </b>
+                                    <font style="font-size: 72px">
                                         E
-                                    </span>
-                                    <span style="font-size: 32px">
+                                    </font>
+                                    <font style="font-size: 36px">
                                         ngula
-                                    </span>
-                                    <span style="font-size: 32px">
-                                        <b>
+                                    </font>
+                                    <b style="font-size: 36px">
+                                        <font style="font-size: 36px">
                                             &gt;
-                                        </b>
-                                    </span>
+                                            <br/>
+                                        </font>
+                                    </b>
                                 </font>
                             </div>
                         </div>
                     </div>
                 </foreignObject>
-                <text x="80" y="84" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                <text x="100" y="104" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
                     &lt;Engula&gt;
                 </text>
             </switch>
