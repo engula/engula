@@ -12,7 +12,7 @@ To achieve this goal, Engula is designed from scratch to take full advantage of 
 Engula unbundles components of a classic storage engine into single-function units.
 For example, some units are responsible for data storage, while some are responsible for command execution.
 Each unit is a lightweight container that runs on a node and possesses a certain amount of resources on that node.
-Nodes are provisioned from the running platform and constitute a unified resource pool for units.
+Nodes are provisioned from the running platform and constitute a unified resource pool to serve units.
 That said, Engula can be regarded as a unit orchestration system that provides storage service as a whole.
 
 The design principles of Engula are as follows:
@@ -34,26 +34,28 @@ Record keys are sequences of bytes, while record values can be of various types.
 Engula supports scalar types (numbers, strings), compound types (unions, structs), and collection types (maps, lists).
 Consider that some real-world applications need to store lots of elements in a single record, Engula will optimize records of collection types that contain millions of elements.
 
-Engula exposes far more rich APIs to manipulate data than existing storage engines.
+Engula exposes a far more rich set of APIs to manipulate data than existing storage engines.
 Each data type supports a dedicated set of APIs to manipulate values of that type.
 For example, numeric types support arithmetic operations like addition and subtraction, collection types support operations to insert, update, and delete a single element.
+
 Engula supports atomic updates to a single record as well as ACID transactions across multiple records within a database.
 However, records of different databases are independent of each other, which means that interoperations between different databases are impossible.
 
 ## Architecture
 
-Engula is designed to be a cross-platform and vendor-independent storage engine.
-While the detailed designs for different platforms are varied, this document describes the general cloud-native architecture of Engula.
-In this document, we assume that the running platform supplies elastic resources and provides APIs to provision and de-provision different types of nodes.
+Engula is cross-platform and vendor-independent.
+Although the detailed design of Engula depends on the specific platform, this document describes the general cloud-native architecture.
+In this document, we assume that the running platform supplies elastic resources and provides APIs to provision and de-provision nodes.
 
-For more details about the design and implementation of Engula for a specific platform, see the following documents (TODO):
+For more details about the design and implementation of a specific platform, see the following documents (TODO):
 
 - Embedded Engine
 - Amazon Web Services
 
-### Unit
+Engula employs a [microunit](https://github.com/engula/microunit) architecture to exploit elastic resources.
 
-Engula employs a [microunit](https://github.com/engula/microunit) architecture to leverage elastic resources.
+![Architecture](images/2021-08-08-unit-architecture.drawio.svg)
+
 Engula decomposes its functionalities into different kinds of units:
 
 - Supreme Unit
@@ -63,65 +65,63 @@ Engula decomposes its functionalities into different kinds of units:
 - Storage Unit
 - Background Unit
 
-A unit is a lightweight container that runs on a node and possesses a certain amount of resources on that node.
-Different units have varied resource characteristics.
-For example, some are CPU-bound while some are IO-bound.
+These units have varied resource requirements.
+For example, some are CPU-bound while some are IO-bound, some require reliable resources while some don't.
 The decomposition allows Engula to allocate optimal combinations of resources to different units according to their characteristics.
-It is also possible to extend Engula with custom units and let Engula take care of the deployment.
-That said, Engula can be considered as a unit orchestration system.
+It also empowers developers to extend Engula with custom units that leverage these built-in units to provide higher-level services.
 
-A group of units can form a replication group to provide reliable service.
-A replication group runs the Paxos consensus algorithm and elects a leader to process commands.
-The details about Paxos can be found in related papers and will not be further discussed in this document.
-
-A node manages a set of units and exposes APIs to provision and de-provision units on demand.
-The node maintains a list of units provisioned on it.
-On restart, the node resumes the execution of all provisioned units.
-Nodes can be tagged with different attributes and units can choose to run on nodes with specific attributes.
-
-The overall architecture and the behaviors of individual units are described below.
+An Engula universe consists of a set of nodes provisioned from the running platform.
+These nodes are homogeneous and each one can serve all kinds of units as long as the node meets a unit's resource requirement.
+In addition, nodes can be tagged with different attributes so that units can choose to run on nodes that have specific attributes.
+Each node exposes APIs to provision and de-provision units on it and maintains a list of provisioned units.
+On restart, the node resumes the execution of all provisioned units and recovers their previous state if possible.
 
 ### Universe
 
-An Engula universe consists of a set of nodes provisioned from the running platform.
-These nodes serve as a unified resource pool for the universe.
-The universe architecture is as follow:
+The relationships between different kinds of units in a universe are as follows:
 
-![Universe Architecture](images/2021-08-01-universe-architecture.drawio.svg)
+![Universe Architecture](images/2021-08-08-universe-architecture.drawio.svg)
+
+The supreme unit is responsible for the top-level management of a universe.
+It exposes APIs to create, delete, and configure databases.
+It also monitors the load and health of the universe to provision and de-provision nodes on demand.
+
+The central unit is responsible for the top-level management of a database under the supreme unit.
+It manages a set of other units that are dedicated to a database.
+Units of different databases are independent and do not interact with each other.
+The details about individual units in a database are described later.
 
 When a universe is bootstrapped, a group of supreme units is created.
 These supreme units form a replication group that is capable of fail-over and self-repair.
-If the leader supreme unit fails, the followers will start elections to elect a new leader.
-If one follower supreme unit fails, the leader will provision a new supreme unit to replace the broken one.
+Each supreme unit stores a replica of the universe metadata on the local file system.
+A leader supreme unit is elected to process commands and maintain the metadata.
+If the leader fails, followers will start elections to elect a new leader.
+If some follower fails, the leader will provision a new supreme unit to replace it.
 
-A supreme unit stores a replica of the universe metadata on the local file system.
-The leader supreme unit is responsible for the universe and manages the metadata and databases for it.
+**TODO: Consensus**
 
 ### Database
 
-An Engula database consists of a set of units: central units, compute units, journal units, storage units, and background units.
-Units of different databases do not interact with each other at all.
-The relationship between units within a database can be simplified as follow:
+The relationships between different kinds of units in a database are as follows:
 
-![Database Architecture](images/2021-08-01-database-architecture.drawio.svg)
+![Database Architecture](images/2021-08-08-database-architecture.drawio.svg)
 
-When a database is created, the leader supreme unit registers the database and then provisions a group of central units to manage it.
+When a database is created, the supreme unit registers the database and provisions a group of central units for it.
 These central units form a replication group that is capable of fail-over and self-repair like the supreme units.
-
-A central unit stores a replica of the database metadata on the local file system.
-The leader central unit is responsible for the database and manages the metadata and a dedicated set of units for it.
-
-Although the central unit manages different kinds of units in different ways, there are some common principles:
+The central unit serves as the housekeeper of a database.
+Although the central unit manages different kinds of units in different ways, there are some common principles as well:
 
 - Scale units that are overloaded or underloaded.
 - Monitor the health of individual units and replace broken ones.
 
-While the central unit serves as the housekeeper of a database, other units are responsible for client data storage and command execution.
-The persistent state of a database consists of two parts: the journal and the storage.
-The journal is a log system that stores incremental update logs and the storage is a file system that stores immutable files.
+The central unit exposes APIs to create, delete, and configure collections.
+Collections of the same database share the same set of units.
+The compute unit is responsible to process client commands and persist data to the journal unit and the storage unit.
+The journal and the storage together consist of the persistent state of a database.
 
 #### Journal
 
+The journal is a log system that stores incremental updates for a database.
 The journal architecture is as follow:
 
 ![Journal Architecture](images/2021-08-01-journal-architecture.drawio.svg)
@@ -170,6 +170,7 @@ Note that there is no data movement during a split because the compute unit mana
 
 #### Storage
 
+The storage is a file system that stores immutable files for a database.
 The storage architecture is as follow:
 
 ![Storage Architecture](images/2021-08-01-storage-architecture.drawio.svg)
