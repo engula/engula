@@ -5,17 +5,25 @@ This document describes the top-level design of Engula.
 ## Overview
 
 Engula is a cloud-native storage engine.
-Engula aims to provide reliable and high-performance storage with minimal cost.
-To achieve this goal, Engula is designed from scratch to take full advantage of elastic resources.
+Engula aims to provide reliable and high-performance storage service with minimal cost on cloud platforms.
+Cloud platforms provide elastic resources that can be provisioned and de-provisioned on demand, which opens a wide range of opportunities to re-architect the storage engine to exploit it.
+To achieve this goal, Engula is designed from scratch to take full advantage of elastic resources on these platforms.
+
+Engula unbundles components of a classic storage engine into single-function units.
+For example, some units are responsible for data storage, while some are responsible for command execution.
+Each unit is a lightweight container that runs on a node and possesses a certain amount of resources on that node.
+Nodes are provisioned from the running platform and constitute a unified resource pool for units.
+That said, Engula can be regarded as a unit orchestration system that provides storage service as a whole.
 
 The design principles of Engula are as follows:
 
-- Make it simple and reliable, then make it cost-effective and high-performance.
-- Make it smart that requires minimal operation and configuration.
+- Make it simple and reliable first, then make it cost-effective and high-performance.
+- Make it smart enough that requires minimal operation and configuration.
 - Avoid external dependencies that are not built-in the platforms.
 
 ## Data Model
 
+Despite being cloud-native, Engula is still a general-purpose storage engine.
 Engula exposes a semi-structured data model with rich data types to support diverse applications.
 
 An Engula deployment is called a universe.
@@ -23,11 +31,14 @@ A universe contains multiple databases, which in turn contain multiple collectio
 A collection is a set of key-value records versioned with timestamps.
 
 Record keys are sequences of bytes, while record values can be of various types.
-Engula supports primitive types (numbers, strings), compound types (unions, structs), and collection types (maps, lists).
+Engula supports scalar types (numbers, strings), compound types (unions, structs), and collection types (maps, lists).
 Consider that some real-world applications need to store lots of elements in a single record, Engula will optimize records of collection types that contain millions of elements.
 
-Engula supports atomic updates of a single record as well as ACID transactions across records within a database.
-However, records of different databases are independent of each other, which means that interoperations between different databases are not possible.
+Engula exposes far more rich APIs to manipulate data than existing storage engines.
+Each data type supports a dedicated set of APIs to manipulate values of that type.
+For example, numeric types support arithmetic operations like addition and subtraction, collection types support operations to insert, update, and delete a single element.
+Engula supports atomic updates to a single record as well as ACID transactions across multiple records within a database.
+However, records of different databases are independent of each other, which means that interoperations between different databases are impossible.
 
 ## Architecture
 
