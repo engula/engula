@@ -4,15 +4,15 @@ This document describes the top-level design of Engula.
 
 ## Overview
 
-Engula is a cloud-native storage engine.
-Engula aims to provide reliable and high-performance storage service with minimal cost on cloud platforms.
+Engula is a cloud-native storage engine for web-scale applications.
+Engula aims to provide reliable and high-performance service with minimal cost on cloud platforms.
 Cloud platforms provide elastic resources that can be provisioned and de-provisioned on demand, which opens a wide range of opportunities to re-architect the storage engine to exploit it.
 To achieve this goal, Engula is designed from scratch to take full advantage of elastic resources on these platforms.
 
 Engula unbundles components of a classic storage engine into single-function units.
 For example, some units are responsible for data storage, while some are responsible for command execution.
-Each unit is a lightweight container that runs on a node and possesses a certain amount of resources on that node.
-Nodes are provisioned from the running platform and constitute a unified resource pool to serve units.
+Each unit is a lightweight container that runs on a node and possesses a certain amount of resources on the node.
+Nodes are provisioned from the running platform and constitute a unified resource pool to serve different kinds of units.
 That said, Engula can be regarded as a unit orchestration system that provides storage service as a whole.
 
 The design principles of Engula are as follows:
@@ -36,7 +36,7 @@ Consider that some real-world applications need to store lots of elements in a s
 
 Engula exposes a far more rich set of APIs to manipulate data than existing storage engines.
 Each data type supports a dedicated set of APIs to manipulate values of that type.
-For example, numeric types support arithmetic operations like addition and subtraction, collection types support operations to insert, update, and delete a single element.
+For example, numeric types support arithmetic operations like addition and subtraction, collection types support operations to insert, update, and delete individual elements.
 
 Engula supports atomic updates to a single record as well as ACID transactions across multiple records within a database.
 However, records of different databases are independent of each other, which means that interoperations between different databases are impossible.
@@ -72,9 +72,10 @@ It also empowers developers to extend Engula with custom units that leverage the
 
 An Engula universe consists of a set of nodes provisioned from the running platform.
 These nodes are homogeneous and each one can serve all kinds of units as long as the node meets a unit's resource requirement.
-In addition, nodes can be tagged with different attributes so that units can choose to run on nodes that have specific attributes.
-Each node exposes APIs to provision and de-provision units on it and maintains a list of provisioned units.
-On restart, the node resumes the execution of all provisioned units and recovers their previous state if possible.
+In addition, nodes can be tagged with different attributes and units can be configured to run on nodes with specific attributes.
+Each node exposes APIs to provision and de-provision units on it.
+Each node also maintains a list of provisioned units on the local file system.
+On restart, the node resumes the execution of all units on the list and recovers their previous state if possible.
 
 ### Universe
 
@@ -87,19 +88,19 @@ It exposes APIs to create, delete, and configure databases.
 It also monitors the load and health of the universe to provision and de-provision nodes on demand.
 
 The control unit is responsible for the top-level management of a database under the supreme unit.
-It manages a set of other units that are dedicated to a database.
+It manages a dedicated set of units for the database.
 Units of different databases are independent and do not interact with each other.
-The details about individual units in a database are described later.
+The details about different kinds of units are described later.
 
 When a universe is bootstrapped, a group of supreme units is created.
 These supreme units form a replication group that is capable of fail-over and self-repair.
 Each supreme unit stores a replica of the universe metadata on the local file system.
 A leader supreme unit is elected to process commands and maintain the metadata.
-If the leader fails, followers will start elections to elect a new leader.
+If the leader fails, followers will elect a new one.
 If some follower fails, the leader will provision a new supreme unit to replace it.
 
-Engula implements a consensus algorithm based on Raft and Paxos.
-The details about the consensus algorithm will be described in another document.
+Engula implements a consensus algorithm derived from Raft and Paxos.
+The details about the implementation will be described in another document.
 
 ### Database
 
@@ -110,15 +111,15 @@ The relationships between different kinds of units in a database are as follows:
 When a database is created, the supreme unit registers the database and provisions a group of control units for it.
 These control units form a replication group that is capable of fail-over and self-repair like the supreme units.
 The control unit serves as the housekeeper of a database.
-Although the control unit manages different kinds of units in different ways, there are some common principles as well:
+The control unit manages different kinds of units in different ways, but the common principles are as follows:
 
 - Scale units that are overloaded or underloaded.
 - Monitor the health of individual units and replace broken ones.
 
 The control unit exposes APIs to create, delete, and configure collections.
 Collections of the same database share the same set of units.
-The compute unit is responsible to process client commands and persist data to the journal unit and the storage unit.
-The journal and the storage together consist of the persistent state of a database.
+The compute unit is responsible to process client commands and it persists data to the journal unit and the storage unit.
+In other words, the journal and the storage consist of the persistent state of a database.
 
 #### Journal
 
@@ -180,11 +181,11 @@ The manifest records the metadata of each file and the file layout of each colle
 Collections can use different file structures to optimize for specific workloads.
 
 A manifest consists of a manifest file and a manifest journal.
-The manifest file records the base version of the manifest, which describes the persistent database state in the storage.
+The manifest file records the base version of the manifest, which describes the persistent state of the storage.
 The manifest journal records a sequence of version edits applied on the base version.
 When the size of the manifest journal reaches a threshold, the manifest journal is merged with the manifest file to form a new base version.
 
-The manifest file and all data files are immutable and replicated in the storage units, while the manifest journal is replicated in the control units for incremental updates.
+The manifest file and all data files are immutable and replicated in storage units, while the manifest journal is replicated in control units for incremental updates.
 The control unit is responsible to maintain the manifest and distribute files among storage units.
 
 A storage unit stores immutable files on the local file system and exposes APIs to add, drop, and read these files.
@@ -204,29 +205,31 @@ Since the background job is fault-tolerant and will not affect foreground servic
 
 #### Execution
 
-The leader compute unit is responsible to process client commands for the shards it manages.
+The compute unit is responsible to process client commands for the shard it manages.
 The command execution flow is as follow:
 
 ![Compute Architecture](images/20210808-compute-architecture.drawio.svg)
 
-To handle writes, the compute unit replicates the updates to journal units of the corresponding shard.
-Then updates are applied to the memtable and forwarded to followers for fast fail-over.
-When the size of the memtable reaches a threshold, the memtable is flushed to the storage and a memtable is created.
+The leader compute unit is responsible to process all write commands.
+To process writes, the leader compute unit replicates updates to the corresponding journal.
+Then the updates are applied to the memtable and forwarded to followers for fast fail-over.
+When the size of the memtable reaches a threshold, the memtable is flushed to the storage and a new memtable is created.
 
-To handle reads, the compute unit merges updates in the write buffer with data from the local cache or the remote storage.
-The compute unit queries data from the local cache first.
-If the required data is not in the local cache, the compute unit reads from the remote storage instead and then fills the local cache.
-Followers can also serve as read replicas to share read traffics.
+All compute units with up-to-date data can process read commands.
+To process reads, the compute unit merges updates in the memtable with the local cache or the remote storage to construct the required data.
+The compute unit queries the local cache first.
+On cache misses, the compute unit reads from the remote storage instead and then fills the local cache.
+Followers can serve as read replicas to share read traffics with the leader.
+When a follower processes reads, it is possible that it doesn't has the latest data to serve.
+In this case, the follower need to wait for the latest updates from the leader.
+
+The compute unit also handles distributed transactions.
+The default isolation level is snapshot isolation.
+More strict isolation levels are possible, but for most web-scale applications, snapshot isolation should be good enough.
+Engula implements a two-phase commit protocol that orders transactions with hybrid logical clocks.
+The details about the implementation will be described in another document.
 
 To further improve performance, the following optimizations can be introduced:
 
-- Introduce a dedicated cache tier to address read hotspots.
+- Add another level of cache on top of the compute unit to address read hotspots.
 - Aggregate concurrent commands of a single record and execute them at once to deal with single-point hotspots.
-
-#### Transaction
-
-**TODO: transaction**
-
-Engula supports causal snapshot isolation.
-
-More strict isolation levels are possible, but for most web-scale applications, causal snapshot isolation should be good enough.
