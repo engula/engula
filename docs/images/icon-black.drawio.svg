@@ -1,0 +1,17 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="481px" height="481px" viewBox="-0.5 -0.5 481 481" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;7ZjLcpswFIafhm2Hix3wsnGSdtGuvGi81IAMagSHEaJAn76SkRAYmCRjD3GTbDycXxfQ9+scYSxvm9bfGMqTnxBharl2VFveneW6QeCKXyk0reD7fivEjESt5BhhR/5iJdpKLUmEi0FHDkA5yYdiCFmGQz7QEGNQDbsdgA7vmqMYj4RdiOhY/UUinqhlrW2jf8ckTvSdHVu1pEh3VkKRoAiqnuTdW96WAfD2Kq23mEp2mks77mGmtXswhjP+ogGBIv8H0VKtTj0Zb/Ryq4RwvMtRKONKOGp5twlPqYgccYmKvIV8IDUW894WnMFTR0Z2ORBKt0CBiTiDDHedTkT1LJhxXM+uyOk4if2FIcWcNaJLZZxYBQpv0nOhE5FyP+7GGkDiQjGa4eU7z/MSQ8ROlOs5j5y7ktIT5qGMbBno7WJPQ52BNYF0zE+36q2pcnOlwh7eKbqXgeu9c7gdpreAuxqzjERZU6FaJIMyiySuIwVgPIEYMkR/AOQK7G/MeaOKMio5DLHjmvDH3vVeTvVlraK7Ws18DBodZGIxj/2gN0qGZtgxMuOir7Kcm8cXygORDFpHX+P4rL0FlCzUlV/nP0csxrqf3reS5zk5dp6/NyN/L2amMXDf9+8ZM41/ez3flZnpT5npXIOZLziW/+tKeErNtZcshZsPRte7WZCunmShg2ZYm3TL62qTqUZXXps2V1Cb9L+3d5s9p29py2aP9/madoHs2Uxkj964b5s96w+WPYue7MH4Jfgzey5z9uiNu2D2iNB8Cju29b4nevf/AA==&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <rect x="0" y="0" width="480" height="480" fill="none" stroke="none" pointer-events="all"/>
+        <ellipse cx="160" cy="80" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <ellipse cx="320" cy="80" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <path d="M 200 80 L 280 80" fill="none" stroke="#000000" stroke-width="24" stroke-miterlimit="10" pointer-events="stroke"/>
+        <path d="M 160 200 L 160 120" fill="none" stroke="#000000" stroke-width="24" stroke-miterlimit="10" pointer-events="stroke"/>
+        <ellipse cx="160" cy="240" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <ellipse cx="160" cy="400" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <path d="M 160 280 L 160 360" fill="none" stroke="#000000" stroke-width="24" stroke-miterlimit="10" pointer-events="stroke"/>
+        <ellipse cx="320" cy="400" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <path d="M 200 400 L 280 400" fill="none" stroke="#000000" stroke-width="24" stroke-miterlimit="10" pointer-events="stroke"/>
+        <ellipse cx="320" cy="240" rx="40" ry="40" fill="none" stroke="#000000" stroke-width="24" pointer-events="all"/>
+        <path d="M 200 240 L 280 240" fill="none" stroke="#000000" stroke-width="24" stroke-miterlimit="10" pointer-events="stroke"/>
+    </g>
+</svg>

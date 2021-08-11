@@ -4,7 +4,7 @@ This document describes the top-level design of Engula.
 
 ## Overview
 
-Engula is a cloud-native storage engine for web-scale applications.
+Engula is a cloud-native storage engine for next-generation data infrastructures.
 Engula aims to provide reliable and high-performance services with minimal cost on cloud platforms.
 Cloud platforms provide elastic resources that can be provisioned on-demand, which opens a wide range of opportunities to re-architect the storage engine to exploit it.
 To achieve this goal, Engula is designed from scratch to take full advantage of elastic resources on these platforms.
@@ -30,7 +30,7 @@ An Engula deployment is called a universe.
 A universe contains multiple databases, which in turn contain multiple collections.
 A collection is a set of key-value pairs versioned with timestamps.
 
-Specifically, keys are sequences of bytes, while values can be of various types.
+Keys are sequences of bytes, while values can be of various types.
 Engula supports scalar types (numbers, strings), compound types (unions, structs), and collection types (maps, lists).
 Consider that some real-world applications need to store lots of elements in a single value, Engula will support values of collection types with millions of elements.
 
