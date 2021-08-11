@@ -1,0 +1,80 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1490px" height="570px" viewBox="-0.5 -0.5 1490 570" content="&lt;mxfile&gt;&lt;diagram id=&quot;jWUFB24kEZgdJ2QmPlMA&quot; name=&quot;Page-1&quot;&gt;7VnLctowFP0alsnINjawJCSknWmmiyyaLFVb2GqE5coimH59r7BkW9gJtOER0m7AOlfPo3OPZOh5k3lxK3CW3PGIsJ6LoqLnXfdcdzh04VMBqxIYDAYlEAsalZBTA/f0F9Eg0uiCRiS3KkrOmaSZDYY8TUkoLQwLwZd2tRln9qgZjkkLuA8xa6PfaCQTvSwf1fgnQuPEjOwgHZljU1kDeYIjvmxA3k3PmwjOZfk0LyaEKe4ML2W76QvRamKCpHKnBr5u8ozZQq9Oz0yuzHIFX6QRUS1Qz7taJlSS+wyHKrqE/QUskXMGJQcecyn4U0WLgypowhkXAKU8hZZX7ZmamRAhSdGA9MxvCZ8TKVZQRUf7msSVXVzWW+L0hxpMGvvhBxrEWgdx1XVNFTxotl5grj/oYC5gMMbVjMOamhQGPxfcBC7ytZ7HUKGPUFbA95oOxGhKLsw8VdhRm+fXrVXGYIkvyl5EaHWdSKnUP1YLcKeqSn4Zcx4zgjOaX4Z8DnCYQ5XpDM8pU6R9TiFDcs6gU2uUWbm5NfY1IwJL2D4X3fGUNysHsfpO4wXDZvl6fBNr6Qm2V3aJZkMhM8rYBoQZjVMohiAaAviVEguFxBzrwJxGkRqmU6W2jnMI0jSGkrsfOXpDW4+O2yHIygqagqxU+jZBDrencgwcZLuvtbJQ/N30gF7loFrzKxxUiWpRgPZAwcjfzgC0gGPiJYk0NInzrDw7ZrRQotlwtqFCnogME6MnY+WoW07V9mwXVIOsLv/ah1pGwSGp6kjd47Fnor6tRL8lRL/rbNgHt10nwxnK0ESDdg4fTJZem6kI7l66qLVkGzkXMuExTzH7wnmmaftBpFzpmyNeSG6TSgoqHxrPj6qrS1+Xrgvd87qwMoUU1vLQLDRaqWLdbF2q20Vjdeespw/IlCoKrlFrP53gbzc05wuhj+3KCCUWMZG2KhWfr267IHAhoM/2XfdNm7rDwXTmXjM4ndmMWlzuLT3qlHhsZsSW9Kgz4tH0987Sw0FeR374p8qPajrnfmAY9R/xwHBQ/8Oby4a3DI5nLg46qHUfXZlex+vI4ZSJ2lQd8C5jm7WJ/JlZ1/b8zs26EuYp3Hr0jzmO5x3RccxvvOfuOJsvTydxoOCoDvRR36Yqs7EcyAj1BA7k7PCj/Zk70OCUFuR+aAs67vXc+W9BB7sEGaGewoIO+sr6Hi3ogO9dUKz/8l3HGv+beze/AQ==&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs>
+        <style type="text/css">
+            /* vietnamese */
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  src: url("https://fonts.gstatic.com/s/inconsolata/v21/QldgNThLqRwH-OJ1UHjlKENVzkWGVkL3GZQmAwLYxYWI2qfdm7Lpp4U8WRL2kXWdycuJDETf.woff") format('woff');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  src: url("https://fonts.gstatic.com/s/inconsolata/v21/QldgNThLqRwH-OJ1UHjlKENVzkWGVkL3GZQmAwLYxYWI2qfdm7Lpp4U8WRP2kXWdycuJDETf.woff") format('woff');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  src: url("https://fonts.gstatic.com/s/inconsolata/v21/QldgNThLqRwH-OJ1UHjlKENVzkWGVkL3GZQmAwLYxYWI2qfdm7Lpp4U8WR32kXWdycuJDA.woff") format('woff');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+        </style>
+    </defs>
+    <g>
+        <rect x="5" y="5" width="1480" height="560" fill="#ffffff" stroke="none" pointer-events="all"/>
+        <rect x="345" y="85" width="1100" height="480" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1098px; height: 1px; padding-top: 325px; margin-left: 346px;">
+                        <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                <font style="font-size: 400px ; line-height: 120%" data-font-src="https://fonts.googleapis.com/css?family=Inconsolata" face="Operator Mono">
+                                    ngula
+                                </font>
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="895" y="329" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                    ngula
+                </text>
+            </switch>
+        </g>
+        <ellipse cx="125" cy="125" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="125" cy="125" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="285" cy="125" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <path d="M 165 125 L 245 125" fill="none" stroke="#000000" stroke-width="16" stroke-miterlimit="10" pointer-events="none"/>
+        <ellipse cx="285" cy="125" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <path d="M 125 245 L 125 165" fill="none" stroke="#000000" stroke-width="16" stroke-miterlimit="10" pointer-events="none"/>
+        <ellipse cx="125" cy="285" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="125" cy="285" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="125" cy="445" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <path d="M 125 325 L 125 405" fill="none" stroke="#000000" stroke-width="16" stroke-miterlimit="10" pointer-events="none"/>
+        <ellipse cx="125" cy="445" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="285" cy="445" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <path d="M 165 445 L 245 445" fill="none" stroke="#000000" stroke-width="16" stroke-miterlimit="10" pointer-events="none"/>
+        <ellipse cx="285" cy="445" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <ellipse cx="285" cy="285" rx="40" ry="40" fill="#ffffff" stroke="#000000" stroke-width="8" pointer-events="none"/>
+        <path d="M 165 285 L 245 285" fill="none" stroke="#000000" stroke-width="16" stroke-miterlimit="10" pointer-events="none"/>
+        <ellipse cx="285" cy="285" rx="25" ry="25" fill="none" stroke="#000000" stroke-width="8" pointer-events="none"/>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://www.diagrams.net/doc/faq/svg-export-text-problems" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Viewer does not support full SVG 1.1
+            </text>
+        </a>
+    </switch>
+</svg>
