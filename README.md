@@ -1,4 +1,4 @@
-# ![Engula](docs/images/logo-wide.drawio.svg)
+# ![Engula](docs/images/logo-wide.png)
 
 [![Gitter](https://badges.gitter.im/engula/contributors.svg)](https://gitter.im/engula/contributors?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
