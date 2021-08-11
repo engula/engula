@@ -30,9 +30,9 @@ An Engula deployment is called a universe.
 A universe contains multiple databases, which in turn contain multiple collections.
 A collection is a set of key-value pairs versioned with timestamps.
 
-Keys are sequences of bytes, while values can be of various types.
+Specifically, keys are sequences of bytes, while values can be of various types.
 Engula supports scalar types (numbers, strings), compound types (unions, structs), and collection types (maps, lists).
-Consider that some real-world applications need to store lots of elements in a single value, Engula will support values of collection types that contain millions of elements.
+Consider that some real-world applications need to store lots of elements in a single value, Engula will support values of collection types with millions of elements.
 
 Engula provides a far more rich set of APIs than existing storage engines.
 Each data type provides a dedicated set of APIs to manipulate values of that type.
@@ -65,7 +65,7 @@ To be specific, Engula decomposes its functionalities into different kinds of un
 These units have varied resource requirements.
 For example, some are CPU-bound while some are IO-bound, some require reliable resources, while some can run with cheap but unreliable resources.
 The decomposition allows Engula to allocate optimal combinations of resources to different units according to their characteristics.
-It also enables developers to extend Engula with custom units that leverage these built-in units to provide higher-level services.
+It also enables developers to extend Engula with custom units that leverage these built-in ones to provide higher-level services.
 
 ### Universe
 
@@ -87,11 +87,9 @@ The relationships between different kinds of units are as follows:
 The supreme unit is responsible for the top-level management of a universe.
 It exposes APIs to create, delete, and configure databases.
 It also monitors the load and health of the universe to scale nodes on demand.
-
 The control unit is responsible for the top-level management of a database under the supreme unit.
-It manages a dedicated set of units for the database.
 Units of different databases are independent and do not interact with each other.
-The details about these units are described later.
+We will describe the details about other units later.
 
 When a universe is bootstrapped, a group of supreme units is created.
 These supreme units form a replication group that is capable of fail-over and self-repair.
@@ -102,15 +100,15 @@ If some follower fails, the leader will provision a new supreme unit to replace 
 
 ### Database
 
+When a database is created, the supreme unit registers the database and provisions a group of control units for it.
+These control units form a replication group that is capable of fail-over and self-repair just like the supreme units.
+The control unit serves as the housekeeper of the database and manages a dedicated set of units for it.
+
 The relationships between different kinds of units in a database are as follows:
 
 ![Database Units](images/20210808-database-units.drawio.svg)
 
-When a database is created, the supreme unit registers the database and provisions a group of control units for it.
-These control units form a replication group that is capable of fail-over and self-repair just like the supreme units.
-
-The control unit serves as the housekeeper of a database.
-It manages different kinds of units in different ways, but the common principles are as follows:
+The control unit manages different kinds of units in different ways, but the common principles are as follows:
 
 - Scale units that are overloaded or underloaded.
 - Monitor the health of individual units and replace broken ones.
@@ -131,10 +129,10 @@ Each shard manages one or more hash or range partitions of the database.
 A group of compute units and journal units form a replication group.
 Each replication group runs a consensus algorithm to serve one shard.
 The compute units act as proposers to process commands for the shard.
-A leader compute unit is elected as the distinguished proposer.
+Specifically, a leader compute unit is elected as the distinguished proposer.
 The journal units act as acceptors to replicate the logs and metadata for the shard.
 Each journal unit stores a replica of the shard on the local file system.
-More details about the consensus algorithm are described later.
+We will describe the details about the consensus algorithm later.
 
 The command execution flow of a shard is as follow:
 
@@ -150,22 +148,22 @@ To process reads, the compute unit merges changes in the memtable with data in t
 The compute unit queries the local cache first.
 On cache misses, it reads from the remote storage instead and then fills its local cache.
 Followers can also serve reads to offload read traffics from the leader.
-However, when a follower processes reads, it may not have the up-to-date data to serve.
+However, when a follower processes reads, it may not have up-to-date data to serve.
 In this case, the follower can wait for the latest changes from the leader or just redirect the command to the leader instead.
 
 Partitions can be split, merged, and moved between shards for load balance.
 To split or merge partitions in the same shard, the compute unit just issues a configuration change to update the metadata of the shard.
-However, it requires two phases to move partitions between different shards.
+However, to move partitions between different shards, a two-phase commit is required.
 
-**To transfer a partition from the source shard to the target shard:**
+**To move a partition from the source shard to the target shard:**
 
 - Phase 1: pre-move
-  - The source issues a command that updates its metadata to indicate the movement.
+  - The source issues a command that updates its metadata to initiate the movement.
   - Then the source issues a command to the target to register the movement.
-  - On failure, the source just aborts the movement.
+  - On failure, the source can abort the movement.
   - On success, the source starts flushing its memtable to the storage.
-  - Meanwhile, the source forwards all writes to the target first and applies the writes to its memtable if they have succeeded in the target However, all reads are still processed by the source because only the source possesses the complete data of the moving partition during the flush.
-  - On the other hand, the target processes writes from the source in the same way as it processes writes from other clients.
+  - Meanwhile, the source forwards all writes to the target first and then applies the writes to its memtable if they have succeeded in the target. However, all reads are still processed by the source because only the source possesses the complete data of the moving partition during the flush.
+  - On the other hand, the target processes writes from the source the same as it processes writes from other clients.
 - Phase 2: post-move
   - When the source finishes flushing the previous memtable, it notifies the target to commit the movement.
   - On failure, the source just retries until success.
@@ -176,7 +174,7 @@ However, it requires two phases to move partitions between different shards.
 First of all, there are no shards in the storage.
 That is, all shards share the same set of storage units.
 The observation is that, in most cases, the size of the storage dominates the database, while the compute and the journal only contain a small working set.
-By separating shards from the storage, the benefits are multi-fold:
+The benefits of separating shards from the storage are multi-fold:
 
 - It reduces the number of shards and the overhead to manage them.
 - It reduces the cost to alter shards since most data stays in the storage.
@@ -199,26 +197,25 @@ When the size of the manifest journal reaches a threshold, the manifest journal 
 The manifest file and all data files are immutable and replicated in storage units, while the manifest journal is replicated in control units for incremental updates.
 The control unit is responsible to maintain the manifest and distribute files among storage units.
 
-A storage unit stores immutable files on the local file system.
+A storage unit stores files on the local file system.
 The storage unit is designed to be as reliable and cost-effective as possible.
 It relies on the performance of the local file system without further optimizations.
 We leave performance optimization to the upper level, which has more application context to make better trade-offs.
-For instance, a dedicated cache tier can be introduced on top of the compute to boost read performance on demand.
+For instance, a dedicated cache tier can be introduced on top of the compute to boost read performance on-demand.
 
 The storage unit also records access statistics for each file and reports them to the control unit.
 The control unit calculates the hotness of individual files from these statistics to balance file distribution.
 For example, the control unit can add more replicas for hot files in the fast storage tier to share traffics, while keeping cool files in the slow storage tier to save cost.
 
-In addition, the control unit can schedule background jobs to reorganize files in storage units.
-For example, the control unit can schedule compactions to merge files with overlapped ranges to improve read performance.
-The control unit can also schedule compressions or garbage collections to reduce storage usage.
+In addition, the control unit can schedule background jobs to reorganize files in storage units when necessary.
+For example, it can schedule compactions to merge files with overlapped ranges to improve read performance, or schedule compressions or garbage collections to reduce storage usage.
 When a background job is scheduled, the control unit provisions a background unit to run it.
-Since the background job is fault-tolerant and will not affect foreground services even if it fails, the background unit can be served with cheap but unreliable resources to save cost.
+Since the background job is fault-tolerant and will not affect foreground services even if it fails, the background unit can be served with cheap but unreliable resources to further save cost.
 
 ## Consensus Algorithm (TODO)
 
 Engula develops a variant of the Raft consensus algorithm to serve its architecture.
-The original Raft algorithm bundles the compute and storage of logs together, which is the opposite of Engula's design.
+The original Raft algorithm bundles the compute and storage of logs together, which is opposite to Engula's design.
 
 ## Distributed Transaction (TODO)
 
