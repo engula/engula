@@ -4,27 +4,37 @@
 
 Engula is a cloud-native storage engine for next-generation data infrastructures.
 
-Engula is in the demo stage now, welcome to **review [the design](docs/design.md)** and join [the room](https://gitter.im/engula/contributors) to discuss with us.
+Engula is in the demo stage now, welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.
 You can also **contact careers@engula.com to become a full-time developer!**
 
-## Demo
+## Usage
 
-```rust
-use engula::{ListObject, MapObject, Uint64Object, Universe};
+1. Install `engula`:
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let uv = Universe::open("engula://mem")?;
-    let db = uv.create_database("demo")?;
-    let co = db.create_collection("demo")?;
-    let num: Uint64Object = co.object("a");
-    num.add(1)?;
-    num.sub(2)?;
-    let list: ListObject<Uint64Object> = co.object("b");
-    let ob = list.at(1);
-    ob.add(1)?;
-    let map: MapObject<String, Uint64Object> = co.object("c");
-    let ob = map.at("abc");
-    ob.add(1)?;
-    Ok(())
-}
+```
+cargo install engula
+```
+
+2. Run an Engula node:
+
+```
+engula node init
+```
+
+```
+node 8b23f970-542e-404d-b1a3-27130c87a8ea listen on 127.0.0.1:21812
+```
+
+3. In another terminal, lists all Engula nodes:
+
+```
+engula node list
+```
+
+```
+[
+    NodeDesc {
+        uuid: "8b23f970-542e-404d-b1a3-27130c87a8ea",
+    },
+]
 ```

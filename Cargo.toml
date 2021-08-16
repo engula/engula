@@ -1,13 +1,2 @@
-[package]
-name = "engula"
-version = "0.1.0"
-edition = "2018"
-license = "Apache-2.0"
-homepage = "https://engula.com"
-description = "A cloud-native storage engine for next-generation data infrastructures."
-
-[[bin]]
-name = "engula"
-path = "bin/engula.rs"
-
-[dependencies]
+[workspace]
+members = ["engula"]
