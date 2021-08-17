@@ -123,13 +123,22 @@ name = "engula"
 version = "0.1.1"
 dependencies = [
  "clap",
- "engula-supreme-unit",
+ "engula-supreme-unit 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "microunit",
 ]
 
 [[package]]
 name = "engula-supreme-unit"
 version = "0.1.0"
+dependencies = [
+ "microunit",
+]
+
+[[package]]
+name = "engula-supreme-unit"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47195d1cd9cad06a846eceb83a1c3681b7ecdb9cfb90a8c86f29cf52f09e62f2"
 dependencies = [
  "microunit",
 ]

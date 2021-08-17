@@ -10,4 +10,4 @@ description = "A cloud-native storage engine for next-generation data infrastruc
 [dependencies]
 clap = "3.0.0-beta.4"
 microunit = "0.1.1"
-engula-supreme-unit = { path = "../engula-unit/supreme" }
+engula-supreme-unit = "0.1.0"
