@@ -8,5 +8,6 @@ repository = "https://github.com/engula/engula"
 description = "A cloud-native storage engine for next-generation data infrastructures."
 
 [dependencies]
+engula-supreme-unit = { path = "../engula-unit/supreme" }
 clap = "3.0.0-beta.4"
-microunit = "0.1.0"
+microunit = "0.1.1"

@@ -25,7 +25,7 @@ engula node init
 node 8b23f970-542e-404d-b1a3-27130c87a8ea listen on 127.0.0.1:21812
 ```
 
-3. In another terminal, lists all Engula nodes:
+3. In another terminal, list all Engula nodes:
 
 ```
 engula node list
@@ -35,6 +35,36 @@ engula node list
 [
     NodeDesc {
         uuid: "8b23f970-542e-404d-b1a3-27130c87a8ea",
+    },
+]
+```
+
+4. Create a `supreme` unit:
+
+```
+engula unit create --kind supreme
+```
+
+```
+created unit Some(
+    UnitDesc {
+        uuid: "c61dc1c2-dfaf-4221-b9b8-7b1ac4fe6e4f",
+        kind: "supreme",
+    },
+)
+```
+
+5. List all units:
+
+```
+engula unit list
+```
+
+```
+[
+    UnitDesc {
+        uuid: "c61dc1c2-dfaf-4221-b9b8-7b1ac4fe6e4f",
+        kind: "supreme",
     },
 ]
 ```

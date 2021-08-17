@@ -123,6 +123,14 @@ name = "engula"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "engula-supreme-unit",
+ "microunit",
+]
+
+[[package]]
+name = "engula-supreme-unit"
+version = "0.1.0"
+dependencies = [
  "microunit",
 ]
 
@@ -356,12 +364,13 @@ checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
 
 [[package]]
 name = "microunit"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbc045dec2feb79e3ec4ad1d519a32b04b0eb54bb46723d045e2aead96265e30"
+checksum = "bad04f5f4b62f4e46362cb5b2d128e0afce25beeb4539be11bcc04b2dfba5c93"
 dependencies = [
  "clap",
  "prost",
+ "thiserror",
  "tokio",
  "tonic",
  "tonic-build",
@@ -685,6 +694,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0066c8d12af8b5acd21e00547c3797fde4e8677254a7ee429176ccebbe93dd80"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93119e4feac1cbe6c798c34d3a53ea0026b0b1de6a120deef895137c0529bfe2"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "060d69a0afe7796bf42e9e2ff91f5ee691fb15c53d38b4b62a9a53eb23164745"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
