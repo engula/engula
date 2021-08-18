@@ -1,10 +1,11 @@
-use clap::Clap;
+use clap::{crate_version, Clap};
 
 use engula_supreme_unit::SupremeUnit;
 use microunit::cmd::{NodeCommand, UnitCommand};
 use microunit::NodeBuilder;
 
 #[derive(Clap)]
+#[clap(version = crate_version!())]
 struct Command {
     #[clap(subcommand)]
     subcmd: SubCommand,
