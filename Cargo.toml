@@ -1,2 +1,2 @@
 [workspace]
-members = ["engula", "engula-unit/supreme", "engula-unit/storage"]
+members = ["engula", "engula-fs", "engula-unit/supreme", "engula-unit/storage"]
