@@ -5,7 +5,7 @@ mod memtable;
 mod storage;
 
 pub use database::Database;
-pub use journal::{Journal, MemJournal};
+pub use journal::{Journal, LocalJournal};
 pub use storage::{MemStorage, Storage};
 
 pub type Error = Box<dyn std::error::Error>;

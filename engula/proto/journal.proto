@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package engula.journal.v1;
+
+service Journal {
+  rpc Append(AppendRequest) returns (AppendResponse) {}
+}
+
+message AppendRequest { bytes data = 1; }
+
+message AppendResponse {}

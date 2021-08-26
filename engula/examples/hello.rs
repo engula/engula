@@ -1,8 +1,8 @@
-use engula::{Database, MemJournal, MemStorage};
+use engula::{Database, LocalJournal, MemStorage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let journal = MemJournal::new();
+    let journal = LocalJournal::new("/tmp/engula", true)?;
     let storage = MemStorage::new();
     let db = Database::new(journal, storage);
     let key = "helo".as_bytes().to_owned();
