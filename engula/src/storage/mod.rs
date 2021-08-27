@@ -2,4 +2,4 @@ mod local_storage;
 mod storage;
 
 pub use local_storage::{LocalStorage, LocalStorageVersion};
-pub use storage::{Storage, StorageVersion};
+pub use storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};
