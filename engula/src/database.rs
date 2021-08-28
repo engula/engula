@@ -7,7 +7,7 @@ use tokio_stream::{wrappers::WatchStream, StreamExt};
 
 use crate::common::Timestamp;
 use crate::journal::Journal;
-use crate::memtable::{BTreeTable, Memtable};
+use crate::memtable::{BTreeTable, MemTable};
 use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};
 use crate::Result;
 
@@ -92,7 +92,7 @@ impl Core {
         let current_clone = current.clone();
         let current_rx = storage.current_rx();
         let watch_handle = task::spawn(async move {
-            let _ = watch_storage_version(current_clone, current_rx).await;
+            let _ = VersionHandle::watch_storage_version(current_clone, current_rx).await;
         });
         Core {
             options,
@@ -132,6 +132,7 @@ impl Core {
 
         let handle = task::spawn(async move {
             // flush(imm);
+            println!("flush");
             current.release_immtable().await;
         });
         *flush_handle = Some(handle);
@@ -141,8 +142,8 @@ impl Core {
 }
 
 struct Version {
-    mem: Arc<Box<dyn Memtable>>,
-    imm: Option<Arc<Box<dyn Memtable>>>,
+    mem: Arc<Box<dyn MemTable>>,
+    imm: Option<Arc<Box<dyn MemTable>>>,
     storage: StorageVersionRef,
 }
 
@@ -173,7 +174,7 @@ impl VersionHandle {
 
     async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) -> usize {
         let current = self.0.read().await.clone();
-        current.mem.insert(ts, key, value).await;
+        current.mem.put(ts, key, value).await;
         current.mem.approximate_size()
     }
 
@@ -197,6 +198,17 @@ impl VersionHandle {
         *current = version;
     }
 
+    async fn watch_storage_version(
+        current: Arc<VersionHandle>,
+        current_rx: StorageVersionReceiver,
+    ) -> Result<()> {
+        let mut rx = WatchStream::new(current_rx);
+        while let Some(version) = rx.next().await {
+            current.install_storage_version(version).await;
+        }
+        Ok(())
+    }
+
     async fn install_storage_version(&self, storage: StorageVersionRef) {
         let mut current = self.0.write().await;
         let version = Arc::new(Version {
@@ -206,15 +218,4 @@ impl VersionHandle {
         });
         *current = version;
     }
-}
-
-async fn watch_storage_version(
-    current: Arc<VersionHandle>,
-    current_rx: StorageVersionReceiver,
-) -> Result<()> {
-    let mut rx = WatchStream::new(current_rx);
-    while let Some(version) = rx.next().await {
-        current.install_storage_version(version).await;
-    }
-    Ok(())
 }
