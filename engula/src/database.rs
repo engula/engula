@@ -79,8 +79,8 @@ impl Put {
 
 struct Core {
     options: Options,
-    journal: Box<dyn Journal>,
-    storage: Box<dyn Storage>,
+    journal: Arc<Box<dyn Journal>>,
+    storage: Arc<Box<dyn Storage>>,
     current: Arc<VersionHandle>,
     watch_handle: task::JoinHandle<()>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
@@ -96,8 +96,8 @@ impl Core {
         });
         Core {
             options,
-            journal,
-            storage,
+            journal: Arc::new(journal),
+            storage: Arc::new(storage),
             current,
             watch_handle,
             flush_handle: Mutex::new(None),
@@ -127,12 +127,12 @@ impl Core {
             handle.await?;
         }
 
+        let storage = self.storage.clone();
         let current = self.current.clone();
-        current.switch_memtable().await;
+        let imm = current.switch_memtable().await;
 
         let handle = task::spawn(async move {
-            // flush(imm);
-            println!("flush");
+            storage.flush_memtable(imm).await;
             current.release_immtable().await;
         });
         *flush_handle = Some(handle);
@@ -178,7 +178,7 @@ impl VersionHandle {
         current.mem.approximate_size()
     }
 
-    async fn switch_memtable(&self) {
+    async fn switch_memtable(&self) -> Arc<Box<dyn MemTable>> {
         let mut current = self.0.write().await;
         let version = Arc::new(Version {
             mem: Arc::new(Box::new(BTreeTable::new())),
@@ -186,6 +186,7 @@ impl VersionHandle {
             storage: current.storage.clone(),
         });
         *current = version;
+        current.imm.clone().unwrap()
     }
 
     async fn release_immtable(&self) {

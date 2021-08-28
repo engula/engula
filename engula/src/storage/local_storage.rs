@@ -5,26 +5,31 @@ use tokio::sync::watch;
 
 use super::storage::*;
 use crate::common::Timestamp;
+use crate::file_system::FileSystem;
+use crate::memtable::MemTable;
 use crate::Result;
 
 pub struct LocalStorage {
+    fs: Box<dyn FileSystem>,
     current: StorageVersionRef,
     current_tx: StorageVersionSender,
     current_rx: StorageVersionReceiver,
 }
 
 impl LocalStorage {
-    pub fn new() -> LocalStorage {
+    pub fn new(fs: Box<dyn FileSystem>) -> Result<LocalStorage> {
         let current: StorageVersionRef = Arc::new(Box::new(LocalStorageVersion::new()));
         let (tx, rx) = watch::channel(current.clone());
-        LocalStorage {
+        Ok(LocalStorage {
+            fs,
             current,
             current_tx: tx,
             current_rx: rx,
-        }
+        })
     }
 }
 
+#[async_trait]
 impl Storage for LocalStorage {
     fn current(&self) -> StorageVersionRef {
         self.current.clone()
@@ -32,6 +37,10 @@ impl Storage for LocalStorage {
 
     fn current_rx(&self) -> StorageVersionReceiver {
         self.current_rx.clone()
+    }
+
+    async fn flush_memtable(&self, mem: Arc<Box<dyn MemTable>>) -> Result<()> {
+        Ok(())
     }
 }
 
