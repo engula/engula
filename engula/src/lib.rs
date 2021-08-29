@@ -1,6 +1,7 @@
 mod common;
 mod database;
 mod file_system;
+mod format;
 mod journal;
 mod memtable;
 mod storage;
