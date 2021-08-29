@@ -54,8 +54,10 @@ impl SstBuilder {
 #[async_trait]
 impl TableBuilder for SstBuilder {
     async fn add(&mut self, ts: Timestamp, key: &[u8], value: &[u8]) {
+        let this_key = key.to_owned();
+        assert!(this_key > self.last_key || (this_key == self.last_key && ts < self.last_ts));
         self.last_ts = ts;
-        self.last_key = key.to_owned();
+        self.last_key = this_key;
         self.data_block.add(ts, key, value);
         if self.data_block.approximate_size() >= self.options.block_size {
             self.flush_data_block().await.unwrap();
