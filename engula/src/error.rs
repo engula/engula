@@ -1,5 +1,7 @@
+use std::fmt::Debug;
+
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task;
 
 #[derive(Error, Debug, Clone)]
@@ -27,6 +29,12 @@ impl From<task::JoinError> for Error {
 impl<T> From<mpsc::error::SendError<T>> for Error {
     fn from(error: mpsc::error::SendError<T>) -> Error {
         Error::ChannelError(error.to_string())
+    }
+}
+
+impl<T> From<watch::error::SendError<T>> for Error {
+    fn from(_: watch::error::SendError<T>) -> Error {
+        Error::ChannelError("watch send error".to_owned())
     }
 }
 

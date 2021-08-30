@@ -90,7 +90,7 @@ fn decode_version<'a>(
     let klen = data.get_u32_le() as usize;
     let vlen = data.get_u32_le() as usize;
     new_offset.map(|x| *x = offset + 16 + klen + vlen);
-    (ts, &data[0..klen], &data[klen..(klen + vlen)])
+    Version(ts, &data[0..klen], &data[klen..(klen + vlen)])
 }
 
 #[derive(Debug)]
@@ -139,14 +139,15 @@ impl Iterator for BlockIterator {
         self.current_offset = 0;
     }
 
-    async fn seek(&mut self, ts: Timestamp, target: &[u8]) {
+    async fn seek(&mut self, ts: Timestamp, key: &[u8]) {
+        let target = Version(ts, key, &[]);
         let mut left = 0;
         let mut right = self.num_restarts - 1;
         while left < right {
             let mid = (left + right + 1) / 2;
             let offset = self.decode_restart_offset(mid);
             let version = decode_version(&self.data, offset, None);
-            if version.1 < target || version.1 == target && version.0 >= ts {
+            if version <= target {
                 left = mid;
             } else {
                 right = mid - 1;
@@ -156,7 +157,7 @@ impl Iterator for BlockIterator {
         self.current_offset = self.decode_restart_offset(left);
         loop {
             if let Some(version) = self.current() {
-                if version.1 > target || version.1 == target && version.0 <= ts {
+                if version >= target {
                     break;
                 }
             } else {
@@ -208,13 +209,13 @@ mod tests {
         iter.seek_to_first().await;
         for v in versions {
             assert!(iter.valid());
-            assert_eq!(iter.current(), Some(v));
+            assert_eq!(iter.current(), Some(v.into()));
             iter.next().await;
         }
         assert_eq!(iter.current(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some((2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(iter.current(), Some(Version(2, [2].as_ref(), [2].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some((5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(iter.current(), Some(Version(5, [5].as_ref(), [5].as_ref())));
     }
 }

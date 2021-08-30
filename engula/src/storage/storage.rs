@@ -13,11 +13,11 @@ pub type StorageVersionReceiver = watch::Receiver<StorageVersionRef>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    fn current(&self) -> StorageVersionRef;
+    async fn current(&self) -> StorageVersionRef;
 
     fn current_rx(&self) -> StorageVersionReceiver;
 
-    async fn flush_memtable(&self, mem: Arc<Box<dyn MemTable>>) -> Result<()>;
+    async fn flush_memtable(&self, mem: Arc<Box<dyn MemTable>>) -> Result<StorageVersionRef>;
 }
 
 #[async_trait]

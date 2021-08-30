@@ -100,7 +100,7 @@ mod tests {
             let mut iter = BlockIterator::new(Arc::new(block));
             iter.seek_to_first().await;
             for v in versions {
-                assert_eq!(iter.current(), Some(v));
+                assert_eq!(iter.current(), Some(v.into()));
                 iter.next().await;
             }
             iter
@@ -116,7 +116,7 @@ mod tests {
             let mut iter = BlockIterator::new(Arc::new(block));
             iter.seek_to_first().await;
             for v in versions {
-                assert_eq!(iter.current(), Some(v));
+                assert_eq!(iter.current(), Some(v.into()));
                 iter.next().await;
             }
             iter
@@ -136,16 +136,16 @@ mod tests {
         iter.seek_to_first().await;
         for v in versions {
             assert!(iter.valid());
-            assert_eq!(iter.current(), Some(v));
+            assert_eq!(iter.current(), Some(v.into()));
             iter.next().await;
         }
         assert_eq!(iter.current(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some((2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(iter.current(), Some(Version(2, [2].as_ref(), [2].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some((5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(iter.current(), Some(Version(5, [5].as_ref(), [5].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some((6, [6].as_ref(), [6].as_ref())));
+        assert_eq!(iter.current(), Some(Version(6, [6].as_ref(), [6].as_ref())));
         iter.next().await;
         assert_eq!(iter.current(), None);
     }

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::common::Timestamp;
 
 pub type MemItem<'a> = (Timestamp, &'a [u8], &'a [u8]);
-pub type MemIter<'a> = dyn Iterator<Item = MemItem<'a>> + 'a;
+pub type MemIter<'a> = dyn Iterator<Item = MemItem<'a>> + Send + Sync + 'a;
 
 #[async_trait]
 pub trait MemTable: Send + Sync {
@@ -18,6 +18,6 @@ pub trait MemTable: Send + Sync {
     fn approximate_size(&self) -> usize;
 }
 
-pub trait MemSnapshot {
+pub trait MemSnapshot: Send + Sync {
     fn iter(&self) -> Box<MemIter>;
 }

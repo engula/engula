@@ -6,7 +6,7 @@ use tokio::task;
 use tokio_stream::{wrappers::WatchStream, StreamExt};
 
 use crate::common::Timestamp;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::journal::Journal;
 use crate::memtable::{BTreeTable, MemTable};
 use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};
@@ -15,11 +15,18 @@ pub struct Options {
     pub memtable_size: usize,
 }
 
+impl Options {
+    pub fn default() -> Options {
+        Options {
+            memtable_size: 1024 * 1024,
+        }
+    }
+}
+
 pub struct Database {
     core: Arc<Core>,
-    last_ts: AtomicU64,
+    next_ts: AtomicU64,
     write_tx: mpsc::Sender<Put>,
-    write_thread: task::JoinHandle<()>,
 }
 
 impl Database {
@@ -32,25 +39,24 @@ impl Database {
         let core = Arc::new(core);
         let core_clone = core.clone();
         let (write_tx, write_rx) = mpsc::channel(4096);
-        let write_thread = task::spawn(async move {
+        task::spawn(async move {
             let _ = core_clone.handle_writes(write_rx).await;
         });
         Database {
             core,
-            last_ts: AtomicU64::new(0),
+            next_ts: AtomicU64::new(0),
             write_tx,
-            write_thread,
         }
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let ts = self.last_ts.load(Ordering::SeqCst);
+        let ts = self.next_ts.load(Ordering::SeqCst);
         self.core.get(ts, key).await
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        let ts = self.last_ts.fetch_add(1, Ordering::SeqCst);
+        let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
         let put = Put { tx, ts, key, value };
         self.write_tx.send(put).await?;
         rx.await?;
@@ -82,24 +88,25 @@ struct Core {
     journal: Arc<Box<dyn Journal>>,
     storage: Arc<Box<dyn Storage>>,
     current: Arc<VersionHandle>,
-    watch_handle: task::JoinHandle<()>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
 }
 
 impl Core {
     async fn new(options: Options, journal: Box<dyn Journal>, storage: Box<dyn Storage>) -> Core {
-        let current = Arc::new(VersionHandle::new(storage.current()));
+        let storage_version = storage.current().await;
+        let current = Arc::new(VersionHandle::new(storage_version));
         let current_clone = current.clone();
         let current_rx = storage.current_rx();
-        let watch_handle = task::spawn(async move {
-            let _ = VersionHandle::watch_storage_version(current_clone, current_rx).await;
+        task::spawn(async move {
+            VersionHandle::watch_storage_version(current_clone, current_rx)
+                .await
+                .unwrap();
         });
         Core {
             options,
             journal: Arc::new(journal),
             storage: Arc::new(storage),
             current,
-            watch_handle,
             flush_handle: Mutex::new(None),
         }
     }
@@ -112,8 +119,8 @@ impl Core {
         while let Some(put) = rx.recv().await {
             let data = put.encode();
             self.journal.append(data).await?;
-            put.tx.send(()).unwrap();
             let memtable_size = self.current.put(put.ts, put.key, put.value).await;
+            put.tx.send(()).unwrap();
             if memtable_size >= self.options.memtable_size {
                 self.schedule_flush().await?;
             }
@@ -132,8 +139,8 @@ impl Core {
         let imm = current.switch_memtable().await;
 
         let handle = task::spawn(async move {
-            storage.flush_memtable(imm).await;
-            current.release_immtable().await;
+            let version = storage.flush_memtable(imm).await.unwrap();
+            current.install_flush_result(version).await;
         });
         *flush_handle = Some(handle);
 
@@ -180,6 +187,7 @@ impl VersionHandle {
 
     async fn switch_memtable(&self) -> Arc<Box<dyn MemTable>> {
         let mut current = self.0.write().await;
+        assert!(current.imm.is_none());
         let version = Arc::new(Version {
             mem: Arc::new(Box::new(BTreeTable::new())),
             imm: Some(current.mem.clone()),
@@ -189,12 +197,13 @@ impl VersionHandle {
         current.imm.clone().unwrap()
     }
 
-    async fn release_immtable(&self) {
+    async fn install_flush_result(&self, storage: StorageVersionRef) {
         let mut current = self.0.write().await;
+        assert!(current.imm.is_some());
         let version = Arc::new(Version {
             mem: current.mem.clone(),
             imm: None,
-            storage: current.storage.clone(),
+            storage: storage,
         });
         *current = version;
     }

@@ -11,11 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let journal = LocalJournal::new(dirname, false)?;
     let db = Database::new(options, Box::new(journal), Box::new(storage)).await;
 
-    let key = vec![1, 2, 3];
-    let value = vec![4, 5, 6];
-    db.put(key.clone(), value.clone()).await?;
-    let got_value = db.get(&key).await?;
-    assert_eq!(got_value, Some(value));
+    for i in 0..1024u64 {
+        let v = i.to_be_bytes().to_vec();
+        db.put(v.clone(), v.clone()).await?;
+        let got = db.get(&v).await?;
+        assert_eq!(got, Some(v.clone()));
+    }
 
     Ok(())
 }

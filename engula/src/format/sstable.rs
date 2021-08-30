@@ -18,7 +18,7 @@ pub struct SstOptions {
 }
 
 impl SstOptions {
-    fn default() -> SstOptions {
+    pub fn default() -> SstOptions {
         SstOptions { block_size: 8192 }
     }
 }
@@ -54,7 +54,7 @@ pub struct SstBuilder {
 }
 
 impl SstBuilder {
-    fn new(options: SstOptions, file: Box<dyn SequentialWriter>) -> SstBuilder {
+    pub fn new(options: SstOptions, file: Box<dyn SequentialWriter>) -> SstBuilder {
         SstBuilder {
             options,
             file: SstFileWriter::new(file),
@@ -72,6 +72,7 @@ impl SstBuilder {
         let encoded_handle = block_handle.encode();
         self.index_block
             .add(self.last_ts, &self.last_key, &encoded_handle);
+        self.data_block.reset();
         Ok(())
     }
 }
@@ -108,6 +109,7 @@ impl TableBuilder for SstBuilder {
             let encoded_footer = footer.encode();
             let _ = self.file.write_block(&encoded_footer).await?;
         }
+        self.file.sync_data().await?;
         Ok(self.file.file_size())
     }
 }
@@ -129,6 +131,10 @@ impl SstFileWriter {
         self.offset
     }
 
+    async fn sync_data(&self) -> Result<()> {
+        self.file.sync_data().await
+    }
+
     async fn write_block(&mut self, block: &[u8]) -> Result<BlockHandle> {
         let handle = BlockHandle {
             offset: self.offset as u64,
@@ -146,7 +152,7 @@ pub struct SstReader {
 }
 
 impl SstReader {
-    async fn open(file: Box<dyn RandomAccessReader>, size: usize) -> Result<SstReader> {
+    pub async fn open(file: Box<dyn RandomAccessReader>, size: usize) -> Result<SstReader> {
         assert!(size >= FOOTER_SIZE);
         let mut footer_data = [0; FOOTER_SIZE];
         file.read_at(&mut footer_data, (size - FOOTER_SIZE) as u64)
@@ -212,6 +218,7 @@ impl BlockIterGenerator for SstBlockIterGenerator {
 
 #[cfg(test)]
 mod tests {
+    use super::super::*;
     use super::*;
     use crate::file_system::{FileSystem, LocalFileSystem};
 
@@ -221,9 +228,10 @@ mod tests {
         let wfile = fs.new_sequential_writer("test.sst").await.unwrap();
         let options = SstOptions::default();
         let mut builder = SstBuilder::new(options, wfile);
-        let num_versions = 256u64;
+        let num_versions = 1024u64;
         for i in 0..num_versions {
-            builder.add(i, &[i as u8], &[i as u8]).await;
+            let v = i.to_be_bytes();
+            builder.add(i, &v, &v).await;
         }
         let file_size = builder.finish().await.unwrap();
         let rfile = fs.new_random_access_reader("test.sst").await.unwrap();
@@ -232,22 +240,19 @@ mod tests {
         assert!(!iter.valid());
         iter.seek_to_first().await;
         for i in 0..num_versions {
-            assert_eq!(
-                iter.current(),
-                Some((i, [i as u8].as_ref(), [i as u8].as_ref()))
-            );
+            let v = i.to_be_bytes();
+            assert_eq!(iter.current(), Some(Version(i, &v, &v)));
             iter.next().await;
         }
         assert_eq!(iter.current(), None);
-        let target = num_versions / 2;
-        iter.seek(target, &[target as u8]).await;
-        assert_eq!(
-            iter.current(),
-            Some((target, [target as u8].as_ref(), [target as u8].as_ref()))
-        );
+        let ts = num_versions / 2;
+        let target = ts.to_be_bytes();
+        iter.seek(ts, &target).await;
+        assert_eq!(iter.current(), Some(Version(ts, &target, &target)));
         for i in 0..num_versions {
-            let value = reader.get(i, &[i as u8]).await.unwrap().unwrap();
-            assert_eq!(&value, &[i as u8]);
+            let expect = i.to_be_bytes();
+            let actual = reader.get(i, &expect).await.unwrap().unwrap();
+            assert_eq!(&actual, &expect);
         }
     }
 }
