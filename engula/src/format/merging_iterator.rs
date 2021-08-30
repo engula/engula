@@ -79,3 +79,74 @@ impl Iterator for MergingIterator {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::super::block::*;
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        let mut builder = BlockBuilder::new();
+        let iter1 = {
+            let versions: [(Timestamp, &[u8], &[u8]); 3] =
+                [(3, &[1], &[3]), (1, &[1], &[1]), (5, &[5], &[5])];
+            for v in &versions {
+                builder.add(v.0, v.1, v.2);
+            }
+            let block = builder.finish().to_owned();
+            let mut iter = BlockIterator::new(Arc::new(block));
+            iter.seek_to_first().await;
+            for v in versions {
+                assert_eq!(iter.current(), Some(v));
+                iter.next().await;
+            }
+            iter
+        };
+        builder.reset();
+        let iter2 = {
+            let versions: [(Timestamp, &[u8], &[u8]); 3] =
+                [(4, &[2], &[4]), (2, &[2], &[2]), (6, &[6], &[6])];
+            for v in &versions {
+                builder.add(v.0, v.1, v.2);
+            }
+            let block = builder.finish().to_owned();
+            let mut iter = BlockIterator::new(Arc::new(block));
+            iter.seek_to_first().await;
+            for v in versions {
+                assert_eq!(iter.current(), Some(v));
+                iter.next().await;
+            }
+            iter
+        };
+
+        let versions: [(Timestamp, &[u8], &[u8]); 6] = [
+            (3, &[1], &[3]),
+            (1, &[1], &[1]),
+            (4, &[2], &[4]),
+            (2, &[2], &[2]),
+            (5, &[5], &[5]),
+            (6, &[6], &[6]),
+        ];
+
+        let mut iter = MergingIterator::new(vec![Box::new(iter1), Box::new(iter2)]);
+        assert!(!iter.valid());
+        iter.seek_to_first().await;
+        for v in versions {
+            assert!(iter.valid());
+            assert_eq!(iter.current(), Some(v));
+            iter.next().await;
+        }
+        assert_eq!(iter.current(), None);
+        iter.seek(3, &[2]).await;
+        assert_eq!(iter.current(), Some((2, [2].as_ref(), [2].as_ref())));
+        iter.next().await;
+        assert_eq!(iter.current(), Some((5, [5].as_ref(), [5].as_ref())));
+        iter.next().await;
+        assert_eq!(iter.current(), Some((6, [6].as_ref(), [6].as_ref())));
+        iter.next().await;
+        assert_eq!(iter.current(), None);
+    }
+}

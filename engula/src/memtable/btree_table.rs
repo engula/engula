@@ -96,3 +96,30 @@ impl MemSnapshot for BTreeSnapshot {
         Box::new(BTreeIter::new(self.0.iter()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        let mem = BTreeTable::new();
+        mem.put(1, vec![1], vec![1]).await;
+        assert_eq!(mem.get(1, &[1]).await, Some(vec![1]));
+        mem.put(2, vec![2], vec![2]).await;
+        assert_eq!(mem.get(2, &[1]).await, Some(vec![1]));
+        mem.put(3, vec![1], vec![3]).await;
+        mem.put(4, vec![2], vec![4]).await;
+        mem.put(5, vec![5], vec![5]).await;
+        assert_eq!(mem.get(3, &[1]).await, Some(vec![3]));
+        assert_eq!(mem.get(4, &[2]).await, Some(vec![4]));
+        let snap = mem.snapshot().await;
+        let mut iter = snap.iter();
+        assert_eq!(iter.next(), Some((3, [1u8].as_ref(), [3u8].as_ref())));
+        assert_eq!(iter.next(), Some((1, [1u8].as_ref(), [1u8].as_ref())));
+        assert_eq!(iter.next(), Some((4, [2u8].as_ref(), [4u8].as_ref())));
+        assert_eq!(iter.next(), Some((2, [2u8].as_ref(), [2u8].as_ref())));
+        assert_eq!(iter.next(), Some((5, [5u8].as_ref(), [5u8].as_ref())));
+        assert_eq!(iter.next(), None);
+    }
+}

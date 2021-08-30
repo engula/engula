@@ -2,7 +2,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future::{self, Future, FutureExt};
 use tokio::io::AsyncWriteExt;
 
 use super::block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE};
@@ -143,7 +142,6 @@ impl SstFileWriter {
 
 pub struct SstReader {
     file: Arc<Box<dyn RandomAccessReader>>,
-    size: usize,
     index_block: Arc<Vec<u8>>,
 }
 
@@ -160,7 +158,6 @@ impl SstReader {
             .await?;
         Ok(SstReader {
             file: Arc::new(file),
-            size,
             index_block: Arc::new(index_block),
         })
     }
@@ -170,7 +167,7 @@ impl SstReader {
 impl TableReader for SstReader {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut iter = self.new_iterator().await?;
-        iter.seek(ts, key);
+        iter.seek(ts, key).await;
         if let Some(error) = iter.error() {
             return Err(error);
         }
@@ -210,5 +207,47 @@ impl BlockIterGenerator for SstBlockIterGenerator {
         let block_size = self.file.read_at(&mut block, block_handle.offset).await?;
         assert_eq!(block_size as u64, block_handle.size);
         Ok(Box::new(BlockIterator::new(Arc::new(block))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::{FileSystem, LocalFileSystem};
+
+    #[tokio::test]
+    async fn test() {
+        let fs = LocalFileSystem::new("/tmp/engula_test").unwrap();
+        let wfile = fs.new_sequential_writer("test.sst").await.unwrap();
+        let options = SstOptions::default();
+        let mut builder = SstBuilder::new(options, wfile);
+        let num_versions = 256u64;
+        for i in 0..num_versions {
+            builder.add(i, &[i as u8], &[i as u8]).await;
+        }
+        let file_size = builder.finish().await.unwrap();
+        let rfile = fs.new_random_access_reader("test.sst").await.unwrap();
+        let reader = SstReader::open(rfile, file_size).await.unwrap();
+        let mut iter = reader.new_iterator().await.unwrap();
+        assert!(!iter.valid());
+        iter.seek_to_first().await;
+        for i in 0..num_versions {
+            assert_eq!(
+                iter.current(),
+                Some((i, [i as u8].as_ref(), [i as u8].as_ref()))
+            );
+            iter.next().await;
+        }
+        assert_eq!(iter.current(), None);
+        let target = num_versions / 2;
+        iter.seek(target, &[target as u8]).await;
+        assert_eq!(
+            iter.current(),
+            Some((target, [target as u8].as_ref(), [target as u8].as_ref()))
+        );
+        for i in 0..num_versions {
+            let value = reader.get(i, &[i as u8]).await.unwrap().unwrap();
+            assert_eq!(&value, &[i as u8]);
+        }
     }
 }

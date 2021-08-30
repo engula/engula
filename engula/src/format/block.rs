@@ -42,7 +42,7 @@ impl BlockBuilder {
         BlockBuilder {
             buf: Vec::new(),
             count: 0,
-            restarts: Vec::new(),
+            restarts: vec![0],
             restart_interval: 16,
         }
     }
@@ -51,6 +51,7 @@ impl BlockBuilder {
         self.buf.clear();
         self.count = 0;
         self.restarts.clear();
+        self.restarts.push(0);
     }
 
     pub fn add(&mut self, ts: Timestamp, key: &[u8], value: &[u8]) {
@@ -92,11 +93,12 @@ fn decode_version<'a>(
     (ts, &data[0..klen], &data[klen..(klen + vlen)])
 }
 
+#[derive(Debug)]
 pub struct BlockIterator {
     data: Arc<Vec<u8>>,
     num_restarts: usize,
     num_restarts_offset: usize,
-    restart_start: usize,
+    restart_offset: usize,
     current_offset: usize,
 }
 
@@ -105,19 +107,19 @@ impl BlockIterator {
         let num_restarts_offset = data.len() - 4;
         let mut num_restarts_data = &data[num_restarts_offset..];
         let num_restarts = num_restarts_data.get_u32_le() as usize;
-        let restart_start = num_restarts_offset - num_restarts * 4;
+        let restart_offset = num_restarts_offset - num_restarts * 4;
         BlockIterator {
             data,
             num_restarts,
             num_restarts_offset,
-            restart_start,
-            current_offset: num_restarts_offset,
+            restart_offset,
+            current_offset: restart_offset,
         }
     }
 
     fn decode_restart_offset(&self, index: usize) -> usize {
         assert!(index < self.num_restarts);
-        let offset = self.restart_start + index * 4;
+        let offset = self.restart_offset + index * 4;
         let mut restarts_data = &self.data[offset..];
         restarts_data.get_u32_le() as usize
     }
@@ -126,7 +128,7 @@ impl BlockIterator {
 #[async_trait]
 impl Iterator for BlockIterator {
     fn valid(&self) -> bool {
-        self.current_offset < self.num_restarts_offset
+        self.current_offset < self.restart_offset
     }
 
     fn error(&self) -> Option<Error> {
@@ -144,7 +146,7 @@ impl Iterator for BlockIterator {
             let mid = (left + right + 1) / 2;
             let offset = self.decode_restart_offset(mid);
             let version = decode_version(&self.data, offset, None);
-            if version.1 < target || version.1 == target && version.0 > ts {
+            if version.1 < target || version.1 == target && version.0 >= ts {
                 left = mid;
             } else {
                 right = mid - 1;
@@ -154,13 +156,13 @@ impl Iterator for BlockIterator {
         self.current_offset = self.decode_restart_offset(left);
         loop {
             if let Some(version) = self.current() {
-                if version.1 > target || version.1 == target && version.0 < ts {
+                if version.1 > target || version.1 == target && version.0 <= ts {
                     break;
                 }
             } else {
                 break;
             }
-            self.next();
+            self.next().await;
         }
     }
 
@@ -180,5 +182,39 @@ impl Iterator for BlockIterator {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        let mut builder = BlockBuilder::new();
+        let versions: [(Timestamp, &[u8], &[u8]); 5] = [
+            (3, &[1], &[3]),
+            (1, &[1], &[1]),
+            (4, &[2], &[4]),
+            (2, &[2], &[2]),
+            (5, &[5], &[5]),
+        ];
+        for v in &versions {
+            builder.add(v.0, v.1, v.2);
+        }
+        let block = builder.finish().to_owned();
+        let mut iter = BlockIterator::new(Arc::new(block));
+        assert!(!iter.valid());
+        iter.seek_to_first().await;
+        for v in versions {
+            assert!(iter.valid());
+            assert_eq!(iter.current(), Some(v));
+            iter.next().await;
+        }
+        assert_eq!(iter.current(), None);
+        iter.seek(3, &[2]).await;
+        assert_eq!(iter.current(), Some((2, [2].as_ref(), [2].as_ref())));
+        iter.next().await;
+        assert_eq!(iter.current(), Some((5, [5].as_ref(), [5].as_ref())));
     }
 }

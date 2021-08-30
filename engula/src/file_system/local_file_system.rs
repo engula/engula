@@ -21,35 +21,30 @@ impl LocalFileSystem {
             dirname: dirname.as_ref().to_owned(),
         })
     }
-
-    async fn open_sequential_file(&self, fname: &str) -> Result<Box<LocalSequentialFile>> {
-        let path = self.dirname.join(fname);
-        let file = tokio::fs::File::open(path).await?;
-        Ok(Box::new(LocalSequentialFile::new(file)))
-    }
-
-    async fn open_random_access_file(&self, fname: &str) -> Result<Box<LocalRandomAccessFile>> {
-        let path = self.dirname.join(fname);
-        let file = std::fs::File::open(path)?;
-        Ok(Box::new(LocalRandomAccessFile::new(file)))
-    }
 }
 
 #[async_trait]
 impl FileSystem for LocalFileSystem {
     async fn new_sequential_reader(&self, fname: &str) -> Result<Box<dyn SequentialReader>> {
-        let file = self.open_sequential_file(fname).await?;
-        Ok(file)
+        let path = self.dirname.join(fname);
+        let file = tokio::fs::File::open(path).await?;
+        Ok(Box::new(LocalSequentialFile::new(file)))
     }
 
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
-        let file = self.open_random_access_file(fname).await?;
-        Ok(file)
+        let path = self.dirname.join(fname);
+        let file = std::fs::File::open(path)?;
+        Ok(Box::new(LocalRandomAccessFile::new(file)))
     }
 
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
-        let file = self.open_sequential_file(fname).await?;
-        Ok(file)
+        let path = self.dirname.join(fname);
+        let file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(path)
+            .await?;
+        Ok(Box::new(LocalSequentialFile::new(file)))
     }
 }
 
