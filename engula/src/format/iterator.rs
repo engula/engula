@@ -1,17 +1,23 @@
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 
+use async_trait::async_trait;
+
 use crate::common::Timestamp;
+use crate::error::Error;
 
 pub type Version<'a> = (Timestamp, &'a [u8], &'a [u8]);
 
-pub trait Iterator {
+#[async_trait]
+pub trait Iterator: Send + Sync {
     fn valid(&self) -> bool;
 
-    fn seek_to_first(&mut self);
+    fn error(&self) -> Option<Error>;
 
-    fn seek(&mut self, ts: Timestamp, key: &[u8]);
+    async fn seek_to_first(&mut self);
 
-    fn next(&mut self);
+    async fn seek(&mut self, ts: Timestamp, key: &[u8]);
+
+    async fn next(&mut self);
 
     fn current(&self) -> Option<Version>;
 }

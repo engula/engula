@@ -1,14 +1,14 @@
 mod block;
-mod sst_builder;
-mod table_builder;
+mod sstable;
+mod table;
 
 mod iterator;
 mod merging_iterator;
 mod two_level_iterator;
 
 pub use block::{BlockBuilder, BlockHandle};
-pub use sst_builder::SstBuilder;
-pub use table_builder::TableBuilder;
+pub use sstable::{SstBuilder, SstReader};
+pub use table::{TableBuilder, TableReader};
 
 pub use iterator::{Iterator, Version};
 pub use merging_iterator::MergingIterator;

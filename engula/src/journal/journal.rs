@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::Result;
+use crate::error::Result;
 
 #[async_trait]
 pub trait Journal: Send + Sync {

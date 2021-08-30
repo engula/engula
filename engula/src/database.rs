@@ -6,10 +6,10 @@ use tokio::task;
 use tokio_stream::{wrappers::WatchStream, StreamExt};
 
 use crate::common::Timestamp;
+use crate::error::{Error, Result};
 use crate::journal::Journal;
 use crate::memtable::{BTreeTable, MemTable};
 use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};
-use crate::Result;
 
 pub struct Options {
     pub memtable_size: usize,

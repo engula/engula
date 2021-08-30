@@ -5,9 +5,9 @@ use tokio::sync::watch;
 
 use super::storage::*;
 use crate::common::Timestamp;
+use crate::error::Result;
 use crate::file_system::FileSystem;
 use crate::memtable::MemTable;
-use crate::Result;
 
 pub struct LocalStorage {
     fs: Box<dyn FileSystem>,

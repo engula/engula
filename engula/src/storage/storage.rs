@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use tokio::sync::watch;
 
 use crate::common::Timestamp;
+use crate::error::Result;
 use crate::memtable::MemTable;
-use crate::Result;
 
 pub type StorageVersionRef = Arc<Box<dyn StorageVersion>>;
 pub type StorageVersionSender = watch::Sender<StorageVersionRef>;

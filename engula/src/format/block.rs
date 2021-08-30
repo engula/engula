@@ -1,7 +1,13 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 
 use super::iterator::*;
 use crate::common::Timestamp;
+use crate::error::Error;
+
+pub const BLOCK_HANDLE_SIZE: usize = 16;
 
 pub struct BlockHandle {
     pub offset: u64,
@@ -9,6 +15,13 @@ pub struct BlockHandle {
 }
 
 impl BlockHandle {
+    pub fn decode_from(mut buf: &[u8]) -> BlockHandle {
+        BlockHandle {
+            offset: buf.get_u64_le(),
+            size: buf.get_u64_le(),
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u64_le(self.offset);
@@ -79,16 +92,16 @@ fn decode_version<'a>(
     (ts, &data[0..klen], &data[klen..(klen + vlen)])
 }
 
-pub struct BlockIterator<'a> {
-    data: &'a [u8],
+pub struct BlockIterator {
+    data: Arc<Vec<u8>>,
     num_restarts: usize,
     num_restarts_offset: usize,
     restart_start: usize,
     current_offset: usize,
 }
 
-impl<'a> BlockIterator<'a> {
-    fn new(data: &[u8]) -> BlockIterator {
+impl BlockIterator {
+    pub fn new(data: Arc<Vec<u8>>) -> BlockIterator {
         let num_restarts_offset = data.len() - 4;
         let mut num_restarts_data = &data[num_restarts_offset..];
         let num_restarts = num_restarts_data.get_u32_le() as usize;
@@ -110,22 +123,27 @@ impl<'a> BlockIterator<'a> {
     }
 }
 
-impl<'a> Iterator for BlockIterator<'a> {
+#[async_trait]
+impl Iterator for BlockIterator {
     fn valid(&self) -> bool {
         self.current_offset < self.num_restarts_offset
     }
 
-    fn seek_to_first(&mut self) {
+    fn error(&self) -> Option<Error> {
+        None
+    }
+
+    async fn seek_to_first(&mut self) {
         self.current_offset = 0;
     }
 
-    fn seek(&mut self, ts: Timestamp, target: &[u8]) {
+    async fn seek(&mut self, ts: Timestamp, target: &[u8]) {
         let mut left = 0;
         let mut right = self.num_restarts - 1;
         while left < right {
             let mid = (left + right + 1) / 2;
             let offset = self.decode_restart_offset(mid);
-            let version = decode_version(self.data, offset, None);
+            let version = decode_version(&self.data, offset, None);
             if version.1 < target || version.1 == target && version.0 > ts {
                 left = mid;
             } else {
@@ -146,10 +164,10 @@ impl<'a> Iterator for BlockIterator<'a> {
         }
     }
 
-    fn next(&mut self) {
+    async fn next(&mut self) {
         if self.current_offset < self.num_restarts_offset {
             decode_version(
-                self.data,
+                &self.data,
                 self.current_offset,
                 Some(&mut self.current_offset),
             );
@@ -158,7 +176,7 @@ impl<'a> Iterator for BlockIterator<'a> {
 
     fn current(&self) -> Option<Version> {
         if self.valid() {
-            Some(decode_version(self.data, self.current_offset, None))
+            Some(decode_version(&self.data, self.current_offset, None))
         } else {
             None
         }
