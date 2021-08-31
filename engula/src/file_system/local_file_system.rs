@@ -46,6 +46,12 @@ impl FileSystem for LocalFileSystem {
             .await?;
         Ok(Box::new(LocalSequentialFile::new(file)))
     }
+
+    async fn remove_file(&self, fname: &str) -> Result<()> {
+        let path = self.dirname.join(fname);
+        tokio::fs::remove_file(path).await?;
+        Ok(())
+    }
 }
 
 struct LocalSequentialFile {

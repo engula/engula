@@ -13,7 +13,7 @@ pub struct MergingIterator {
 }
 
 impl MergingIterator {
-    fn new(children: Vec<Box<dyn Iterator>>) -> MergingIterator {
+    pub fn new(children: Vec<Box<dyn Iterator>>) -> MergingIterator {
         let mut heap = BinaryHeap::new();
         for child in children {
             heap.push(Reverse(child));

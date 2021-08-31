@@ -10,6 +10,8 @@ pub trait FileSystem: Sync + Send {
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>>;
 
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>>;
+
+    async fn remove_file(&self, fname: &str) -> Result<()>;
 }
 
 pub trait SequentialReader: Sync + Send + Unpin + AsyncRead {}

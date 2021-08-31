@@ -24,3 +24,13 @@ pub trait Storage: Send + Sync {
 pub trait StorageVersion: Send + Sync {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>>;
 }
+
+pub struct StorageOptions {
+    pub max_levels: usize,
+}
+
+impl StorageOptions {
+    pub fn default() -> StorageOptions {
+        StorageOptions { max_levels: 4 }
+    }
+}
