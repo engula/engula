@@ -13,62 +13,34 @@ Please get in touch with **careers@engula.com** for more information.
 
 ## Usage
 
-1. Install `engula`:
+```rust
+use std::sync::Arc;
 
-```
-cargo install engula
-```
+use engula::{
+    Database, FileSystem, JobRuntime, LocalFileSystem, LocalJobRuntime, LocalJournal, LocalStorage,
+    Options, StorageOptions,
+};
 
-2. Run an Engula node:
-
-```
-engula node init
-```
-
-```
-node 8b23f970-542e-404d-b1a3-27130c87a8ea listen on 127.0.0.1:21812
-```
-
-3. In another terminal, list all Engula nodes:
-
-```
-engula node list
-```
-
-```
-[
-    NodeDesc {
-        uuid: "8b23f970-542e-404d-b1a3-27130c87a8ea",
-    },
-]
-```
-
-4. Create a `supreme` unit:
-
-```
-engula unit create --kind supreme
-```
-
-```
-created unit Some(
-    UnitDesc {
-        uuid: "c61dc1c2-dfaf-4221-b9b8-7b1ac4fe6e4f",
-        kind: "supreme",
-    },
-)
-```
-
-5. List all units:
-
-```
-engula unit list
-```
-
-```
-[
-    UnitDesc {
-        uuid: "c61dc1c2-dfaf-4221-b9b8-7b1ac4fe6e4f",
-        kind: "supreme",
-    },
-]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let options = Options {
+        memtable_size: 1024,
+    };
+    let storage_options = StorageOptions::default();
+    let dirname = "/tmp/engula";
+    let fs = LocalFileSystem::new(dirname)?;
+    let fs: Arc<Box<dyn FileSystem>> = Arc::new(Box::new(fs));
+    let job = LocalJobRuntime::new(fs.clone());
+    let job: Arc<Box<dyn JobRuntime>> = Arc::new(Box::new(job));
+    let storage = LocalStorage::new(storage_options, fs, job)?;
+    let journal = LocalJournal::new(dirname, false)?;
+    let db = Database::new(options, Box::new(journal), Box::new(storage)).await;
+    for i in 0..1024u64 {
+        let v = i.to_be_bytes().to_vec();
+        db.put(v.clone(), v.clone()).await?;
+        let got = db.get(&v).await?;
+        assert_eq!(got, Some(v.clone()));
+    }
+    Ok(())
+}
 ```
