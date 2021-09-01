@@ -2,14 +2,13 @@
 
 [![Gitter](https://badges.gitter.im/engula/contributors.svg)](https://gitter.im/engula/contributors?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
-Engula is a cloud-native storage engine that empowers engineers to build next-generation data infrastructures with less effort and more confidence.
+Engula is a storage engine that empowers engineers to build reliable and cost-effective databases with less effort and more confidence.
 
 Engula is in the demo stage now.
-Check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
+Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
 
 Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.
-We also offer full-time jobs.
-Please get in touch with **careers@engula.com** for more information.
+We also offer full-time jobs. For more information, please get in touch with **careers@engula.com**.
 
 ## Usage
 
@@ -43,4 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+```
+
+You can run the example with:
+
+```
+cargo run --example hello
 ```
