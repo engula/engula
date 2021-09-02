@@ -7,8 +7,8 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::file_system::*;
 use crate::error::Result;
+use crate::file_system::*;
 
 pub struct LocalFileSystem {
     dirname: PathBuf,

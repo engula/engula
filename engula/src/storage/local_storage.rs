@@ -7,13 +7,13 @@ use futures::executor::block_on;
 use tokio::sync::{watch, Mutex};
 use tokio::task;
 
-use super::storage::*;
 use crate::common::Timestamp;
 use crate::error::Result;
 use crate::file_system::FileSystem;
 use crate::format::{SstBuilder, SstOptions, SstReader, TableBuilder, TableReader};
 use crate::job::{CompactionInput, CompactionOutput, FileMeta, JobInput, JobOutput, JobRuntime};
 use crate::memtable::MemTable;
+use crate::storage::*;
 
 pub struct LocalStorage {
     manifest: Arc<LocalManifest>,
