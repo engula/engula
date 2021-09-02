@@ -62,7 +62,7 @@ impl LocalStorage {
                     let output = job.spawn(input).await.unwrap();
                     let JobOutput::Compaction(output) = output;
                     let current = manifest.install_compaction_output(output).await.unwrap();
-                    if let Err(_) = current_tx.send(current) {
+                    if current_tx.send(current).is_err() {
                         panic!("send current error");
                     }
                     compaction = manifest.pick_compaction().await;

@@ -203,7 +203,7 @@ impl VersionHandle {
         let version = Arc::new(Version {
             mem: current.mem.clone(),
             imm: None,
-            storage: storage,
+            storage,
         });
         *current = version;
     }

@@ -89,7 +89,9 @@ fn decode_version<'a>(
     let ts = data.get_u64_le();
     let klen = data.get_u32_le() as usize;
     let vlen = data.get_u32_le() as usize;
-    new_offset.map(|x| *x = offset + 16 + klen + vlen);
+    if let Some(x) = new_offset {
+        *x = offset + 16 + klen + vlen
+    }
     Version(ts, &data[0..klen], &data[klen..(klen + vlen)])
 }
 
@@ -155,12 +157,9 @@ impl Iterator for BlockIterator {
         }
 
         self.current_offset = self.decode_restart_offset(left);
-        loop {
-            if let Some(version) = self.current() {
-                if version >= target {
-                    break;
-                }
-            } else {
+
+        while let Some(version) = self.current() {
+            if version >= target {
                 break;
             }
             self.next().await;

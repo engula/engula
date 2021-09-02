@@ -8,6 +8,7 @@ pub struct Service {
 }
 
 impl Service {
+    #[allow(dead_code)]
     pub fn new(journal: Box<dyn Journal>) -> Service {
         Service { journal }
     }

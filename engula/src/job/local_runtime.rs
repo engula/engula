@@ -30,7 +30,7 @@ impl JobRuntime for LocalJobRuntime {
             match input {
                 JobInput::Compaction(c) => {
                     let result = run_compaction(fs, c).await;
-                    result.map(|x| JobOutput::Compaction(x))
+                    result.map(JobOutput::Compaction)
                 }
             }
         });

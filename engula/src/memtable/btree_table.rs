@@ -43,7 +43,7 @@ impl MemTable for BTreeTable {
         self.size.fetch_add(size, Ordering::Relaxed);
         let mut tree = self.tree.write().await;
         tree.entry(key)
-            .or_insert(SequenceTree::new())
+            .or_insert_with(SequenceTree::new)
             .insert(Reverse(ts), value);
     }
 
@@ -78,7 +78,7 @@ impl<'a> Iterator for BTreeIter<'a> {
         loop {
             if let Some(iter) = &mut self.inner_iter {
                 if let Some(pair) = iter.1.next() {
-                    return Some((pair.0 .0, &iter.0, pair.1));
+                    return Some((pair.0 .0, iter.0, pair.1));
                 }
             }
             if let Some(pair) = self.outer_iter.next() {
