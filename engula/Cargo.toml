@@ -15,3 +15,8 @@ async-trait = "0.1"
 bytes = "1.1"
 thiserror = "1.0"
 futures = "0.3"
+tonic = "0.5"
+prost = "0.8"
+
+[build-dependencies]
+tonic-build = "0.5"
