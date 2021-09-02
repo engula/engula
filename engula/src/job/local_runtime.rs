@@ -13,11 +13,11 @@ use crate::format::{
 use crate::job::{JobInput, JobOutput};
 
 pub struct LocalJobRuntime {
-    fs: Arc<Box<dyn FileSystem>>,
+    fs: Arc<dyn FileSystem>,
 }
 
 impl LocalJobRuntime {
-    pub fn new(fs: Arc<Box<dyn FileSystem>>) -> LocalJobRuntime {
+    pub fn new(fs: Arc<dyn FileSystem>) -> LocalJobRuntime {
         LocalJobRuntime { fs }
     }
 }
@@ -39,7 +39,7 @@ impl JobRuntime for LocalJobRuntime {
 }
 
 async fn run_compaction(
-    fs: Arc<Box<dyn FileSystem>>,
+    fs: Arc<dyn FileSystem>,
     input: CompactionInput,
 ) -> Result<CompactionOutput> {
     let mut children = Vec::new();

@@ -32,8 +32,8 @@ pub struct Database {
 impl Database {
     pub async fn new(
         options: Options,
-        journal: Box<dyn Journal>,
-        storage: Box<dyn Storage>,
+        journal: Arc<dyn Journal>,
+        storage: Arc<dyn Storage>,
     ) -> Database {
         let core = Core::new(options, journal, storage).await;
         let core = Arc::new(core);
@@ -85,14 +85,14 @@ impl Put {
 
 struct Core {
     options: Options,
-    journal: Arc<Box<dyn Journal>>,
-    storage: Arc<Box<dyn Storage>>,
+    journal: Arc<dyn Journal>,
+    storage: Arc<dyn Storage>,
     current: Arc<VersionHandle>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
 }
 
 impl Core {
-    async fn new(options: Options, journal: Box<dyn Journal>, storage: Box<dyn Storage>) -> Core {
+    async fn new(options: Options, journal: Arc<dyn Journal>, storage: Arc<dyn Storage>) -> Core {
         let storage_version = storage.current().await;
         let current = Arc::new(VersionHandle::new(storage_version));
         let current_clone = current.clone();
@@ -104,8 +104,8 @@ impl Core {
         });
         Core {
             options,
-            journal: Arc::new(journal),
-            storage: Arc::new(storage),
+            journal,
+            storage,
             current,
             flush_handle: Mutex::new(None),
         }
@@ -149,17 +149,17 @@ impl Core {
 }
 
 struct Version {
-    mem: Arc<Box<dyn MemTable>>,
-    imm: Option<Arc<Box<dyn MemTable>>>,
+    mem: Arc<dyn MemTable>,
+    imm: Option<Arc<dyn MemTable>>,
     storage: StorageVersionRef,
 }
 
 struct VersionHandle(RwLock<Arc<Version>>);
 
 impl VersionHandle {
-    fn new(storage: Arc<Box<dyn StorageVersion>>) -> VersionHandle {
+    fn new(storage: Arc<dyn StorageVersion>) -> VersionHandle {
         let version = Version {
-            mem: Arc::new(Box::new(BTreeTable::new())),
+            mem: Arc::new(BTreeTable::new()),
             imm: None,
             storage,
         };
@@ -185,11 +185,11 @@ impl VersionHandle {
         current.mem.approximate_size()
     }
 
-    async fn switch_memtable(&self) -> Arc<Box<dyn MemTable>> {
+    async fn switch_memtable(&self) -> Arc<dyn MemTable> {
         let mut current = self.0.write().await;
         assert!(current.imm.is_none());
         let version = Arc::new(Version {
-            mem: Arc::new(Box::new(BTreeTable::new())),
+            mem: Arc::new(BTreeTable::new()),
             imm: Some(current.mem.clone()),
             storage: current.storage.clone(),
         });

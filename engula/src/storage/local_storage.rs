@@ -17,7 +17,7 @@ use crate::storage::*;
 
 pub struct LocalStorage {
     manifest: Arc<LocalManifest>,
-    job: Arc<Box<dyn JobRuntime>>,
+    job: Arc<dyn JobRuntime>,
     pending_job: Arc<Mutex<bool>>,
     current_tx: Arc<StorageVersionSender>,
     current_rx: StorageVersionReceiver,
@@ -26,8 +26,8 @@ pub struct LocalStorage {
 impl LocalStorage {
     pub fn new(
         options: StorageOptions,
-        fs: Arc<Box<dyn FileSystem>>,
-        job: Arc<Box<dyn JobRuntime>>,
+        fs: Arc<dyn FileSystem>,
+        job: Arc<dyn JobRuntime>,
     ) -> Result<LocalStorage> {
         let manifest = LocalManifest::new(options, fs);
         let current = block_on(manifest.current());
@@ -85,7 +85,7 @@ impl Storage for LocalStorage {
         self.current_rx.clone()
     }
 
-    async fn flush_memtable(&self, mem: Arc<Box<dyn MemTable>>) -> Result<StorageVersionRef> {
+    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<StorageVersionRef> {
         let current = self.manifest.flush_memtable(mem).await?;
         self.schedule_background_jobs().await;
         Ok(current)
@@ -94,7 +94,7 @@ impl Storage for LocalStorage {
 
 struct LocalManifest {
     options: StorageOptions,
-    fs: Arc<Box<dyn FileSystem>>,
+    fs: Arc<dyn FileSystem>,
     next_number: AtomicU64,
     version: Mutex<LocalVersion>,
     current: Mutex<StorageVersionRef>,
@@ -102,7 +102,7 @@ struct LocalManifest {
 }
 
 impl LocalManifest {
-    fn new(options: StorageOptions, fs: Arc<Box<dyn FileSystem>>) -> LocalManifest {
+    fn new(options: StorageOptions, fs: Arc<dyn FileSystem>) -> LocalManifest {
         let version = LocalVersion::new();
         let current = version.to_ref();
         LocalManifest {
@@ -129,15 +129,15 @@ impl LocalManifest {
         SstReader::open(file, meta.file_size).await
     }
 
-    async fn flush_memtable(&self, mem: Arc<Box<dyn MemTable>>) -> Result<StorageVersionRef> {
+    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<StorageVersionRef> {
         let options = SstOptions::default();
         let file_name = self.new_file_name();
         let wfile = self.fs.new_sequential_writer(&file_name).await?;
         let mut builder = SstBuilder::new(options, wfile);
         let snap = mem.snapshot().await;
         let mut iter = snap.iter();
-        for v in iter.next() {
-            builder.add(v.0, v.1, v.2).await;
+        if let Some(v) = iter.next() {
+            builder.add(v.0, v.1, v.2).await
         }
         let file_size = builder.finish().await?;
         let file_meta = FileMeta {
@@ -241,9 +241,9 @@ impl LocalVersion {
     }
 
     fn to_ref(&self) -> StorageVersionRef {
-        Arc::new(Box::new(LocalVersion {
+        Arc::new(LocalVersion {
             levels: self.levels.clone(),
-        }))
+        })
     }
 }
 

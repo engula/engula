@@ -26,8 +26,8 @@ impl journal_server::Journal for Service {
     }
 }
 
-impl Into<journal_server::JournalServer<Service>> for Service {
-    fn into(self) -> journal_server::JournalServer<Service> {
-        journal_server::JournalServer::new(self)
+impl From<Service> for journal_server::JournalServer<Service> {
+    fn from(s: Service) -> journal_server::JournalServer<Service> {
+        journal_server::JournalServer::new(s)
     }
 }

@@ -57,9 +57,11 @@ impl MemTable for BTreeTable {
     }
 }
 
+type InnerIter<'a> = Option<(&'a [u8], btree_map::Iter<'a, Sequence, Vec<u8>>)>;
+
 struct BTreeIter<'a> {
     outer_iter: btree_map::Iter<'a, Vec<u8>, SequenceTree>,
-    inner_iter: Option<(&'a [u8], btree_map::Iter<'a, Sequence, Vec<u8>>)>,
+    inner_iter: InnerIter<'a>,
 }
 
 impl<'a> BTreeIter<'a> {

@@ -2,6 +2,8 @@ mod local_file_system;
 
 pub use local_file_system::LocalFileSystem;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -11,7 +13,7 @@ use crate::error::Result;
 pub trait FileSystem: Sync + Send {
     async fn new_sequential_reader(&self, fname: &str) -> Result<Box<dyn SequentialReader>>;
 
-    async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>>;
+    async fn new_random_access_reader(&self, fname: &str) -> Result<Arc<dyn RandomAccessReader>>;
 
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>>;
 
