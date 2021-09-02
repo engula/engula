@@ -5,8 +5,8 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
-use super::journal::Journal;
 use crate::error::Result;
+use crate::journal::Journal;
 
 pub struct LocalJournal {
     file: Mutex<File>,

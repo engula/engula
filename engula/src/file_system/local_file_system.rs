@@ -7,8 +7,8 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::file_system::*;
 use crate::error::Result;
+use crate::file_system::*;
 
 pub struct LocalFileSystem {
     dirname: PathBuf,
@@ -31,10 +31,10 @@ impl FileSystem for LocalFileSystem {
         Ok(Box::new(LocalSequentialFile::new(file)))
     }
 
-    async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
+    async fn new_random_access_reader(&self, fname: &str) -> Result<Arc<dyn RandomAccessReader>> {
         let path = self.dirname.join(fname);
         let file = std::fs::File::open(path)?;
-        Ok(Box::new(LocalRandomAccessFile::new(file)))
+        Ok(Arc::new(LocalRandomAccessFile::new(file)))
     }
 
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {

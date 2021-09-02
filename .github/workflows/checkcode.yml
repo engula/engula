@@ -1,0 +1,71 @@
+name: Check Code
+
+on:
+  push:
+    branches:
+      - '*'
+      - '!staging.tmp'
+    tags:
+      - '*'
+
+jobs:
+  test:
+    name: "Test"
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [nightly, beta, stable]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: "Checkout Repository"
+      uses: actions/checkout@master
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain:  ${{ matrix.rust }}
+        components: rustfmt, clippy
+        override: true
+        
+    - name: Release build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release
+
+    - name: Cargo test
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+
+  check:
+    name: "Clippy & Format"
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: "Checkout Repository"
+      uses: actions/checkout@master
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain:  stable
+        components: rustfmt, clippy
+        override: true
+        
+    - name: Clippy warnings
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: -- -D warnings
+
+    - name: Cargo Fmt Check
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --all -- --check

@@ -61,10 +61,11 @@ impl Iterator for TwoLevelIterator {
     }
 
     fn error(&self) -> Option<Error> {
-        self.error.clone().or(self
-            .index_iter
-            .error()
-            .or(self.block_iter.as_ref().and_then(|x| x.error())))
+        self.error.clone().or_else(|| {
+            self.index_iter
+                .error()
+                .or_else(|| self.block_iter.as_ref().and_then(|x| x.error()))
+        })
     }
 
     async fn seek_to_first(&mut self) {

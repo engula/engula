@@ -147,12 +147,12 @@ impl SstFileWriter {
 }
 
 pub struct SstReader {
-    file: Arc<Box<dyn RandomAccessReader>>,
+    file: Arc<dyn RandomAccessReader>,
     index_block: Arc<Vec<u8>>,
 }
 
 impl SstReader {
-    pub async fn open(file: Box<dyn RandomAccessReader>, size: usize) -> Result<SstReader> {
+    pub async fn open(file: Arc<dyn RandomAccessReader>, size: usize) -> Result<SstReader> {
         assert!(size >= FOOTER_SIZE);
         let mut footer_data = [0; FOOTER_SIZE];
         file.read_at(&mut footer_data, (size - FOOTER_SIZE) as u64)
@@ -163,7 +163,7 @@ impl SstReader {
         file.read_at(&mut index_block, footer.index_handle.offset)
             .await?;
         Ok(SstReader {
-            file: Arc::new(file),
+            file,
             index_block: Arc::new(index_block),
         })
     }
@@ -195,11 +195,11 @@ impl TableReader for SstReader {
 }
 
 pub struct SstBlockIterGenerator {
-    file: Arc<Box<dyn RandomAccessReader>>,
+    file: Arc<dyn RandomAccessReader>,
 }
 
 impl SstBlockIterGenerator {
-    fn new(file: Arc<Box<dyn RandomAccessReader>>) -> SstBlockIterGenerator {
+    fn new(file: Arc<dyn RandomAccessReader>) -> SstBlockIterGenerator {
         SstBlockIterGenerator { file }
     }
 }

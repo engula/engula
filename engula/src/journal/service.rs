@@ -1,13 +1,14 @@
 use tonic::{Request, Response, Status};
 
-use super::journal::Journal;
 use super::proto::*;
+use crate::journal::Journal;
 
 pub struct Service {
     journal: Box<dyn Journal>,
 }
 
 impl Service {
+    #[allow(dead_code)]
     pub fn new(journal: Box<dyn Journal>) -> Service {
         Service { journal }
     }
@@ -25,8 +26,8 @@ impl journal_server::Journal for Service {
     }
 }
 
-impl Into<journal_server::JournalServer<Service>> for Service {
-    fn into(self) -> journal_server::JournalServer<Service> {
-        journal_server::JournalServer::new(self)
+impl From<Service> for journal_server::JournalServer<Service> {
+    fn from(s: Service) -> journal_server::JournalServer<Service> {
+        journal_server::JournalServer::new(s)
     }
 }

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
-use super::memtable::{MemItem, MemIter, MemSnapshot, MemTable};
 use crate::common::Timestamp;
+use crate::memtable::{MemItem, MemIter, MemSnapshot, MemTable};
 
 type Sequence = Reverse<Timestamp>;
 type SequenceTree = BTreeMap<Sequence, Vec<u8>>;
@@ -43,7 +43,7 @@ impl MemTable for BTreeTable {
         self.size.fetch_add(size, Ordering::Relaxed);
         let mut tree = self.tree.write().await;
         tree.entry(key)
-            .or_insert(SequenceTree::new())
+            .or_insert_with(SequenceTree::new)
             .insert(Reverse(ts), value);
     }
 
@@ -57,9 +57,11 @@ impl MemTable for BTreeTable {
     }
 }
 
+type InnerIter<'a> = Option<(&'a [u8], btree_map::Iter<'a, Sequence, Vec<u8>>)>;
+
 struct BTreeIter<'a> {
     outer_iter: btree_map::Iter<'a, Vec<u8>, SequenceTree>,
-    inner_iter: Option<(&'a [u8], btree_map::Iter<'a, Sequence, Vec<u8>>)>,
+    inner_iter: InnerIter<'a>,
 }
 
 impl<'a> BTreeIter<'a> {
@@ -78,7 +80,7 @@ impl<'a> Iterator for BTreeIter<'a> {
         loop {
             if let Some(iter) = &mut self.inner_iter {
                 if let Some(pair) = iter.1.next() {
-                    return Some((pair.0 .0, &iter.0, pair.1));
+                    return Some((pair.0 .0, iter.0, pair.1));
                 }
             }
             if let Some(pair) = self.outer_iter.next() {

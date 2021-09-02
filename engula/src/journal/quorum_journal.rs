@@ -9,9 +9,9 @@ use tokio::time::timeout;
 use tonic::transport::Channel;
 use tonic::Request;
 
-use super::journal::Journal;
 use super::proto::*;
 use crate::error::Result;
+use crate::journal::Journal;
 
 type JournalClient = journal_client::JournalClient<Channel>;
 
@@ -21,6 +21,7 @@ pub struct QuorumJournal {
 }
 
 impl QuorumJournal {
+    #[allow(dead_code)]
     pub async fn new(urls: Vec<String>, timeout: Duration) -> Result<QuorumJournal> {
         let mut clients = Vec::new();
         for url in urls {

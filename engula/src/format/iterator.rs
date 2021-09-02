@@ -24,15 +24,11 @@ impl<'a> PartialEq for Version<'a> {
 
 impl<'a> Ord for Version<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut ord = self.1.cmp(&other.1);
-        if ord == Ordering::Equal {
-            if self.0 < other.0 {
-                ord = Ordering::Greater;
-            } else if self.0 > other.0 {
-                ord = Ordering::Less;
-            }
+        match self.1.cmp(other.1) {
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal => other.0.cmp(&self.0),
         }
-        ord
     }
 }
 

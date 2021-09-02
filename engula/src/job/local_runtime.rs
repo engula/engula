@@ -4,20 +4,20 @@ use async_trait::async_trait;
 use tokio::task;
 
 use super::compaction::{CompactionInput, CompactionOutput, FileMeta};
-use super::job::{JobInput, JobOutput};
 use super::runtime::JobRuntime;
 use crate::error::Result;
 use crate::file_system::FileSystem;
 use crate::format::{
     Iterator, MergingIterator, SstBuilder, SstOptions, SstReader, TableBuilder, TableReader,
 };
+use crate::job::{JobInput, JobOutput};
 
 pub struct LocalJobRuntime {
-    fs: Arc<Box<dyn FileSystem>>,
+    fs: Arc<dyn FileSystem>,
 }
 
 impl LocalJobRuntime {
-    pub fn new(fs: Arc<Box<dyn FileSystem>>) -> LocalJobRuntime {
+    pub fn new(fs: Arc<dyn FileSystem>) -> LocalJobRuntime {
         LocalJobRuntime { fs }
     }
 }
@@ -30,7 +30,7 @@ impl JobRuntime for LocalJobRuntime {
             match input {
                 JobInput::Compaction(c) => {
                     let result = run_compaction(fs, c).await;
-                    result.map(|x| JobOutput::Compaction(x))
+                    result.map(JobOutput::Compaction)
                 }
             }
         });
@@ -39,7 +39,7 @@ impl JobRuntime for LocalJobRuntime {
 }
 
 async fn run_compaction(
-    fs: Arc<Box<dyn FileSystem>>,
+    fs: Arc<dyn FileSystem>,
     input: CompactionInput,
 ) -> Result<CompactionOutput> {
     let mut children = Vec::new();
