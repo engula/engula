@@ -93,8 +93,7 @@ impl Manifest {
         let writer = self.fs.new_sequential_writer(&file_name).await?;
         let mut builder = SstBuilder::new(options, writer);
         let snap = mem.snapshot().await;
-        let mut iter = snap.iter();
-        while let Some(v) = iter.next() {
+        for v in snap.iter() {
             builder.add(v.0, v.1, v.2).await
         }
         let file_size = builder.finish().await?;
