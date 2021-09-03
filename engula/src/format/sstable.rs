@@ -178,7 +178,7 @@ impl TableReader for SstReader {
             return Err(error);
         }
         if let Some(version) = iter.current() {
-            if version.0 == ts && version.1 == key {
+            if version.0 <= ts && version.1 == key {
                 return Ok(Some(version.2.to_owned()));
             }
         }
@@ -254,6 +254,8 @@ mod tests {
         for i in 0..num_versions {
             let expect = i.to_be_bytes();
             let actual = reader.get(i, &expect).await.unwrap().unwrap();
+            assert_eq!(&actual, &expect);
+            let actual = reader.get(i + 10, &expect).await.unwrap().unwrap();
             assert_eq!(&actual, &expect);
         }
     }

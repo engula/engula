@@ -94,7 +94,7 @@ impl Manifest {
         let mut builder = SstBuilder::new(options, writer);
         let snap = mem.snapshot().await;
         let mut iter = snap.iter();
-        if let Some(v) = iter.next() {
+        while let Some(v) = iter.next() {
             builder.add(v.0, v.1, v.2).await
         }
         let file_size = builder.finish().await?;

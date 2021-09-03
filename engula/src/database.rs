@@ -1,5 +1,8 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task;
@@ -13,12 +16,14 @@ use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVer
 
 pub struct Options {
     pub memtable_size: usize,
+    pub max_batch_size: usize,
 }
 
 impl Options {
     pub fn default() -> Options {
         Options {
-            memtable_size: 1024 * 1024,
+            memtable_size: 8 * 1024,
+            max_batch_size: 8 * 1024,
         }
     }
 }
@@ -73,13 +78,14 @@ struct Put {
 }
 
 impl Put {
-    fn encode(&self) -> Vec<u8> {
-        let mut buf =
-            Vec::with_capacity(std::mem::size_of_val(&self.ts) + self.key.len() + self.value.len());
+    fn encode_to(&self, buf: &mut Vec<u8>) {
         buf.extend_from_slice(&self.ts.to_le_bytes());
         buf.extend_from_slice(&self.key);
         buf.extend_from_slice(&self.value);
-        buf
+    }
+
+    fn encode_size(&self) -> usize {
+        std::mem::size_of_val(&self.ts) + self.key.len() + self.value.len()
     }
 }
 
@@ -115,12 +121,19 @@ impl Core {
         self.current.get(ts, key).await
     }
 
-    async fn handle_writes(&self, mut rx: mpsc::Receiver<Put>) -> Result<()> {
-        while let Some(put) = rx.recv().await {
-            let data = put.encode();
+    async fn handle_writes(&self, rx: mpsc::Receiver<Put>) -> Result<()> {
+        let mut batch_rx = BatchReceiver::new(rx, self.options.max_batch_size);
+        while let Some(puts) = batch_rx.recv().await {
+            let mut data = Vec::new();
+            for put in &puts {
+                put.encode_to(&mut data);
+            }
             self.journal.append(data).await?;
-            let memtable_size = self.current.put(put.ts, put.key, put.value).await;
-            put.tx.send(()).unwrap();
+            let mut memtable_size = 0;
+            for put in puts {
+                memtable_size = self.current.put(put.ts, put.key, put.value).await;
+                put.tx.send(()).unwrap();
+            }
             if memtable_size >= self.options.memtable_size {
                 self.schedule_flush().await?;
             }
@@ -227,5 +240,54 @@ impl VersionHandle {
             storage,
         });
         *current = version;
+    }
+}
+
+struct BatchReceiver {
+    rx: mpsc::Receiver<Put>,
+    batch_size: usize,
+}
+
+impl BatchReceiver {
+    fn new(rx: mpsc::Receiver<Put>, batch_size: usize) -> BatchReceiver {
+        BatchReceiver { rx, batch_size }
+    }
+
+    async fn recv(&mut self) -> Option<Vec<Put>> {
+        self.await
+    }
+}
+
+impl Future for BatchReceiver {
+    type Output = Option<Vec<Put>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut output = Vec::new();
+        let mut output_size = 0;
+        loop {
+            match self.rx.poll_recv(cx) {
+                Poll::Ready(Some(v)) => {
+                    output_size += v.encode_size();
+                    output.push(v);
+                    if output_size >= self.batch_size {
+                        return Poll::Ready(Some(output));
+                    }
+                }
+                Poll::Ready(None) => {
+                    if output.is_empty() {
+                        return Poll::Ready(None);
+                    } else {
+                        return Poll::Ready(Some(output));
+                    }
+                }
+                Poll::Pending => {
+                    if output.is_empty() {
+                        return Poll::Pending;
+                    } else {
+                        return Poll::Ready(Some(output));
+                    }
+                }
+            }
+        }
     }
 }
