@@ -1,3 +1,4 @@
+mod background_job;
 mod local_storage;
 mod manifest;
 

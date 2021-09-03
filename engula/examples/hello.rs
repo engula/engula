@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fs: Arc<dyn FileSystem> = Arc::new(fs);
     let job = LocalJobRuntime::new(fs.clone());
     let job: Arc<dyn JobRuntime> = Arc::new(job);
-    let storage = LocalStorage::new(storage_options, fs, job)?;
+    let storage = LocalStorage::new(storage_options, fs, job);
     let journal = LocalJournal::new(dirname, false)?;
     let db = Database::new(options, Arc::new(journal), Arc::new(storage)).await;
     let db = Arc::new(db);
