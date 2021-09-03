@@ -8,11 +8,11 @@ use super::block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE};
 use super::iterator::Iterator;
 use super::table::{TableBuilder, TableReader};
 use super::two_level_iterator::{BlockIterGenerator, TwoLevelIterator};
-use crate::common::Timestamp;
+use super::Timestamp;
 use crate::error::{Error, Result};
 use crate::file_system::{RandomAccessReader, SequentialWriter};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SstOptions {
     pub block_size: usize,
 }
@@ -152,10 +152,10 @@ pub struct SstReader {
 }
 
 impl SstReader {
-    pub async fn open(file: Arc<dyn RandomAccessReader>, size: usize) -> Result<SstReader> {
-        assert!(size >= FOOTER_SIZE);
+    pub async fn open(file: Box<dyn RandomAccessReader>, size: u64) -> Result<SstReader> {
+        assert!(size >= FOOTER_SIZE as u64);
         let mut footer_data = [0; FOOTER_SIZE];
-        file.read_at(&mut footer_data, (size - FOOTER_SIZE) as u64)
+        file.read_at(&mut footer_data, size - FOOTER_SIZE as u64)
             .await?;
         let footer = SstFooter::decode_from(&footer_data);
         let mut index_block = Vec::new();
@@ -163,7 +163,7 @@ impl SstReader {
         file.read_at(&mut index_block, footer.index_handle.offset)
             .await?;
         Ok(SstReader {
-            file,
+            file: Arc::from(file),
             index_block: Arc::new(index_block),
         })
     }
@@ -234,8 +234,10 @@ mod tests {
             builder.add(i, &v, &v).await;
         }
         let file_size = builder.finish().await.unwrap();
-        let rfile = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstReader::open(rfile, file_size).await.unwrap();
+        let file_reader = fs.new_random_access_reader("test.sst").await.unwrap();
+        let reader = SstReader::open(file_reader, file_size as u64)
+            .await
+            .unwrap();
         let mut iter = reader.new_iterator().await.unwrap();
         assert!(!iter.valid());
         iter.seek_to_first().await;

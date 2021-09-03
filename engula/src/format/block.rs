@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 
-use super::iterator::*;
-use crate::common::Timestamp;
+use super::iterator::{Iterator, Version};
+use super::Timestamp;
 use crate::error::Error;
 
 pub const BLOCK_HANDLE_SIZE: usize = 16;

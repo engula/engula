@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
-use crate::common::Timestamp;
+use crate::format::Timestamp;
 use crate::memtable::{MemItem, MemIter, MemSnapshot, MemTable};
 
 type Sequence = Reverse<Timestamp>;

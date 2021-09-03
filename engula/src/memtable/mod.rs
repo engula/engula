@@ -6,7 +6,7 @@ use std::iter::Iterator;
 
 use async_trait::async_trait;
 
-use crate::common::Timestamp;
+use crate::format::Timestamp;
 
 pub type MemItem<'a> = (Timestamp, &'a [u8], &'a [u8]);
 pub type MemIter<'a> = dyn Iterator<Item = MemItem<'a>> + Send + Sync + 'a;

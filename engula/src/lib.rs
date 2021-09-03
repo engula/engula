@@ -1,4 +1,3 @@
-mod common;
 mod database;
 mod error;
 mod file_system;

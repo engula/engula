@@ -3,8 +3,8 @@ use std::collections::BinaryHeap;
 
 use async_trait::async_trait;
 
-use super::iterator::*;
-use crate::common::Timestamp;
+use super::iterator::{Iterator, Version};
+use super::Timestamp;
 use crate::error::Error;
 
 pub struct MergingIterator {

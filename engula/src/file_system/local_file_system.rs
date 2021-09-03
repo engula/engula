@@ -28,13 +28,7 @@ impl FileSystem for LocalFileSystem {
     async fn new_sequential_reader(&self, fname: &str) -> Result<Box<dyn SequentialReader>> {
         let path = self.dirname.join(fname);
         let file = tokio::fs::File::open(path).await?;
-        Ok(Box::new(LocalSequentialFile::new(file)))
-    }
-
-    async fn new_random_access_reader(&self, fname: &str) -> Result<Arc<dyn RandomAccessReader>> {
-        let path = self.dirname.join(fname);
-        let file = std::fs::File::open(path)?;
-        Ok(Arc::new(LocalRandomAccessFile::new(file)))
+        Ok(Box::new(SequentialFile::new(file)))
     }
 
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
@@ -44,7 +38,13 @@ impl FileSystem for LocalFileSystem {
             .write(true)
             .open(path)
             .await?;
-        Ok(Box::new(LocalSequentialFile::new(file)))
+        Ok(Box::new(SequentialFile::new(file)))
+    }
+
+    async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
+        let path = self.dirname.join(fname);
+        let file = std::fs::File::open(path)?;
+        Ok(Box::new(RandomAccessFile::new(file)))
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
@@ -54,13 +54,13 @@ impl FileSystem for LocalFileSystem {
     }
 }
 
-struct LocalSequentialFile {
+struct SequentialFile {
     file: Pin<Box<tokio::fs::File>>,
 }
 
-impl LocalSequentialFile {
-    fn new(file: tokio::fs::File) -> LocalSequentialFile {
-        LocalSequentialFile {
+impl SequentialFile {
+    fn new(file: tokio::fs::File) -> SequentialFile {
+        SequentialFile {
             file: Box::pin(file),
         }
     }
@@ -68,7 +68,7 @@ impl LocalSequentialFile {
 
 type IoResult<T> = std::result::Result<T, std::io::Error>;
 
-impl AsyncRead for LocalSequentialFile {
+impl AsyncRead for SequentialFile {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -78,7 +78,7 @@ impl AsyncRead for LocalSequentialFile {
     }
 }
 
-impl AsyncWrite for LocalSequentialFile {
+impl AsyncWrite for SequentialFile {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -108,29 +108,30 @@ impl AsyncWrite for LocalSequentialFile {
     }
 }
 
-impl SequentialReader for LocalSequentialFile {}
+impl SequentialReader for SequentialFile {}
 
 #[async_trait]
-impl SequentialWriter for LocalSequentialFile {
+impl SequentialWriter for SequentialFile {
     async fn sync_data(&self) -> Result<()> {
         self.file.sync_data().await?;
         Ok(())
     }
 }
 
-pub struct LocalRandomAccessFile {
+struct RandomAccessFile {
     file: std::fs::File,
 }
 
-impl LocalRandomAccessFile {
-    fn new(file: std::fs::File) -> LocalRandomAccessFile {
-        LocalRandomAccessFile { file }
+impl RandomAccessFile {
+    fn new(file: std::fs::File) -> RandomAccessFile {
+        RandomAccessFile { file }
     }
 }
 
 #[async_trait]
-impl RandomAccessReader for LocalRandomAccessFile {
+impl RandomAccessReader for RandomAccessFile {
     async fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize> {
+        // NOTE: this is a blocking read.
         let size = self.file.read_at(buf, offset)?;
         Ok(size)
     }

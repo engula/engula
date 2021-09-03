@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use super::iterator::*;
-use crate::common::Timestamp;
+use super::iterator::{Iterator, Version};
+use super::Timestamp;
 use crate::error::{Error, Result};
 
 #[async_trait]

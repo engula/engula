@@ -2,7 +2,7 @@ use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 
 use async_trait::async_trait;
 
-use crate::common::Timestamp;
+use super::Timestamp;
 use crate::error::Error;
 
 #[derive(Debug)]

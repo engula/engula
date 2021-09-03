@@ -1,4 +1,5 @@
 mod local_storage;
+mod manifest;
 
 pub use local_storage::LocalStorage;
 
@@ -7,9 +8,23 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::watch;
 
-use crate::common::Timestamp;
 use crate::error::Result;
+use crate::format::Timestamp;
 use crate::memtable::MemTable;
+
+pub struct StorageOptions {
+    pub max_levels: usize,
+    pub block_size: usize,
+}
+
+impl StorageOptions {
+    pub fn default() -> StorageOptions {
+        StorageOptions {
+            max_levels: 4,
+            block_size: 8 * 1024,
+        }
+    }
+}
 
 pub type StorageVersionRef = Arc<dyn StorageVersion>;
 #[allow(dead_code)]
@@ -28,14 +43,4 @@ pub trait Storage: Send + Sync {
 #[async_trait]
 pub trait StorageVersion: Send + Sync {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>>;
-}
-
-pub struct StorageOptions {
-    pub max_levels: usize,
-}
-
-impl StorageOptions {
-    pub fn default() -> StorageOptions {
-        StorageOptions { max_levels: 4 }
-    }
 }

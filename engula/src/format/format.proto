@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package engula.format.v1;
+
+message FileDesc {
+  uint64 file_number = 1;
+  uint64 file_size = 2;
+}
+
+message VersionDesc { repeated FileDesc files = 1; }

@@ -5,8 +5,8 @@ use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task;
 use tokio_stream::{wrappers::WatchStream, StreamExt};
 
-use crate::common::Timestamp;
 use crate::error::Result;
+use crate::format::Timestamp;
 use crate::journal::Journal;
 use crate::memtable::{BTreeTable, MemTable};
 use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};

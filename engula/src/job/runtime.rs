@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
+use super::{JobInput, JobOutput};
 use crate::error::Result;
-use crate::job::{JobInput, JobOutput};
 
 #[async_trait]
 pub trait JobRuntime: Send + Sync {
