@@ -63,7 +63,7 @@ impl Storage for LocalStorage {
         let options = SstOptions {
             block_size: self.options.block_size,
         };
-        let file_number = self.manifest.next_file_number().await?;
+        let file_number = self.manifest.next_number().await?;
         let file_name = sst_name(file_number);
         let file_writer = self.fs.new_sequential_writer(&file_name).await?;
         let mut builder = SstBuilder::new(options, file_writer);
@@ -76,7 +76,7 @@ impl Storage for LocalStorage {
             file_number,
             file_size: file_size as u64,
         };
-        let version = self.manifest.install_flush_output(file_desc).await?;
+        let version = self.manifest.install_flush(file_desc).await?;
         let current = self.handle.install_version(version).await?;
         Ok(current)
     }

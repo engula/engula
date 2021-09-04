@@ -1,6 +1,10 @@
 mod local_manifest;
+mod remote_manifest;
+mod service;
 
 pub use local_manifest::LocalManifest;
+pub use remote_manifest::RemoteManifest;
+pub use service::Service as ManifestService;
 
 use async_trait::async_trait;
 
@@ -13,7 +17,7 @@ tonic::include_proto!("engula.manifest");
 pub trait Manifest: Send + Sync {
     async fn current(&self) -> Result<VersionDesc>;
 
-    async fn next_file_number(&self) -> Result<u64>;
+    async fn next_number(&self) -> Result<u64>;
 
-    async fn install_flush_output(&self, desc: FileDesc) -> Result<VersionDesc>;
+    async fn install_flush(&self, desc: FileDesc) -> Result<VersionDesc>;
 }

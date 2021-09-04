@@ -7,6 +7,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub enum Error {
     #[error("io error: `{0}`")]
     Io(String),
+    #[error("rpc error: `{0}`")]
+    Rpc(String),
     #[error("task error: `{0}`")]
     Task(String),
     #[error("timeout error: `{0}`")]
@@ -20,6 +22,12 @@ pub enum Error {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Error {
         Error::Io(error.to_string())
+    }
+}
+
+impl From<tonic::Status> for Error {
+    fn from(status: tonic::Status) -> Error {
+        Error::Rpc(status.to_string())
     }
 }
 

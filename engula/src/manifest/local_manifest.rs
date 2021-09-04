@@ -51,7 +51,7 @@ impl LocalManifest {
                     let input = JobInput::Compaction(input);
                     let output = job.spawn(input).await.unwrap();
                     let JobOutput::Compaction(output) = output;
-                    core.install_compaction_output(output).await;
+                    core.install_compaction(output).await;
                     compaction = core.pick_compaction().await;
                 }
                 *pending.lock().await = false;
@@ -68,12 +68,12 @@ impl Manifest for LocalManifest {
         Ok(self.core.current().await)
     }
 
-    async fn next_file_number(&self) -> Result<u64> {
-        Ok(self.core.next_file_number())
+    async fn next_number(&self) -> Result<u64> {
+        Ok(self.core.next_number())
     }
 
-    async fn install_flush_output(&self, file: FileDesc) -> Result<VersionDesc> {
-        let version = self.core.install_flush_output(file).await;
+    async fn install_flush(&self, file: FileDesc) -> Result<VersionDesc> {
+        let version = self.core.install_flush(file).await;
         self.schedule_background_jobs().await;
         Ok(version)
     }
@@ -105,11 +105,11 @@ impl Core {
         self.current.lock().await.clone()
     }
 
-    fn next_file_number(&self) -> u64 {
+    fn next_number(&self) -> u64 {
         self.next_number.fetch_add(1, Ordering::SeqCst)
     }
 
-    async fn install_flush_output(&self, file: FileDesc) -> VersionDesc {
+    async fn install_flush(&self, file: FileDesc) -> VersionDesc {
         let mut current = self.current.lock().await;
         current.files.push(file);
         current.clone()
@@ -135,11 +135,11 @@ impl Core {
         Some(CompactionInput {
             options,
             input_files,
-            output_file_number: self.next_file_number(),
+            output_file_number: self.next_number(),
         })
     }
 
-    async fn install_compaction_output(&self, output: CompactionOutput) {
+    async fn install_compaction(&self, output: CompactionOutput) {
         let mut current = self.current.lock().await;
         let mut obsoleted_files = self.obsoleted_files.lock().await;
         let mut output_file = Some(output.output_file);

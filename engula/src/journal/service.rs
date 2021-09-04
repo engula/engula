@@ -1,7 +1,6 @@
 use tonic::{Request, Response, Status};
 
-use super::{journal_server, AppendRequest, AppendResponse};
-use crate::journal::Journal;
+use super::{journal_server, AppendRequest, AppendResponse, Journal};
 
 pub struct Service {
     journal: Box<dyn Journal>,

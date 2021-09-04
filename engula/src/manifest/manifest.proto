@@ -6,6 +6,10 @@ import "format/format.proto";
 
 service Manifest {
   rpc GetCurrent(GetCurrentRequest) returns (GetCurrentResponse) {}
+
+  rpc NextNumber(NextNumberRequest) returns (NextNumberResponse) {}
+
+  rpc InstallFlush(InstallFlushRequest) returns (InstallFlushResponse) {}
 }
 
 message VersionDesc { repeated engula.format.FileDesc files = 1; }
@@ -13,3 +17,11 @@ message VersionDesc { repeated engula.format.FileDesc files = 1; }
 message GetCurrentRequest {}
 
 message GetCurrentResponse { VersionDesc version = 1; }
+
+message NextNumberRequest {}
+
+message NextNumberResponse { uint64 number = 1; }
+
+message InstallFlushRequest { engula.format.FileDesc file = 1; }
+
+message InstallFlushResponse { VersionDesc version = 1; }

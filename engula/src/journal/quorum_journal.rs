@@ -9,9 +9,8 @@ use tokio::time::timeout;
 use tonic::transport::Channel;
 use tonic::Request;
 
-use super::{journal_client, AppendRequest};
+use super::{journal_client, AppendRequest, Journal};
 use crate::error::Result;
-use crate::journal::Journal;
 
 type JournalClient = journal_client::JournalClient<Channel>;
 
