@@ -12,7 +12,7 @@ use crate::error::Result;
 use crate::format::Timestamp;
 use crate::journal::Journal;
 use crate::memtable::{BTreeTable, MemTable};
-use crate::storage::{Storage, StorageVersion, StorageVersionReceiver, StorageVersionRef};
+use crate::storage::{Storage, StorageVersion, StorageVersionReceiver};
 
 pub struct Options {
     pub memtable_size: usize,
@@ -45,7 +45,7 @@ impl Database {
         let core_clone = core.clone();
         let (write_tx, write_rx) = mpsc::channel(4096);
         task::spawn(async move {
-            let _ = core_clone.handle_writes(write_rx).await;
+            core_clone.handle_writes(write_rx).await.unwrap();
         });
         Database {
             core,
@@ -164,7 +164,7 @@ impl Core {
 struct Version {
     mem: Arc<dyn MemTable>,
     imm: Option<Arc<dyn MemTable>>,
-    storage: StorageVersionRef,
+    storage: Arc<dyn StorageVersion>,
 }
 
 struct VersionHandle(RwLock<Arc<Version>>);
@@ -210,7 +210,7 @@ impl VersionHandle {
         current.imm.clone().unwrap()
     }
 
-    async fn install_flush_result(&self, storage: StorageVersionRef) {
+    async fn install_flush_result(&self, storage: Arc<dyn StorageVersion>) {
         let mut current = self.0.write().await;
         assert!(current.imm.is_some());
         let version = Arc::new(Version {
@@ -232,7 +232,7 @@ impl VersionHandle {
         Ok(())
     }
 
-    async fn install_storage_version(&self, storage: StorageVersionRef) {
+    async fn install_storage_version(&self, storage: Arc<dyn StorageVersion>) {
         let mut current = self.0.write().await;
         let version = Arc::new(Version {
             mem: current.mem.clone(),

@@ -1,6 +1,4 @@
-mod background_job;
 mod local_storage;
-mod manifest;
 
 pub use local_storage::LocalStorage;
 
@@ -13,6 +11,7 @@ use crate::error::Result;
 use crate::format::Timestamp;
 use crate::memtable::MemTable;
 
+#[derive(Clone)]
 pub struct StorageOptions {
     pub max_levels: usize,
     pub block_size: usize,
@@ -27,18 +26,16 @@ impl StorageOptions {
     }
 }
 
-pub type StorageVersionRef = Arc<dyn StorageVersion>;
-#[allow(dead_code)]
-pub type StorageVersionSender = watch::Sender<StorageVersionRef>;
-pub type StorageVersionReceiver = watch::Receiver<StorageVersionRef>;
+pub type StorageVersionSender = watch::Sender<Arc<dyn StorageVersion>>;
+pub type StorageVersionReceiver = watch::Receiver<Arc<dyn StorageVersion>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    async fn current(&self) -> StorageVersionRef;
+    async fn current(&self) -> Arc<dyn StorageVersion>;
 
     fn current_rx(&self) -> StorageVersionReceiver;
 
-    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<StorageVersionRef>;
+    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<Arc<dyn StorageVersion>>;
 }
 
 #[async_trait]

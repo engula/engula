@@ -1,5 +1,11 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::compile_protos("src/format/format.proto")?;
-    tonic_build::compile_protos("src/journal/journal.proto")?;
+    tonic_build::configure().compile(
+        &[
+            "src/format/format.proto",
+            "src/journal/journal.proto",
+            "src/manifest/manifest.proto",
+        ],
+        &["src"],
+    )?;
     Ok(())
 }

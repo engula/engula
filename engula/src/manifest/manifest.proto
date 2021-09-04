@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package engula.manifest;
+
+import "format/format.proto";
+
+service Manifest {
+  rpc GetCurrent(GetCurrentRequest) returns (GetCurrentResponse) {}
+}
+
+message VersionDesc { repeated engula.format.FileDesc files = 1; }
+
+message GetCurrentRequest {}
+
+message GetCurrentResponse { VersionDesc version = 1; }

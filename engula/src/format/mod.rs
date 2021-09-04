@@ -14,7 +14,7 @@ pub use iterator::{Entry, Iterator};
 pub use merging_iterator::MergingIterator;
 pub use two_level_iterator::TwoLevelIterator;
 
-tonic::include_proto!("engula.format.v1");
+tonic::include_proto!("engula.format");
 
 pub type Timestamp = u64;
 

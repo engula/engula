@@ -1,6 +1,6 @@
 use tonic::{Request, Response, Status};
 
-use super::proto::*;
+use super::{journal_server, AppendRequest, AppendResponse};
 use crate::journal::Journal;
 
 pub struct Service {

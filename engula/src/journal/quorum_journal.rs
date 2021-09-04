@@ -9,7 +9,7 @@ use tokio::time::timeout;
 use tonic::transport::Channel;
 use tonic::Request;
 
-use super::proto::*;
+use super::{journal_client, AppendRequest};
 use crate::error::Result;
 use crate::journal::Journal;
 

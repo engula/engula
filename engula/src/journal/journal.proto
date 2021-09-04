@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package engula.journal.v1;
+package engula.journal;
 
 service Journal {
   rpc Append(AppendRequest) returns (AppendResponse) {}
