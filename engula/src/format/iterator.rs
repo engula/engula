@@ -6,23 +6,23 @@ use super::Timestamp;
 use crate::error::Error;
 
 #[derive(Debug)]
-pub struct Version<'a>(pub Timestamp, pub &'a [u8], pub &'a [u8]);
+pub struct Entry<'a>(pub Timestamp, pub &'a [u8], pub &'a [u8]);
 
-impl<'a> From<(Timestamp, &'a [u8], &'a [u8])> for Version<'a> {
-    fn from(v: (Timestamp, &'a [u8], &'a [u8])) -> Version {
-        Version(v.0, v.1, v.2)
+impl<'a> From<(Timestamp, &'a [u8], &'a [u8])> for Entry<'a> {
+    fn from(v: (Timestamp, &'a [u8], &'a [u8])) -> Entry {
+        Entry(v.0, v.1, v.2)
     }
 }
 
-impl<'a> Eq for Version<'a> {}
+impl<'a> Eq for Entry<'a> {}
 
-impl<'a> PartialEq for Version<'a> {
+impl<'a> PartialEq for Entry<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0 && self.1 == other.1
     }
 }
 
-impl<'a> Ord for Version<'a> {
+impl<'a> Ord for Entry<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.1.cmp(other.1) {
             Ordering::Greater => Ordering::Greater,
@@ -32,7 +32,7 @@ impl<'a> Ord for Version<'a> {
     }
 }
 
-impl<'a> PartialOrd for Version<'a> {
+impl<'a> PartialOrd for Entry<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -50,7 +50,7 @@ pub trait Iterator: Send + Sync {
 
     async fn next(&mut self);
 
-    fn current(&self) -> Option<Version>;
+    fn current(&self) -> Option<Entry>;
 }
 
 impl Eq for Box<dyn Iterator> {}

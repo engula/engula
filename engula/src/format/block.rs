@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::{Buf, BufMut};
 
-use super::iterator::{Iterator, Version};
+use super::iterator::{Entry, Iterator};
 use super::Timestamp;
 use crate::error::Error;
 
@@ -80,11 +80,7 @@ impl BlockBuilder {
     }
 }
 
-fn decode_version<'a>(
-    data: &'a [u8],
-    offset: usize,
-    new_offset: Option<&mut usize>,
-) -> Version<'a> {
+fn decode_entry<'a>(data: &'a [u8], offset: usize, new_offset: Option<&mut usize>) -> Entry<'a> {
     let mut data = &data[offset..];
     let ts = data.get_u64_le();
     let klen = data.get_u32_le() as usize;
@@ -92,7 +88,7 @@ fn decode_version<'a>(
     if let Some(x) = new_offset {
         *x = offset + 16 + klen + vlen
     }
-    Version(ts, &data[0..klen], &data[klen..(klen + vlen)])
+    Entry(ts, &data[0..klen], &data[klen..(klen + vlen)])
 }
 
 #[derive(Debug)]
@@ -142,13 +138,13 @@ impl Iterator for BlockIterator {
     }
 
     async fn seek(&mut self, ts: Timestamp, key: &[u8]) {
-        let target = Version(ts, key, &[]);
+        let target = Entry(ts, key, &[]);
         let mut left = 0;
         let mut right = self.num_restarts - 1;
         while left < right {
             let mid = (left + right + 1) / 2;
             let offset = self.decode_restart_offset(mid);
-            let version = decode_version(&self.data, offset, None);
+            let version = decode_entry(&self.data, offset, None);
             if version <= target {
                 left = mid;
             } else {
@@ -168,7 +164,7 @@ impl Iterator for BlockIterator {
 
     async fn next(&mut self) {
         if self.current_offset < self.num_restarts_offset {
-            decode_version(
+            decode_entry(
                 &self.data,
                 self.current_offset,
                 Some(&mut self.current_offset),
@@ -176,9 +172,9 @@ impl Iterator for BlockIterator {
         }
     }
 
-    fn current(&self) -> Option<Version> {
+    fn current(&self) -> Option<Entry> {
         if self.valid() {
-            Some(decode_version(&self.data, self.current_offset, None))
+            Some(decode_entry(&self.data, self.current_offset, None))
         } else {
             None
         }
@@ -213,8 +209,8 @@ mod tests {
         }
         assert_eq!(iter.current(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some(Version(2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(iter.current(), Some(Entry(2, [2].as_ref(), [2].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some(Version(5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(iter.current(), Some(Entry(5, [5].as_ref(), [5].as_ref())));
     }
 }

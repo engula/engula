@@ -243,14 +243,14 @@ mod tests {
         iter.seek_to_first().await;
         for i in 0..num_versions {
             let v = i.to_be_bytes();
-            assert_eq!(iter.current(), Some(Version(i, &v, &v)));
+            assert_eq!(iter.current(), Some(Entry(i, &v, &v)));
             iter.next().await;
         }
         assert_eq!(iter.current(), None);
         let ts = num_versions / 2;
         let target = ts.to_be_bytes();
         iter.seek(ts, &target).await;
-        assert_eq!(iter.current(), Some(Version(ts, &target, &target)));
+        assert_eq!(iter.current(), Some(Entry(ts, &target, &target)));
         for i in 0..num_versions {
             let expect = i.to_be_bytes();
             let actual = reader.get(i, &expect).await.unwrap().unwrap();

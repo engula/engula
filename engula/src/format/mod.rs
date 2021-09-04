@@ -10,7 +10,7 @@ pub use block::{BlockBuilder, BlockHandle};
 pub use sstable::{SstBuilder, SstOptions, SstReader};
 pub use table::{TableBuilder, TableReader};
 
-pub use iterator::{Iterator, Version};
+pub use iterator::{Entry, Iterator};
 pub use merging_iterator::MergingIterator;
 pub use two_level_iterator::TwoLevelIterator;
 

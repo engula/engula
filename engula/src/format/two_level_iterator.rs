@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::iterator::{Iterator, Version};
+use super::iterator::{Entry, Iterator};
 use super::Timestamp;
 use crate::error::{Error, Result};
 
@@ -95,7 +95,7 @@ impl Iterator for TwoLevelIterator {
         self.init_block_iter().await;
     }
 
-    fn current(&self) -> Option<Version> {
+    fn current(&self) -> Option<Entry> {
         if self.valid() {
             self.block_iter.as_ref().and_then(|x| x.current())
         } else {

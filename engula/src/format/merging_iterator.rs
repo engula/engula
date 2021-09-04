@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 
 use async_trait::async_trait;
 
-use super::iterator::{Iterator, Version};
+use super::iterator::{Entry, Iterator};
 use super::Timestamp;
 use crate::error::Error;
 
@@ -71,7 +71,7 @@ impl Iterator for MergingIterator {
         }
     }
 
-    fn current(&self) -> Option<Version> {
+    fn current(&self) -> Option<Entry> {
         if self.valid() {
             self.heap.peek().and_then(|x| x.0.current())
         } else {
@@ -141,11 +141,11 @@ mod tests {
         }
         assert_eq!(iter.current(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some(Version(2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(iter.current(), Some(Entry(2, [2].as_ref(), [2].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some(Version(5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(iter.current(), Some(Entry(5, [5].as_ref(), [5].as_ref())));
         iter.next().await;
-        assert_eq!(iter.current(), Some(Version(6, [6].as_ref(), [6].as_ref())));
+        assert_eq!(iter.current(), Some(Entry(6, [6].as_ref(), [6].as_ref())));
         iter.next().await;
         assert_eq!(iter.current(), None);
     }
