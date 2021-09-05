@@ -107,7 +107,7 @@ impl Version {
 #[async_trait]
 impl StorageVersion for Version {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        for file in self.files.iter().rev() {
+        for file in self.files.iter() {
             if let Some(v) = file.reader.get(ts, key).await? {
                 return Ok(Some(v));
             }

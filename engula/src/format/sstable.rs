@@ -1,6 +1,8 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::io::AsyncWriteExt;
 
 use super::block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE};
 use super::iterator::Iterator;
@@ -21,7 +23,7 @@ impl SstOptions {
     }
 }
 
-pub const FOOTER_SIZE: u64 = BLOCK_HANDLE_SIZE;
+pub const FOOTER_SIZE: usize = BLOCK_HANDLE_SIZE;
 
 pub struct SstFooter {
     index_handle: BlockHandle,
@@ -107,23 +109,30 @@ impl TableBuilder for SstBuilder {
             let encoded_footer = footer.encode();
             let _ = self.file.write_block(&encoded_footer).await?;
         }
-        self.file.sync().await?;
+        self.file.sync_data().await?;
         Ok(self.file.file_size())
     }
 }
 
 struct SstFileWriter {
-    file: Box<dyn SequentialWriter>,
+    file: Pin<Box<dyn SequentialWriter>>,
     offset: usize,
 }
 
 impl SstFileWriter {
     fn new(file: Box<dyn SequentialWriter>) -> SstFileWriter {
-        SstFileWriter { file, offset: 0 }
+        SstFileWriter {
+            file: Pin::new(file),
+            offset: 0,
+        }
     }
 
     fn file_size(&self) -> usize {
         self.offset
+    }
+
+    async fn sync_data(&self) -> Result<()> {
+        self.file.sync_data().await
     }
 
     async fn write_block(&mut self, block: &[u8]) -> Result<BlockHandle> {
@@ -131,13 +140,9 @@ impl SstFileWriter {
             offset: self.offset as u64,
             size: block.len() as u64,
         };
-        self.file.write(block).await?;
+        self.file.write_all(block).await?;
         self.offset += block.len();
         Ok(handle)
-    }
-
-    async fn sync(&mut self) -> Result<()> {
-        self.file.sync().await
     }
 }
 
@@ -148,11 +153,14 @@ pub struct SstReader {
 
 impl SstReader {
     pub async fn open(file: Box<dyn RandomAccessReader>, size: u64) -> Result<SstReader> {
-        assert!(size >= FOOTER_SIZE);
-        let footer_data = file.read_at(size - FOOTER_SIZE, FOOTER_SIZE).await?;
+        assert!(size >= FOOTER_SIZE as u64);
+        let mut footer_data = [0; FOOTER_SIZE];
+        file.read_at(&mut footer_data, size - FOOTER_SIZE as u64)
+            .await?;
         let footer = SstFooter::decode_from(&footer_data);
-        let index_block = file
-            .read_at(footer.index_handle.offset, footer.index_handle.size)
+        let mut index_block = Vec::new();
+        index_block.resize(footer.index_handle.size as usize, 0);
+        file.read_at(&mut index_block, footer.index_handle.offset)
             .await?;
         Ok(SstReader {
             file: Arc::from(file),
@@ -200,11 +208,10 @@ impl SstBlockIterGenerator {
 impl BlockIterGenerator for SstBlockIterGenerator {
     async fn spawn(&self, index_value: &[u8]) -> Result<Box<dyn Iterator>> {
         let block_handle = BlockHandle::decode_from(index_value);
-        let block = self
-            .file
-            .read_at(block_handle.offset, block_handle.size)
-            .await?;
-        assert_eq!(block.len() as u64, block_handle.size);
+        let mut block = Vec::new();
+        block.resize(block_handle.size as usize, 0);
+        let block_size = self.file.read_at(&mut block, block_handle.offset).await?;
+        assert_eq!(block_size as u64, block_handle.size);
         Ok(Box::new(BlockIterator::new(Arc::new(block))))
     }
 }

@@ -7,7 +7,7 @@ use super::iterator::{Entry, Iterator};
 use super::Timestamp;
 use crate::error::Error;
 
-pub const BLOCK_HANDLE_SIZE: u64 = 16;
+pub const BLOCK_HANDLE_SIZE: usize = 16;
 
 pub struct BlockHandle {
     pub offset: u64,

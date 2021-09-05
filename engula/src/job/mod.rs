@@ -1,14 +1,16 @@
 mod local_runtime;
+mod remote_runtime;
 mod runtime;
 mod service;
-mod remote_runtime;
 
 pub use local_runtime::LocalJobRuntime;
-pub use runtime::JobRuntime;
 pub use remote_runtime::RemoteJobRuntime;
+pub use runtime::JobRuntime;
 pub use service::Service as JobService;
 
 use crate::format::{FileDesc, SstOptions};
+
+tonic::include_proto!("engula.job");
 
 pub enum JobInput {
     Compaction(CompactionInput),
