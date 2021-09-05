@@ -4,6 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "src/format/format.proto",
             "src/journal/journal.proto",
             "src/manifest/manifest.proto",
+            "src/job/job.proto"
         ],
         &["src"],
     )?;

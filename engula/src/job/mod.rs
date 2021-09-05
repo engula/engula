@@ -1,8 +1,12 @@
 mod local_runtime;
 mod runtime;
+mod service;
+mod remote_runtime;
 
 pub use local_runtime::LocalJobRuntime;
 pub use runtime::JobRuntime;
+pub use remote_runtime::RemoteJobRuntime;
+pub use service::Service as JobService;
 
 use crate::format::{FileDesc, SstOptions};
 

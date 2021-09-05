@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package engula.job;
+import "format/format.proto";
+
+service Job {
+  rpc spawn_job(JobRequest) returns (JobResponse) {}
+}
+
+message JobRequest {
+    repeated format.FileDesc files = 1;
+    uint64 output_file_number = 2;
+  }
+
+message JobResponse {
+  repeated format.FileDesc files = 1;
+  format.FileDesc file = 2;
+}
