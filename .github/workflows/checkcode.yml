@@ -1,6 +1,7 @@
 name: Check Code
 
 on:
+  pull_request:
   push:
     branches:
       - '*'
