@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package engula.file_system;
+
+service FileSystem {
+  rpc Open(OpenRequest) returns (OpenResponse) {}
+
+  rpc Read(ReadRequest) returns (ReadResponse) {}
+
+  rpc Write(WriteRequest) returns (WriteResponse) {}
+
+  rpc Sync(SyncRequest) returns (SyncResponse) {}
+
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {}
+}
+
+enum AccessMode {
+  READ = 0;
+  WRITE = 1;
+}
+
+message OpenRequest {
+  string file_name = 1;
+  AccessMode access_mode = 2;
+}
+
+message OpenResponse { uint64 fd = 1; }
+
+message ReadRequest {
+  uint64 fd = 1;
+  uint64 offset = 2;
+  uint64 size = 3;
+}
+
+message ReadResponse { bytes data = 1; }
+
+message WriteRequest {
+  uint64 fd = 1;
+  bytes data = 2;
+}
+
+message WriteResponse {}
+
+message SyncRequest { uint64 fd = 1; }
+
+message SyncResponse {}
+
+message RemoveRequest { string file_name = 1; }
+
+message RemoveResponse {}

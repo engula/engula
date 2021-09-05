@@ -1,6 +1,12 @@
 mod local_file_system;
+mod remote_file_system;
+mod service;
 
 pub use local_file_system::LocalFileSystem;
+pub use remote_file_system::RemoteFileSystem;
+pub use service::Service as FileSystemService;
+
+tonic::include_proto!("engula.file_system");
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
