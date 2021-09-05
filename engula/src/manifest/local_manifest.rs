@@ -48,7 +48,7 @@ impl LocalManifest {
         if compaction.is_some() {
             task::spawn(async move {
                 while let Some(input) = compaction {
-                    let output = job.spawn(input).await.unwrap();
+                    let output = job.compact(input).await.unwrap();
                     core.install_compaction(output).await;
                     compaction = core.pick_compaction().await;
                 }

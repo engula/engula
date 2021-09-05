@@ -1,4 +1,4 @@
-use super::{job_client, JobRequest};
+use super::{job_client, CompactRequest};
 use crate::error::Result;
 use crate::job::{CompactionOutput, CompactionInput, JobRuntime};
 use async_trait::async_trait;
@@ -24,10 +24,10 @@ impl RemoteJobRuntime {
 
 #[async_trait]
 impl JobRuntime for RemoteJobRuntime {
-    async fn spawn(&self, input: CompactionInput) -> Result<CompactionOutput> {
+    async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
         let files = input.input_files;
         let output_file_number = input.output_file_number;
-        let input = JobRequest {
+        let input = CompactRequest {
             files,
             output_file_number,
         };

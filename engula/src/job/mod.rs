@@ -28,5 +28,5 @@ pub struct CompactionOutput {
 
 #[async_trait]
 pub trait JobRuntime: Send + Sync {
-    async fn spawn(&self, input: CompactionInput) -> Result<CompactionOutput>;
+    async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput>;
 }

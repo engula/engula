@@ -22,7 +22,7 @@ impl LocalJobRuntime {
 
 #[async_trait]
 impl JobRuntime for LocalJobRuntime {
-    async fn spawn(&self, input: CompactionInput) -> Result<CompactionOutput> {
+    async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
         let fs = self.fs.clone();
         let handle = task::spawn(async move {
             run_compaction(fs, input).await
