@@ -45,7 +45,7 @@ async fn run_compaction(
     for desc in &input.input_files {
         let file_name = sst_name(desc.file_number);
         let reader = fs.new_random_access_reader(&file_name).await?;
-        let sst_reader = SstReader::open(reader, desc.file_size).await?;
+        let sst_reader = SstReader::open(reader, desc.clone(), None).await?;
         let iter = sst_reader.new_iterator().await?;
         children.push(iter);
     }

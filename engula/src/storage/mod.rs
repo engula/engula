@@ -8,13 +8,14 @@ use async_trait::async_trait;
 use tokio::sync::watch;
 
 use crate::error::Result;
-use crate::format::Timestamp;
+use crate::format::{Cache, Timestamp};
 use crate::memtable::MemTable;
 
 #[derive(Clone)]
 pub struct StorageOptions {
     pub max_levels: usize,
     pub block_size: usize,
+    pub cache: Option<Arc<dyn Cache>>,
 }
 
 impl StorageOptions {
@@ -22,6 +23,7 @@ impl StorageOptions {
         StorageOptions {
             max_levels: 4,
             block_size: 8 * 1024,
+            cache: None,
         }
     }
 }

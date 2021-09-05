@@ -1,4 +1,5 @@
 mod block;
+mod cache;
 mod sstable;
 mod table;
 
@@ -7,6 +8,7 @@ mod merging_iterator;
 mod two_level_iterator;
 
 pub use block::{BlockBuilder, BlockHandle};
+pub use cache::Cache;
 pub use sstable::{SstBuilder, SstOptions, SstReader};
 pub use table::{TableBuilder, TableReader};
 

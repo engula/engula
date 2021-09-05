@@ -30,7 +30,7 @@ impl LocalStorage {
         fs: Arc<dyn FileSystem>,
         manifest: Arc<dyn Manifest>,
     ) -> Result<LocalStorage> {
-        let handle = Arc::new(VersionHandle::new(fs.clone()));
+        let handle = Arc::new(VersionHandle::new(options.clone(), fs.clone()));
         let version = manifest.current().await?;
         let current = handle.install_version(version).await?;
         let (tx, rx) = watch::channel(current);
@@ -117,16 +117,18 @@ impl StorageVersion for Version {
 }
 
 struct VersionHandle {
+    options: StorageOptions,
     fs: Arc<dyn FileSystem>,
     version: Mutex<Version>,
     current: Mutex<Arc<dyn StorageVersion>>,
 }
 
 impl VersionHandle {
-    fn new(fs: Arc<dyn FileSystem>) -> VersionHandle {
+    fn new(options: StorageOptions, fs: Arc<dyn FileSystem>) -> VersionHandle {
         let version = Version::new();
         let current = version.make_storage_version();
         VersionHandle {
+            options,
             fs,
             version: Mutex::new(version),
             current: Mutex::new(current),
@@ -140,7 +142,7 @@ impl VersionHandle {
     async fn open_file(&self, desc: FileDesc) -> Result<File> {
         let file_name = sst_name(desc.file_number);
         let file_reader = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = SstReader::open(file_reader, desc.file_size).await?;
+        let reader = SstReader::open(file_reader, desc.clone(), self.options.cache.clone()).await?;
         Ok(File { desc, reader })
     }
 

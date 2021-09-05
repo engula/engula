@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::BufMut;
 
 use super::block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE};
+use super::cache::Cache;
 use super::iterator::Iterator;
 use super::table::{TableBuilder, TableReader};
 use super::two_level_iterator::{BlockIterGenerator, TwoLevelIterator};
-use super::Timestamp;
+use super::{FileDesc, Timestamp};
 use crate::error::{Error, Result};
 use crate::file_system::{RandomAccessReader, SequentialWriter};
 
@@ -141,22 +143,50 @@ impl SstFileWriter {
     }
 }
 
+const CACHE_KEY_LEN: usize = 16;
+
+fn make_cache_key(mut buf: &mut [u8], file_number: u64, offset: u64) {
+    buf.put_u64_le(file_number);
+    buf.put_u64_le(offset);
+}
+
 pub struct SstReader {
     file: Arc<dyn RandomAccessReader>,
+    desc: FileDesc,
+    cache: Option<Arc<dyn Cache>>,
     index_block: Arc<Vec<u8>>,
 }
 
 impl SstReader {
-    pub async fn open(file: Box<dyn RandomAccessReader>, size: u64) -> Result<SstReader> {
-        assert!(size >= FOOTER_SIZE);
-        let footer_data = file.read_at(size - FOOTER_SIZE, FOOTER_SIZE).await?;
-        let footer = SstFooter::decode_from(&footer_data);
-        let index_block = file
-            .read_at(footer.index_handle.offset, footer.index_handle.size)
+    pub async fn open(
+        file: Box<dyn RandomAccessReader>,
+        desc: FileDesc,
+        cache: Option<Arc<dyn Cache>>,
+    ) -> Result<SstReader> {
+        assert!(desc.file_size >= FOOTER_SIZE);
+        let footer_data = file
+            .read_at(desc.file_size - FOOTER_SIZE, FOOTER_SIZE)
             .await?;
+        let footer = SstFooter::decode_from(&footer_data);
+        let mut index_block = None;
+        if let Some(cache) = cache.as_ref() {
+            let mut key = [0; CACHE_KEY_LEN];
+            make_cache_key(&mut key, desc.file_number, footer.index_handle.offset);
+            index_block = cache.get(&key).await;
+        }
+        if index_block.is_none() {
+            let block = file
+                .read_at(footer.index_handle.offset, footer.index_handle.size)
+                .await?;
+            index_block = Some(Arc::new(block));
+        }
+        let index_block = index_block.unwrap();
+        assert_eq!(index_block.len() as u64, footer.index_handle.size);
         Ok(SstReader {
             file: Arc::from(file),
-            index_block: Arc::new(index_block),
+            desc,
+            cache,
+            index_block,
         })
     }
 }
@@ -179,7 +209,8 @@ impl TableReader for SstReader {
 
     async fn new_iterator(&self) -> Result<Box<dyn Iterator>> {
         let index_iter = BlockIterator::new(self.index_block.clone());
-        let block_iter_generator = SstBlockIterGenerator::new(self.file.clone());
+        let block_iter_generator =
+            SstBlockIterGenerator::new(self.file.clone(), self.desc.clone(), self.cache.clone());
         let two_level_iter =
             TwoLevelIterator::new(Box::new(index_iter), Box::new(block_iter_generator));
         Ok(Box::new(two_level_iter))
@@ -188,11 +219,17 @@ impl TableReader for SstReader {
 
 pub struct SstBlockIterGenerator {
     file: Arc<dyn RandomAccessReader>,
+    desc: FileDesc,
+    cache: Option<Arc<dyn Cache>>,
 }
 
 impl SstBlockIterGenerator {
-    fn new(file: Arc<dyn RandomAccessReader>) -> SstBlockIterGenerator {
-        SstBlockIterGenerator { file }
+    fn new(
+        file: Arc<dyn RandomAccessReader>,
+        desc: FileDesc,
+        cache: Option<Arc<dyn Cache>>,
+    ) -> SstBlockIterGenerator {
+        SstBlockIterGenerator { file, desc, cache }
     }
 }
 
@@ -200,12 +237,22 @@ impl SstBlockIterGenerator {
 impl BlockIterGenerator for SstBlockIterGenerator {
     async fn spawn(&self, index_value: &[u8]) -> Result<Box<dyn Iterator>> {
         let block_handle = BlockHandle::decode_from(index_value);
-        let block = self
-            .file
-            .read_at(block_handle.offset, block_handle.size)
-            .await?;
-        assert_eq!(block.len() as u64, block_handle.size);
-        Ok(Box::new(BlockIterator::new(Arc::new(block))))
+        let mut data_block = None;
+        if let Some(cache) = self.cache.as_ref() {
+            let mut key = [0; CACHE_KEY_LEN];
+            make_cache_key(&mut key, self.desc.file_number, block_handle.offset);
+            data_block = cache.get(&key).await;
+        }
+        if data_block.is_none() {
+            let block = self
+                .file
+                .read_at(block_handle.offset, block_handle.size)
+                .await?;
+            data_block = Some(Arc::new(block));
+        }
+        let data_block = data_block.unwrap();
+        assert_eq!(data_block.len() as u64, block_handle.size);
+        Ok(Box::new(BlockIterator::new(data_block)))
     }
 }
 
@@ -227,10 +274,12 @@ mod tests {
             builder.add(i, &v, &v).await;
         }
         let file_size = builder.finish().await.unwrap();
+        let file_desc = FileDesc {
+            file_number: 0,
+            file_size: file_size as u64,
+        };
         let file_reader = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstReader::open(file_reader, file_size as u64)
-            .await
-            .unwrap();
+        let reader = SstReader::open(file_reader, file_desc, None).await.unwrap();
         let mut iter = reader.new_iterator().await.unwrap();
         assert!(!iter.valid());
         iter.seek_to_first().await;

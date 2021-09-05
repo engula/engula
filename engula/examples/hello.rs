@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::new(options, Arc::new(journal), Arc::new(storage)).await;
     let db = Arc::new(db);
     let mut tasks = Vec::new();
-    for _ in 0..8 {
+    for _ in 0..4 {
         let db2 = db.clone();
         let task = tokio::task::spawn(async move {
             for i in 0..1024u64 {
