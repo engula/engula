@@ -3,7 +3,7 @@ package engula.job;
 import "format/format.proto";
 
 service Job {
-  rpc spawn_job(JobRequest) returns (JobResponse) {}
+  rpc compact(JobRequest) returns (JobResponse) {}
 }
 
 message JobRequest {
