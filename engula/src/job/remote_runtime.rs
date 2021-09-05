@@ -26,9 +26,7 @@ impl RemoteJobRuntime {
 #[async_trait]
 impl JobRuntime for RemoteJobRuntime {
     async fn spawn(&self, input: JobInput) -> Result<JobOutput> {
-        let input = match input {
-            JobInput::Compaction(c) => c,
-        };
+        let JobInput::Compaction(input) = input;
         let files = input.input_files;
         let output_file_number = input.output_file_number;
         let input = JobRequest {

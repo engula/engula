@@ -27,9 +27,7 @@ impl job_server::Job for Service {
             options: SstOptions::default(),
             output_file_number: input.output_file_number,
         });
-        let output = match self.runtime.spawn(input).await? {
-            JobOutput::Compaction(c) => c,
-        };
+        let JobOutput::Compaction(output) = self.runtime.spawn(input).await?;
         Ok(Response::new(JobResponse {
             files: output.input_files,
             file: Some(output.output_file),
