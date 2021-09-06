@@ -6,8 +6,8 @@ pub use local_runtime::LocalJobRuntime;
 pub use remote_runtime::RemoteJobRuntime;
 pub use service::Service as JobService;
 
-use crate::format::{FileDesc, SstOptions};
 use crate::error::Result;
+use crate::format::{FileDesc, SstOptions};
 
 use async_trait::async_trait;
 

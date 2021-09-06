@@ -1,6 +1,6 @@
 use super::{job_client, CompactRequest};
 use crate::error::Result;
-use crate::job::{CompactionOutput, CompactionInput, JobRuntime};
+use crate::job::{CompactionInput, CompactionOutput, JobRuntime};
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;

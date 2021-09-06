@@ -24,9 +24,7 @@ impl LocalJobRuntime {
 impl JobRuntime for LocalJobRuntime {
     async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
         let fs = self.fs.clone();
-        let handle = task::spawn(async move {
-            run_compaction(fs, input).await
-        });
+        let handle = task::spawn(async move { run_compaction(fs, input).await });
         handle.await?
     }
 }
