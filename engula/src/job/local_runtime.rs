@@ -3,8 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::task;
 
-use super::runtime::JobRuntime;
-use super::{CompactionInput, CompactionOutput, JobInput, JobOutput};
+use super::{CompactionInput, CompactionOutput, JobRuntime};
 use crate::error::Result;
 use crate::file_system::FileSystem;
 use crate::format::{
@@ -23,16 +22,9 @@ impl LocalJobRuntime {
 
 #[async_trait]
 impl JobRuntime for LocalJobRuntime {
-    async fn spawn(&self, input: JobInput) -> Result<JobOutput> {
+    async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
         let fs = self.fs.clone();
-        let handle = task::spawn(async move {
-            match input {
-                JobInput::Compaction(c) => {
-                    let result = run_compaction(fs, c).await;
-                    result.map(JobOutput::Compaction)
-                }
-            }
-        });
+        let handle = task::spawn(async move { run_compaction(fs, input).await });
         handle.await?
     }
 }

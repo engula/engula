@@ -1,8 +1,8 @@
 use tonic::{Request, Response, Status};
 
-use super::{job_server, JobRequest, JobResponse};
+use super::{job_server, CompactRequest, CompactResponse};
 use crate::format::SstOptions;
-use crate::job::{CompactionInput, JobInput, JobOutput, JobRuntime};
+use crate::job::{CompactionInput, JobRuntime};
 
 pub struct Service {
     runtime: Box<dyn JobRuntime>,
@@ -17,18 +17,18 @@ impl Service {
 
 #[tonic::async_trait]
 impl job_server::Job for Service {
-    async fn spawn_job(
+    async fn compact(
         &self,
-        request: Request<JobRequest>,
-    ) -> Result<Response<JobResponse>, Status> {
+        request: Request<CompactRequest>,
+    ) -> Result<Response<CompactResponse>, Status> {
         let input = request.into_inner();
-        let input = JobInput::Compaction(CompactionInput {
+        let input = CompactionInput {
             input_files: input.files,
             options: SstOptions::default(),
             output_file_number: input.output_file_number,
-        });
-        let JobOutput::Compaction(output) = self.runtime.spawn(input).await?;
-        Ok(Response::new(JobResponse {
+        };
+        let output = self.runtime.compact(input).await?;
+        Ok(Response::new(CompactResponse {
             files: output.input_files,
             file: Some(output.output_file),
         }))

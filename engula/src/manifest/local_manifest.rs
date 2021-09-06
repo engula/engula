@@ -10,7 +10,7 @@ use super::{Manifest, VersionDesc};
 use crate::error::Result;
 use crate::file_system::FileSystem;
 use crate::format::{sst_name, FileDesc, SstOptions};
-use crate::job::{CompactionInput, CompactionOutput, JobInput, JobOutput, JobRuntime};
+use crate::job::{CompactionInput, CompactionOutput, JobRuntime};
 use crate::storage::*;
 
 pub struct LocalManifest {
@@ -48,9 +48,7 @@ impl LocalManifest {
         if compaction.is_some() {
             task::spawn(async move {
                 while let Some(input) = compaction {
-                    let input = JobInput::Compaction(input);
-                    let output = job.spawn(input).await.unwrap();
-                    let JobOutput::Compaction(output) = output;
+                    let output = job.compact(input).await.unwrap();
                     core.install_compaction(output).await;
                     compaction = core.pick_compaction().await;
                 }
