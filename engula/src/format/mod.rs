@@ -4,6 +4,7 @@ mod filter;
 mod sstable;
 mod table;
 
+mod bloom_filter;
 mod iterator;
 mod merging_iterator;
 mod two_level_iterator;

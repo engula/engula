@@ -19,6 +19,7 @@ tonic = "0.5"
 prost = "0.8"
 aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types" }
 aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3" }
+bit-vec = "0.6"
 
 [build-dependencies]
 tonic-build = "0.5"
