@@ -17,6 +17,8 @@ pub enum Error {
     Channel(String),
     #[error("transport error: `{0}`")]
     Transport(String),
+    #[error("aws error: `{0}`")]
+    AwsSdk(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -64,6 +66,12 @@ impl From<tokio::time::error::Elapsed> for Error {
 impl From<tonic::transport::Error> for Error {
     fn from(error: tonic::transport::Error) -> Error {
         Error::Transport(error.to_string())
+    }
+}
+
+impl<E: std::error::Error> From<aws_sdk_s3::SdkError<E>> for Error {
+    fn from(error: aws_sdk_s3::SdkError<E>) -> Error {
+        Error::AwsSdk(error.to_string())
     }
 }
 

@@ -1,9 +1,11 @@
 mod local_file_system;
 mod remote_file_system;
+mod s3;
 mod service;
 
 pub use local_file_system::LocalFileSystem;
 pub use remote_file_system::RemoteFileSystem;
+pub use s3::{S3Bucket, S3Config};
 pub use service::Service as FileSystemService;
 
 tonic::include_proto!("engula.file_system");
