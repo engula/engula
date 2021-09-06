@@ -4,6 +4,13 @@
 
 Engula is a storage engine that empowers engineers to build reliable and cost-effective databases with less effort and more confidence.
 
+Engula's design goals are as follows:
+
+- Cloud-native: unbundles different components to leverage elastic resources on the cloud
+- Intelligent: optimizes its own data structures according to dynamic workloads
+- Extensible: provides rich APIs and modules for users to program application logic
+- Platform independent: supports flexible deployments on bare-metal servers, private and public cloud platforms
+
 Engula is in the demo stage now.
 Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
 
