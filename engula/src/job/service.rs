@@ -1,7 +1,6 @@
 use tonic::{Request, Response, Status};
 
 use super::{job_server, CompactRequest, CompactResponse};
-use crate::format::SstOptions;
 use crate::job::{CompactionInput, JobRuntime};
 
 pub struct Service {
@@ -24,8 +23,8 @@ impl job_server::Job for Service {
         let input = request.into_inner();
         let input = CompactionInput {
             input_files: input.files,
-            options: SstOptions::default(),
             output_file_number: input.output_file_number,
+            options: input.options.unwrap(),
         };
         let output = self.runtime.compact(input).await?;
         Ok(Response::new(CompactResponse {

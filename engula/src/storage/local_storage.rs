@@ -61,7 +61,7 @@ impl Storage for LocalStorage {
 
     async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<Arc<dyn StorageVersion>> {
         let options = SstOptions {
-            block_size: self.options.block_size,
+            block_size: self.options.block_size as u64,
         };
         let file_number = self.manifest.next_number().await?;
         let file_name = sst_name(file_number);

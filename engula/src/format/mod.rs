@@ -11,7 +11,7 @@ mod two_level_iterator;
 pub use block::{BlockBuilder, BlockHandle};
 pub use cache::Cache;
 pub use filter::{FilterBuilder, FilterReader};
-pub use sstable::{SstBuilder, SstOptions, SstReader};
+pub use sstable::{SstBuilder, SstReader};
 pub use table::{TableBuilder, TableReader};
 
 pub use iterator::{Entry, Iterator};
