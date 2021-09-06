@@ -7,4 +7,4 @@ message FileDesc {
   uint64 file_size = 2;
 }
 
-message SstOptions { uint64 block_size = 1;}
+message SstOptions { uint64 block_size = 1; }
