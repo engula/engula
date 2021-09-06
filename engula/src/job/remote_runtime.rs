@@ -1,6 +1,6 @@
-use super::{job_client, CompactRequest};
+use super::job_client;
 use crate::error::Result;
-use crate::job::{CompactionInput, CompactionOutput, JobRuntime};
+use crate::job::{CompactRequest, CompactionInput, CompactionOutput, JobRuntime};
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
@@ -25,11 +25,10 @@ impl RemoteJobRuntime {
 #[async_trait]
 impl JobRuntime for RemoteJobRuntime {
     async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
-        let files = input.input_files;
-        let output_file_number = input.output_file_number;
         let input = CompactRequest {
-            files,
-            output_file_number,
+            files: input.input_files,
+            output_file_number: input.output_file_number,
+            options: Some(input.options),
         };
         let request = Request::new(input);
         let mut client = self.client.lock().await;

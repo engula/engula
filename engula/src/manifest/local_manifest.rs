@@ -128,7 +128,7 @@ impl Core {
             input_files.push(file.clone());
         }
         let options = SstOptions {
-            block_size: self.options.block_size,
+            block_size: self.options.block_size as u64,
         };
         Some(CompactionInput {
             options,
