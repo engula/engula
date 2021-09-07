@@ -12,6 +12,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 //  See analysis in [Kirsch,Mitzenmacher 2006].
 //  https://www.eecs.harvard.edu/~michaelm/postscripts/rsa2008.pdf
 pub struct BloomFilter {
+    // bit array
     bitmap: BitVec,
     //size of the bit array
     m: u64,
