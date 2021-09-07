@@ -4,8 +4,8 @@ use tonic::transport::Channel;
 use tonic::Request;
 
 use super::{
-    file_system_client, AccessMode, FileSystem, OpenRequest, RandomAccessReader, ReadRequest,
-    RemoveRequest, SequentialWriter, SyncRequest, WriteRequest,
+    file_system_client, AccessMode, FileSystem, FinishRequest, OpenRequest, RandomAccessReader,
+    ReadRequest, RemoveRequest, SequentialWriter, WriteRequest,
 };
 use crate::error::Result;
 
@@ -76,11 +76,11 @@ impl SequentialWriter for RemoteFile {
         Ok(())
     }
 
-    async fn sync(&mut self) -> Result<()> {
-        let input = SyncRequest { fd: self.fd };
+    async fn finish(&mut self) -> Result<()> {
+        let input = FinishRequest { fd: self.fd };
         let request = Request::new(input);
         let mut client = self.client.clone();
-        client.sync(request).await?;
+        client.finish(request).await?;
         Ok(())
     }
 }

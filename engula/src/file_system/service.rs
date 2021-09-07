@@ -6,9 +6,9 @@ use tokio::sync::{Mutex, RwLock};
 use tonic::{Code, Request, Response, Status};
 
 use super::{
-    file_system_server, AccessMode, FileSystem, OpenRequest, OpenResponse, RandomAccessReader,
-    ReadRequest, ReadResponse, RemoveRequest, RemoveResponse, SequentialWriter, SyncRequest,
-    SyncResponse, WriteRequest, WriteResponse,
+    file_system_server, AccessMode, FileSystem, FinishRequest, FinishResponse, OpenRequest,
+    OpenResponse, RandomAccessReader, ReadRequest, ReadResponse, RemoveRequest, RemoveResponse,
+    SequentialWriter, WriteRequest, WriteResponse,
 };
 
 type ReaderRef = Arc<dyn RandomAccessReader>;
@@ -83,11 +83,14 @@ impl file_system_server::FileSystem for Service {
         }
     }
 
-    async fn sync(&self, request: Request<SyncRequest>) -> Result<Response<SyncResponse>, Status> {
+    async fn finish(
+        &self,
+        request: Request<FinishRequest>,
+    ) -> Result<Response<FinishResponse>, Status> {
         let input = request.into_inner();
         if let Some(writer) = self.writers.read().await.get(&input.fd) {
-            writer.lock().await.sync().await?;
-            Ok(Response::new(SyncResponse::default()))
+            writer.lock().await.finish().await?;
+            Ok(Response::new(FinishResponse::default()))
         } else {
             Err(Status::new(
                 Code::NotFound,
