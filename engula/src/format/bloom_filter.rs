@@ -108,9 +108,8 @@ impl FilterBuilder for BloomFilter {
 
     fn finish(&mut self) -> Vec<u8> {
         if self.full == 1 {
-            let mut result = Vec::new();
-            result.push(self.full);
-            return result;
+            let full = self.full;
+            vec![full]
         } else {
             self.bitmap.to_bytes()
         }
