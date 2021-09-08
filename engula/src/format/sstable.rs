@@ -38,6 +38,7 @@ pub struct SstBuilder {
     error: Option<Error>,
     last_ts: Timestamp,
     last_key: Vec<u8>,
+    finished: bool,
     data_block: BlockBuilder,
     index_block: BlockBuilder,
 }
@@ -50,6 +51,7 @@ impl SstBuilder {
             error: None,
             last_ts: 0,
             last_key: Vec::new(),
+            finished: false,
             data_block: BlockBuilder::new(),
             index_block: BlockBuilder::new(),
         }
@@ -69,6 +71,7 @@ impl SstBuilder {
 #[async_trait]
 impl TableBuilder for SstBuilder {
     async fn add(&mut self, ts: Timestamp, key: &[u8], value: &[u8]) {
+        assert!(!self.finished);
         if self.error.is_some() {
             return;
         }
@@ -85,6 +88,8 @@ impl TableBuilder for SstBuilder {
     }
 
     async fn finish(&mut self) -> Result<usize> {
+        assert!(!self.finished);
+        self.finished = true;
         if let Some(error) = &self.error {
             return Err(error.clone());
         }
@@ -98,7 +103,7 @@ impl TableBuilder for SstBuilder {
             let encoded_footer = footer.encode();
             let _ = self.file.write_block(&encoded_footer).await?;
         }
-        self.file.sync().await?;
+        self.file.finish().await?;
         Ok(self.file.file_size())
     }
 }
@@ -127,8 +132,8 @@ impl SstFileWriter {
         Ok(handle)
     }
 
-    async fn sync(&mut self) -> Result<()> {
-        self.file.sync().await
+    async fn finish(&mut self) -> Result<()> {
+        self.file.finish().await
     }
 }
 

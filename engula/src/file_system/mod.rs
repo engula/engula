@@ -27,7 +27,7 @@ pub trait FileSystem: Sync + Send {
 pub trait SequentialWriter: Sync + Send + Unpin {
     async fn write(&mut self, data: &[u8]) -> Result<()>;
 
-    async fn sync(&mut self) -> Result<()>;
+    async fn finish(&mut self) -> Result<()>;
 }
 
 #[async_trait]
