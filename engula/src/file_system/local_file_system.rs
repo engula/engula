@@ -62,7 +62,7 @@ impl SequentialWriter for SequentialFile {
         Ok(())
     }
 
-    async fn sync(&mut self) -> Result<()> {
+    async fn finish(&mut self) -> Result<()> {
         self.file.sync_data().await?;
         Ok(())
     }

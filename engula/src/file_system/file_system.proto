@@ -9,7 +9,7 @@ service FileSystem {
 
   rpc Write(WriteRequest) returns (WriteResponse) {}
 
-  rpc Sync(SyncRequest) returns (SyncResponse) {}
+  rpc Finish(FinishRequest) returns (FinishResponse) {}
 
   rpc Remove(RemoveRequest) returns (RemoveResponse) {}
 }
@@ -41,9 +41,9 @@ message WriteRequest {
 
 message WriteResponse {}
 
-message SyncRequest { uint64 fd = 1; }
+message FinishRequest { uint64 fd = 1; }
 
-message SyncResponse {}
+message FinishResponse {}
 
 message RemoveRequest { string file_name = 1; }
 

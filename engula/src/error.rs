@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use parquet::errors::ParquetError;
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -17,6 +18,8 @@ pub enum Error {
     Channel(String),
     #[error("transport error: `{0}`")]
     Transport(String),
+    #[error("parquet error: `{0}`")]
+    Parquet(String),
     #[error("aws error: `{0}`")]
     AwsSdk(String),
 }
@@ -66,6 +69,12 @@ impl From<tokio::time::error::Elapsed> for Error {
 impl From<tonic::transport::Error> for Error {
     fn from(error: tonic::transport::Error) -> Error {
         Error::Transport(error.to_string())
+    }
+}
+
+impl From<ParquetError> for Error {
+    fn from(error: ParquetError) -> Error {
+        Error::Parquet(error.to_string())
     }
 }
 
