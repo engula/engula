@@ -1,6 +1,5 @@
-extern crate bit_vec;
+use crate::filter::{FilterBuilder, FilterReader};
 
-use crate::format::{FilterBuilder, FilterReader};
 use bit_vec::BitVec;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
