@@ -1,6 +1,8 @@
+mod cache;
 mod database;
 mod error;
 mod file_system;
+mod filter;
 mod format;
 mod job;
 mod journal;

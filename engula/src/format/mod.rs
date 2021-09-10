@@ -1,18 +1,13 @@
 mod block;
-mod cache;
-mod filter;
 mod parquet_builder;
 mod sstable;
 mod table;
 
-mod bloom_filter;
 mod iterator;
 mod merging_iterator;
 mod two_level_iterator;
 
 pub use block::{BlockBuilder, BlockHandle};
-pub use cache::Cache;
-pub use filter::{FilterBuilder, FilterReader};
 pub use parquet_builder::ParquetBuilder;
 pub use sstable::{SstBuilder, SstReader};
 pub use table::{TableBuilder, TableReader};

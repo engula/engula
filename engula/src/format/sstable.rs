@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use bytes::BufMut;
 
 use super::block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE};
-use super::cache::Cache;
 use super::iterator::Iterator;
 use super::table::{TableBuilder, TableReader};
 use super::two_level_iterator::{BlockIterGenerator, TwoLevelIterator};
 use super::{FileDesc, SstOptions, Timestamp};
+use crate::cache::Cache;
 use crate::error::{Error, Result};
 use crate::file_system::{RandomAccessReader, SequentialWriter};
 

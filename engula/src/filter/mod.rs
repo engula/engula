@@ -1,3 +1,7 @@
+mod bloom_filter;
+
+pub use bloom_filter::BloomFilter;
+
 pub trait FilterReader {
     fn may_exist(&self, key: &[u8]) -> bool;
 }

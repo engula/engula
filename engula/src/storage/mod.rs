@@ -7,8 +7,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::watch;
 
+use crate::cache::Cache;
 use crate::error::Result;
-use crate::format::{Cache, Timestamp};
+use crate::format::Timestamp;
 use crate::memtable::MemTable;
 
 #[derive(Clone)]
