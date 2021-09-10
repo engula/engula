@@ -1,28 +1,27 @@
 use async_trait::async_trait;
 use tokio::sync::Mutex;
-use tonic::transport::Channel;
-use tonic::Request;
+use tonic::{transport::Channel, Request};
 
 use super::{
-    file_system_client, AccessMode, FileSystem, FinishRequest, OpenRequest, RandomAccessReader,
-    ReadRequest, RemoveRequest, SequentialWriter, WriteRequest,
+    fs_client, AccessMode, FinishRequest, Fs, OpenRequest, RandomAccessReader, ReadRequest,
+    RemoveRequest, SequentialWriter, WriteRequest,
 };
 use crate::error::Result;
 
-type FileSystemClient = file_system_client::FileSystemClient<Channel>;
+type FsClient = fs_client::FsClient<Channel>;
 
-pub struct RemoteFileSystem {
-    client: Mutex<FileSystemClient>,
+pub struct RemoteFs {
+    client: Mutex<FsClient>,
 }
 
-impl RemoteFileSystem {
+impl RemoteFs {
     async fn open_file(&self, fname: &str, mode: AccessMode) -> Result<RemoteFile> {
+        let mut client = self.client.lock().await;
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: mode as i32,
         };
         let request = Request::new(input);
-        let mut client = self.client.lock().await;
         let response = client.open(request).await?;
         let output = response.into_inner();
         Ok(RemoteFile::new(output.fd, client.clone()))
@@ -30,7 +29,7 @@ impl RemoteFileSystem {
 }
 
 #[async_trait]
-impl FileSystem for RemoteFileSystem {
+impl Fs for RemoteFs {
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
         let file = self.open_file(fname, AccessMode::Write).await?;
         Ok(Box::new(file))
@@ -42,11 +41,11 @@ impl FileSystem for RemoteFileSystem {
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
+        let mut client = self.client.lock().await;
         let input = RemoveRequest {
             file_name: fname.to_owned(),
         };
         let request = Request::new(input);
-        let mut client = self.client.lock().await;
         client.remove(request).await?;
         Ok(())
     }
@@ -54,33 +53,31 @@ impl FileSystem for RemoteFileSystem {
 
 struct RemoteFile {
     fd: u64,
-    client: FileSystemClient,
+    client: FsClient,
 }
 
 impl RemoteFile {
-    fn new(fd: u64, client: FileSystemClient) -> RemoteFile {
+    fn new(fd: u64, client: FsClient) -> RemoteFile {
         RemoteFile { fd, client }
     }
 }
 
 #[async_trait]
 impl SequentialWriter for RemoteFile {
-    async fn write(&mut self, buf: &[u8]) -> Result<()> {
+    async fn write(&mut self, data: &[u8]) -> Result<()> {
         let input = WriteRequest {
             fd: self.fd,
-            data: buf.to_owned(),
+            data: data.to_owned(),
         };
         let request = Request::new(input);
-        let mut client = self.client.clone();
-        client.write(request).await?;
+        self.client.write(request).await?;
         Ok(())
     }
 
     async fn finish(&mut self) -> Result<()> {
         let input = FinishRequest { fd: self.fd };
         let request = Request::new(input);
-        let mut client = self.client.clone();
-        client.finish(request).await?;
+        self.client.finish(request).await?;
         Ok(())
     }
 }
@@ -88,13 +85,13 @@ impl SequentialWriter for RemoteFile {
 #[async_trait]
 impl RandomAccessReader for RemoteFile {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
+        let mut client = self.client.clone();
         let input = ReadRequest {
             fd: self.fd,
             offset,
             size,
         };
         let request = Request::new(input);
-        let mut client = self.client.clone();
         let response = client.read(request).await?;
         let output = response.into_inner();
         Ok(output.data)

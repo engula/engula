@@ -5,23 +5,26 @@ package engula.manifest;
 import "format/format.proto";
 
 service Manifest {
-  rpc GetCurrent(GetCurrentRequest) returns (GetCurrentResponse) {}
+  rpc Current(CurrentRequest) returns (CurrentResponse) {}
+
+  rpc AddTable(AddTableRequest) returns (AddTableResponse) {}
 
   rpc NextNumber(NextNumberRequest) returns (NextNumberResponse) {}
-
-  rpc InstallFlush(InstallFlushRequest) returns (InstallFlushResponse) {}
 }
 
-message VersionDesc { repeated engula.format.FileDesc files = 1; }
+message VersionDesc {
+  uint64 sequence = 1;
+  repeated engula.format.TableDesc tables = 2;
+}
 
-message GetCurrentRequest {}
+message CurrentRequest {}
 
-message GetCurrentResponse { VersionDesc version = 1; }
+message CurrentResponse { VersionDesc version = 1; }
+
+message AddTableRequest { engula.format.TableDesc table = 1; }
+
+message AddTableResponse { VersionDesc version = 1; }
 
 message NextNumberRequest {}
 
 message NextNumberResponse { uint64 number = 1; }
-
-message InstallFlushRequest { engula.format.FileDesc file = 1; }
-
-message InstallFlushResponse { VersionDesc version = 1; }

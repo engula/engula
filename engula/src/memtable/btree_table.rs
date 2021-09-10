@@ -1,15 +1,21 @@
-use std::cmp::Reverse;
-use std::collections::btree_map;
-use std::collections::BTreeMap;
-use std::ops::Bound::{Included, Unbounded};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::{
+    cmp::Reverse,
+    collections::btree_map,
+    collections::BTreeMap,
+    ops::Bound::{Included, Unbounded},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use async_trait::async_trait;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
-use crate::format::Timestamp;
-use crate::memtable::{MemItem, MemIter, MemSnapshot, MemTable};
+use crate::{
+    format::Timestamp,
+    memtable::{MemItem, MemIter, MemSnapshot, MemTable},
+};
 
 type Sequence = Reverse<Timestamp>;
 type SequenceTree = BTreeMap<Sequence, Vec<u8>>;

@@ -1,10 +1,10 @@
+mod journal_service;
 mod local_journal;
 mod quorum_journal;
-mod service;
 
+pub use journal_service::JournalService;
 pub use local_journal::LocalJournal;
 pub use quorum_journal::QuorumJournal;
-pub use service::Service as JournalService;
 
 use async_trait::async_trait;
 

@@ -1,27 +1,29 @@
-use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::fs::FileExt,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
+use super::{Fs, RandomAccessReader, SequentialWriter};
 use crate::error::Result;
-use crate::file_system::*;
 
-pub struct LocalFileSystem {
+pub struct LocalFs {
     dirname: PathBuf,
 }
 
-impl LocalFileSystem {
-    pub fn new<P: AsRef<Path>>(dirname: P) -> Result<LocalFileSystem> {
+impl LocalFs {
+    pub fn new<P: AsRef<Path>>(dirname: P) -> Result<LocalFs> {
         std::fs::create_dir_all(dirname.as_ref())?;
-        Ok(LocalFileSystem {
+        Ok(LocalFs {
             dirname: dirname.as_ref().to_owned(),
         })
     }
 }
 
 #[async_trait]
-impl FileSystem for LocalFileSystem {
+impl Fs for LocalFs {
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
         let path = self.dirname.join(fname);
         let file = tokio::fs::OpenOptions::new()
@@ -83,7 +85,7 @@ impl RandomAccessReader for RandomAccessFile {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
         buf.resize(size as usize, 0);
-        // NOTE: this is a blocking read.
+        // TODO: this is a blocking read.
         self.file.read_at(&mut buf, offset)?;
         Ok(buf)
     }

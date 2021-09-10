@@ -1,29 +1,37 @@
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
-use tokio::task;
-use tokio_stream::{wrappers::WatchStream, StreamExt};
+use tokio::{
+    sync::{mpsc, oneshot, Mutex, RwLock},
+    task, time,
+};
 
-use crate::error::Result;
-use crate::format::Timestamp;
-use crate::journal::Journal;
-use crate::memtable::{BTreeTable, MemTable};
-use crate::storage::{Storage, StorageVersion, StorageVersionReceiver};
+use crate::{
+    error::Result,
+    format::Timestamp,
+    journal::Journal,
+    manifest::Manifest,
+    memtable::{BTreeTable, MemTable},
+    storage::Storage,
+    version_set::{Version, VersionSet},
+    write::{BatchReceiver, Write},
+};
 
+#[derive(Clone)]
 pub struct Options {
     pub memtable_size: usize,
-    pub max_batch_size: usize,
+    pub write_batch_size: usize,
+    pub write_channel_size: usize,
 }
 
 impl Options {
     pub fn default() -> Options {
         Options {
-            memtable_size: 8 * 1024,
-            max_batch_size: 8 * 1024,
+            memtable_size: 4 * 1024,
+            write_batch_size: 4 * 1024,
+            write_channel_size: 4 * 1024,
         }
     }
 }
@@ -31,7 +39,7 @@ impl Options {
 pub struct Database {
     core: Arc<Core>,
     next_ts: AtomicU64,
-    write_tx: mpsc::Sender<Put>,
+    write_tx: mpsc::Sender<Write>,
 }
 
 impl Database {
@@ -39,19 +47,20 @@ impl Database {
         options: Options,
         journal: Arc<dyn Journal>,
         storage: Arc<dyn Storage>,
-    ) -> Database {
-        let core = Core::new(options, journal, storage).await;
+        manifest: Arc<dyn Manifest>,
+    ) -> Result<Database> {
+        let core = Core::new(options.clone(), journal, storage, manifest).await?;
         let core = Arc::new(core);
         let core_clone = core.clone();
-        let (write_tx, write_rx) = mpsc::channel(4096);
+        let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
         task::spawn(async move {
-            core_clone.handle_writes(write_rx).await.unwrap();
+            core_clone.write(write_rx).await;
         });
-        Database {
+        Ok(Database {
             core,
             next_ts: AtomicU64::new(0),
             write_tx,
-        }
+        })
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -60,127 +69,111 @@ impl Database {
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
         let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
-        let put = Put { tx, ts, key, value };
-        self.write_tx.send(put).await?;
+        let (tx, rx) = oneshot::channel();
+        let write = Write { tx, ts, key, value };
+        self.write_tx.send(write).await?;
         rx.await?;
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct Put {
-    tx: oneshot::Sender<()>,
-    ts: Timestamp,
-    key: Vec<u8>,
-    value: Vec<u8>,
-}
-
-impl Put {
-    fn encode_to(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.ts.to_le_bytes());
-        buf.extend_from_slice(&self.key);
-        buf.extend_from_slice(&self.value);
-    }
-
-    fn encode_size(&self) -> usize {
-        std::mem::size_of_val(&self.ts) + self.key.len() + self.value.len()
     }
 }
 
 struct Core {
     options: Options,
     journal: Arc<dyn Journal>,
-    storage: Arc<dyn Storage>,
-    current: Arc<VersionHandle>,
+    super_handle: Arc<SuperVersionHandle>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
 }
 
 impl Core {
-    async fn new(options: Options, journal: Arc<dyn Journal>, storage: Arc<dyn Storage>) -> Core {
-        let storage_version = storage.current().await;
-        let current = Arc::new(VersionHandle::new(storage_version));
-        let current_clone = current.clone();
-        let current_rx = storage.current_rx();
+    async fn new(
+        options: Options,
+        journal: Arc<dyn Journal>,
+        storage: Arc<dyn Storage>,
+        manifest: Arc<dyn Manifest>,
+    ) -> Result<Core> {
+        let vset = VersionSet::new(storage, manifest).await;
+        let super_handle = SuperVersionHandle::new(vset).await?;
+        let super_handle = Arc::new(super_handle);
+        let super_handle_clone = super_handle.clone();
         task::spawn(async move {
-            VersionHandle::watch_storage_version(current_clone, current_rx)
-                .await
-                .unwrap();
+            update_version(super_handle_clone).await;
         });
-        Core {
+        Ok(Core {
             options,
             journal,
-            storage,
-            current,
+            super_handle,
             flush_handle: Mutex::new(None),
-        }
+        })
     }
 
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.current.get(ts, key).await
+        self.super_handle.get(ts, key).await
     }
 
-    async fn handle_writes(&self, rx: mpsc::Receiver<Put>) -> Result<()> {
-        let mut batch_rx = BatchReceiver::new(rx, self.options.max_batch_size);
-        while let Some(puts) = batch_rx.recv().await {
+    async fn write(&self, rx: mpsc::Receiver<Write>) {
+        let mut batch_rx = BatchReceiver::new(rx, self.options.write_batch_size);
+        while let Some(writes) = batch_rx.recv().await {
             let mut data = Vec::new();
-            for put in &puts {
-                put.encode_to(&mut data);
+            for write in &writes {
+                write.encode_to(&mut data);
             }
-            self.journal.append(data).await?;
-            let mut memtable_size = 0;
-            for put in puts {
-                memtable_size = self.current.put(put.ts, put.key, put.value).await;
-                put.tx.send(()).unwrap();
-            }
-            if memtable_size >= self.options.memtable_size {
-                self.schedule_flush().await?;
+            self.journal.append(data).await.unwrap();
+            for write in writes {
+                let memtable_size = self
+                    .super_handle
+                    .put(write.ts, write.key, write.value)
+                    .await;
+                write.tx.send(()).unwrap();
+                if memtable_size >= self.options.memtable_size {
+                    self.flush_memtable().await;
+                }
             }
         }
-        Ok(())
     }
 
-    async fn schedule_flush(&self) -> Result<()> {
+    async fn flush_memtable(&self) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
-            handle.await?;
+            handle.await.unwrap();
         }
-
-        let storage = self.storage.clone();
-        let current = self.current.clone();
-        let imm = current.switch_memtable().await;
-
+        let super_handle = self.super_handle.clone();
         let handle = task::spawn(async move {
-            let version = storage.flush_memtable(imm).await.unwrap();
-            current.install_flush_result(version).await;
+            super_handle.flush_memtable().await.unwrap();
         });
         *flush_handle = Some(handle);
-
-        Ok(())
     }
 }
 
-struct Version {
+struct SuperVersion {
     mem: Arc<dyn MemTable>,
     imm: Option<Arc<dyn MemTable>>,
-    storage: Arc<dyn StorageVersion>,
+    version: Arc<Version>,
 }
 
-struct VersionHandle(RwLock<Arc<Version>>);
+struct SuperVersionHandle {
+    vset: VersionSet,
+    current: RwLock<Arc<SuperVersion>>,
+    sequence: Mutex<u64>,
+}
 
-impl VersionHandle {
-    fn new(storage: Arc<dyn StorageVersion>) -> VersionHandle {
-        let version = Version {
+impl SuperVersionHandle {
+    async fn new(vset: VersionSet) -> Result<SuperVersionHandle> {
+        let version = vset.current().await?;
+        let current = SuperVersion {
             mem: Arc::new(BTreeTable::new()),
             imm: None,
-            storage,
+            version,
         };
-        VersionHandle(RwLock::new(Arc::new(version)))
+        Ok(SuperVersionHandle {
+            vset,
+            current: RwLock::new(Arc::new(current)),
+            sequence: Mutex::new(0),
+        })
     }
 
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let current = self.0.read().await.clone();
+        let current = self.current.read().await.clone();
         if let Some(value) = current.mem.get(ts, key).await {
             return Ok(Some(value));
         }
@@ -189,105 +182,74 @@ impl VersionHandle {
                 return Ok(Some(value));
             }
         }
-        current.storage.get(ts, key).await
+        current.version.get(ts, key).await
     }
 
     async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) -> usize {
-        let current = self.0.read().await.clone();
+        let current = self.current.read().await.clone();
         current.mem.put(ts, key, value).await;
         current.mem.approximate_size()
     }
 
-    async fn switch_memtable(&self) -> Arc<dyn MemTable> {
-        let mut current = self.0.write().await;
-        assert!(current.imm.is_none());
-        let version = Arc::new(Version {
-            mem: Arc::new(BTreeTable::new()),
-            imm: Some(current.mem.clone()),
-            storage: current.storage.clone(),
-        });
-        *current = version;
-        current.imm.clone().unwrap()
-    }
-
-    async fn install_flush_result(&self, storage: Arc<dyn StorageVersion>) {
-        let mut current = self.0.write().await;
-        assert!(current.imm.is_some());
-        let version = Arc::new(Version {
-            mem: current.mem.clone(),
-            imm: None,
-            storage,
-        });
-        *current = version;
-    }
-
-    async fn watch_storage_version(
-        current: Arc<VersionHandle>,
-        current_rx: StorageVersionReceiver,
-    ) -> Result<()> {
-        let mut rx = WatchStream::new(current_rx);
-        while let Some(version) = rx.next().await {
-            current.install_storage_version(version).await;
-        }
+    async fn flush_memtable(&self) -> Result<()> {
+        let imm = self.switch_memtable().await;
+        let version = self.vset.flush_memtable(imm).await?;
+        self.install_flush_version(version).await;
         Ok(())
     }
 
-    async fn install_storage_version(&self, storage: Arc<dyn StorageVersion>) {
-        let mut current = self.0.write().await;
-        let version = Arc::new(Version {
+    async fn switch_memtable(&self) -> Arc<dyn MemTable> {
+        let mut current = self.current.write().await;
+        assert!(current.imm.is_none());
+        *current = Arc::new(SuperVersion {
+            mem: Arc::new(BTreeTable::new()),
+            imm: Some(current.mem.clone()),
+            version: current.version.clone(),
+        });
+        current.imm.clone().unwrap()
+    }
+
+    async fn version_updated(&self, version: Arc<Version>) -> bool {
+        let mut sequence = self.sequence.lock().await;
+        if *sequence >= version.sequence() {
+            false
+        } else {
+            *sequence = version.sequence();
+            true
+        }
+    }
+
+    async fn install_version(&self, version: Arc<Version>) {
+        if !self.version_updated(version.clone()).await {
+            return;
+        }
+        let mut current = self.current.write().await;
+        *current = Arc::new(SuperVersion {
             mem: current.mem.clone(),
             imm: current.imm.clone(),
-            storage,
+            version,
         });
-        *current = version;
-    }
-}
-
-struct BatchReceiver {
-    rx: mpsc::Receiver<Put>,
-    batch_size: usize,
-}
-
-impl BatchReceiver {
-    fn new(rx: mpsc::Receiver<Put>, batch_size: usize) -> BatchReceiver {
-        BatchReceiver { rx, batch_size }
     }
 
-    async fn recv(&mut self) -> Option<Vec<Put>> {
-        self.await
-    }
-}
-
-impl Future for BatchReceiver {
-    type Output = Option<Vec<Put>>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut output = Vec::new();
-        let mut output_size = 0;
-        loop {
-            match self.rx.poll_recv(cx) {
-                Poll::Ready(Some(v)) => {
-                    output_size += v.encode_size();
-                    output.push(v);
-                    if output_size >= self.batch_size {
-                        return Poll::Ready(Some(output));
-                    }
-                }
-                Poll::Ready(None) => {
-                    if output.is_empty() {
-                        return Poll::Ready(None);
-                    } else {
-                        return Poll::Ready(Some(output));
-                    }
-                }
-                Poll::Pending => {
-                    if output.is_empty() {
-                        return Poll::Pending;
-                    } else {
-                        return Poll::Ready(Some(output));
-                    }
-                }
-            }
+    async fn install_flush_version(&self, version: Arc<Version>) {
+        if !self.version_updated(version.clone()).await {
+            return;
         }
+        let mut current = self.current.write().await;
+        assert!(current.imm.is_some());
+        *current = Arc::new(SuperVersion {
+            mem: current.mem.clone(),
+            imm: None,
+            version,
+        });
+    }
+}
+
+async fn update_version(handle: Arc<SuperVersionHandle>) {
+    let mut interval = time::interval(time::Duration::from_secs(1));
+    loop {
+        interval.tick().await;
+        let version = handle.vset.current().await.unwrap();
+        handle.install_version(version).await;
     }
 }

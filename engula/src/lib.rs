@@ -1,18 +1,20 @@
 mod cache;
+mod compaction;
 mod database;
 mod error;
-mod file_system;
-mod filter;
 mod format;
-mod job;
+mod fs;
 mod journal;
 mod manifest;
 mod memtable;
 mod storage;
+mod version_set;
+mod write;
 
+pub use compaction::{CompactionRuntime, LocalCompaction, RemoteCompaction};
 pub use database::{Database, Options};
-pub use file_system::{FileSystem, LocalFileSystem};
-pub use job::{JobRuntime, LocalJobRuntime};
-pub use journal::{Journal, LocalJournal};
-pub use manifest::{LocalManifest, Manifest};
-pub use storage::{LocalStorage, Storage, StorageOptions};
+pub use format::SstOptions;
+pub use fs::{Fs, LocalFs, RemoteFs};
+pub use journal::{Journal, LocalJournal, QuorumJournal};
+pub use manifest::{LocalManifest, Manifest, ManifestOptions, RemoteManifest};
+pub use storage::{SstStorage, Storage};

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package engula.compaction;
+
+import "format/format.proto";
+
+service Compaction {
+  rpc Compact(CompactionInput) returns (CompactionOutput) {}
+}
+
+message CompactionInput {
+  repeated format.TableDesc tables = 1;
+  uint64 output_table_number = 2;
+}
+
+message CompactionOutput {
+  repeated format.TableDesc tables = 1;
+  format.TableDesc output_table = 2;
+}

@@ -1,13 +1,13 @@
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::Duration;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
-use tokio::time::timeout;
-use tonic::transport::Channel;
-use tonic::Request;
+use tokio::{sync::Mutex, time::timeout};
+use tonic::{transport::Channel, Request};
 
 use super::{journal_client, AppendRequest, Journal};
 use crate::error::Result;

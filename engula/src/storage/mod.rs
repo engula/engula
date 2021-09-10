@@ -1,47 +1,19 @@
-mod local_storage;
+mod sst_storage;
 
-pub use local_storage::LocalStorage;
-
-use std::sync::Arc;
+pub use sst_storage::SstStorage;
 
 use async_trait::async_trait;
-use tokio::sync::watch;
 
-use crate::cache::Cache;
-use crate::error::Result;
-use crate::format::Timestamp;
-use crate::memtable::MemTable;
-
-#[derive(Clone)]
-pub struct StorageOptions {
-    pub max_levels: usize,
-    pub block_size: usize,
-    pub cache: Option<Arc<dyn Cache>>,
-}
-
-impl StorageOptions {
-    pub fn default() -> StorageOptions {
-        StorageOptions {
-            max_levels: 4,
-            block_size: 8 * 1024,
-            cache: None,
-        }
-    }
-}
-
-pub type StorageVersionSender = watch::Sender<Arc<dyn StorageVersion>>;
-pub type StorageVersionReceiver = watch::Receiver<Arc<dyn StorageVersion>>;
+use crate::{
+    error::Result,
+    format::{TableBuilder, TableDesc, TableReader},
+};
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    async fn current(&self) -> Arc<dyn StorageVersion>;
+    async fn new_reader(&self, desc: &TableDesc) -> Result<Box<dyn TableReader>>;
 
-    fn current_rx(&self) -> StorageVersionReceiver;
+    async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>>;
 
-    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<Arc<dyn StorageVersion>>;
-}
-
-#[async_trait]
-pub trait StorageVersion: Send + Sync {
-    async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>>;
+    async fn remove_table(&self, table_number: u64) -> Result<()>;
 }

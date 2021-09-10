@@ -1,21 +1,21 @@
-mod local_file_system;
-mod remote_file_system;
+mod fs_service;
+mod local_fs;
+mod remote_fs;
 mod s3;
-mod service;
 
-pub use local_file_system::LocalFileSystem;
-pub use remote_file_system::RemoteFileSystem;
+pub use fs_service::FsService;
+pub use local_fs::LocalFs;
+pub use remote_fs::RemoteFs;
 pub use s3::{S3Bucket, S3Config};
-pub use service::Service as FileSystemService;
 
-tonic::include_proto!("engula.file_system");
+tonic::include_proto!("engula.fs");
 
 use async_trait::async_trait;
 
 use crate::error::Result;
 
 #[async_trait]
-pub trait FileSystem: Sync + Send {
+pub trait Fs: Sync + Send {
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>>;
 
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>>;

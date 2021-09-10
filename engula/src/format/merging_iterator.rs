@@ -1,10 +1,11 @@
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::{cmp::Reverse, collections::BinaryHeap};
 
 use async_trait::async_trait;
 
-use super::iterator::{Entry, Iterator};
-use super::Timestamp;
+use super::{
+    iterator::{Entry, Iterator},
+    Timestamp,
+};
 use crate::error::Error;
 
 pub struct MergingIterator {

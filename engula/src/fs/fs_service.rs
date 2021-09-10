@@ -1,31 +1,35 @@
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use tokio::sync::{Mutex, RwLock};
 use tonic::{Code, Request, Response, Status};
 
 use super::{
-    file_system_server, AccessMode, FileSystem, FinishRequest, FinishResponse, OpenRequest,
-    OpenResponse, RandomAccessReader, ReadRequest, ReadResponse, RemoveRequest, RemoveResponse,
-    SequentialWriter, WriteRequest, WriteResponse,
+    fs_server, AccessMode, FinishRequest, FinishResponse, Fs, OpenRequest, OpenResponse,
+    RandomAccessReader, ReadRequest, ReadResponse, RemoveRequest, RemoveResponse, SequentialWriter,
+    WriteRequest, WriteResponse,
 };
 
 type ReaderRef = Arc<dyn RandomAccessReader>;
 type WriterRef = Arc<Mutex<Box<dyn SequentialWriter>>>;
 
-pub struct Service {
-    fs: Box<dyn FileSystem>,
+pub struct FsService {
+    fs: Box<dyn Fs>,
     next_fd: AtomicU64,
     readers: RwLock<HashMap<u64, ReaderRef>>,
     writers: RwLock<HashMap<u64, WriterRef>>,
     opened_files: Mutex<HashMap<String, u64>>,
 }
 
-impl Service {
+impl FsService {
     #[allow(dead_code)]
-    pub fn new(fs: Box<dyn FileSystem>) -> Service {
-        Service {
+    pub fn new(fs: Box<dyn Fs>) -> FsService {
+        FsService {
             fs,
             next_fd: AtomicU64::new(0),
             writers: RwLock::new(HashMap::new()),
@@ -36,7 +40,7 @@ impl Service {
 }
 
 #[tonic::async_trait]
-impl file_system_server::FileSystem for Service {
+impl fs_server::Fs for FsService {
     async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
         let input = request.into_inner();
         let fd = self.next_fd.fetch_add(1, Ordering::SeqCst);
@@ -114,8 +118,8 @@ impl file_system_server::FileSystem for Service {
     }
 }
 
-impl From<Service> for file_system_server::FileSystemServer<Service> {
-    fn from(s: Service) -> file_system_server::FileSystemServer<Service> {
-        file_system_server::FileSystemServer::new(s)
+impl From<FsService> for fs_server::FsServer<FsService> {
+    fn from(s: FsService) -> fs_server::FsServer<FsService> {
+        fs_server::FsServer::new(s)
     }
 }

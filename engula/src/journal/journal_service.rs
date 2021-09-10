@@ -2,19 +2,19 @@ use tonic::{Request, Response, Status};
 
 use super::{journal_server, AppendRequest, AppendResponse, Journal};
 
-pub struct Service {
+pub struct JournalService {
     journal: Box<dyn Journal>,
 }
 
-impl Service {
+impl JournalService {
     #[allow(dead_code)]
-    pub fn new(journal: Box<dyn Journal>) -> Service {
-        Service { journal }
+    pub fn new(journal: Box<dyn Journal>) -> JournalService {
+        JournalService { journal }
     }
 }
 
 #[tonic::async_trait]
-impl journal_server::Journal for Service {
+impl journal_server::Journal for JournalService {
     async fn append(
         &self,
         request: Request<AppendRequest>,
@@ -25,8 +25,8 @@ impl journal_server::Journal for Service {
     }
 }
 
-impl From<Service> for journal_server::JournalServer<Service> {
-    fn from(s: Service) -> journal_server::JournalServer<Service> {
+impl From<JournalService> for journal_server::JournalServer<JournalService> {
+    fn from(s: JournalService) -> journal_server::JournalServer<JournalService> {
         journal_server::JournalServer::new(s)
     }
 }
