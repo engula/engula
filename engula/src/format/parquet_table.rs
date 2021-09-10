@@ -1,21 +1,26 @@
-use std::sync::Arc;
+use std::{convert::TryInto, io::Cursor, sync::Arc};
 
 use async_trait::async_trait;
+use futures::executor::block_on;
 use parquet::{
     column::writer::ColumnWriter,
     data_type::ByteArray,
+    errors::ParquetError,
     file::{
         properties::WriterProperties,
+        reader::{ChunkReader, Length},
+        serialized_reader::SerializedFileReader,
         writer::{FileWriter, SerializedFileWriter},
     },
+    record::{reader::RowIter, Field, Row},
     schema::parser::parse_message_type,
     util::cursor::InMemoryWriteableCursor,
 };
 
-use super::{table::TableBuilder, TableDesc, Timestamp};
+use super::{iterator::Entry, table::TableBuilder, TableDesc, Timestamp};
 use crate::{
     error::{Error, Result},
-    fs::SequentialWriter,
+    fs::{RandomAccessReader, SequentialWriter},
 };
 
 pub struct ParquetOptions {
@@ -143,5 +148,80 @@ impl ParquetFileWriter {
             table_number: self.number,
             table_size: data.len() as u64,
         })
+    }
+}
+
+macro_rules! next_bytes_column {
+    ($iter:ident) => {
+        if let Field::Bytes(bytes) = $iter.next().unwrap().1 {
+            bytes.data()
+        } else {
+            panic!();
+        }
+    };
+}
+
+pub struct ParquetIterator {
+    iter: RowIter<'static>,
+    current_row: Option<Row>,
+}
+
+#[allow(dead_code)]
+impl ParquetIterator {
+    pub fn new(desc: &TableDesc, file: Box<dyn RandomAccessReader>) -> Result<ParquetIterator> {
+        let reader = ParquetFileReader::new(desc.clone(), file);
+        let file = SerializedFileReader::new(reader)?;
+        let iter = RowIter::from_file_into(Box::new(file));
+        Ok(ParquetIterator {
+            iter,
+            current_row: None,
+        })
+    }
+
+    pub fn next(&mut self) {
+        self.current_row = self.iter.next();
+    }
+
+    pub fn current(&self) -> Option<Entry> {
+        if let Some(row) = self.current_row.as_ref() {
+            let mut col = row.get_column_iter();
+            let ts_bytes = next_bytes_column!(col);
+            let ts = u64::from_be_bytes(ts_bytes.try_into().unwrap());
+            let key = next_bytes_column!(col);
+            let value = next_bytes_column!(col);
+            Some(Entry(ts, key, value))
+        } else {
+            None
+        }
+    }
+}
+
+type ParquetResult<T> = std::result::Result<T, ParquetError>;
+
+struct ParquetFileReader {
+    desc: TableDesc,
+    file: Box<dyn RandomAccessReader>,
+}
+
+impl ParquetFileReader {
+    fn new(desc: TableDesc, file: Box<dyn RandomAccessReader>) -> ParquetFileReader {
+        ParquetFileReader { desc, file }
+    }
+}
+
+impl Length for ParquetFileReader {
+    fn len(&self) -> u64 {
+        self.desc.table_size
+    }
+}
+
+impl ChunkReader for ParquetFileReader {
+    type T = Cursor<Vec<u8>>;
+
+    fn get_read(&self, start: u64, length: usize) -> ParquetResult<Self::T> {
+        match block_on(self.file.read_at(start, length as u64)) {
+            Ok(data) => Ok(Cursor::new(data)),
+            Err(err) => Err(ParquetError::General(err.to_string())),
+        }
     }
 }

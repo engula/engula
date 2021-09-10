@@ -32,24 +32,31 @@ impl TwoLevelIterator {
     }
 
     async fn init_block_iter(&mut self) {
-        while let Some(version) = self.index_iter.current() {
-            match self.block_iter_generator.spawn(version.2).await {
-                Ok(mut iter) => {
-                    iter.seek_to_first().await;
-                    if iter.valid() {
-                        self.block_iter = Some(iter);
-                        break;
+        loop {
+            match self.index_iter.current() {
+                Ok(Some(ent)) => match self.block_iter_generator.spawn(ent.2).await {
+                    Ok(mut iter) => {
+                        iter.seek_to_first().await;
+                        match iter.current() {
+                            Ok(Some(_)) | Err(_) => {
+                                self.block_iter = Some(iter);
+                                return;
+                            }
+                            _ => self.index_iter.next().await,
+                        }
                     }
-                    if iter.error().is_some() {
-                        self.block_iter = None;
-                        break;
+                    Err(err) => {
+                        self.error = Some(err);
+                        return;
                     }
-                    self.index_iter.next().await;
-                }
-                Err(error) => {
-                    self.error = Some(error);
+                },
+                Ok(None) => {
                     self.block_iter = None;
-                    break;
+                    return;
+                }
+                Err(err) => {
+                    self.error = Some(err);
+                    return;
                 }
             }
         }
@@ -58,18 +65,6 @@ impl TwoLevelIterator {
 
 #[async_trait]
 impl Iterator for TwoLevelIterator {
-    fn valid(&self) -> bool {
-        self.error().is_none() && self.block_iter.as_ref().map_or(false, |x| x.valid())
-    }
-
-    fn error(&self) -> Option<Error> {
-        self.error.clone().or_else(|| {
-            self.index_iter
-                .error()
-                .or_else(|| self.block_iter.as_ref().and_then(|x| x.error()))
-        })
-    }
-
     async fn seek_to_first(&mut self) {
         self.index_iter.seek_to_first().await;
         self.init_block_iter().await;
@@ -84,24 +79,23 @@ impl Iterator for TwoLevelIterator {
     }
 
     async fn next(&mut self) {
-        match self.block_iter.as_mut() {
-            Some(iter) => {
-                iter.next().await;
-                if iter.valid() {
-                    return;
-                }
+        if let Some(iter) = self.block_iter.as_mut() {
+            iter.next().await;
+            if let Ok(None) = iter.current() {
+                self.index_iter.next().await;
+                self.init_block_iter().await;
             }
-            None => return,
         }
-        self.index_iter.next().await;
-        self.init_block_iter().await;
     }
 
-    fn current(&self) -> Option<Entry> {
-        if self.valid() {
-            self.block_iter.as_ref().and_then(|x| x.current())
+    fn current(&self) -> Result<Option<Entry>> {
+        if let Some(err) = self.error.as_ref() {
+            return Err(err.clone());
+        }
+        if let Some(iter) = self.block_iter.as_ref() {
+            iter.current()
         } else {
-            None
+            Ok(None)
         }
     }
 }

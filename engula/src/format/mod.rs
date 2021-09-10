@@ -1,5 +1,5 @@
-mod parquet_builder;
-mod sst;
+mod parquet_table;
+mod sstable;
 mod table;
 
 mod block;
@@ -8,8 +8,8 @@ mod iterator;
 mod merging_iterator;
 mod two_level_iterator;
 
-pub use parquet_builder::{ParquetBuilder, ParquetOptions};
-pub use sst::{SstBuilder, SstOptions, SstReader};
+pub use parquet_table::{ParquetBuilder, ParquetIterator, ParquetOptions};
+pub use sstable::{SstBuilder, SstOptions, SstReader};
 pub use table::{TableBuilder, TableReader};
 
 pub use iterator::{Entry, Iterator};

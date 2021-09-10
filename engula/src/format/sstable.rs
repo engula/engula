@@ -247,17 +247,20 @@ impl SstReader {
             index_block,
         })
     }
+
+    fn new_internal_iterator(&self) -> TwoLevelIterator {
+        let index_iter = BlockIterator::new(self.index_block.clone());
+        let block_iter = SstBlockIterGenerator::new(self.file.clone());
+        TwoLevelIterator::new(Box::new(index_iter), Box::new(block_iter))
+    }
 }
 
 #[async_trait]
 impl TableReader for SstReader {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let mut iter = self.new_iterator().await?;
+        let mut iter = self.new_iterator();
         iter.seek(ts, key).await;
-        if let Some(error) = iter.error() {
-            return Err(error);
-        }
-        if let Some(ent) = iter.current() {
+        if let Some(ent) = iter.current()? {
             if ent.0 <= ts && ent.1 == key {
                 return Ok(Some(ent.2.to_owned()));
             }
@@ -265,11 +268,8 @@ impl TableReader for SstReader {
         Ok(None)
     }
 
-    async fn new_iterator(&self) -> Result<Box<dyn Iterator>> {
-        let index_iter = BlockIterator::new(self.index_block.clone());
-        let block_iter = SstBlockIterGenerator::new(self.file.clone());
-        let two_level_iter = TwoLevelIterator::new(Box::new(index_iter), Box::new(block_iter));
-        Ok(Box::new(two_level_iter))
+    fn new_iterator(&self) -> Box<dyn Iterator> {
+        Box::new(self.new_internal_iterator())
     }
 }
 
@@ -316,19 +316,18 @@ mod tests {
         };
         let file = fs.new_random_access_reader("test.sst").await.unwrap();
         let reader = SstReader::open(&desc, file, None).await.unwrap();
-        let mut iter = reader.new_iterator().await.unwrap();
-        assert!(!iter.valid());
+        let mut iter = reader.new_iterator();
         iter.seek_to_first().await;
         for i in 0..NUM {
             let v = i.to_be_bytes();
-            assert_eq!(iter.current(), Some(Entry(i, &v, &v)));
+            assert_eq!(iter.current().unwrap(), Some(Entry(i, &v, &v)));
             iter.next().await;
         }
-        assert_eq!(iter.current(), None);
+        assert_eq!(iter.current().unwrap(), None);
         let ts = NUM / 2;
         let target = ts.to_be_bytes();
         iter.seek(ts, &target).await;
-        assert_eq!(iter.current(), Some(Entry(ts, &target, &target)));
+        assert_eq!(iter.current().unwrap(), Some(Entry(ts, &target, &target)));
         for i in 0..NUM {
             let expect = i.to_be_bytes();
             let actual = reader.get(i, &expect).await.unwrap().unwrap();

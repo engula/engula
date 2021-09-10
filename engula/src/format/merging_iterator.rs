@@ -6,11 +6,10 @@ use super::{
     iterator::{Entry, Iterator},
     Timestamp,
 };
-use crate::error::Error;
+use crate::error::Result;
 
 pub struct MergingIterator {
     heap: BinaryHeap<Reverse<Box<dyn Iterator>>>,
-    error: Option<Error>,
 }
 
 impl MergingIterator {
@@ -19,43 +18,25 @@ impl MergingIterator {
         for child in children {
             heap.push(Reverse(child));
         }
-        MergingIterator { heap, error: None }
+        MergingIterator { heap }
     }
 }
 
 #[async_trait]
 impl Iterator for MergingIterator {
-    fn valid(&self) -> bool {
-        self.error.is_none() && self.heap.peek().map_or(false, |x| x.0.valid())
-    }
-
-    fn error(&self) -> Option<Error> {
-        self.error.clone()
-    }
-
     async fn seek_to_first(&mut self) {
-        assert!(self.error.is_none());
         let mut children = Vec::new();
         for mut child in self.heap.drain() {
             child.0.seek_to_first().await;
-            if let Some(error) = child.0.error() {
-                self.error = Some(error);
-                break;
-            }
             children.push(child);
         }
         self.heap = BinaryHeap::from(children);
     }
 
     async fn seek(&mut self, ts: Timestamp, target: &[u8]) {
-        assert!(self.error.is_none());
         let mut children = Vec::new();
         for mut child in self.heap.drain() {
             child.0.seek(ts, target).await;
-            if let Some(error) = child.0.error() {
-                self.error = Some(error);
-                return;
-            }
             children.push(child);
         }
         self.heap = BinaryHeap::from(children);
@@ -64,19 +45,15 @@ impl Iterator for MergingIterator {
     async fn next(&mut self) {
         if let Some(mut top) = self.heap.pop() {
             top.0.next().await;
-            if let Some(error) = top.0.error() {
-                self.error = Some(error);
-                return;
-            }
             self.heap.push(top);
         }
     }
 
-    fn current(&self) -> Option<Entry> {
-        if self.valid() {
-            self.heap.peek().and_then(|x| x.0.current())
+    fn current(&self) -> Result<Option<Entry>> {
+        if let Some(top) = self.heap.peek() {
+            top.0.current()
         } else {
-            None
+            Ok(None)
         }
     }
 }
@@ -101,7 +78,7 @@ mod tests {
             let mut iter = BlockIterator::new(Arc::new(block));
             iter.seek_to_first().await;
             for v in versions {
-                assert_eq!(iter.current(), Some(v.into()));
+                assert_eq!(iter.current().unwrap(), Some(v.into()));
                 iter.next().await;
             }
             iter
@@ -117,7 +94,7 @@ mod tests {
             let mut iter = BlockIterator::new(Arc::new(block));
             iter.seek_to_first().await;
             for v in versions {
-                assert_eq!(iter.current(), Some(v.into()));
+                assert_eq!(iter.current().unwrap(), Some(v.into()));
                 iter.next().await;
             }
             iter
@@ -133,21 +110,28 @@ mod tests {
         ];
 
         let mut iter = MergingIterator::new(vec![Box::new(iter1), Box::new(iter2)]);
-        assert!(!iter.valid());
         iter.seek_to_first().await;
         for v in versions {
-            assert!(iter.valid());
-            assert_eq!(iter.current(), Some(v.into()));
+            assert_eq!(iter.current().unwrap(), Some(v.into()));
             iter.next().await;
         }
-        assert_eq!(iter.current(), None);
+        assert_eq!(iter.current().unwrap(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some(Entry(2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(
+            iter.current().unwrap(),
+            Some(Entry(2, [2].as_ref(), [2].as_ref()))
+        );
         iter.next().await;
-        assert_eq!(iter.current(), Some(Entry(5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(
+            iter.current().unwrap(),
+            Some(Entry(5, [5].as_ref(), [5].as_ref()))
+        );
         iter.next().await;
-        assert_eq!(iter.current(), Some(Entry(6, [6].as_ref(), [6].as_ref())));
+        assert_eq!(
+            iter.current().unwrap(),
+            Some(Entry(6, [6].as_ref(), [6].as_ref()))
+        );
         iter.next().await;
-        assert_eq!(iter.current(), None);
+        assert_eq!(iter.current().unwrap(), None);
     }
 }

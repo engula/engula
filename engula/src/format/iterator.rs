@@ -3,7 +3,7 @@ use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use async_trait::async_trait;
 
 use super::Timestamp;
-use crate::error::Error;
+use crate::error::Result;
 
 #[derive(Debug)]
 pub struct Entry<'a>(pub Timestamp, pub &'a [u8], pub &'a [u8]);
@@ -40,17 +40,13 @@ impl<'a> PartialOrd for Entry<'a> {
 
 #[async_trait]
 pub trait Iterator: Send + Sync {
-    fn valid(&self) -> bool;
-
-    fn error(&self) -> Option<Error>;
-
     async fn seek_to_first(&mut self);
 
     async fn seek(&mut self, ts: Timestamp, key: &[u8]);
 
     async fn next(&mut self);
 
-    fn current(&self) -> Option<Entry>;
+    fn current(&self) -> Result<Option<Entry>>;
 }
 
 impl Eq for Box<dyn Iterator> {}
@@ -58,8 +54,11 @@ impl Eq for Box<dyn Iterator> {}
 impl PartialEq for Box<dyn Iterator> {
     fn eq(&self, other: &Self) -> bool {
         match (self.current(), other.current()) {
-            (Some(left), Some(right)) => left == right,
-            (None, None) => true,
+            (Ok(left), Ok(right)) => match (left, right) {
+                (Some(left), Some(right)) => left == right,
+                (None, None) => true,
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -68,10 +67,14 @@ impl PartialEq for Box<dyn Iterator> {
 impl Ord for Box<dyn Iterator> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self.current(), other.current()) {
-            (Some(left), Some(right)) => left.cmp(&right),
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => Ordering::Equal,
+            (Ok(left), Ok(right)) => match (left, right) {
+                (Some(left), Some(right)) => left.cmp(&right),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+            (Err(_), _) => Ordering::Less,
+            (_, Err(_)) => Ordering::Greater,
         }
     }
 }

@@ -25,13 +25,13 @@ impl CompactionRuntime for LocalCompaction {
         let mut children = Vec::new();
         for desc in &input.tables {
             let reader = self.storage.new_reader(desc).await?;
-            let iter = reader.new_iterator().await?;
+            let iter = reader.new_iterator();
             children.push(iter);
         }
         let mut iter = MergingIterator::new(children);
         let mut builder = self.storage.new_builder(input.output_table_number).await?;
         iter.seek_to_first().await;
-        while let Some(v) = iter.current() {
+        while let Some(v) = iter.current()? {
             builder.add(v.0, v.1, v.2).await;
             iter.next().await;
         }

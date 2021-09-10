@@ -7,7 +7,7 @@ use crate::error::Result;
 pub trait TableReader: Send + Sync {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
-    async fn new_iterator(&self) -> Result<Box<dyn Iterator>>;
+    fn new_iterator(&self) -> Box<dyn Iterator>;
 }
 
 #[async_trait]

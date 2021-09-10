@@ -7,7 +7,7 @@ use super::{
     iterator::{Entry, Iterator},
     Timestamp,
 };
-use crate::error::Error;
+use crate::error::Result;
 
 pub const BLOCK_HANDLE_SIZE: u64 = 16;
 
@@ -127,14 +127,6 @@ impl BlockIterator {
 
 #[async_trait]
 impl Iterator for BlockIterator {
-    fn valid(&self) -> bool {
-        self.current_offset < self.restart_offset
-    }
-
-    fn error(&self) -> Option<Error> {
-        None
-    }
-
     async fn seek_to_first(&mut self) {
         self.current_offset = 0;
     }
@@ -156,8 +148,8 @@ impl Iterator for BlockIterator {
 
         self.current_offset = self.decode_restart_offset(left);
 
-        while let Some(version) = self.current() {
-            if version >= target {
+        while let Ok(Some(ent)) = self.current() {
+            if ent >= target {
                 break;
             }
             self.next().await;
@@ -174,11 +166,11 @@ impl Iterator for BlockIterator {
         }
     }
 
-    fn current(&self) -> Option<Entry> {
-        if self.valid() {
-            Some(decode_entry(&self.data, self.current_offset, None))
+    fn current(&self) -> Result<Option<Entry>> {
+        if self.current_offset < self.restart_offset {
+            Ok(Some(decode_entry(&self.data, self.current_offset, None)))
         } else {
-            None
+            Ok(None)
         }
     }
 }
@@ -202,17 +194,21 @@ mod tests {
         }
         let block = builder.finish().to_owned();
         let mut iter = BlockIterator::new(Arc::new(block));
-        assert!(!iter.valid());
         iter.seek_to_first().await;
         for v in versions {
-            assert!(iter.valid());
-            assert_eq!(iter.current(), Some(v.into()));
+            assert_eq!(iter.current().unwrap(), Some(v.into()));
             iter.next().await;
         }
-        assert_eq!(iter.current(), None);
+        assert_eq!(iter.current().unwrap(), None);
         iter.seek(3, &[2]).await;
-        assert_eq!(iter.current(), Some(Entry(2, [2].as_ref(), [2].as_ref())));
+        assert_eq!(
+            iter.current().unwrap(),
+            Some(Entry(2, [2].as_ref(), [2].as_ref()))
+        );
         iter.next().await;
-        assert_eq!(iter.current(), Some(Entry(5, [5].as_ref(), [5].as_ref())));
+        assert_eq!(
+            iter.current().unwrap(),
+            Some(Entry(5, [5].as_ref(), [5].as_ref()))
+        );
     }
 }
