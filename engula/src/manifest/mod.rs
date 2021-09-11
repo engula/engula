@@ -13,7 +13,7 @@ use crate::{error::Result, format::TableDesc};
 tonic::include_proto!("engula.manifest");
 
 pub struct ManifestOptions {
-    pub num_levels: u32,
+    pub num_levels: usize,
 }
 
 impl ManifestOptions {

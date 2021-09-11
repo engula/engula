@@ -49,8 +49,9 @@ impl LocalManifest {
         if compaction.is_some() {
             task::spawn(async move {
                 while let Some(input) = compaction {
-                    let output = runtime.compact(input).await.unwrap();
-                    core.install_compaction(output).await;
+                    if let Ok(output) = runtime.compact(input).await {
+                        core.install_compaction(output).await;
+                    }
                     compaction = core.pick_compaction().await;
                 }
                 *pending.lock().await = false;
@@ -117,7 +118,7 @@ impl Core {
 
     async fn pick_compaction(&self) -> Option<CompactionInput> {
         let current = self.current.lock().await;
-        if current.tables.len() <= self.options.num_levels as usize {
+        if current.tables.len() <= self.options.num_levels {
             return None;
         }
         let mut input_size = 0;

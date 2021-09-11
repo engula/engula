@@ -18,7 +18,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct SstOptions {
-    block_size: u64,
+    pub block_size: usize,
 }
 
 impl SstOptions {
@@ -78,7 +78,7 @@ impl TableBuilder for SstBuilder {
         self.last_ts = ts;
         self.last_key = this_key;
         self.data_block.add(ts, key, value);
-        if self.data_block.approximate_size() >= self.options.block_size as usize {
+        if self.data_block.approximate_size() >= self.options.block_size {
             if let Err(error) = self.flush_data_block().await {
                 self.error = Some(error);
             }

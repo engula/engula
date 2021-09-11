@@ -13,6 +13,7 @@ mod write;
 
 pub use compaction::{CompactionRuntime, LocalCompaction, RemoteCompaction};
 pub use database::{Database, Options};
+pub use error::{Error, Result};
 pub use format::SstOptions;
 pub use fs::{Fs, LocalFs, RemoteFs};
 pub use journal::{Journal, LocalJournal, QuorumJournal};

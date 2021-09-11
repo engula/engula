@@ -7,6 +7,10 @@ homepage = "https://engula.com"
 repository = "https://github.com/engula/engula"
 description = "A cloud-native storage engine for next-generation data infrastructures."
 
+[[bin]]
+name = "engula"
+path = "bin/engula.rs"
+
 [dependencies]
 clap = "3.0.0-beta.4"
 tokio = { version = "1", features = ["full"] }
