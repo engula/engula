@@ -2,6 +2,7 @@ mod journal_service;
 mod local_journal;
 mod quorum_journal;
 
+pub use journal_server::JournalServer;
 pub use journal_service::JournalService;
 pub use local_journal::LocalJournal;
 pub use quorum_journal::QuorumJournal;

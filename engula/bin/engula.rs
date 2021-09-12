@@ -1,4 +1,5 @@
 mod bench;
+mod start;
 
 use clap::Clap;
 
@@ -11,14 +12,18 @@ struct Command {
 #[derive(Clap)]
 enum SubCommand {
     Bench(bench::Command),
+    Start(start::Command),
 }
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let appender = tracing_appender::rolling::never("/tmp/engula/", "LOG");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
+    tracing_subscriber::fmt().with_writer(non_blocking).init();
+
     let cmd: Command = Command::parse();
-    let future = match &cmd.subcmd {
-        SubCommand::Bench(cmd) => cmd.run(),
-    };
-    future.await.unwrap();
+    match &cmd.subcmd {
+        SubCommand::Bench(cmd) => cmd.run().await.unwrap(),
+        SubCommand::Start(cmd) => cmd.run().await.unwrap(),
+    }
 }

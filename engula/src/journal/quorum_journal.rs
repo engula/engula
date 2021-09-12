@@ -20,7 +20,6 @@ pub struct QuorumJournal {
 }
 
 impl QuorumJournal {
-    #[allow(dead_code)]
     pub async fn new(urls: Vec<String>, timeout: Duration) -> Result<QuorumJournal> {
         let mut clients = Vec::new();
         for url in urls {

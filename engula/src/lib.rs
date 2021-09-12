@@ -16,6 +16,6 @@ pub use database::{Database, Options};
 pub use error::{Error, Result};
 pub use format::SstOptions;
 pub use fs::{Fs, LocalFs, RemoteFs};
-pub use journal::{Journal, LocalJournal, QuorumJournal};
+pub use journal::{Journal, JournalServer, JournalService, LocalJournal, QuorumJournal};
 pub use manifest::{LocalManifest, Manifest, ManifestOptions, RemoteManifest};
 pub use storage::{SstStorage, Storage};

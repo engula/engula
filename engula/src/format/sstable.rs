@@ -16,7 +16,7 @@ use crate::{
     fs::{RandomAccessReader, SequentialWriter},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SstOptions {
     pub block_size: usize,
 }

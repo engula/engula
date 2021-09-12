@@ -11,7 +11,7 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex, RwLock},
     task, time,
 };
-use tracing::error;
+use tracing::{error, info, warn};
 
 use crate::{
     error::Result,
@@ -24,7 +24,7 @@ use crate::{
     write::{Write, WriteBatch, WriteBatchReceiver, WriteReceiver},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Options {
     pub num_cores: usize,
     pub memtable_size: usize,
@@ -60,10 +60,12 @@ impl Database {
 
         let mut cores = Vec::new();
         for i in 0..options.num_cores {
+            let mut options = options.clone();
+            options.memtable_size /= options.num_cores;
             let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
             let (memtable_tx, memtable_rx) = mpsc::channel(options.write_channel_size);
             let vset = VersionSet::new(i as u64, storage.clone(), manifest.clone());
-            let core = Core::new(options.clone(), write_tx, memtable_tx, vset).await?;
+            let core = Core::new(options, write_tx, memtable_tx, vset).await?;
             let core = Arc::new(core);
 
             // Spawns a task to handle writes per core.
@@ -168,6 +170,8 @@ impl Core {
                 buffer,
             };
             tx.send(batch).await.unwrap();
+            // Gives way to clients.
+            task::yield_now().await;
         }
     }
 
@@ -189,6 +193,7 @@ impl Core {
     async fn flush_memtable(&self) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
+            warn!("stalling because of pending flush");
             handle.await.unwrap();
         }
         let super_handle = self.super_handle.clone();
@@ -247,6 +252,7 @@ impl SuperVersionHandle {
     }
 
     async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<()> {
+        info!("flush memtable size {}", mem.approximate_size());
         let version = self.vset.flush_memtable(mem).await?;
         self.install_flush_version(version).await;
         Ok(())
@@ -312,6 +318,8 @@ async fn write_journal(
         for batch in batch.writes {
             batch.tx.send(batch.writes).await.unwrap();
         }
+        // Gives way to clients.
+        task::yield_now().await;
     }
 }
 

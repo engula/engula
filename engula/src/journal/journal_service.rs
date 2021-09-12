@@ -7,7 +7,6 @@ pub struct JournalService {
 }
 
 impl JournalService {
-    #[allow(dead_code)]
     pub fn new(journal: Box<dyn Journal>) -> JournalService {
         JournalService { journal }
     }
@@ -22,11 +21,5 @@ impl journal_server::Journal for JournalService {
         let input = request.into_inner();
         self.journal.append(input.data).await?;
         Ok(Response::new(AppendResponse {}))
-    }
-}
-
-impl From<JournalService> for journal_server::JournalServer<JournalService> {
-    fn from(s: JournalService) -> journal_server::JournalServer<JournalService> {
-        journal_server::JournalServer::new(s)
     }
 }
