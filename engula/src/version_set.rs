@@ -44,14 +44,16 @@ impl Version {
 }
 
 pub struct VersionSet {
+    id: u64,
     current: Mutex<Arc<Version>>,
     storage: Arc<dyn Storage>,
     manifest: Arc<dyn Manifest>,
 }
 
 impl VersionSet {
-    pub async fn new(storage: Arc<dyn Storage>, manifest: Arc<dyn Manifest>) -> VersionSet {
+    pub fn new(id: u64, storage: Arc<dyn Storage>, manifest: Arc<dyn Manifest>) -> VersionSet {
         VersionSet {
+            id,
             current: Mutex::new(Arc::new(Version::new())),
             storage,
             manifest,
@@ -59,7 +61,7 @@ impl VersionSet {
     }
 
     pub async fn current(&self) -> Result<Arc<Version>> {
-        let version = self.manifest.current().await?;
+        let version = self.manifest.current(self.id).await?;
         self.install_version(version).await
     }
 
@@ -71,7 +73,7 @@ impl VersionSet {
             builder.add(ent.0, ent.1, ent.2).await;
         }
         let table = builder.finish().await?;
-        let version = self.manifest.add_table(table).await?;
+        let version = self.manifest.add_table(self.id, table).await?;
         self.install_version(version).await
     }
 

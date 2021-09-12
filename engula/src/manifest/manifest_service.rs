@@ -21,9 +21,10 @@ impl ManifestService {
 impl manifest_server::Manifest for ManifestService {
     async fn current(
         &self,
-        _: Request<CurrentRequest>,
+        request: Request<CurrentRequest>,
     ) -> Result<Response<CurrentResponse>, Status> {
-        let version = self.manifest.current().await?;
+        let input = request.into_inner();
+        let version = self.manifest.current(input.id).await?;
         Ok(Response::new(CurrentResponse {
             version: Some(version),
         }))
@@ -35,7 +36,7 @@ impl manifest_server::Manifest for ManifestService {
     ) -> Result<Response<AddTableResponse>, Status> {
         let input = request.into_inner();
         let table = input.table.unwrap();
-        let version = self.manifest.add_table(table).await?;
+        let version = self.manifest.add_table(input.id, table).await?;
         Ok(Response::new(AddTableResponse {
             version: Some(version),
         }))

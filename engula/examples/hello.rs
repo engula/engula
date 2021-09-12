@@ -7,6 +7,8 @@ use engula::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let dirname = "/tmp/engula";
     let _ = std::fs::remove_dir_all(dirname);
 
@@ -32,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..4 {
         let db_clone = db.clone();
         let task = tokio::task::spawn(async move {
-            for i in 0..1024u64 {
+            for i in 0..10000u64 {
                 let v = i.to_be_bytes().to_vec();
                 db_clone.put(v.clone(), v.clone()).await.unwrap();
                 let got = db_clone.get(&v).await.unwrap();

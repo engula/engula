@@ -25,18 +25,21 @@ impl RemoteManifest {
 
 #[async_trait]
 impl Manifest for RemoteManifest {
-    async fn current(&self) -> Result<VersionDesc> {
+    async fn current(&self, id: u64) -> Result<VersionDesc> {
         let mut client = self.client.lock().await;
-        let input = CurrentRequest::default();
+        let input = CurrentRequest { id };
         let request = Request::new(input);
         let response = client.current(request).await?;
         let output = response.into_inner();
         Ok(output.version.unwrap())
     }
 
-    async fn add_table(&self, table: TableDesc) -> Result<VersionDesc> {
+    async fn add_table(&self, id: u64, table: TableDesc) -> Result<VersionDesc> {
         let mut client = self.client.lock().await;
-        let input = AddTableRequest { table: Some(table) };
+        let input = AddTableRequest {
+            id,
+            table: Some(table),
+        };
         let request = Request::new(input);
         let response = client.add_table(request).await?;
         let output = response.into_inner();

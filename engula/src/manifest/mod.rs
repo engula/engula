@@ -24,9 +24,9 @@ impl ManifestOptions {
 
 #[async_trait]
 pub trait Manifest: Send + Sync {
-    async fn current(&self) -> Result<VersionDesc>;
+    async fn current(&self, id: u64) -> Result<VersionDesc>;
 
-    async fn add_table(&self, desc: TableDesc) -> Result<VersionDesc>;
+    async fn add_table(&self, id: u64, desc: TableDesc) -> Result<VersionDesc>;
 
     async fn next_number(&self) -> Result<u64>;
 }

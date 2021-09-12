@@ -1,12 +1,17 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::Hasher,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use tokio::{
     sync::{mpsc, oneshot, Mutex, RwLock},
     task, time,
 };
+use tracing::error;
 
 use crate::{
     error::Result,
@@ -16,11 +21,12 @@ use crate::{
     memtable::{BTreeTable, MemTable},
     storage::Storage,
     version_set::{Version, VersionSet},
-    write::{BatchReceiver, Write},
+    write::{Write, WriteBatch, WriteBatchReceiver, WriteReceiver},
 };
 
 #[derive(Clone)]
 pub struct Options {
+    pub num_cores: usize,
     pub memtable_size: usize,
     pub write_batch_size: usize,
     pub write_channel_size: usize,
@@ -29,6 +35,7 @@ pub struct Options {
 impl Options {
     pub fn default() -> Options {
         Options {
+            num_cores: 4,
             memtable_size: 4 * 1024,
             write_batch_size: 4 * 1024,
             write_channel_size: 4 * 1024,
@@ -37,9 +44,8 @@ impl Options {
 }
 
 pub struct Database {
-    core: Arc<Core>,
+    cores: Vec<Arc<Core>>,
     next_ts: AtomicU64,
-    write_tx: mpsc::Sender<Write>,
 }
 
 impl Database {
@@ -49,38 +55,68 @@ impl Database {
         storage: Arc<dyn Storage>,
         manifest: Arc<dyn Manifest>,
     ) -> Result<Database> {
-        let core = Core::new(options.clone(), journal, storage, manifest).await?;
-        let core = Arc::new(core);
-        let core_clone = core.clone();
-        let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
+        let (journal_tx, journal_rx) = mpsc::channel(options.write_channel_size);
+        let journal_tx = Arc::new(journal_tx);
+
+        let mut cores = Vec::new();
+        for i in 0..options.num_cores {
+            let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
+            let (memtable_tx, memtable_rx) = mpsc::channel(options.write_channel_size);
+            let vset = VersionSet::new(i as u64, storage.clone(), manifest.clone());
+            let core = Core::new(options.clone(), write_tx, memtable_tx, vset).await?;
+            let core = Arc::new(core);
+
+            // Spawns a task to handle writes per core.
+            let core_clone = core.clone();
+            let journal_tx_clone = journal_tx.clone();
+            task::spawn(async move {
+                core_clone.write_batch(write_rx, journal_tx_clone).await;
+            });
+
+            // Spawns a task to handle memtable writes per core.
+            let core_clone = core.clone();
+            task::spawn(async move {
+                core_clone.write_memtable(memtable_rx).await;
+            });
+
+            cores.push(core);
+        }
+
+        // Spawns a task to handle journal writes per database.
         task::spawn(async move {
-            core_clone.write(write_rx).await;
+            write_journal(options, journal, journal_rx).await;
         });
+
         Ok(Database {
-            core,
+            cores,
             next_ts: AtomicU64::new(0),
-            write_tx,
         })
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let ts = self.next_ts.load(Ordering::SeqCst);
-        self.core.get(ts, key).await
+        let core = self.select_core(key);
+        core.get(ts, key).await
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
-        let (tx, rx) = oneshot::channel();
-        let write = Write { tx, ts, key, value };
-        self.write_tx.send(write).await?;
-        rx.await?;
-        Ok(())
+        let core = self.select_core(&key);
+        core.put(ts, key, value).await
+    }
+
+    fn select_core(&self, key: &[u8]) -> Arc<Core> {
+        let mut hasher = DefaultHasher::new();
+        hasher.write(key);
+        let hash = hasher.finish() as usize;
+        self.cores[hash % self.cores.len()].clone()
     }
 }
 
 struct Core {
     options: Options,
-    journal: Arc<dyn Journal>,
+    write_tx: mpsc::Sender<Write>,
+    memtable_tx: Arc<mpsc::Sender<Vec<Write>>>,
     super_handle: Arc<SuperVersionHandle>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
 }
@@ -88,12 +124,11 @@ struct Core {
 impl Core {
     async fn new(
         options: Options,
-        journal: Arc<dyn Journal>,
-        storage: Arc<dyn Storage>,
-        manifest: Arc<dyn Manifest>,
+        write_tx: mpsc::Sender<Write>,
+        memtable_tx: mpsc::Sender<Vec<Write>>,
+        version_set: VersionSet,
     ) -> Result<Core> {
-        let vset = VersionSet::new(storage, manifest).await;
-        let super_handle = SuperVersionHandle::new(vset).await?;
+        let super_handle = SuperVersionHandle::new(version_set).await?;
         let super_handle = Arc::new(super_handle);
         let super_handle_clone = super_handle.clone();
         task::spawn(async move {
@@ -101,7 +136,8 @@ impl Core {
         });
         Ok(Core {
             options,
-            journal,
+            write_tx,
+            memtable_tx: Arc::new(memtable_tx),
             super_handle,
             flush_handle: Mutex::new(None),
         })
@@ -111,14 +147,32 @@ impl Core {
         self.super_handle.get(ts, key).await
     }
 
-    async fn write(&self, rx: mpsc::Receiver<Write>) {
-        let mut batch_rx = BatchReceiver::new(rx, self.options.write_batch_size);
+    async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        let write = Write { tx, ts, key, value };
+        self.write_tx.send(write).await?;
+        rx.await?;
+        Ok(())
+    }
+
+    async fn write_batch(&self, rx: mpsc::Receiver<Write>, tx: Arc<mpsc::Sender<WriteBatch>>) {
+        let mut batch_rx = WriteReceiver::new(rx, self.options.write_batch_size);
         while let Some(writes) = batch_rx.recv().await {
-            let mut data = Vec::new();
+            let mut buffer = Vec::with_capacity(self.options.write_batch_size);
             for write in &writes {
-                write.encode_to(&mut data);
+                write.encode_to(&mut buffer);
             }
-            self.journal.append(data).await.unwrap();
+            let batch = WriteBatch {
+                tx: self.memtable_tx.clone(),
+                writes,
+                buffer,
+            };
+            tx.send(batch).await.unwrap();
+        }
+    }
+
+    async fn write_memtable(&self, mut rx: mpsc::Receiver<Vec<Write>>) {
+        while let Some(writes) = rx.recv().await {
             for write in writes {
                 let memtable_size = self
                     .super_handle
@@ -138,8 +192,9 @@ impl Core {
             handle.await.unwrap();
         }
         let super_handle = self.super_handle.clone();
+        let imm = super_handle.switch_memtable().await;
         let handle = task::spawn(async move {
-            super_handle.flush_memtable().await.unwrap();
+            super_handle.flush_memtable(imm.clone()).await.unwrap();
         });
         *flush_handle = Some(handle);
     }
@@ -191,9 +246,8 @@ impl SuperVersionHandle {
         current.mem.approximate_size()
     }
 
-    async fn flush_memtable(&self) -> Result<()> {
-        let imm = self.switch_memtable().await;
-        let version = self.vset.flush_memtable(imm).await?;
+    async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<()> {
+        let version = self.vset.flush_memtable(mem).await?;
         self.install_flush_version(version).await;
         Ok(())
     }
@@ -245,11 +299,28 @@ impl SuperVersionHandle {
     }
 }
 
+async fn write_journal(
+    options: Options,
+    journal: Arc<dyn Journal>,
+    rx: mpsc::Receiver<WriteBatch>,
+) {
+    let mut batch_rx = WriteBatchReceiver::new(rx, options.write_batch_size);
+    while let Some(batch) = batch_rx.recv().await {
+        if let Err(err) = journal.append(batch.buffer).await {
+            error!("write journal: {}", err);
+        }
+        for batch in batch.writes {
+            batch.tx.send(batch.writes).await.unwrap();
+        }
+    }
+}
+
 async fn update_version(handle: Arc<SuperVersionHandle>) {
     let mut interval = time::interval(time::Duration::from_secs(1));
     loop {
         interval.tick().await;
-        let version = handle.vset.current().await.unwrap();
-        handle.install_version(version).await;
+        if let Ok(version) = handle.vset.current().await {
+            handle.install_version(version).await;
+        }
     }
 }

@@ -17,11 +17,14 @@ message VersionDesc {
   repeated engula.format.TableDesc tables = 2;
 }
 
-message CurrentRequest {}
+message CurrentRequest { uint64 id = 1; }
 
 message CurrentResponse { VersionDesc version = 1; }
 
-message AddTableRequest { engula.format.TableDesc table = 1; }
+message AddTableRequest {
+  uint64 id = 1;
+  engula.format.TableDesc table = 2;
+}
 
 message AddTableResponse { VersionDesc version = 1; }
 

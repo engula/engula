@@ -64,11 +64,11 @@ impl LocalManifest {
 
 #[async_trait]
 impl Manifest for LocalManifest {
-    async fn current(&self) -> Result<VersionDesc> {
+    async fn current(&self, _: u64) -> Result<VersionDesc> {
         Ok(self.core.current().await)
     }
 
-    async fn add_table(&self, table: TableDesc) -> Result<VersionDesc> {
+    async fn add_table(&self, _: u64, table: TableDesc) -> Result<VersionDesc> {
         let version = self.core.add_table(table).await;
         self.schedule_compaction().await;
         Ok(version)
