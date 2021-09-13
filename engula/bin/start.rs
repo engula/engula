@@ -1,5 +1,5 @@
 use clap::Clap;
-use engula::{JournalServer, JournalService, LocalJournal, Result};
+use engula::*;
 use tonic::transport::Server;
 
 #[derive(Clap)]
@@ -36,8 +36,11 @@ impl JournalCommand {
     async fn run(&self) -> Result<()> {
         println!("{:?}", self);
         let addr = self.addr.parse().unwrap();
-        let journal = Box::new(LocalJournal::new(&self.path, self.sync)?);
-        let service = JournalService::new(journal);
+        let options = JournalOptions {
+            sync: self.sync,
+            chunk_size: 1024,
+        };
+        let service = JournalService::new(&self.path, options)?;
         Server::builder()
             .add_service(JournalServer::new(service))
             .serve(addr)

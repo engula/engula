@@ -7,28 +7,28 @@ use std::{
     },
 };
 
+use futures::StreamExt;
 use tokio::{
     sync::{mpsc, oneshot, Mutex, RwLock},
     task, time,
 };
-use tracing::{error, info, warn};
+use tokio_stream::wrappers::ReceiverStream;
+use tracing::{info, warn};
 
 use crate::{
     error::Result,
     format::Timestamp,
-    journal::Journal,
+    journal::{Journal, Write, WriteBatch},
     manifest::Manifest,
     memtable::{BTreeTable, MemTable},
     storage::Storage,
     version_set::{Version, VersionSet},
-    write::{Write, WriteBatch, WriteBatchReceiver, WriteReceiver},
 };
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub num_cores: usize,
     pub memtable_size: usize,
-    pub write_batch_size: usize,
     pub write_channel_size: usize,
 }
 
@@ -36,9 +36,8 @@ impl Options {
     pub fn default() -> Options {
         Options {
             num_cores: 4,
-            memtable_size: 4 * 1024,
-            write_batch_size: 4 * 1024,
-            write_channel_size: 4 * 1024,
+            memtable_size: 1024,
+            write_channel_size: 1024,
         }
     }
 }
@@ -86,7 +85,7 @@ impl Database {
 
         // Spawns a task to handle journal writes per database.
         task::spawn(async move {
-            write_journal(options, journal, journal_rx).await;
+            journal.append_stream(journal_rx).await.unwrap();
         });
 
         Ok(Database {
@@ -158,16 +157,16 @@ impl Core {
     }
 
     async fn write_batch(&self, rx: mpsc::Receiver<Write>, tx: Arc<mpsc::Sender<WriteBatch>>) {
-        let mut batch_rx = WriteReceiver::new(rx, self.options.write_batch_size);
-        while let Some(writes) = batch_rx.recv().await {
-            let mut buffer = Vec::with_capacity(self.options.write_batch_size);
+        let mut stream = ReceiverStream::new(rx).ready_chunks(self.options.write_channel_size);
+        while let Some(writes) = stream.next().await {
+            let mut buffer = Vec::with_capacity(1024 * 1024);
             for write in &writes {
                 write.encode_to(&mut buffer);
             }
             let batch = WriteBatch {
                 tx: self.memtable_tx.clone(),
-                writes,
                 buffer,
+                writes,
             };
             tx.send(batch).await.unwrap();
             // Gives way to clients.
@@ -302,24 +301,6 @@ impl SuperVersionHandle {
             imm: None,
             version,
         });
-    }
-}
-
-async fn write_journal(
-    options: Options,
-    journal: Arc<dyn Journal>,
-    rx: mpsc::Receiver<WriteBatch>,
-) {
-    let mut batch_rx = WriteBatchReceiver::new(rx, options.write_batch_size);
-    while let Some(batch) = batch_rx.recv().await {
-        if let Err(err) = journal.append(batch.buffer).await {
-            error!("write journal: {}", err);
-        }
-        for batch in batch.writes {
-            batch.tx.send(batch.writes).await.unwrap();
-        }
-        // Gives way to clients.
-        task::yield_now().await;
     }
 }
 

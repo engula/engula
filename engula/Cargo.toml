@@ -15,6 +15,7 @@ path = "bin/engula.rs"
 clap = "3.0.0-beta.4"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+async-stream = "0.3"
 tracing = "0.1"
 tracing-appender = "0.1"
 tracing-subscriber = "0.2"
@@ -25,10 +26,9 @@ futures = "0.3"
 tonic = "0.5"
 prost = "0.8"
 parquet = "5.3"
+bit-vec = "0.6"
 aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types" }
 aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3" }
-bit-vec = "0.6"
-num_cpus = "1.0"
 
 [build-dependencies]
 tonic-build = "0.5"

@@ -1,80 +1,72 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{collections::VecDeque, sync::Arc};
 
 use async_trait::async_trait;
-use tokio::{sync::Mutex, time::timeout};
+use futures::StreamExt;
+use tokio::{
+    sync::{mpsc, Mutex},
+    task,
+};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Request};
 
-use super::{journal_client, AppendRequest, Journal};
+use super::{journal_client, write::WriteBatch, Journal, JournalOptions, JournalRecord};
 use crate::error::Result;
 
 type JournalClient = journal_client::JournalClient<Channel>;
 
 pub struct QuorumJournal {
-    clients: Mutex<Vec<JournalClient>>,
-    timeout: Duration,
+    options: JournalOptions,
+    clients: Vec<JournalClient>,
 }
 
 impl QuorumJournal {
-    pub async fn new(urls: Vec<String>, timeout: Duration) -> Result<QuorumJournal> {
+    pub async fn new(urls: Vec<String>, options: JournalOptions) -> Result<QuorumJournal> {
         let mut clients = Vec::new();
         for url in urls {
             let client = JournalClient::connect(url).await?;
             clients.push(client);
         }
-        let journal = QuorumJournal {
-            clients: Mutex::new(clients),
-            timeout,
-        };
-        Ok(journal)
+        Ok(QuorumJournal { options, clients })
     }
 }
 
 #[async_trait]
 impl Journal for QuorumJournal {
-    async fn append(&self, data: Vec<u8>) -> Result<()> {
-        let input = AppendRequest { data };
-        let mut clients = self.clients.lock().await;
-        let mut flights = Vec::new();
-        for client in clients.iter_mut() {
-            let request = Request::new(input.clone());
-            flights.push(Box::pin(client.append(request)));
-        }
-        let quorum = QuorumFuture::new(flights);
-        timeout(self.timeout, quorum).await?;
-        Ok(())
-    }
-}
-
-struct QuorumFuture<F> {
-    futures: Vec<F>,
-}
-
-impl<F: Future + Unpin> QuorumFuture<F> {
-    fn new(futures: Vec<F>) -> QuorumFuture<F> {
-        QuorumFuture { futures }
-    }
-}
-
-impl<F: Future + Unpin> Future for QuorumFuture<F> {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut count = 0;
-        for f in &mut self.futures {
-            let future = Pin::new(f);
-            if future.poll(cx).is_ready() {
-                count += 1;
+    async fn append_stream(&self, rx: mpsc::Receiver<WriteBatch>) -> Result<()> {
+        let producer = Arc::new(Mutex::new(VecDeque::new()));
+        let consumer = producer.clone();
+        let mut stream = ReceiverStream::new(rx).ready_chunks(self.options.chunk_size);
+        let input_stream = async_stream::stream! {
+            let mut sequence = 0;
+            while let Some(mut batches) = stream.next().await {
+                sequence += 1;
+                let mut data = Vec::with_capacity(1024 * 1024);
+                for batch in &mut batches {
+                    data.append(&mut batch.buffer);
+                }
+                producer.lock().await.push_back((sequence, batches));
+                yield JournalRecord { sequence, data };
             }
+        };
+
+        let mut client = self.clients[0].clone();
+        let request = Request::new(input_stream);
+        let response = client.append(request).await?;
+        let mut output_stream = response.into_inner();
+
+        while let Some(output) = output_stream.message().await? {
+            let readies = {
+                let mut consumer = consumer.lock().await;
+                let index = consumer.partition_point(|x| x.0 <= output.sequence);
+                consumer.drain(0..index).collect::<VecDeque<_>>()
+            };
+            for (_, batches) in readies {
+                for batch in batches {
+                    batch.tx.send(batch.writes).await?;
+                }
+            }
+            task::yield_now().await;
         }
-        if count > self.futures.len() / 2 {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
+        Ok(())
     }
 }

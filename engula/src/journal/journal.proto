@@ -3,9 +3,12 @@ syntax = "proto3";
 package engula.journal;
 
 service Journal {
-  rpc Append(AppendRequest) returns (AppendResponse) {}
+  rpc Append(stream JournalRecord) returns (stream JournalOutput) {}
 }
 
-message AppendRequest { bytes data = 1; }
+message JournalRecord {
+  uint64 sequence = 1;
+  bytes data = 2;
+}
 
-message AppendResponse {}
+message JournalOutput { uint64 sequence = 1; }

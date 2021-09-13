@@ -475,6 +475,7 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 name = "engula"
 version = "0.1.1"
 dependencies = [
+ "async-stream",
  "async-trait",
  "aws-sdk-s3",
  "aws-types",
@@ -482,7 +483,6 @@ dependencies = [
  "bytes",
  "clap",
  "futures",
- "num_cpus",
  "parquet",
  "prost",
  "thiserror",
