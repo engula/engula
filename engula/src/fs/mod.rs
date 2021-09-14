@@ -30,7 +30,7 @@ pub trait Fs: Sync + Send {
 
 #[async_trait]
 pub trait SequentialWriter: Sync + Send + Unpin {
-    async fn write(&mut self, data: &[u8]) -> Result<()>;
+    async fn write(&mut self, data: Vec<u8>) -> Result<()>;
 
     async fn finish(&mut self) -> Result<()>;
 }

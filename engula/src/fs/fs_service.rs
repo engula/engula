@@ -72,7 +72,7 @@ impl fs_server::Fs for FsService {
     ) -> Result<Response<WriteResponse>, Status> {
         let input = request.into_inner();
         if let Some(writer) = self.writers.read().await.get(&input.fd).cloned() {
-            writer.lock().await.write(&input.data).await?;
+            writer.lock().await.write(input.data).await?;
             self.writers.write().await.remove(&input.fd);
             Ok(Response::new(WriteResponse::default()))
         } else {

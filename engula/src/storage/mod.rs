@@ -1,5 +1,7 @@
+mod parquet_storage;
 mod sst_storage;
 
+pub use parquet_storage::ParquetStorage;
 pub use sst_storage::SstStorage;
 
 use async_trait::async_trait;

@@ -21,18 +21,14 @@ impl SstStorage {
         let fs = open_fs(url).await?;
         Ok(SstStorage { fs, options })
     }
-
-    async fn new_sst_reader(&self, desc: TableDesc) -> Result<SstReader> {
-        let file_name = sst_name(desc.table_number);
-        let file = self.fs.new_random_access_reader(&file_name).await?;
-        SstReader::open(self.options.clone(), file, desc).await
-    }
 }
 
 #[async_trait]
 impl Storage for SstStorage {
     async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
-        let reader = self.new_sst_reader(desc).await?;
+        let file_name = sst_name(desc.table_number);
+        let file = self.fs.new_random_access_reader(&file_name).await?;
+        let reader = SstReader::new(self.options.clone(), file, desc).await?;
         Ok(Box::new(reader))
     }
 

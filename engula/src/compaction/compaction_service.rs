@@ -7,7 +7,6 @@ pub struct CompactionService {
 }
 
 impl CompactionService {
-    #[allow(dead_code)]
     pub fn new(runtime: Box<dyn CompactionRuntime>) -> CompactionService {
         CompactionService { runtime }
     }

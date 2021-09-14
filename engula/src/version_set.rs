@@ -89,6 +89,7 @@ impl VersionSet {
                 .iter()
                 .find(|x| x.desc.table_number == desc.table_number)
             {
+                // Reuses existing tables.
                 tables.push(table.clone());
             } else {
                 let reader = self.storage.new_reader(desc.clone()).await?;

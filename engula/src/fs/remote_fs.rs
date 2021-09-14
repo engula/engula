@@ -65,11 +65,8 @@ impl RemoteFile {
 
 #[async_trait]
 impl SequentialWriter for RemoteFile {
-    async fn write(&mut self, data: &[u8]) -> Result<()> {
-        let input = WriteRequest {
-            fd: self.fd,
-            data: data.to_owned(),
-        };
+    async fn write(&mut self, data: Vec<u8>) -> Result<()> {
+        let input = WriteRequest { fd: self.fd, data };
         let request = Request::new(input);
         self.client.write(request).await?;
         Ok(())

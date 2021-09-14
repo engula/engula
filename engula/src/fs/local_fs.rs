@@ -59,8 +59,8 @@ impl SequentialFile {
 
 #[async_trait]
 impl SequentialWriter for SequentialFile {
-    async fn write(&mut self, buf: &[u8]) -> Result<()> {
-        self.file.write_all(buf).await?;
+    async fn write(&mut self, data: Vec<u8>) -> Result<()> {
+        self.file.write_all(&data).await?;
         Ok(())
     }
 

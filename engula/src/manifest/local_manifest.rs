@@ -163,6 +163,7 @@ async fn purge_obsoleted_tables(
     storage: Arc<dyn Storage>,
     obsoleted_tables: Arc<Mutex<Vec<TableDesc>>>,
 ) {
+    // This is ugly and unsafe, but good enough for the demo.
     let mut interval = time::interval(time::Duration::from_secs(3));
     loop {
         interval.tick().await;

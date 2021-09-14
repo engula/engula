@@ -8,27 +8,32 @@ use parquet::{
     errors::ParquetError,
     file::{
         properties::WriterProperties,
-        reader::{ChunkReader, Length},
+        reader::{ChunkReader, FileReader, Length},
         serialized_reader::SerializedFileReader,
         writer::{FileWriter, SerializedFileWriter},
     },
-    record::{reader::RowIter, Field, Row},
+    record::Field,
     schema::parser::parse_message_type,
     util::cursor::InMemoryWriteableCursor,
 };
 
-use super::{iterator::Entry, table::TableBuilder, TableDesc, Timestamp};
+use super::{
+    iterator::{Entry, Iterator},
+    table::{TableBuilder, TableReader},
+    TableDesc, Timestamp,
+};
 use crate::{
     error::{Error, Result},
     fs::{RandomAccessReader, SequentialWriter},
 };
 
+#[derive(Clone)]
 pub struct ParquetOptions {
     pub row_group_size: u64,
 }
 
-#[allow(dead_code)]
 impl ParquetOptions {
+    #[allow(dead_code)]
     pub fn default() -> ParquetOptions {
         ParquetOptions {
             row_group_size: 8 * 1024 * 1024,
@@ -38,14 +43,13 @@ impl ParquetOptions {
 
 pub struct ParquetBuilder {
     options: ParquetOptions,
-    file: ParquetFileWriter,
     done: bool,
     error: Option<Error>,
+    writer: RowGroupWriter,
     columns: [Vec<ByteArray>; 3],
     current_group_size: u64,
 }
 
-#[allow(dead_code)]
 impl ParquetBuilder {
     pub fn new(
         options: ParquetOptions,
@@ -54,9 +58,9 @@ impl ParquetBuilder {
     ) -> ParquetBuilder {
         ParquetBuilder {
             options,
-            file: ParquetFileWriter::new(table_writer, table_number),
             done: false,
             error: None,
+            writer: RowGroupWriter::new(table_writer, table_number),
             columns: [Vec::new(), Vec::new(), Vec::new()],
             current_group_size: 0,
         }
@@ -73,7 +77,7 @@ impl TableBuilder for ParquetBuilder {
         self.columns[2].push(value.to_vec().into());
         self.current_group_size += (ts_bytes.len() + key.len() + value.len()) as u64;
         if self.current_group_size >= self.options.row_group_size {
-            if let Err(error) = self.file.write_row_group(&self.columns) {
+            if let Err(error) = self.writer.write_group(&self.columns) {
                 self.error = Some(error);
             }
             self.current_group_size = 0;
@@ -87,9 +91,109 @@ impl TableBuilder for ParquetBuilder {
             return Err(error.clone());
         }
         if self.current_group_size > 0 {
-            self.file.write_row_group(&self.columns)?;
+            self.writer.write_group(&self.columns)?;
         }
-        self.file.finish().await
+        self.writer.finish().await
+    }
+}
+
+pub struct ParquetReader {
+    reader: SerializedFileReader<ColumnChunkReader>,
+}
+
+impl ParquetReader {
+    pub fn new(file: Box<dyn RandomAccessReader>, desc: TableDesc) -> Result<ParquetReader> {
+        let file = ColumnChunkReader::new(file, desc);
+        let reader = SerializedFileReader::new(file)?;
+        Ok(ParquetReader { reader })
+    }
+}
+
+#[async_trait]
+impl TableReader for ParquetReader {
+    async fn get(&self, _: Timestamp, _: &[u8]) -> Result<Option<Vec<u8>>> {
+        // Parquet files do not support point gets.
+        unimplemented!();
+    }
+
+    fn new_iterator(&self) -> Box<dyn Iterator> {
+        Box::new(RowIterator::new(&self.reader))
+    }
+}
+
+macro_rules! next_bytes_column {
+    ($iter:ident) => {
+        if let Field::Bytes(bytes) = $iter.next().unwrap().1 {
+            bytes.clone()
+        } else {
+            panic!();
+        }
+    };
+}
+
+pub struct RowIterator {
+    rows: Vec<[ByteArray; 3]>,
+    index: usize,
+    error: Option<Error>,
+}
+
+impl RowIterator {
+    fn new(reader: &SerializedFileReader<ColumnChunkReader>) -> RowIterator {
+        match reader.get_row_iter(None) {
+            Ok(row_iter) => {
+                let mut rows = Vec::new();
+                for row in row_iter {
+                    let mut col_iter = row.get_column_iter();
+                    let columns = [
+                        next_bytes_column!(col_iter), // ts
+                        next_bytes_column!(col_iter), // key
+                        next_bytes_column!(col_iter), // value
+                    ];
+                    rows.push(columns);
+                }
+                RowIterator {
+                    rows,
+                    index: 0,
+                    error: None,
+                }
+            }
+            Err(err) => RowIterator {
+                rows: Vec::new(),
+                index: 0,
+                error: Some(err.into()),
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl Iterator for RowIterator {
+    async fn seek_to_first(&mut self) {
+        self.index = 0;
+    }
+
+    async fn seek(&mut self, _: Timestamp, _: &[u8]) {
+        // Parquet files do not support point gets.
+        unimplemented!();
+    }
+
+    async fn next(&mut self) {
+        if self.index < self.rows.len() {
+            self.index += 1;
+        }
+    }
+
+    fn current(&self) -> Result<Option<Entry>> {
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
+        if self.index >= self.rows.len() {
+            return Ok(None);
+        }
+        let row = &self.rows[self.index];
+        let ts_bytes = row[0].data();
+        let ts = u64::from_be_bytes(ts_bytes.try_into().unwrap());
+        Ok(Some(Entry(ts, row[1].data(), row[2].data())))
     }
 }
 
@@ -101,31 +205,32 @@ const SCHEMA_MESSAGE: &str = "
     }
 ";
 
-struct ParquetFileWriter {
+struct RowGroupWriter {
     file: Box<dyn SequentialWriter>,
     number: u64,
     buffer: Option<InMemoryWriteableCursor>,
-    writer: SerializedFileWriter<InMemoryWriteableCursor>,
+    writer: Option<SerializedFileWriter<InMemoryWriteableCursor>>,
 }
 
-impl ParquetFileWriter {
-    fn new(file: Box<dyn SequentialWriter>, number: u64) -> ParquetFileWriter {
+impl RowGroupWriter {
+    fn new(file: Box<dyn SequentialWriter>, number: u64) -> RowGroupWriter {
         let buffer = InMemoryWriteableCursor::default();
         let schema = parse_message_type(SCHEMA_MESSAGE).unwrap();
         let properties = WriterProperties::builder().build();
         let writer =
             SerializedFileWriter::new(buffer.clone(), Arc::new(schema), Arc::new(properties))
                 .unwrap();
-        ParquetFileWriter {
+        RowGroupWriter {
             file,
             number,
             buffer: Some(buffer),
-            writer,
+            writer: Some(writer),
         }
     }
 
-    fn write_row_group(&mut self, columns: &[Vec<ByteArray>]) -> Result<()> {
-        let mut row = self.writer.next_row_group()?;
+    fn write_group(&mut self, columns: &[Vec<ByteArray>]) -> Result<()> {
+        let writer = self.writer.as_mut().unwrap();
+        let mut row = writer.next_row_group()?;
         for column in columns {
             let mut col = row.next_column()?.unwrap();
             match &mut col {
@@ -136,86 +241,50 @@ impl ParquetFileWriter {
             }
             row.close_column(col)?;
         }
-        self.writer.close_row_group(row)?;
+        writer.close_row_group(row)?;
+        Ok(())
+    }
+
+    fn close_writer(&mut self) -> Result<()> {
+        let mut writer = self.writer.take().unwrap();
+        writer.close()?;
         Ok(())
     }
 
     async fn finish(&mut self) -> Result<TableDesc> {
-        let data = self.buffer.take().unwrap().into_inner().unwrap();
-        self.file.write(&data).await?;
+        self.close_writer()?;
+        let buffer = self.buffer.take().unwrap();
+        let buffer = buffer.into_inner().unwrap();
+        let table_size = buffer.len() as u64;
+        self.file.write(buffer).await?;
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,
-            table_size: data.len() as u64,
+            table_size,
         })
-    }
-}
-
-macro_rules! next_bytes_column {
-    ($iter:ident) => {
-        if let Field::Bytes(bytes) = $iter.next().unwrap().1 {
-            bytes.data()
-        } else {
-            panic!();
-        }
-    };
-}
-
-pub struct ParquetIterator {
-    iter: RowIter<'static>,
-    current_row: Option<Row>,
-}
-
-#[allow(dead_code)]
-impl ParquetIterator {
-    pub fn new(desc: &TableDesc, file: Box<dyn RandomAccessReader>) -> Result<ParquetIterator> {
-        let reader = ParquetFileReader::new(desc.clone(), file);
-        let file = SerializedFileReader::new(reader)?;
-        let iter = RowIter::from_file_into(Box::new(file));
-        Ok(ParquetIterator {
-            iter,
-            current_row: None,
-        })
-    }
-
-    pub fn next(&mut self) {
-        self.current_row = self.iter.next();
-    }
-
-    pub fn current(&self) -> Option<Entry> {
-        if let Some(row) = self.current_row.as_ref() {
-            let mut col = row.get_column_iter();
-            let ts_bytes = next_bytes_column!(col);
-            let ts = u64::from_be_bytes(ts_bytes.try_into().unwrap());
-            let key = next_bytes_column!(col);
-            let value = next_bytes_column!(col);
-            Some(Entry(ts, key, value))
-        } else {
-            None
-        }
     }
 }
 
 type ParquetResult<T> = std::result::Result<T, ParquetError>;
 
-struct ParquetFileReader {
-    desc: TableDesc,
+struct ColumnChunkReader {
     file: Box<dyn RandomAccessReader>,
+    desc: TableDesc,
 }
 
-impl ParquetFileReader {
-    fn new(desc: TableDesc, file: Box<dyn RandomAccessReader>) -> ParquetFileReader {
-        ParquetFileReader { desc, file }
+impl ColumnChunkReader {
+    fn new(file: Box<dyn RandomAccessReader>, desc: TableDesc) -> ColumnChunkReader {
+        ColumnChunkReader { file, desc }
     }
 }
 
-impl Length for ParquetFileReader {
+impl Length for ColumnChunkReader {
     fn len(&self) -> u64 {
         self.desc.table_size
     }
 }
 
-impl ChunkReader for ParquetFileReader {
+impl ChunkReader for ColumnChunkReader {
     type T = Cursor<Vec<u8>>;
 
     fn get_read(&self, start: u64, length: usize) -> ParquetResult<Self::T> {
@@ -223,5 +292,40 @@ impl ChunkReader for ParquetFileReader {
             Ok(data) => Ok(Cursor::new(data)),
             Err(err) => Err(ParquetError::General(err.to_string())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        format::Entry,
+        fs::{Fs, LocalFs},
+    };
+
+    #[tokio::test]
+    async fn test() {
+        const NUM: u64 = 1024;
+        let fs = LocalFs::new("/tmp/engula_test").unwrap();
+        let options = ParquetOptions::default();
+        let desc = {
+            let file = fs.new_sequential_writer("test.parquet").await.unwrap();
+            let mut builder = ParquetBuilder::new(options.clone(), file, 0);
+            for i in 0..NUM {
+                let v = i.to_be_bytes();
+                builder.add(i, &v, &v).await;
+            }
+            builder.finish().await.unwrap()
+        };
+        let file = fs.new_random_access_reader("test.parquet").await.unwrap();
+        let reader = ParquetReader::new(file, desc).unwrap();
+        let mut iter = reader.new_iterator();
+        iter.seek_to_first().await;
+        for i in 0..NUM {
+            let v = i.to_be_bytes();
+            assert_eq!(iter.current().unwrap(), Some(Entry(i, &v, &v)));
+            iter.next().await;
+        }
+        assert_eq!(iter.current().unwrap(), None);
     }
 }
