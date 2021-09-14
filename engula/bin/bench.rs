@@ -11,19 +11,17 @@ pub struct Command {
     num_cores: usize,
     #[clap(long, default_value = "4")]
     num_levels: usize,
-    #[clap(long, default_value = "8")]
+    #[clap(long, default_value = "16")]
     block_size_kb: usize,
     #[clap(long, default_value = "1024")]
     memtable_size_mb: usize,
     #[clap(long, default_value = "1024")]
     write_channel_size: usize,
     // Component options
-    #[clap(long, default_value = "local")]
-    journal_kind: String,
     #[clap(long)]
-    journal_path: String,
+    no_sync: bool,
     #[clap(long)]
-    journal_sync: bool,
+    journal_url: String,
     #[clap(long)]
     storage_url: String,
     // Benchmark options
@@ -73,22 +71,11 @@ impl Command {
 
     async fn open_journal(&self) -> Arc<dyn Journal> {
         let options = JournalOptions {
-            sync: self.journal_sync,
+            sync: !self.no_sync,
             chunk_size: self.write_channel_size,
         };
-        match self.journal_kind.as_str() {
-            "local" => {
-                let _ = std::fs::remove_dir_all(&self.journal_path);
-                let journal = LocalJournal::new(&self.journal_path, options).unwrap();
-                Arc::new(journal)
-            }
-            "quorum" => {
-                let urls = self.journal_path.split(',').map(|x| x.to_owned()).collect();
-                let journal = QuorumJournal::new(urls, options).await.unwrap();
-                Arc::new(journal)
-            }
-            _ => panic!("unknown journal kind"),
-        }
+        let journal = open_journal(&self.journal_url, options).await.unwrap();
+        Arc::from(journal)
     }
 
     async fn open_storage(&self) -> Arc<dyn Storage> {

@@ -15,6 +15,7 @@ impl Command {
         match &self.subcmd {
             SubCommand::Journal(cmd) => cmd.run().await?,
             SubCommand::Storage(cmd) => cmd.run().await?,
+            SubCommand::Manifest(cmd) => cmd.run().await?,
             SubCommand::Compaction(cmd) => cmd.run().await?,
         }
         Ok(())
@@ -25,6 +26,7 @@ impl Command {
 enum SubCommand {
     Journal(JournalCommand),
     Storage(StorageCommand),
+    Manifest(ManifestCommand),
     Compaction(CompactionCommand),
 }
 
@@ -35,7 +37,7 @@ struct JournalCommand {
     #[clap(long)]
     path: String,
     #[clap(long)]
-    sync: bool,
+    no_sync: bool,
 }
 
 impl JournalCommand {
@@ -43,7 +45,7 @@ impl JournalCommand {
         println!("{:?}", self);
         let addr = self.addr.parse().unwrap();
         let options = JournalOptions {
-            sync: self.sync,
+            sync: !self.no_sync,
             chunk_size: 1024,
         };
         let service = JournalService::new(&self.path, options)?;
@@ -71,6 +73,34 @@ impl StorageCommand {
         let service = FsService::new(Box::new(fs));
         Server::builder()
             .add_service(FsServer::new(service))
+            .serve(addr)
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(Clap, Debug)]
+struct ManifestCommand {
+    #[clap(long)]
+    addr: String,
+    #[clap(long)]
+    storage_url: String,
+    #[clap(long)]
+    compaction_url: String,
+}
+
+impl ManifestCommand {
+    async fn run(&self) -> Result<()> {
+        println!("{:?}", self);
+        let addr = self.addr.parse().unwrap();
+        let sst_options = SstOptions::default();
+        let manifest_options = ManifestOptions::default();
+        let storage = SstStorage::new(&self.storage_url, sst_options).await?;
+        let runtime = RemoteCompaction::new(&self.compaction_url).await?;
+        let manifest = LocalManifest::new(manifest_options, Arc::new(storage), Arc::new(runtime));
+        let service = ManifestService::new(Box::new(manifest));
+        Server::builder()
+            .add_service(ManifestServer::new(service))
             .serve(addr)
             .await?;
         Ok(())

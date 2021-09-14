@@ -51,6 +51,9 @@ pub async fn open_fs(url: &str) -> Result<Box<dyn Fs>> {
             let fs = RemoteFs::new(url).await?;
             Ok(Box::new(fs))
         }
-        _ => Err(Error::InvalidArgument("invalid url schema".to_owned())),
+        _ => Err(Error::InvalidArgument(format!(
+            "invalid fs url: {:?}",
+            parsed_url
+        ))),
     }
 }

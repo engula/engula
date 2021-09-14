@@ -1,17 +1,12 @@
 use tonic::{Request, Response, Status};
 
-use super::{
-    manifest_server::{self, ManifestServer},
-    AddTableRequest, AddTableResponse, CurrentRequest, CurrentResponse, Manifest,
-    NextNumberRequest, NextNumberResponse,
-};
+use super::{proto::*, Manifest};
 
 pub struct ManifestService {
     manifest: Box<dyn Manifest>,
 }
 
 impl ManifestService {
-    #[allow(dead_code)]
     pub fn new(manifest: Box<dyn Manifest>) -> ManifestService {
         ManifestService { manifest }
     }
@@ -48,11 +43,5 @@ impl manifest_server::Manifest for ManifestService {
     ) -> Result<Response<NextNumberResponse>, Status> {
         let number = self.manifest.next_number().await?;
         Ok(Response::new(NextNumberResponse { number }))
-    }
-}
-
-impl From<ManifestService> for ManifestServer<ManifestService> {
-    fn from(s: ManifestService) -> ManifestServer<ManifestService> {
-        ManifestServer::new(s)
     }
 }

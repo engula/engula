@@ -3,14 +3,21 @@ mod manifest_service;
 mod remote_manifest;
 
 pub use local_manifest::LocalManifest;
+pub use manifest_server::ManifestServer;
 pub use manifest_service::ManifestService;
+pub use proto::*;
 pub use remote_manifest::RemoteManifest;
 
 use async_trait::async_trait;
 
-use crate::{error::Result, format::TableDesc};
+use crate::{
+    error::Result,
+    format::{self, TableDesc},
+};
 
-tonic::include_proto!("engula.manifest");
+mod proto {
+    tonic::include_proto!("engula.manifest");
+}
 
 #[derive(Clone, Debug)]
 pub struct ManifestOptions {

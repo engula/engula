@@ -25,7 +25,7 @@ pub struct SstOptions {
 impl SstOptions {
     pub fn default() -> SstOptions {
         SstOptions {
-            block_size: 4096,
+            block_size: 16 * 1024,
             block_cache: None,
         }
     }
