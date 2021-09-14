@@ -4,5 +4,6 @@ package engula.format;
 
 message TableDesc {
   uint64 table_number = 1;
-  uint64 table_size = 2;
+  uint64 sst_table_size = 2;
+  uint64 parquet_table_size = 3;
 }

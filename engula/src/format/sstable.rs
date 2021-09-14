@@ -145,9 +145,9 @@ impl SstReader {
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
     ) -> Result<SstReader> {
-        assert!(desc.table_size >= FOOTER_SIZE);
+        assert!(desc.sst_table_size >= FOOTER_SIZE);
         let data = file
-            .read_at(desc.table_size - FOOTER_SIZE, FOOTER_SIZE)
+            .read_at(desc.sst_table_size - FOOTER_SIZE, FOOTER_SIZE)
             .await?;
         let footer = SstFooter::decode_from(&data);
         let reader = BlockReader::new(file, desc, options.block_cache);
@@ -212,7 +212,8 @@ impl BlockWriter {
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,
-            table_size: self.offset,
+            sst_table_size: self.offset,
+            ..Default::default()
         })
     }
 }

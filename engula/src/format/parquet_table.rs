@@ -255,12 +255,13 @@ impl RowGroupWriter {
         self.close_writer()?;
         let buffer = self.buffer.take().unwrap();
         let buffer = buffer.into_inner().unwrap();
-        let table_size = buffer.len() as u64;
+        let buffer_size = buffer.len() as u64;
         self.file.write(buffer).await?;
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,
-            table_size,
+            parquet_table_size: buffer_size,
+            ..Default::default()
         })
     }
 }
@@ -280,7 +281,7 @@ impl ColumnChunkReader {
 
 impl Length for ColumnChunkReader {
     fn len(&self) -> u64 {
-        self.desc.table_size
+        self.desc.parquet_table_size
     }
 }
 

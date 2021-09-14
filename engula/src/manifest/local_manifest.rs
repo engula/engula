@@ -124,10 +124,11 @@ impl Core {
         let mut input_size = 0;
         let mut input_tables = Vec::new();
         for table in current.tables.iter().rev() {
-            if input_size < table.table_size / 2 && input_tables.len() >= 2 {
+            let table_size = table.sst_table_size + table.parquet_table_size;
+            if input_size < table_size / 2 && input_tables.len() >= 2 {
                 break;
             }
-            input_size += table.table_size;
+            input_size += table_size;
             input_tables.push(table.clone());
         }
         Some(CompactionInput {

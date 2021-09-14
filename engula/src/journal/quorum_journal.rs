@@ -49,6 +49,7 @@ impl Journal for QuorumJournal {
             }
         };
 
+        // TODO: write to the quorum.
         let mut client = self.clients[0].clone();
         let request = Request::new(input_stream);
         let response = client.append(request).await?;
