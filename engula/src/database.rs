@@ -27,7 +27,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct Options {
-    pub num_cores: usize,
+    pub num_shards: usize,
     pub memtable_size: usize,
     pub write_channel_size: usize,
 }
@@ -35,7 +35,7 @@ pub struct Options {
 impl Options {
     pub fn default() -> Options {
         Options {
-            num_cores: 4,
+            num_shards: 4,
             memtable_size: 1024,
             write_channel_size: 1024,
         }
@@ -58,9 +58,9 @@ impl Database {
         let journal_tx = Arc::new(journal_tx);
 
         let mut cores = Vec::new();
-        for i in 0..options.num_cores {
+        for i in 0..options.num_shards {
             let mut options = options.clone();
-            options.memtable_size /= options.num_cores;
+            options.memtable_size /= options.num_shards;
             let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
             let (memtable_tx, memtable_rx) = mpsc::channel(options.write_channel_size);
             let vset = VersionSet::new(i as u64, storage.clone(), manifest.clone());

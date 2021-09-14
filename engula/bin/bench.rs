@@ -8,7 +8,7 @@ use tokio::sync::Barrier;
 pub struct Command {
     // Database options
     #[clap(long, default_value = "8")]
-    num_cores: usize,
+    num_shards: usize,
     #[clap(long, default_value = "4")]
     num_levels: usize,
     #[clap(long, default_value = "16")]
@@ -49,11 +49,12 @@ impl Command {
 
     async fn open(&self) -> Result<Database> {
         let options = Options {
-            num_cores: self.num_cores,
+            num_shards: self.num_shards,
             memtable_size: self.memtable_size_mb * 1024 * 1024,
             write_channel_size: self.write_channel_size,
         };
         let manifest_options = ManifestOptions {
+            num_shards: self.num_shards,
             num_levels: self.num_levels,
         };
 

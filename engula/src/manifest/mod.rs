@@ -21,12 +21,16 @@ mod proto {
 
 #[derive(Clone, Debug)]
 pub struct ManifestOptions {
+    pub num_shards: usize,
     pub num_levels: usize,
 }
 
 impl ManifestOptions {
     pub fn default() -> ManifestOptions {
-        ManifestOptions { num_levels: 4 }
+        ManifestOptions {
+            num_shards: 8,
+            num_levels: 4,
+        }
     }
 }
 

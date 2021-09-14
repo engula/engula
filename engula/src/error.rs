@@ -24,6 +24,8 @@ pub enum Error {
     Parquet(String),
     #[error("url parse error: `{0}`")]
     UrlParse(String),
+    #[error("not found: `{0}`")]
+    NotFound(String),
     #[error("invalid argument: `{0}`")]
     InvalidArgument(String),
 }
@@ -96,7 +98,12 @@ impl From<url::ParseError> for Error {
 
 impl From<Error> for tonic::Status {
     fn from(error: Error) -> tonic::Status {
-        tonic::Status::new(tonic::Code::Internal, error.to_string())
+        let code = match &error {
+            Error::NotFound(_) => tonic::Code::NotFound,
+            Error::InvalidArgument(_) => tonic::Code::InvalidArgument,
+            _ => tonic::Code::Internal,
+        };
+        tonic::Status::new(code, error.to_string())
     }
 }
 

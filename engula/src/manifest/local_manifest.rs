@@ -1,23 +1,23 @@
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 
 use async_trait::async_trait;
 use tokio::{sync::Mutex, task, time};
+use tracing::{error, info};
 
 use super::{Manifest, ManifestOptions, VersionDesc};
 use crate::{
     compaction::{CompactionInput, CompactionOutput, CompactionRuntime},
-    error::Result,
+    error::{Error, Result},
     format::TableDesc,
     storage::Storage,
 };
 
 pub struct LocalManifest {
-    core: Arc<Core>,
-    runtime: Arc<dyn CompactionRuntime>,
-    pending_compaction: Arc<Mutex<bool>>,
+    cores: Vec<Arc<Core>>,
+    next_number: Arc<AtomicU64>,
 }
 
 impl LocalManifest {
@@ -26,79 +26,86 @@ impl LocalManifest {
         storage: Arc<dyn Storage>,
         runtime: Arc<dyn CompactionRuntime>,
     ) -> LocalManifest {
-        LocalManifest {
-            core: Arc::new(Core::new(options, storage)),
-            runtime,
-            pending_compaction: Arc::new(Mutex::new(false)),
-        }
-    }
+        let next_number = Arc::new(AtomicU64::new(0));
+        let obsoleted_tables = Arc::new(Mutex::new(Vec::new()));
 
-    pub async fn schedule_compaction(&self) {
-        let pending = self.pending_compaction.clone();
-        {
-            let mut pending = self.pending_compaction.lock().await;
-            if *pending {
-                return;
-            }
-            *pending = true;
+        let mut cores = Vec::new();
+        for _ in 0..options.num_shards {
+            let core = Arc::new(Core::new(
+                options.clone(),
+                runtime.clone(),
+                next_number.clone(),
+                obsoleted_tables.clone(),
+            ));
+            cores.push(core);
         }
 
-        let core = self.core.clone();
-        let runtime = self.runtime.clone();
-        let mut compaction = core.pick_compaction().await;
-        if compaction.is_some() {
-            task::spawn(async move {
-                while let Some(input) = compaction {
-                    if let Ok(output) = runtime.compact(input).await {
-                        core.install_compaction(output).await;
-                    }
-                    compaction = core.pick_compaction().await;
-                }
-                *pending.lock().await = false;
-            });
-        } else {
-            *pending.lock().await = false;
-        }
+        task::spawn(async move {
+            purge_obsoleted_tables(storage, obsoleted_tables).await;
+        });
+
+        LocalManifest { cores, next_number }
     }
 }
 
 #[async_trait]
 impl Manifest for LocalManifest {
-    async fn current(&self, _: u64) -> Result<VersionDesc> {
-        Ok(self.core.current().await)
+    async fn current(&self, id: u64) -> Result<VersionDesc> {
+        if let Some(core) = self.cores.get(id as usize) {
+            Ok(core.current().await)
+        } else {
+            Err(Error::NotFound(format!("no such shard {}", id)))
+        }
     }
 
-    async fn add_table(&self, _: u64, table: TableDesc) -> Result<VersionDesc> {
-        let version = self.core.add_table(table).await;
-        self.schedule_compaction().await;
-        Ok(version)
+    async fn add_table(&self, id: u64, table: TableDesc) -> Result<VersionDesc> {
+        if let Some(core) = self.cores.get(id as usize) {
+            let version = core.add_table(table).await;
+            if core.need_compact().await {
+                let core = core.clone();
+                task::spawn(async move {
+                    core.run_compact().await;
+                });
+            }
+            Ok(version)
+        } else {
+            Err(Error::NotFound(format!("no such shard {}", id)))
+        }
     }
 
     async fn next_number(&self) -> Result<u64> {
-        Ok(self.core.next_number())
+        Ok(self.next_number.fetch_add(1, Ordering::SeqCst))
     }
 }
 
 pub struct Core {
     options: ManifestOptions,
     current: Mutex<VersionDesc>,
-    next_number: AtomicU64,
+    runtime: Arc<dyn CompactionRuntime>,
+    pending_compaction: AtomicBool,
+    next_number: Arc<AtomicU64>,
     obsoleted_tables: Arc<Mutex<Vec<TableDesc>>>,
 }
 
 impl Core {
-    fn new(options: ManifestOptions, storage: Arc<dyn Storage>) -> Core {
-        let obsoleted_tables = Arc::new(Mutex::new(Vec::new()));
-        let obsoleted_tables_clone = obsoleted_tables.clone();
-        task::spawn(async move {
-            purge_obsoleted_tables(storage, obsoleted_tables_clone).await;
-        });
+    fn new(
+        options: ManifestOptions,
+        runtime: Arc<dyn CompactionRuntime>,
+        next_number: Arc<AtomicU64>,
+        obsoleted_tables: Arc<Mutex<Vec<TableDesc>>>,
+    ) -> Core {
         Core {
             options,
             current: Mutex::new(VersionDesc::default()),
-            next_number: AtomicU64::new(0),
+            runtime,
+            pending_compaction: AtomicBool::new(true),
+            next_number,
             obsoleted_tables,
         }
+    }
+
+    fn next_number(&self) -> u64 {
+        self.next_number.fetch_add(1, Ordering::SeqCst)
     }
 
     async fn current(&self) -> VersionDesc {
@@ -112,8 +119,32 @@ impl Core {
         current.clone()
     }
 
-    fn next_number(&self) -> u64 {
-        self.next_number.fetch_add(1, Ordering::SeqCst)
+    async fn run_compact(&self) {
+        if self
+            .pending_compaction
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        while let Some(input) = self.pick_compaction().await {
+            info!("start compaction {:?}", input);
+            match self.runtime.compact(input).await {
+                Ok(output) => {
+                    info!("finish compaction {:?}", output);
+                    self.install_compaction(output).await;
+                }
+                Err(err) => error!("compaction failed: {}", err),
+            }
+        }
+    }
+
+    async fn need_compact(&self) -> bool {
+        if self.pending_compaction.load(Ordering::Acquire) {
+            return false;
+        }
+        let current = self.current.lock().await;
+        current.tables.len() > self.options.num_levels
     }
 
     async fn pick_compaction(&self) -> Option<CompactionInput> {
