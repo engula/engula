@@ -1,22 +1,23 @@
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 use tonic::{transport::Channel, Request};
 
-use super::{
-    fs_client, AccessMode, FinishRequest, Fs, OpenRequest, RandomAccessReader, ReadRequest,
-    RemoveRequest, SequentialWriter, WriteRequest,
-};
+use super::{proto::*, Fs, RandomAccessReader, SequentialWriter};
 use crate::error::Result;
 
 type FsClient = fs_client::FsClient<Channel>;
 
 pub struct RemoteFs {
-    client: Mutex<FsClient>,
+    client: FsClient,
 }
 
 impl RemoteFs {
+    pub async fn new(url: &str) -> Result<RemoteFs> {
+        let client = FsClient::connect(url.to_owned()).await?;
+        Ok(RemoteFs { client })
+    }
+
     async fn open_file(&self, fname: &str, mode: AccessMode) -> Result<RemoteFile> {
-        let mut client = self.client.lock().await;
+        let mut client = self.client.clone();
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: mode as i32,
@@ -41,7 +42,7 @@ impl Fs for RemoteFs {
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
-        let mut client = self.client.lock().await;
+        let mut client = self.client.clone();
         let input = RemoveRequest {
             file_name: fname.to_owned(),
         };

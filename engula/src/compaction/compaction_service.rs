@@ -1,9 +1,6 @@
 use tonic::{Request, Response, Status};
 
-use super::{
-    compaction_server::{self, CompactionServer},
-    CompactionInput, CompactionOutput, CompactionRuntime,
-};
+use super::{proto::*, CompactionRuntime};
 
 pub struct CompactionService {
     runtime: Box<dyn CompactionRuntime>,
@@ -25,11 +22,5 @@ impl compaction_server::Compaction for CompactionService {
         let input = request.into_inner();
         let output = self.runtime.compact(input).await?;
         Ok(Response::new(output))
-    }
-}
-
-impl From<CompactionService> for CompactionServer<CompactionService> {
-    fn from(s: CompactionService) -> CompactionServer<CompactionService> {
-        CompactionServer::new(s)
     }
 }

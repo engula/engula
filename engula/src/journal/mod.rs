@@ -6,6 +6,7 @@ mod write;
 pub use journal_server::JournalServer;
 pub use journal_service::JournalService;
 pub use local_journal::LocalJournal;
+pub use proto::*;
 pub use quorum_journal::QuorumJournal;
 pub use write::{Write, WriteBatch};
 
@@ -14,7 +15,9 @@ use tokio::sync::mpsc;
 
 use crate::error::Result;
 
-tonic::include_proto!("engula.journal");
+mod proto {
+    tonic::include_proto!("engula.journal");
+}
 
 #[derive(Clone, Debug)]
 pub struct JournalOptions {

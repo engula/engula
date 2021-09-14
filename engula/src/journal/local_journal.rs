@@ -42,8 +42,8 @@ pub struct LocalJournal {
 
 impl LocalJournal {
     pub fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<LocalJournal> {
+        std::fs::create_dir_all(&dirname)?;
         let filename = dirname.as_ref().join("engula.log");
-        std::fs::create_dir_all(dirname)?;
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)

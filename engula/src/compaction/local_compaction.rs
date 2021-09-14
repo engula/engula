@@ -24,7 +24,7 @@ impl CompactionRuntime for LocalCompaction {
     async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
         let mut children = Vec::new();
         for desc in &input.tables {
-            let reader = self.storage.new_reader(desc).await?;
+            let reader = self.storage.new_reader(desc.clone()).await?;
             let iter = reader.new_iterator();
             children.push(iter);
         }

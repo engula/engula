@@ -3,16 +3,21 @@ mod local_fs;
 mod remote_fs;
 mod s3;
 
+pub use fs_server::FsServer;
 pub use fs_service::FsService;
 pub use local_fs::LocalFs;
+pub use proto::*;
 pub use remote_fs::RemoteFs;
 pub use s3::{S3Bucket, S3Config};
 
-tonic::include_proto!("engula.fs");
+mod proto {
+    tonic::include_proto!("engula.fs");
+}
 
 use async_trait::async_trait;
+use url::Url;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 #[async_trait]
 pub trait Fs: Sync + Send {
@@ -33,4 +38,19 @@ pub trait SequentialWriter: Sync + Send + Unpin {
 #[async_trait]
 pub trait RandomAccessReader: Sync + Send + Unpin {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>>;
+}
+
+pub async fn open_fs(url: &str) -> Result<Box<dyn Fs>> {
+    let parsed_url = Url::parse(url)?;
+    match parsed_url.scheme() {
+        "file" => {
+            let fs = LocalFs::new(parsed_url.path())?;
+            Ok(Box::new(fs))
+        }
+        "http" => {
+            let fs = RemoteFs::new(url).await?;
+            Ok(Box::new(fs))
+        }
+        _ => Err(Error::InvalidArgument("invalid url schema".to_owned())),
+    }
 }

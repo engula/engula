@@ -7,7 +7,7 @@ use super::{
     block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE},
     iterator::Iterator,
     table::{TableBuilder, TableReader},
-    two_level_iterator::{BlockIterGenerator, TwoLevelIterator},
+    two_level_iterator::{IterGenerator, TwoLevelIterator},
     TableDesc, Timestamp,
 };
 use crate::{
@@ -16,20 +16,52 @@ use crate::{
     fs::{RandomAccessReader, SequentialWriter},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SstOptions {
     pub block_size: usize,
+    pub block_cache: Option<Arc<dyn Cache>>,
 }
 
 impl SstOptions {
     pub fn default() -> SstOptions {
-        SstOptions { block_size: 4096 }
+        SstOptions {
+            block_size: 4096,
+            block_cache: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for SstOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SstOptions")
+            .field("block_size", &self.block_size)
+            .finish()
+    }
+}
+
+pub const FOOTER_SIZE: u64 = BLOCK_HANDLE_SIZE;
+
+struct SstFooter {
+    index_handle: BlockHandle,
+}
+
+impl SstFooter {
+    fn decode_from(buf: &[u8]) -> SstFooter {
+        SstFooter {
+            index_handle: BlockHandle::decode_from(buf),
+        }
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.index_handle.encode());
+        buf
     }
 }
 
 pub struct SstBuilder {
     options: SstOptions,
-    file: SstFileWriter,
+    file: FileWriter,
     done: bool,
     error: Option<Error>,
     last_ts: Timestamp,
@@ -46,7 +78,7 @@ impl SstBuilder {
     ) -> SstBuilder {
         SstBuilder {
             options,
-            file: SstFileWriter::new(table_writer, table_number),
+            file: FileWriter::new(table_writer, table_number),
             done: false,
             error: None,
             last_ts: 0,
@@ -102,35 +134,64 @@ impl TableBuilder for SstBuilder {
     }
 }
 
-pub const FOOTER_SIZE: u64 = BLOCK_HANDLE_SIZE;
-
-struct SstFooter {
-    index_handle: BlockHandle,
+pub struct SstReader {
+    file: Arc<FileReader>,
+    index_block: Arc<Vec<u8>>,
 }
 
-impl SstFooter {
-    fn decode_from(buf: &[u8]) -> SstFooter {
-        SstFooter {
-            index_handle: BlockHandle::decode_from(buf),
+impl SstReader {
+    pub async fn open(
+        options: SstOptions,
+        file: Box<dyn RandomAccessReader>,
+        desc: TableDesc,
+    ) -> Result<SstReader> {
+        assert!(desc.table_size >= FOOTER_SIZE);
+        let data = file
+            .read_at(desc.table_size - FOOTER_SIZE, FOOTER_SIZE)
+            .await?;
+        let footer = SstFooter::decode_from(&data);
+        let reader = FileReader::new(file, desc, options.block_cache);
+        let index_block = reader.read_block(&footer.index_handle).await?;
+        Ok(SstReader {
+            file: Arc::new(reader),
+            index_block,
+        })
+    }
+
+    fn new_internal_iterator(&self) -> TwoLevelIterator {
+        let index_iter = BlockIterator::new(self.index_block.clone());
+        let block_iter = BlockIterGenerator::new(self.file.clone());
+        TwoLevelIterator::new(Box::new(index_iter), Box::new(block_iter))
+    }
+}
+
+#[async_trait]
+impl TableReader for SstReader {
+    async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let mut iter = self.new_iterator();
+        iter.seek(ts, key).await;
+        if let Some(ent) = iter.current()? {
+            if ent.0 <= ts && ent.1 == key {
+                return Ok(Some(ent.2.to_owned()));
+            }
         }
+        Ok(None)
     }
 
-    fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&self.index_handle.encode());
-        buf
+    fn new_iterator(&self) -> Box<dyn Iterator> {
+        Box::new(self.new_internal_iterator())
     }
 }
 
-struct SstFileWriter {
+struct FileWriter {
     file: Box<dyn SequentialWriter>,
     number: u64,
     offset: u64,
 }
 
-impl SstFileWriter {
-    fn new(file: Box<dyn SequentialWriter>, number: u64) -> SstFileWriter {
-        SstFileWriter {
+impl FileWriter {
+    fn new(file: Box<dyn SequentialWriter>, number: u64) -> FileWriter {
+        FileWriter {
             file,
             number,
             offset: 0,
@@ -156,57 +217,22 @@ impl SstFileWriter {
     }
 }
 
-const CACHE_KEY_LEN: usize = 16;
-
-fn make_cache_key(mut buf: &mut [u8], number: u64, offset: u64) {
-    buf.put_u64_le(number);
-    buf.put_u64_le(offset);
-}
-
-struct SstCache {
-    cache: Option<Arc<dyn Cache>>,
-}
-
-impl SstCache {
-    fn new(cache: Option<Arc<dyn Cache>>) -> SstCache {
-        SstCache { cache }
-    }
-
-    async fn get(&self, number: u64, offset: u64) -> Option<Arc<Vec<u8>>> {
-        if let Some(cache) = self.cache.as_ref() {
-            let mut key = [0; CACHE_KEY_LEN];
-            make_cache_key(&mut key, number, offset);
-            cache.get(&key).await
-        } else {
-            None
-        }
-    }
-
-    async fn put(&self, number: u64, offset: u64, value: Arc<Vec<u8>>) {
-        if let Some(cache) = self.cache.as_ref() {
-            let mut key = Vec::new();
-            make_cache_key(&mut key, number, offset);
-            cache.put(key, value).await;
-        }
-    }
-}
-
-struct SstFileReader {
-    desc: TableDesc,
+struct FileReader {
     file: Box<dyn RandomAccessReader>,
-    cache: SstCache,
+    desc: TableDesc,
+    cache: BlockCache,
 }
 
-impl SstFileReader {
+impl FileReader {
     fn new(
-        desc: &TableDesc,
         file: Box<dyn RandomAccessReader>,
+        desc: TableDesc,
         cache: Option<Arc<dyn Cache>>,
-    ) -> SstFileReader {
-        SstFileReader {
-            desc: desc.clone(),
+    ) -> FileReader {
+        FileReader {
             file,
-            cache: SstCache::new(cache),
+            desc,
+            cache: BlockCache::new(cache),
         }
     }
 
@@ -224,67 +250,54 @@ impl SstFileReader {
     }
 }
 
-pub struct SstReader {
-    file: Arc<SstFileReader>,
-    index_block: Arc<Vec<u8>>,
+const CACHE_KEY_LEN: usize = 16;
+
+fn make_cache_key(number: u64, offset: u64) -> [u8; CACHE_KEY_LEN] {
+    let mut buf = [0; CACHE_KEY_LEN];
+    let mut pos = buf.as_mut();
+    pos.put_u64_le(number);
+    pos.put_u64_le(offset);
+    buf
 }
 
-impl SstReader {
-    pub async fn open(
-        desc: &TableDesc,
-        file: Box<dyn RandomAccessReader>,
-        cache: Option<Arc<dyn Cache>>,
-    ) -> Result<SstReader> {
-        assert!(desc.table_size >= FOOTER_SIZE);
-        let data = file
-            .read_at(desc.table_size - FOOTER_SIZE, FOOTER_SIZE)
-            .await?;
-        let footer = SstFooter::decode_from(&data);
-        let reader = SstFileReader::new(desc, file, cache);
-        let index_block = reader.read_block(&footer.index_handle).await?;
-        Ok(SstReader {
-            file: Arc::new(reader),
-            index_block,
-        })
-    }
-
-    fn new_internal_iterator(&self) -> TwoLevelIterator {
-        let index_iter = BlockIterator::new(self.index_block.clone());
-        let block_iter = SstBlockIterGenerator::new(self.file.clone());
-        TwoLevelIterator::new(Box::new(index_iter), Box::new(block_iter))
-    }
+struct BlockCache {
+    cache: Option<Arc<dyn Cache>>,
 }
 
-#[async_trait]
-impl TableReader for SstReader {
-    async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let mut iter = self.new_iterator();
-        iter.seek(ts, key).await;
-        if let Some(ent) = iter.current()? {
-            if ent.0 <= ts && ent.1 == key {
-                return Ok(Some(ent.2.to_owned()));
-            }
+impl BlockCache {
+    fn new(cache: Option<Arc<dyn Cache>>) -> BlockCache {
+        BlockCache { cache }
+    }
+
+    async fn get(&self, number: u64, offset: u64) -> Option<Arc<Vec<u8>>> {
+        if let Some(cache) = self.cache.as_ref() {
+            let key = make_cache_key(number, offset);
+            cache.get(&key).await
+        } else {
+            None
         }
-        Ok(None)
     }
 
-    fn new_iterator(&self) -> Box<dyn Iterator> {
-        Box::new(self.new_internal_iterator())
+    async fn put(&self, number: u64, offset: u64, value: Arc<Vec<u8>>) {
+        if let Some(cache) = self.cache.as_ref() {
+            let key = make_cache_key(number, offset);
+            cache.put(key.to_vec(), value).await;
+        }
     }
 }
 
-pub struct SstBlockIterGenerator {
-    file: Arc<SstFileReader>,
+pub struct BlockIterGenerator {
+    file: Arc<FileReader>,
 }
 
-impl SstBlockIterGenerator {
-    fn new(file: Arc<SstFileReader>) -> SstBlockIterGenerator {
-        SstBlockIterGenerator { file }
+impl BlockIterGenerator {
+    fn new(file: Arc<FileReader>) -> BlockIterGenerator {
+        BlockIterGenerator { file }
     }
 }
 
 #[async_trait]
-impl BlockIterGenerator for SstBlockIterGenerator {
+impl IterGenerator for BlockIterGenerator {
     async fn spawn(&self, index_value: &[u8]) -> Result<Box<dyn Iterator>> {
         let block_handle = BlockHandle::decode_from(index_value);
         let block = self.file.read_block(&block_handle).await?;
@@ -304,10 +317,10 @@ mod tests {
     async fn test() {
         const NUM: u64 = 1024;
         let fs = LocalFs::new("/tmp/engula_test").unwrap();
+        let options = SstOptions::default();
         let desc = {
-            let options = SstOptions::default();
             let file = fs.new_sequential_writer("test.sst").await.unwrap();
-            let mut builder = SstBuilder::new(options, file, 0);
+            let mut builder = SstBuilder::new(options.clone(), file, 0);
             for i in 0..NUM {
                 let v = i.to_be_bytes();
                 builder.add(i, &v, &v).await;
@@ -315,7 +328,7 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstReader::open(&desc, file, None).await.unwrap();
+        let reader = SstReader::open(options.clone(), file, desc).await.unwrap();
         let mut iter = reader.new_iterator();
         iter.seek_to_first().await;
         for i in 0..NUM {

@@ -11,7 +11,7 @@ use crate::{
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    async fn new_reader(&self, desc: &TableDesc) -> Result<Box<dyn TableReader>>;
+    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>>;
 
     async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>>;
 

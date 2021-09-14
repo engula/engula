@@ -91,7 +91,7 @@ impl VersionSet {
             {
                 tables.push(table.clone());
             } else {
-                let reader = self.storage.new_reader(&desc).await?;
+                let reader = self.storage.new_reader(desc.clone()).await?;
                 let table = Arc::new(Table { desc, reader });
                 tables.push(table);
             }

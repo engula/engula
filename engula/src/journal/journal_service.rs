@@ -3,7 +3,7 @@ use std::{path::Path, pin::Pin, sync::Arc};
 use futures::{Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
-use super::{journal_server, JournalOptions, JournalOutput, JournalRecord, LocalJournal};
+use super::{proto::*, JournalOptions, LocalJournal};
 use crate::error::Result;
 
 pub struct JournalService {

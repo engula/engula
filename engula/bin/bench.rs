@@ -25,7 +25,7 @@ pub struct Command {
     #[clap(long)]
     journal_sync: bool,
     #[clap(long)]
-    storage_path: String,
+    storage_url: String,
     // Benchmark options
     #[clap(long)]
     do_get: bool,
@@ -94,10 +94,9 @@ impl Command {
     async fn open_storage(&self) -> Arc<dyn Storage> {
         let options = SstOptions {
             block_size: self.block_size_kb * 1024,
+            block_cache: None,
         };
-        let _ = std::fs::remove_dir_all(&self.storage_path);
-        let fs = Arc::new(LocalFs::new(&self.storage_path).unwrap());
-        let storage = SstStorage::new(options, fs, None);
+        let storage = SstStorage::new(&self.storage_url, options).await.unwrap();
         Arc::new(storage)
     }
 

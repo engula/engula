@@ -9,11 +9,7 @@ use std::{
 use tokio::sync::{Mutex, RwLock};
 use tonic::{Code, Request, Response, Status};
 
-use super::{
-    fs_server, AccessMode, FinishRequest, FinishResponse, Fs, OpenRequest, OpenResponse,
-    RandomAccessReader, ReadRequest, ReadResponse, RemoveRequest, RemoveResponse, SequentialWriter,
-    WriteRequest, WriteResponse,
-};
+use super::{proto::*, Fs, RandomAccessReader, SequentialWriter};
 
 type ReaderRef = Arc<dyn RandomAccessReader>;
 type WriterRef = Arc<Mutex<Box<dyn SequentialWriter>>>;
@@ -27,7 +23,6 @@ pub struct FsService {
 }
 
 impl FsService {
-    #[allow(dead_code)]
     pub fn new(fs: Box<dyn Fs>) -> FsService {
         FsService {
             fs,
@@ -60,7 +55,7 @@ impl fs_server::Fs for FsService {
 
     async fn read(&self, request: Request<ReadRequest>) -> Result<Response<ReadResponse>, Status> {
         let input = request.into_inner();
-        if let Some(reader) = self.readers.read().await.get(&input.fd) {
+        if let Some(reader) = self.readers.read().await.get(&input.fd).cloned() {
             let data = reader.read_at(input.offset, input.size).await?;
             Ok(Response::new(ReadResponse { data }))
         } else {
@@ -76,8 +71,9 @@ impl fs_server::Fs for FsService {
         request: Request<WriteRequest>,
     ) -> Result<Response<WriteResponse>, Status> {
         let input = request.into_inner();
-        if let Some(writer) = self.writers.read().await.get(&input.fd) {
+        if let Some(writer) = self.writers.read().await.get(&input.fd).cloned() {
             writer.lock().await.write(&input.data).await?;
+            self.writers.write().await.remove(&input.fd);
             Ok(Response::new(WriteResponse::default()))
         } else {
             Err(Status::new(
@@ -115,11 +111,5 @@ impl fs_server::Fs for FsService {
         }
         self.fs.remove_file(&input.file_name).await?;
         Ok(Response::new(RemoveResponse::default()))
-    }
-}
-
-impl From<FsService> for fs_server::FsServer<FsService> {
-    fn from(s: FsService) -> fs_server::FsServer<FsService> {
-        fs_server::FsServer::new(s)
     }
 }

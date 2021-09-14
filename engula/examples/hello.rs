@@ -6,6 +6,7 @@ use engula::*;
 async fn main() -> Result<()> {
     let dirname = "/tmp/engula";
     let _ = std::fs::remove_dir_all(dirname);
+    let storage_url = format!("file://{}", dirname);
 
     let options = Options::default();
     let sst_options = SstOptions::default();
@@ -13,8 +14,7 @@ async fn main() -> Result<()> {
     let manifest_options = ManifestOptions::default();
 
     let journal = Arc::new(LocalJournal::new(dirname, journal_options)?);
-    let fs = Arc::new(LocalFs::new(dirname)?);
-    let storage = Arc::new(SstStorage::new(sst_options, fs, None));
+    let storage = Arc::new(SstStorage::new(&storage_url, sst_options).await?);
     let runtime = Arc::new(LocalCompaction::new(storage.clone()));
     let manifest = Arc::new(LocalManifest::new(
         manifest_options,

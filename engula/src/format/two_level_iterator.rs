@@ -7,7 +7,7 @@ use super::{
 use crate::error::{Error, Result};
 
 #[async_trait]
-pub trait BlockIterGenerator: Sync + Send {
+pub trait IterGenerator: Sync + Send {
     async fn spawn(&self, index_value: &[u8]) -> Result<Box<dyn Iterator>>;
 }
 
@@ -15,13 +15,13 @@ pub struct TwoLevelIterator {
     error: Option<Error>,
     index_iter: Box<dyn Iterator>,
     block_iter: Option<Box<dyn Iterator>>,
-    block_iter_generator: Box<dyn BlockIterGenerator>,
+    block_iter_generator: Box<dyn IterGenerator>,
 }
 
 impl TwoLevelIterator {
     pub fn new(
         index_iter: Box<dyn Iterator>,
-        block_iter_generator: Box<dyn BlockIterGenerator>,
+        block_iter_generator: Box<dyn IterGenerator>,
     ) -> TwoLevelIterator {
         TwoLevelIterator {
             error: None,

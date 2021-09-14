@@ -9,7 +9,7 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Request};
 
-use super::{journal_client, write::WriteBatch, Journal, JournalOptions, JournalRecord};
+use super::{proto::*, write::WriteBatch, Journal, JournalOptions};
 use crate::error::Result;
 
 type JournalClient = journal_client::JournalClient<Channel>;

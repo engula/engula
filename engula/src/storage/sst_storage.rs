@@ -1,13 +1,10 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 
 use super::Storage;
 use crate::{
-    cache::Cache,
     error::Result,
     format::{SstBuilder, SstOptions, SstReader, TableBuilder, TableDesc, TableReader},
-    fs::Fs,
+    fs::{open_fs, Fs},
 };
 
 fn sst_name(number: u64) -> String {
@@ -15,26 +12,26 @@ fn sst_name(number: u64) -> String {
 }
 
 pub struct SstStorage {
+    fs: Box<dyn Fs>,
     options: SstOptions,
-    fs: Arc<dyn Fs>,
-    cache: Option<Arc<dyn Cache>>,
 }
 
 impl SstStorage {
-    pub fn new(options: SstOptions, fs: Arc<dyn Fs>, cache: Option<Arc<dyn Cache>>) -> SstStorage {
-        SstStorage { options, fs, cache }
+    pub async fn new(url: &str, options: SstOptions) -> Result<SstStorage> {
+        let fs = open_fs(url).await?;
+        Ok(SstStorage { fs, options })
     }
 
-    async fn new_sst_reader(&self, desc: &TableDesc) -> Result<SstReader> {
+    async fn new_sst_reader(&self, desc: TableDesc) -> Result<SstReader> {
         let file_name = sst_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        SstReader::open(desc, file, self.cache.clone()).await
+        SstReader::open(self.options.clone(), file, desc).await
     }
 }
 
 #[async_trait]
 impl Storage for SstStorage {
-    async fn new_reader(&self, desc: &TableDesc) -> Result<Box<dyn TableReader>> {
+    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
         let reader = self.new_sst_reader(desc).await?;
         Ok(Box::new(reader))
     }

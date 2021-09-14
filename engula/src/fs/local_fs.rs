@@ -15,7 +15,7 @@ pub struct LocalFs {
 
 impl LocalFs {
     pub fn new<P: AsRef<Path>>(dirname: P) -> Result<LocalFs> {
-        std::fs::create_dir_all(dirname.as_ref())?;
+        std::fs::create_dir_all(&dirname)?;
         Ok(LocalFs {
             dirname: dirname.as_ref().to_owned(),
         })

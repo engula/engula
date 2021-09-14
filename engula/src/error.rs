@@ -22,6 +22,10 @@ pub enum Error {
     AwsSdk(String),
     #[error("parquet error: `{0}`")]
     Parquet(String),
+    #[error("url parse error: `{0}`")]
+    UrlParse(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -81,6 +85,12 @@ impl<E: std::error::Error> From<aws_sdk_s3::SdkError<E>> for Error {
 impl From<ParquetError> for Error {
     fn from(error: ParquetError) -> Error {
         Error::Parquet(error.to_string())
+    }
+}
+
+impl From<url::ParseError> for Error {
+    fn from(error: url::ParseError) -> Error {
+        Error::UrlParse(error.to_string())
     }
 }
 

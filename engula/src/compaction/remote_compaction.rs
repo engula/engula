@@ -1,30 +1,26 @@
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 use tonic::{transport::Channel, Request};
 
-use super::{compaction_client, CompactionInput, CompactionOutput, CompactionRuntime};
+use super::{proto::*, CompactionRuntime};
 use crate::error::Result;
 
 type CompactionClient = compaction_client::CompactionClient<Channel>;
 
 pub struct RemoteCompaction {
-    client: Mutex<CompactionClient>,
+    client: CompactionClient,
 }
 
 impl RemoteCompaction {
-    #[allow(dead_code)]
-    pub async fn new(url: String) -> Result<RemoteCompaction> {
-        let client = CompactionClient::connect(url).await?;
-        Ok(RemoteCompaction {
-            client: Mutex::new(client),
-        })
+    pub async fn new(url: &str) -> Result<RemoteCompaction> {
+        let client = CompactionClient::connect(url.to_owned()).await?;
+        Ok(RemoteCompaction { client })
     }
 }
 
 #[async_trait]
 impl CompactionRuntime for RemoteCompaction {
     async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
-        let mut client = self.client.lock().await;
+        let mut client = self.client.clone();
         let request = Request::new(input);
         let response = client.compact(request).await?;
         Ok(response.into_inner())

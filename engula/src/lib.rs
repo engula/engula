@@ -10,11 +10,13 @@ mod memtable;
 mod storage;
 mod version_set;
 
-pub use compaction::{CompactionRuntime, LocalCompaction, RemoteCompaction};
+pub use compaction::{
+    CompactionRuntime, CompactionServer, CompactionService, LocalCompaction, RemoteCompaction,
+};
 pub use database::{Database, Options};
 pub use error::{Error, Result};
 pub use format::SstOptions;
-pub use fs::{Fs, LocalFs, RemoteFs};
+pub use fs::{Fs, FsServer, FsService, LocalFs, RemoteFs};
 pub use journal::{
     Journal, JournalOptions, JournalServer, JournalService, LocalJournal, QuorumJournal,
 };
