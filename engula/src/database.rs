@@ -106,6 +106,14 @@ impl Database {
         core.put(ts, key, value).await
     }
 
+    pub async fn count(&self) -> Result<usize> {
+        let mut sum = 0;
+        for core in &self.cores {
+            sum += core.count().await?;
+        }
+        Ok(sum)
+    }
+
     fn select_core(&self, key: &[u8]) -> Arc<Core> {
         let mut hasher = DefaultHasher::new();
         hasher.write(key);
@@ -154,6 +162,10 @@ impl Core {
         self.write_tx.send(write).await?;
         rx.await?;
         Ok(())
+    }
+
+    async fn count(&self) -> Result<usize> {
+        self.super_handle.count().await
     }
 
     async fn write_batch(&self, rx: mpsc::Receiver<Write>, tx: Arc<mpsc::Sender<WriteBatch>>) {
@@ -247,11 +259,21 @@ impl SuperVersionHandle {
     async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) -> usize {
         let current = self.current.read().await.clone();
         current.mem.put(ts, key, value).await;
-        current.mem.approximate_size()
+        current.mem.size()
+    }
+
+    async fn count(&self) -> Result<usize> {
+        let current = self.current.read().await.clone();
+        let mut sum = current.mem.count();
+        if let Some(imm) = &current.imm {
+            sum += imm.count();
+        }
+        sum += current.version.count().await?;
+        Ok(sum)
     }
 
     async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<()> {
-        info!("flush memtable size {}", mem.approximate_size());
+        info!("flush memtable size {}", mem.size());
         let version = self.vset.flush_memtable(mem).await?;
         self.install_flush_version(version).await;
         Ok(())

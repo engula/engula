@@ -16,16 +16,14 @@ struct Table {
 }
 
 pub struct Version {
-    tables: Vec<Arc<Table>>,
     sequence: u64,
+    tables: Vec<Arc<Table>>,
+    storage: Arc<dyn Storage>,
 }
 
 impl Version {
-    fn new() -> Version {
-        Version {
-            tables: Vec::new(),
-            sequence: 0,
-        }
+    pub fn sequence(&self) -> u64 {
+        self.sequence
     }
 
     pub async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -38,8 +36,12 @@ impl Version {
         Ok(None)
     }
 
-    pub fn sequence(&self) -> u64 {
-        self.sequence
+    pub async fn count(&self) -> Result<usize> {
+        let mut sum = 0;
+        for table in &self.tables {
+            sum += self.storage.count_table(table.desc.clone()).await?;
+        }
+        Ok(sum)
     }
 }
 
@@ -52,9 +54,14 @@ pub struct VersionSet {
 
 impl VersionSet {
     pub fn new(id: u64, storage: Arc<dyn Storage>, manifest: Arc<dyn Manifest>) -> VersionSet {
+        let version = Version {
+            sequence: 0,
+            tables: Vec::new(),
+            storage: storage.clone(),
+        };
         VersionSet {
             id,
-            current: Mutex::new(Arc::new(Version::new())),
+            current: Mutex::new(Arc::new(version)),
             storage,
             manifest,
         }
@@ -98,8 +105,9 @@ impl VersionSet {
             }
         }
         *current = Arc::new(Version {
-            tables,
             sequence: version.sequence,
+            tables,
+            storage: self.storage.clone(),
         });
         Ok(current.clone())
     }

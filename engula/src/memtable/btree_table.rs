@@ -23,6 +23,7 @@ type SequenceTree = BTreeMap<Sequence, Vec<u8>>;
 pub struct BTreeTable {
     tree: Arc<RwLock<BTreeMap<Vec<u8>, SequenceTree>>>,
     size: AtomicUsize,
+    count: AtomicUsize,
 }
 
 impl BTreeTable {
@@ -30,6 +31,7 @@ impl BTreeTable {
         BTreeTable {
             tree: Arc::new(RwLock::new(BTreeMap::new())),
             size: AtomicUsize::new(0),
+            count: AtomicUsize::new(0),
         }
     }
 }
@@ -47,19 +49,24 @@ impl MemTable for BTreeTable {
     async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
         let size = std::mem::size_of_val(&ts) + key.len() + value.len();
         self.size.fetch_add(size, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
         let mut tree = self.tree.write().await;
         tree.entry(key)
             .or_insert_with(SequenceTree::new)
             .insert(Reverse(ts), value);
     }
 
+    fn size(&self) -> usize {
+        self.size.load(Ordering::Relaxed)
+    }
+
+    fn count(&self) -> usize {
+        self.count.load(Ordering::Relaxed)
+    }
+
     async fn snapshot(&self) -> Box<dyn MemSnapshot> {
         let tree = self.tree.clone().read_owned().await;
         Box::new(BTreeSnapshot(tree))
-    }
-
-    fn approximate_size(&self) -> usize {
-        self.size.load(Ordering::Relaxed)
     }
 }
 

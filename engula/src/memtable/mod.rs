@@ -17,9 +17,11 @@ pub trait MemTable: Send + Sync {
 
     async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>);
 
-    async fn snapshot(&self) -> Box<dyn MemSnapshot>;
+    fn size(&self) -> usize;
 
-    fn approximate_size(&self) -> usize;
+    fn count(&self) -> usize;
+
+    async fn snapshot(&self) -> Box<dyn MemSnapshot>;
 }
 
 pub trait MemSnapshot: Send + Sync {
