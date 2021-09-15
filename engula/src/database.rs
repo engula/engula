@@ -13,7 +13,7 @@ use tokio::{
     task, time,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{info, warn};
+use tracing::{error, warn};
 
 use crate::{
     error::Result,
@@ -85,7 +85,9 @@ impl Database {
 
         // Spawns a task to handle journal writes per database.
         task::spawn(async move {
-            journal.append_stream(journal_rx).await.unwrap();
+            if let Err(err) = journal.append_stream(journal_rx).await {
+                error!("append journal: {}", err);
+            }
         });
 
         Ok(Database {
@@ -194,7 +196,7 @@ impl Core {
                     .put(write.ts, write.key, write.value)
                     .await;
                 write.tx.send(()).unwrap();
-                if memtable_size >= self.options.memtable_size {
+                if memtable_size >= self.options.memtable_size / 2 {
                     self.flush_memtable().await;
                 }
             }
@@ -204,13 +206,15 @@ impl Core {
     async fn flush_memtable(&self) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
-            warn!("stalling because of pending flush");
+            warn!("stall because of pending flush");
             handle.await.unwrap();
         }
         let super_handle = self.super_handle.clone();
         let imm = super_handle.switch_memtable().await;
         let handle = task::spawn(async move {
-            super_handle.flush_memtable(imm.clone()).await.unwrap();
+            while let Err(err) = super_handle.flush_memtable(imm.clone()).await {
+                error!("flush memtable size {}: {}", imm.size(), err);
+            }
         });
         *flush_handle = Some(handle);
     }
@@ -273,7 +277,6 @@ impl SuperVersionHandle {
     }
 
     async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<()> {
-        info!("flush memtable size {}", mem.size());
         let version = self.vset.flush_memtable(mem).await?;
         self.install_flush_version(version).await;
         Ok(())
@@ -330,8 +333,9 @@ async fn update_version(handle: Arc<SuperVersionHandle>) {
     let mut interval = time::interval(time::Duration::from_secs(1));
     loop {
         interval.tick().await;
-        if let Ok(version) = handle.vset.current().await {
-            handle.install_version(version).await;
+        match handle.vset.current().await {
+            Ok(version) => handle.install_version(version).await,
+            Err(err) => error!("current: {}", err),
         }
     }
 }

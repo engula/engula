@@ -7,7 +7,7 @@ service Fs {
 
   rpc Read(ReadRequest) returns (ReadResponse) {}
 
-  rpc Write(WriteRequest) returns (WriteResponse) {}
+  rpc Write(stream WriteRequest) returns (WriteResponse) {}
 
   rpc Finish(FinishRequest) returns (FinishResponse) {}
 

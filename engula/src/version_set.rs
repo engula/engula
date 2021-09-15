@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
+use tracing::info;
 
 use crate::{
     error::Result,
@@ -47,6 +48,7 @@ impl Version {
 
 pub struct VersionSet {
     id: u64,
+    name: String,
     current: Mutex<Arc<Version>>,
     storage: Arc<dyn Storage>,
     manifest: Arc<dyn Manifest>,
@@ -61,6 +63,7 @@ impl VersionSet {
         };
         VersionSet {
             id,
+            name: format!("vset:{}", id),
             current: Mutex::new(Arc::new(version)),
             storage,
             manifest,
@@ -73,6 +76,7 @@ impl VersionSet {
     }
 
     pub async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<Arc<Version>> {
+        info!("[{}] start flush size {}", self.name, mem.size());
         let number = self.manifest.next_number().await?;
         let mut builder = self.storage.new_builder(number).await?;
         let snapshot = mem.snapshot().await;
@@ -80,6 +84,7 @@ impl VersionSet {
             builder.add(ent.0, ent.1, ent.2).await;
         }
         let table = builder.finish().await?;
+        info!("[{}] finish flush table {:?}", self.name, table);
         let version = self.manifest.add_table(self.id, table).await?;
         self.install_version(version).await
     }

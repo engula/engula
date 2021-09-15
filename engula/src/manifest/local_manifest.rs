@@ -200,7 +200,9 @@ async fn purge_obsoleted_tables(
     loop {
         interval.tick().await;
         for table in obsoleted_tables.lock().await.split_off(0) {
-            storage.remove_table(table.table_number).await.unwrap();
+            if let Err(err) = storage.remove_table(table.table_number).await {
+                error!("remove table {}: {}", table.table_number, err);
+            }
         }
     }
 }

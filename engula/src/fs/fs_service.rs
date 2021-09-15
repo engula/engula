@@ -6,8 +6,9 @@ use std::{
     },
 };
 
+use futures::StreamExt;
 use tokio::sync::{Mutex, RwLock};
-use tonic::{Code, Request, Response, Status};
+use tonic::{Code, Request, Response, Status, Streaming};
 
 use super::{proto::*, Fs, RandomAccessReader, SequentialWriter};
 
@@ -32,6 +33,14 @@ impl FsService {
             opened_files: Mutex::new(HashMap::new()),
         }
     }
+
+    async fn get_reader(&self, fd: u64) -> Option<ReaderRef> {
+        self.readers.read().await.get(&fd).cloned()
+    }
+
+    async fn get_writer(&self, fd: u64) -> Option<WriterRef> {
+        self.writers.read().await.get(&fd).cloned()
+    }
 }
 
 #[tonic::async_trait]
@@ -41,12 +50,14 @@ impl fs_server::Fs for FsService {
         let fd = self.next_fd.fetch_add(1, Ordering::SeqCst);
         if input.access_mode == AccessMode::Read as i32 {
             let reader = self.fs.new_random_access_reader(&input.file_name).await?;
+            let reader = Arc::from(reader);
             let mut readers = self.readers.write().await;
-            readers.insert(fd, Arc::from(reader));
+            readers.insert(fd, reader);
         } else {
             let writer = self.fs.new_sequential_writer(&input.file_name).await?;
+            let writer = Arc::new(Mutex::new(writer));
             let mut writers = self.writers.write().await;
-            writers.insert(fd, Arc::new(Mutex::new(writer)));
+            writers.insert(fd, writer);
         }
         self.opened_files.lock().await.insert(input.file_name, fd);
         let output = OpenResponse { fd };
@@ -55,7 +66,7 @@ impl fs_server::Fs for FsService {
 
     async fn read(&self, request: Request<ReadRequest>) -> Result<Response<ReadResponse>, Status> {
         let input = request.into_inner();
-        if let Some(reader) = self.readers.read().await.get(&input.fd).cloned() {
+        if let Some(reader) = self.get_reader(input.fd).await {
             let data = reader.read_at(input.offset, input.size).await?;
             Ok(Response::new(ReadResponse { data }))
         } else {
@@ -68,19 +79,21 @@ impl fs_server::Fs for FsService {
 
     async fn write(
         &self,
-        request: Request<WriteRequest>,
+        request: Request<Streaming<WriteRequest>>,
     ) -> Result<Response<WriteResponse>, Status> {
-        let input = request.into_inner();
-        if let Some(writer) = self.writers.read().await.get(&input.fd).cloned() {
-            writer.lock().await.write(input.data).await?;
-            self.writers.write().await.remove(&input.fd);
-            Ok(Response::new(WriteResponse::default()))
-        } else {
-            Err(Status::new(
-                Code::NotFound,
-                format!("fd {} not found", input.fd),
-            ))
+        let mut stream = request.into_inner();
+        while let Some(input) = stream.next().await {
+            let input = input?;
+            if let Some(writer) = self.get_writer(input.fd).await {
+                writer.lock().await.write(input.data).await;
+            } else {
+                return Err(Status::new(
+                    Code::NotFound,
+                    format!("fd {} not found", input.fd),
+                ));
+            }
         }
+        Ok(Response::new(WriteResponse::default()))
     }
 
     async fn finish(
@@ -88,8 +101,9 @@ impl fs_server::Fs for FsService {
         request: Request<FinishRequest>,
     ) -> Result<Response<FinishResponse>, Status> {
         let input = request.into_inner();
-        if let Some(writer) = self.writers.read().await.get(&input.fd) {
+        if let Some(writer) = self.get_writer(input.fd).await {
             writer.lock().await.finish().await?;
+            self.writers.write().await.remove(&input.fd);
             Ok(Response::new(FinishResponse::default()))
         } else {
             Err(Status::new(

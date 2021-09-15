@@ -69,12 +69,12 @@ impl BlockBuilder {
         self.count += 1;
     }
 
-    pub fn finish(&mut self) -> Vec<u8> {
+    pub fn finish(&mut self) -> &[u8] {
         for restart in &self.restarts {
             self.buf.put_u32_le(*restart);
         }
         self.buf.put_u32_le(self.restarts.len() as u32);
-        self.buf.split_off(0)
+        &self.buf
     }
 
     pub fn approximate_size(&self) -> usize {

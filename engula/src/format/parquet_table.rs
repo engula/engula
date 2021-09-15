@@ -256,7 +256,7 @@ impl RowGroupWriter {
         let buffer = self.buffer.take().unwrap();
         let buffer = buffer.into_inner().unwrap();
         let buffer_size = buffer.len() as u64;
-        self.file.write(buffer).await?;
+        self.file.write(buffer).await;
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,

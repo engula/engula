@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     cache::Cache,
-    error::{Error, Result},
+    error::Result,
     fs::{RandomAccessReader, SequentialWriter},
 };
 
@@ -62,7 +62,6 @@ impl SstFooter {
 pub struct SstBuilder {
     options: SstOptions,
     done: bool,
-    error: Option<Error>,
     writer: BlockWriter,
     last_ts: Timestamp,
     last_key: Vec<u8>,
@@ -79,7 +78,6 @@ impl SstBuilder {
         SstBuilder {
             options,
             done: false,
-            error: None,
             writer: BlockWriter::new(table_writer, table_number),
             last_ts: 0,
             last_key: Vec::new(),
@@ -88,13 +86,12 @@ impl SstBuilder {
         }
     }
 
-    async fn flush_data_block(&mut self) -> Result<()> {
+    async fn flush_data_block(&mut self) {
         let block = self.data_block.finish();
-        let block_handle = self.writer.write_block(block).await?;
+        let block_handle = self.writer.write_block(block).await;
         self.index_block
             .add(self.last_ts, &self.last_key, &block_handle.encode());
         self.data_block.reset();
-        Ok(())
     }
 }
 
@@ -102,34 +99,26 @@ impl SstBuilder {
 impl TableBuilder for SstBuilder {
     async fn add(&mut self, ts: Timestamp, key: &[u8], value: &[u8]) {
         assert!(!self.done);
-        if self.error.is_some() {
-            return;
-        }
         let this_key = key.to_owned();
         assert!(this_key > self.last_key || (this_key == self.last_key && ts < self.last_ts));
         self.last_ts = ts;
         self.last_key = this_key;
         self.data_block.add(ts, key, value);
         if self.data_block.approximate_size() >= self.options.block_size {
-            if let Err(error) = self.flush_data_block().await {
-                self.error = Some(error);
-            }
+            self.flush_data_block().await;
         }
     }
 
     async fn finish(&mut self) -> Result<TableDesc> {
         assert!(!self.done);
         self.done = true;
-        if let Some(error) = &self.error {
-            return Err(error.clone());
-        }
         if self.data_block.approximate_size() > 0 {
-            self.flush_data_block().await?;
+            self.flush_data_block().await;
         }
         let index_block = self.index_block.finish();
-        let index_handle = self.writer.write_block(index_block).await?;
+        let index_handle = self.writer.write_block(index_block).await;
         let footer = SstFooter { index_handle };
-        let _ = self.writer.write_block(footer.encode()).await?;
+        let _ = self.writer.write_block(&footer.encode()).await;
         self.writer.finish().await
     }
 }
@@ -183,10 +172,13 @@ impl TableReader for SstReader {
     }
 }
 
+const BUFFER_SIZE: usize = 1024 * 1024;
+
 struct BlockWriter {
     file: Box<dyn SequentialWriter>,
     number: u64,
     offset: u64,
+    buffer: Vec<u8>,
 }
 
 impl BlockWriter {
@@ -195,20 +187,27 @@ impl BlockWriter {
             file,
             number,
             offset: 0,
+            buffer: Vec::with_capacity(BUFFER_SIZE),
         }
     }
 
-    async fn write_block(&mut self, block: Vec<u8>) -> Result<BlockHandle> {
+    async fn write_block(&mut self, block: &[u8]) -> BlockHandle {
         let handle = BlockHandle {
             offset: self.offset,
             size: block.len() as u64,
         };
         self.offset += block.len() as u64;
-        self.file.write(block).await?;
-        Ok(handle)
+        self.buffer.extend_from_slice(block);
+        if self.buffer.len() >= BUFFER_SIZE {
+            self.file.write(self.buffer.split_off(0)).await;
+        }
+        handle
     }
 
     async fn finish(&mut self) -> Result<TableDesc> {
+        if self.buffer.len() > 0 {
+            self.file.write(self.buffer.split_off(0)).await;
+        }
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,

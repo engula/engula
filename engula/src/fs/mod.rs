@@ -1,14 +1,12 @@
 mod fs_service;
 mod local_fs;
 mod remote_fs;
-mod s3;
 
 pub use fs_server::FsServer;
 pub use fs_service::FsService;
 pub use local_fs::LocalFs;
 pub use proto::*;
 pub use remote_fs::RemoteFs;
-pub use s3::{S3Bucket, S3Config};
 
 mod proto {
     tonic::include_proto!("engula.fs");
@@ -30,7 +28,7 @@ pub trait Fs: Sync + Send {
 
 #[async_trait]
 pub trait SequentialWriter: Sync + Send + Unpin {
-    async fn write(&mut self, data: Vec<u8>) -> Result<()>;
+    async fn write(&mut self, data: Vec<u8>);
 
     async fn finish(&mut self) -> Result<()>;
 }

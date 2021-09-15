@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
 use super::{Fs, RandomAccessReader, SequentialWriter};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 pub struct LocalFs {
     dirname: PathBuf,
@@ -49,22 +49,30 @@ impl Fs for LocalFs {
 
 struct SequentialFile {
     file: tokio::fs::File,
+    error: Option<Error>,
 }
 
 impl SequentialFile {
     fn new(file: tokio::fs::File) -> SequentialFile {
-        SequentialFile { file }
+        SequentialFile { file, error: None }
     }
 }
 
 #[async_trait]
 impl SequentialWriter for SequentialFile {
-    async fn write(&mut self, data: Vec<u8>) -> Result<()> {
-        self.file.write_all(&data).await?;
-        Ok(())
+    async fn write(&mut self, data: Vec<u8>) {
+        if self.error.is_some() {
+            return;
+        }
+        if let Err(err) = self.file.write_all(&data).await {
+            self.error = Some(err.into());
+        }
     }
 
     async fn finish(&mut self) -> Result<()> {
+        if let Some(err) = &self.error {
+            return Err(err.clone());
+        }
         self.file.sync_data().await?;
         Ok(())
     }
