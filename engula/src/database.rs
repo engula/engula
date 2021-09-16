@@ -36,7 +36,7 @@ impl Options {
     pub fn default() -> Options {
         Options {
             num_shards: 8,
-            memtable_size: 1024,
+            memtable_size: 16 * 1024,
             write_channel_size: 1024,
         }
     }

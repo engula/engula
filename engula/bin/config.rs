@@ -51,7 +51,7 @@ impl Config {
     pub async fn new_storage(&self, online: bool) -> Result<Arc<dyn Storage>> {
         if let Some(urls) = &self.storage_urls {
             // hot and cool storages
-            assert!(urls.len() >= 1 && urls.len() <= 2);
+            assert!(!urls.is_empty() && urls.len() <= 2);
             let hot = self.new_inner_storage(&urls[0]).await?;
             if let Some(url) = urls.get(1) {
                 let cool = self.new_inner_storage(url).await?;
