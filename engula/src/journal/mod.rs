@@ -12,9 +12,8 @@ pub use write::{Write, WriteBatch};
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 mod proto {
     tonic::include_proto!("engula.journal");
@@ -38,23 +37,4 @@ impl JournalOptions {
 #[async_trait]
 pub trait Journal: Send + Sync {
     async fn append_stream(&self, rx: mpsc::Receiver<WriteBatch>) -> Result<()>;
-}
-
-pub async fn open_journal(url: &str, options: JournalOptions) -> Result<Box<dyn Journal>> {
-    let parsed_url = Url::parse(url)?;
-    match parsed_url.scheme() {
-        "file" => {
-            let journal = LocalJournal::new(parsed_url.path(), options)?;
-            Ok(Box::new(journal))
-        }
-        "http" => {
-            let urls = vec![url.to_owned()];
-            let journal = QuorumJournal::new(urls, options).await?;
-            Ok(Box::new(journal))
-        }
-        _ => Err(Error::InvalidArgument(format!(
-            "invalid journal url: {:?}",
-            parsed_url
-        ))),
-    }
 }

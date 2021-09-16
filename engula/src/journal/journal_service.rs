@@ -21,6 +21,8 @@ impl JournalService {
     }
 }
 
+type TonicResult<T> = std::result::Result<T, Status>;
+
 #[tonic::async_trait]
 impl journal_server::Journal for JournalService {
     type AppendStream = Pin<
@@ -30,7 +32,7 @@ impl journal_server::Journal for JournalService {
     async fn append(
         &self,
         request: Request<Streaming<JournalRecord>>,
-    ) -> std::result::Result<Response<Self::AppendStream>, Status> {
+    ) -> TonicResult<Response<Self::AppendStream>> {
         let journal = self.journal.clone();
         let mut buffer = Vec::with_capacity(1024 * 1024);
         let mut stream = request.into_inner().ready_chunks(self.options.chunk_size);

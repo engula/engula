@@ -5,48 +5,48 @@ use async_trait::async_trait;
 use super::Storage;
 use crate::{
     error::Result,
-    format::{ParquetBuilder, ParquetOptions, ParquetReader, TableBuilder, TableDesc, TableReader},
+    format::{SstableBuilder, SstableOptions, SstableReader, TableBuilder, TableDesc, TableReader},
     fs::Fs,
 };
 
-fn parquet_name(number: u64) -> String {
-    format!("{}.parquet", number)
+fn sstable_name(number: u64) -> String {
+    format!("{}.sstable", number)
 }
 
-pub struct ParquetStorage {
+pub struct SstableStorage {
     fs: Arc<dyn Fs>,
-    options: ParquetOptions,
+    options: SstableOptions,
 }
 
-impl ParquetStorage {
-    pub fn new(fs: Arc<dyn Fs>, options: ParquetOptions) -> ParquetStorage {
-        ParquetStorage { fs, options }
+impl SstableStorage {
+    pub fn new(fs: Arc<dyn Fs>, options: SstableOptions) -> SstableStorage {
+        SstableStorage { fs, options }
     }
 }
 
 #[async_trait]
-impl Storage for ParquetStorage {
+impl Storage for SstableStorage {
     async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
-        let file_name = parquet_name(desc.table_number);
+        let file_name = sstable_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = ParquetReader::new(file, desc)?;
+        let reader = SstableReader::new(self.options.clone(), file, desc).await?;
         Ok(Box::new(reader))
     }
 
     async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>> {
-        let file_name = parquet_name(table_number);
+        let file_name = sstable_name(table_number);
         let file = self.fs.new_sequential_writer(&file_name).await?;
-        let builder = ParquetBuilder::new(self.options.clone(), file, table_number);
+        let builder = SstableBuilder::new(self.options.clone(), file, table_number);
         Ok(Box::new(builder))
     }
 
     async fn count_table(&self, table_number: u64) -> Result<usize> {
-        let file_name = parquet_name(table_number);
+        let file_name = sstable_name(table_number);
         self.fs.count_file(&file_name).await
     }
 
     async fn remove_table(&self, table_number: u64) -> Result<()> {
-        let file_name = parquet_name(table_number);
+        let file_name = sstable_name(table_number);
         self.fs.remove_file(&file_name).await
     }
 }

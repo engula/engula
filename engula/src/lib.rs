@@ -15,13 +15,12 @@ pub use compaction::{
 };
 pub use database::{Database, Options};
 pub use error::{Error, Result};
-pub use format::SstOptions;
-pub use fs::{open_fs, Fs, FsServer, FsService, LocalFs, RemoteFs, S3Fs, S3Options};
+pub use format::{ParquetOptions, SstableOptions};
+pub use fs::{Fs, FsServer, FsService, LocalFs, RemoteFs, S3Fs, S3Options};
 pub use journal::{
-    open_journal, Journal, JournalOptions, JournalServer, JournalService, LocalJournal,
-    QuorumJournal,
+    Journal, JournalOptions, JournalServer, JournalService, LocalJournal, QuorumJournal,
 };
 pub use manifest::{
     LocalManifest, Manifest, ManifestOptions, ManifestServer, ManifestService, RemoteManifest,
 };
-pub use storage::{SstStorage, Storage};
+pub use storage::{HybridStorage, ParquetStorage, SstableStorage, Storage};

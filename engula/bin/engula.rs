@@ -1,4 +1,5 @@
 mod bench;
+mod config;
 mod start;
 
 use clap::Clap;

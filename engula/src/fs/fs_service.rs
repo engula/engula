@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -10,13 +11,14 @@ use futures::StreamExt;
 use tokio::sync::{Mutex, RwLock};
 use tonic::{Code, Request, Response, Status, Streaming};
 
-use super::{proto::*, Fs, RandomAccessReader, SequentialWriter};
+use super::{proto::*, Fs, LocalFs, RandomAccessReader, SequentialWriter};
+use crate::error::Result;
 
 type ReaderRef = Arc<dyn RandomAccessReader>;
 type WriterRef = Arc<Mutex<Box<dyn SequentialWriter>>>;
 
 pub struct FsService {
-    fs: Box<dyn Fs>,
+    fs: LocalFs,
     next_fd: AtomicU64,
     readers: RwLock<HashMap<u64, ReaderRef>>,
     writers: RwLock<HashMap<u64, WriterRef>>,
@@ -24,14 +26,15 @@ pub struct FsService {
 }
 
 impl FsService {
-    pub fn new(fs: Box<dyn Fs>) -> FsService {
-        FsService {
+    pub fn new<P: AsRef<Path>>(dirname: P) -> Result<FsService> {
+        let fs = LocalFs::new(dirname)?;
+        Ok(FsService {
             fs,
             next_fd: AtomicU64::new(0),
-            writers: RwLock::new(HashMap::new()),
             readers: RwLock::new(HashMap::new()),
+            writers: RwLock::new(HashMap::new()),
             opened_files: Mutex::new(HashMap::new()),
-        }
+        })
     }
 
     async fn get_reader(&self, fd: u64) -> Option<ReaderRef> {
@@ -43,9 +46,11 @@ impl FsService {
     }
 }
 
+type TonicResult<T> = std::result::Result<T, Status>;
+
 #[tonic::async_trait]
 impl fs_server::Fs for FsService {
-    async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
+    async fn open(&self, request: Request<OpenRequest>) -> TonicResult<Response<OpenResponse>> {
         let input = request.into_inner();
         let fd = self.next_fd.fetch_add(1, Ordering::SeqCst);
         if input.access_mode == AccessMode::Read as i32 {
@@ -64,7 +69,7 @@ impl fs_server::Fs for FsService {
         Ok(Response::new(output))
     }
 
-    async fn read(&self, request: Request<ReadRequest>) -> Result<Response<ReadResponse>, Status> {
+    async fn read(&self, request: Request<ReadRequest>) -> TonicResult<Response<ReadResponse>> {
         let input = request.into_inner();
         if let Some(reader) = self.get_reader(input.fd).await {
             let data = reader.read_at(input.offset, input.size).await?;
@@ -80,7 +85,7 @@ impl fs_server::Fs for FsService {
     async fn write(
         &self,
         request: Request<Streaming<WriteRequest>>,
-    ) -> Result<Response<WriteResponse>, Status> {
+    ) -> TonicResult<Response<WriteResponse>> {
         let mut stream = request.into_inner();
         while let Some(input) = stream.next().await {
             let input = input?;
@@ -99,7 +104,7 @@ impl fs_server::Fs for FsService {
     async fn finish(
         &self,
         request: Request<FinishRequest>,
-    ) -> Result<Response<FinishResponse>, Status> {
+    ) -> TonicResult<Response<FinishResponse>> {
         let input = request.into_inner();
         if let Some(writer) = self.get_writer(input.fd).await {
             writer.lock().await.finish().await?;
@@ -116,7 +121,7 @@ impl fs_server::Fs for FsService {
     async fn remove(
         &self,
         request: Request<RemoveRequest>,
-    ) -> Result<Response<RemoveResponse>, Status> {
+    ) -> TonicResult<Response<RemoveResponse>> {
         let input = request.into_inner();
         let files = self.opened_files.lock().await;
         if let Some(fd) = files.get(&input.file_name) {

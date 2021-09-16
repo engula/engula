@@ -9,7 +9,7 @@ mod merging_iterator;
 mod two_level_iterator;
 
 pub use parquet_table::{ParquetBuilder, ParquetOptions, ParquetReader};
-pub use sstable::{SstBuilder, SstOptions, SstReader};
+pub use sstable::{SstableBuilder, SstableOptions, SstableReader};
 pub use table::{TableBuilder, TableReader};
 
 pub use iterator::{Entry, Iterator};

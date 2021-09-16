@@ -30,8 +30,9 @@ impl LocalManifest {
         let obsoleted_tables = Arc::new(Mutex::new(Vec::new()));
 
         let mut cores = Vec::new();
-        for _ in 0..options.num_shards {
+        for id in 0..options.num_shards {
             let core = Arc::new(Core::new(
+                format!("shard:{}", id),
                 options.clone(),
                 runtime.clone(),
                 next_number.clone(),
@@ -79,6 +80,7 @@ impl Manifest for LocalManifest {
 }
 
 pub struct Core {
+    name: String,
     options: ManifestOptions,
     current: Mutex<VersionDesc>,
     runtime: Arc<dyn CompactionRuntime>,
@@ -89,16 +91,18 @@ pub struct Core {
 
 impl Core {
     fn new(
+        name: String,
         options: ManifestOptions,
         runtime: Arc<dyn CompactionRuntime>,
         next_number: Arc<AtomicU64>,
         obsoleted_tables: Arc<Mutex<Vec<TableDesc>>>,
     ) -> Core {
         Core {
+            name,
             options,
             current: Mutex::new(VersionDesc::default()),
             runtime,
-            pending_compaction: AtomicBool::new(true),
+            pending_compaction: AtomicBool::new(false),
             next_number,
             obsoleted_tables,
         }
@@ -128,13 +132,13 @@ impl Core {
             return;
         }
         while let Some(input) = self.pick_compaction().await {
-            info!("start compaction {:?}", input);
+            info!("[{}] start compaction {:?}", self.name, input);
             match self.runtime.compact(input).await {
                 Ok(output) => {
-                    info!("finish compaction {:?}", output);
+                    info!("[{}] finish compaction {:?}", self.name, output);
                     self.install_compaction(output).await;
                 }
-                Err(err) => error!("compaction failed: {}", err),
+                Err(err) => error!("[{}] compaction failed: {}", self.name, err),
             }
         }
     }

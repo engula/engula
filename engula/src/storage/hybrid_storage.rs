@@ -15,7 +15,6 @@ pub struct HybridStorage {
 }
 
 impl HybridStorage {
-    #[allow(dead_code)]
     pub fn new(read: Arc<dyn Storage>, writes: Vec<Arc<dyn Storage>>) -> HybridStorage {
         HybridStorage { read, writes }
     }

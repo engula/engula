@@ -15,9 +15,8 @@ mod proto {
 }
 
 use async_trait::async_trait;
-use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 #[async_trait]
 pub trait Fs: Sync + Send {
@@ -47,22 +46,4 @@ pub trait SequentialWriter: Sync + Send + Unpin {
 #[async_trait]
 pub trait RandomAccessReader: Sync + Send + Unpin {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>>;
-}
-
-pub async fn open_fs(url: &str) -> Result<Box<dyn Fs>> {
-    let parsed_url = Url::parse(url)?;
-    match parsed_url.scheme() {
-        "file" => {
-            let fs = LocalFs::new(parsed_url.path())?;
-            Ok(Box::new(fs))
-        }
-        "http" => {
-            let fs = RemoteFs::new(url).await?;
-            Ok(Box::new(fs))
-        }
-        _ => Err(Error::InvalidArgument(format!(
-            "invalid fs url: {:?}",
-            parsed_url
-        ))),
-    }
 }

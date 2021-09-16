@@ -1,0 +1,29 @@
+bench_get = false
+num_tasks = 100000
+value_size = 100
+num_entries = 1000000
+# journal_urls = ["http://127.0.0.1:10001"]
+# storage_urls = ["http://127.0.0.1:10002"]
+# manifest_url = "http://127.0.0.1:10003"
+# compaction_url = "http://127.0.0.1:10004"
+
+# [aws]
+# region
+# access_key
+# secret_access_key
+
+[compute]
+num_shards = 8
+num_levels = 4
+memtable_size_mb = 1024
+write_channel_size = 1024
+
+[journal]
+path = "/tmp/engula/journal"
+sync = true
+chunk_size = 1024
+
+[storage]
+path = "/tmp/engula/storage"
+sst_block_size_kb = 16
+row_group_size_mb = 16

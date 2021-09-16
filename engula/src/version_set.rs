@@ -70,7 +70,7 @@ impl VersionSet {
         };
         VersionSet {
             id,
-            name: format!("vset:{}", id),
+            name: format!("shard:{}", id),
             current: Mutex::new(Arc::new(version)),
             storage,
             manifest,

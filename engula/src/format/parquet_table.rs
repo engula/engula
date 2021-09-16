@@ -29,11 +29,10 @@ use crate::{
 
 #[derive(Clone)]
 pub struct ParquetOptions {
-    pub row_group_size: u64,
+    pub row_group_size: usize,
 }
 
 impl ParquetOptions {
-    #[allow(dead_code)]
     pub fn default() -> ParquetOptions {
         ParquetOptions {
             row_group_size: 8 * 1024 * 1024,
@@ -47,7 +46,7 @@ pub struct ParquetBuilder {
     error: Option<Error>,
     writer: RowGroupWriter,
     columns: [Vec<ByteArray>; 3],
-    current_group_size: u64,
+    current_group_size: usize,
 }
 
 impl ParquetBuilder {
@@ -75,7 +74,7 @@ impl TableBuilder for ParquetBuilder {
         self.columns[0].push(ts_bytes.to_vec().into());
         self.columns[1].push(key.to_vec().into());
         self.columns[2].push(value.to_vec().into());
-        self.current_group_size += (ts_bytes.len() + key.len() + value.len()) as u64;
+        self.current_group_size += ts_bytes.len() + key.len() + value.len();
         if self.current_group_size >= self.options.row_group_size {
             if let Err(error) = self.writer.write_group(&self.columns) {
                 self.error = Some(error);

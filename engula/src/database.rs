@@ -69,9 +69,9 @@ impl Database {
 
             // Spawns a task to handle writes per core.
             let core_clone = core.clone();
-            let journal_tx_clone = journal_tx.clone();
+            let journal_tx = journal_tx.clone();
             task::spawn(async move {
-                core_clone.write_batch(write_rx, journal_tx_clone).await;
+                core_clone.write_batch(write_rx, journal_tx).await;
             });
 
             // Spawns a task to handle memtable writes per core.

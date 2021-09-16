@@ -1,22 +1,26 @@
-use std::sync::Arc;
-
 use clap::Clap;
 use engula::*;
 use tonic::transport::Server;
 
+use super::config::Config;
+
 #[derive(Clap)]
 pub struct Command {
+    #[clap(short, long)]
+    config: String,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 impl Command {
     pub async fn run(&self) -> Result<()> {
+        let config = Config::from_file(&self.config).unwrap();
+        println!("{:#?}", config);
         match &self.subcmd {
-            SubCommand::Journal(cmd) => cmd.run().await?,
-            SubCommand::Storage(cmd) => cmd.run().await?,
-            SubCommand::Manifest(cmd) => cmd.run().await?,
-            SubCommand::Compaction(cmd) => cmd.run().await?,
+            SubCommand::Journal(cmd) => cmd.run(&config).await?,
+            SubCommand::Storage(cmd) => cmd.run(&config).await?,
+            SubCommand::Manifest(cmd) => cmd.run(&config).await?,
+            SubCommand::Compaction(cmd) => cmd.run(&config).await?,
         }
         Ok(())
     }
@@ -34,21 +38,17 @@ enum SubCommand {
 struct JournalCommand {
     #[clap(long)]
     addr: String,
-    #[clap(long)]
-    path: String,
-    #[clap(long)]
-    no_sync: bool,
 }
 
 impl JournalCommand {
-    async fn run(&self) -> Result<()> {
-        println!("{:?}", self);
+    async fn run(&self, config: &Config) -> Result<()> {
         let addr = self.addr.parse().unwrap();
-        let options = JournalOptions {
-            sync: !self.no_sync,
-            chunk_size: 1024,
-        };
-        let service = JournalService::new(&self.path, options)?;
+        let options = config.journal.as_options();
+        println!(
+            "start journal addr {} path {}",
+            self.addr, config.journal.path,
+        );
+        let service = JournalService::new(&config.journal.path, options)?;
         Server::builder()
             .add_service(JournalServer::new(service))
             .serve(addr)
@@ -61,16 +61,16 @@ impl JournalCommand {
 struct StorageCommand {
     #[clap(long)]
     addr: String,
-    #[clap(long)]
-    path: String,
 }
 
 impl StorageCommand {
-    async fn run(&self) -> Result<()> {
-        println!("{:?}", self);
+    async fn run(&self, config: &Config) -> Result<()> {
         let addr = self.addr.parse().unwrap();
-        let fs = LocalFs::new(&self.path)?;
-        let service = FsService::new(Box::new(fs));
+        println!(
+            "start storage addr {} path {}",
+            self.addr, config.storage.path,
+        );
+        let service = FsService::new(&config.storage.path)?;
         Server::builder()
             .add_service(FsServer::new(service))
             .serve(addr)
@@ -83,21 +83,16 @@ impl StorageCommand {
 struct ManifestCommand {
     #[clap(long)]
     addr: String,
-    #[clap(long)]
-    storage_url: String,
-    #[clap(long)]
-    compaction_url: String,
 }
 
 impl ManifestCommand {
-    async fn run(&self) -> Result<()> {
-        println!("{:?}", self);
+    async fn run(&self, config: &Config) -> Result<()> {
+        println!("start manifest addr {}", self.addr);
         let addr = self.addr.parse().unwrap();
-        let sst_options = SstOptions::default();
-        let manifest_options = ManifestOptions::default();
-        let storage = SstStorage::new(&self.storage_url, sst_options).await?;
-        let runtime = RemoteCompaction::new(&self.compaction_url).await?;
-        let manifest = LocalManifest::new(manifest_options, Arc::new(storage), Arc::new(runtime));
+        let options = config.compute.as_manifest_options();
+        let storage = config.new_storage(true).await?;
+        let compaction = config.new_compaction().await?;
+        let manifest = LocalManifest::new(options, storage, compaction);
         let service = ManifestService::new(Box::new(manifest));
         Server::builder()
             .add_service(ManifestServer::new(service))
@@ -111,17 +106,14 @@ impl ManifestCommand {
 struct CompactionCommand {
     #[clap(long)]
     addr: String,
-    #[clap(long)]
-    storage_url: String,
 }
 
 impl CompactionCommand {
-    async fn run(&self) -> Result<()> {
-        println!("{:?}", self);
+    async fn run(&self, config: &Config) -> Result<()> {
+        println!("start compaction addr {}", self.addr);
         let addr = self.addr.parse().unwrap();
-        let options = SstOptions::default();
-        let storage = SstStorage::new(&self.storage_url, options).await?;
-        let runtime = LocalCompaction::new(Arc::new(storage));
+        let storage = config.new_storage(false).await?;
+        let runtime = LocalCompaction::new(storage);
         let service = CompactionService::new(Box::new(runtime));
         Server::builder()
             .add_service(CompactionServer::new(service))

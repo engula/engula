@@ -4,29 +4,27 @@ use engula::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let dirname = "/tmp/engula";
+    let dirname = "/tmp/engula_test/hello";
     let _ = std::fs::remove_dir_all(dirname);
-    let storage_url = format!("file://{}", dirname);
 
     let options = Options::default();
-    let sst_options = SstOptions::default();
     let journal_options = JournalOptions::default();
+    let sstable_options = SstableOptions::default();
     let manifest_options = ManifestOptions::default();
 
     let journal = Arc::new(LocalJournal::new(dirname, journal_options)?);
-    let storage = Arc::new(SstStorage::new(&storage_url, sst_options).await?);
+    let fs = Arc::new(LocalFs::new(dirname)?);
+    let storage = Arc::new(SstableStorage::new(fs, sstable_options));
     let runtime = Arc::new(LocalCompaction::new(storage.clone()));
     let manifest = Arc::new(LocalManifest::new(
         manifest_options,
         storage.clone(),
         runtime,
     ));
-
-    let db = Database::new(options, journal, storage, manifest).await?;
-    let db = Arc::new(db);
+    let db = Arc::new(Database::new(options, journal, storage, manifest).await?);
 
     let num_tasks = 4u64;
-    let num_entries = 1000u64;
+    let num_entries = 1024u64;
     let mut tasks = Vec::new();
     for _ in 0..num_tasks {
         let db = db.clone();

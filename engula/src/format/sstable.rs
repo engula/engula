@@ -17,21 +17,21 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct SstOptions {
+pub struct SstableOptions {
     pub block_size: usize,
     pub block_cache: Option<Arc<dyn Cache>>,
 }
 
-impl SstOptions {
-    pub fn default() -> SstOptions {
-        SstOptions {
+impl SstableOptions {
+    pub fn default() -> SstableOptions {
+        SstableOptions {
             block_size: 16 * 1024,
             block_cache: None,
         }
     }
 }
 
-impl std::fmt::Debug for SstOptions {
+impl std::fmt::Debug for SstableOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SstOptions")
             .field("block_size", &self.block_size)
@@ -41,13 +41,13 @@ impl std::fmt::Debug for SstOptions {
 
 pub const FOOTER_SIZE: u64 = BLOCK_HANDLE_SIZE;
 
-struct SstFooter {
+struct Footer {
     index_handle: BlockHandle,
 }
 
-impl SstFooter {
-    fn decode_from(buf: &[u8]) -> SstFooter {
-        SstFooter {
+impl Footer {
+    fn decode_from(buf: &[u8]) -> Footer {
+        Footer {
             index_handle: BlockHandle::decode_from(buf),
         }
     }
@@ -59,8 +59,8 @@ impl SstFooter {
     }
 }
 
-pub struct SstBuilder {
-    options: SstOptions,
+pub struct SstableBuilder {
+    options: SstableOptions,
     done: bool,
     writer: BlockWriter,
     last_ts: Timestamp,
@@ -69,13 +69,13 @@ pub struct SstBuilder {
     index_block: BlockBuilder,
 }
 
-impl SstBuilder {
+impl SstableBuilder {
     pub fn new(
-        options: SstOptions,
+        options: SstableOptions,
         table_writer: Box<dyn SequentialWriter>,
         table_number: u64,
-    ) -> SstBuilder {
-        SstBuilder {
+    ) -> SstableBuilder {
+        SstableBuilder {
             options,
             done: false,
             writer: BlockWriter::new(table_writer, table_number),
@@ -96,7 +96,7 @@ impl SstBuilder {
 }
 
 #[async_trait]
-impl TableBuilder for SstBuilder {
+impl TableBuilder for SstableBuilder {
     async fn add(&mut self, ts: Timestamp, key: &[u8], value: &[u8]) {
         assert!(!self.done);
         let this_key = key.to_owned();
@@ -117,31 +117,31 @@ impl TableBuilder for SstBuilder {
         }
         let index_block = self.index_block.finish();
         let index_handle = self.writer.write_block(index_block).await;
-        let footer = SstFooter { index_handle };
+        let footer = Footer { index_handle };
         let _ = self.writer.write_block(&footer.encode()).await;
         self.writer.finish().await
     }
 }
 
-pub struct SstReader {
+pub struct SstableReader {
     reader: Arc<BlockReader>,
     index_block: Arc<Vec<u8>>,
 }
 
-impl SstReader {
+impl SstableReader {
     pub async fn new(
-        options: SstOptions,
+        options: SstableOptions,
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
-    ) -> Result<SstReader> {
+    ) -> Result<SstableReader> {
         assert!(desc.sst_table_size >= FOOTER_SIZE);
         let data = file
             .read_at(desc.sst_table_size - FOOTER_SIZE, FOOTER_SIZE)
             .await?;
-        let footer = SstFooter::decode_from(&data);
+        let footer = Footer::decode_from(&data);
         let reader = BlockReader::new(file, desc, options.block_cache);
         let index_block = reader.read_block(&footer.index_handle).await?;
-        Ok(SstReader {
+        Ok(SstableReader {
             reader: Arc::new(reader),
             index_block,
         })
@@ -155,7 +155,7 @@ impl SstReader {
 }
 
 #[async_trait]
-impl TableReader for SstReader {
+impl TableReader for SstableReader {
     async fn get(&self, ts: Timestamp, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut iter = self.new_iterator();
         iter.seek(ts, key).await;
@@ -315,11 +315,11 @@ mod tests {
     #[tokio::test]
     async fn test() {
         const NUM: u64 = 1024;
-        let fs = LocalFs::new("/tmp/engula_test").unwrap();
-        let options = SstOptions::default();
+        let fs = LocalFs::new("/tmp/engula_test/sstable").unwrap();
+        let options = SstableOptions::default();
         let desc = {
             let file = fs.new_sequential_writer("test.sst").await.unwrap();
-            let mut builder = SstBuilder::new(options.clone(), file, 0);
+            let mut builder = SstableBuilder::new(options.clone(), file, 0);
             for i in 0..NUM {
                 let v = i.to_be_bytes();
                 builder.add(i, &v, &v).await;
@@ -327,7 +327,9 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstReader::new(options.clone(), file, desc).await.unwrap();
+        let reader = SstableReader::new(options.clone(), file, desc)
+            .await
+            .unwrap();
         let mut iter = reader.new_iterator();
         iter.seek_to_first().await;
         for i in 0..NUM {

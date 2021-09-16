@@ -20,10 +20,10 @@ pub struct QuorumJournal {
 }
 
 impl QuorumJournal {
-    pub async fn new(urls: Vec<String>, options: JournalOptions) -> Result<QuorumJournal> {
+    pub async fn new(urls: &[String], options: JournalOptions) -> Result<QuorumJournal> {
         let mut clients = Vec::new();
         for url in urls {
-            let client = JournalClient::connect(url).await?;
+            let client = JournalClient::connect(url.to_owned()).await?;
             clients.push(client);
         }
         Ok(QuorumJournal { options, clients })

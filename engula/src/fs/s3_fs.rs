@@ -21,11 +21,12 @@ use crate::{
     fs::{Fs, RandomAccessReader, SequentialWriter},
 };
 
+#[derive(Debug)]
 pub struct S3Options {
-    region: String,
-    bucket: String,
-    access_key: String,
-    secret_access_key: String,
+    pub region: String,
+    pub bucket: String,
+    pub access_key: String,
+    pub secret_access_key: String,
 }
 
 pub struct S3Fs {
