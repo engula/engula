@@ -48,5 +48,6 @@ async fn main() -> Result<()> {
         let got = db.get(&v).await.unwrap();
         assert_eq!(got, Some(v.clone()));
     }
+    db.count().await.unwrap();
     Ok(())
 }

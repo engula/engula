@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task};
 use tracing::info;
 
 use crate::{
@@ -38,9 +38,16 @@ impl Version {
     }
 
     pub async fn count(&self) -> Result<usize> {
-        let mut sum = 0;
+        let mut handles = Vec::new();
         for table in &self.tables {
-            sum += self.storage.count_table(table.desc.clone()).await?;
+            let storage = self.storage.clone();
+            let table_number = table.desc.table_number;
+            let handle = task::spawn(async move { storage.count_table(table_number).await });
+            handles.push(handle);
+        }
+        let mut sum = 0;
+        for handle in handles {
+            sum += handle.await??;
         }
         Ok(sum)
     }

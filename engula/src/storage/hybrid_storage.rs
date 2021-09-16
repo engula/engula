@@ -37,6 +37,10 @@ impl Storage for HybridStorage {
         Ok(Box::new(builder))
     }
 
+    async fn count_table(&self, table_number: u64) -> Result<usize> {
+        self.read.count_table(table_number).await
+    }
+
     async fn remove_table(&self, table_number: u64) -> Result<()> {
         for s in &self.writes {
             s.remove_table(table_number).await?;

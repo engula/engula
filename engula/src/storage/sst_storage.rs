@@ -39,6 +39,11 @@ impl Storage for SstStorage {
         Ok(Box::new(builder))
     }
 
+    async fn count_table(&self, table_number: u64) -> Result<usize> {
+        let file_name = sst_name(table_number);
+        self.fs.count_file(&file_name).await
+    }
+
     async fn remove_table(&self, table_number: u64) -> Result<()> {
         let file_name = sst_name(table_number);
         self.fs.remove_file(&file_name).await

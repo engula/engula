@@ -19,10 +19,7 @@ pub trait Storage: Send + Sync {
 
     async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>>;
 
-    async fn count_table(&self, _: TableDesc) -> Result<usize> {
-        // TODO
-        Ok(0)
-    }
+    async fn count_table(&self, table_number: u64) -> Result<usize>;
 
     async fn remove_table(&self, table_number: u64) -> Result<()>;
 }

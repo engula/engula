@@ -172,8 +172,6 @@ impl TableReader for SstReader {
     }
 }
 
-const BUFFER_SIZE: usize = 1024 * 1024;
-
 struct BlockWriter {
     file: Box<dyn SequentialWriter>,
     number: u64,
@@ -183,11 +181,12 @@ struct BlockWriter {
 
 impl BlockWriter {
     fn new(file: Box<dyn SequentialWriter>, number: u64) -> BlockWriter {
+        let buffer = Vec::with_capacity(file.suggest_buffer_size());
         BlockWriter {
             file,
             number,
             offset: 0,
-            buffer: Vec::with_capacity(BUFFER_SIZE),
+            buffer,
         }
     }
 
@@ -198,14 +197,14 @@ impl BlockWriter {
         };
         self.offset += block.len() as u64;
         self.buffer.extend_from_slice(block);
-        if self.buffer.len() >= BUFFER_SIZE {
+        if self.buffer.len() >= self.file.suggest_buffer_size() {
             self.file.write(self.buffer.split_off(0)).await;
         }
         handle
     }
 
     async fn finish(&mut self) -> Result<TableDesc> {
-        if self.buffer.len() > 0 {
+        if !self.buffer.is_empty() {
             self.file.write(self.buffer.split_off(0)).await;
         }
         self.file.finish().await?;

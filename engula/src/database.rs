@@ -35,7 +35,7 @@ pub struct Options {
 impl Options {
     pub fn default() -> Options {
         Options {
-            num_shards: 4,
+            num_shards: 8,
             memtable_size: 1024,
             write_channel_size: 1024,
         }
@@ -316,9 +316,6 @@ impl SuperVersionHandle {
     }
 
     async fn install_flush_version(&self, version: Arc<Version>) {
-        if !self.version_updated(version.clone()).await {
-            return;
-        }
         let mut current = self.current.write().await;
         assert!(current.imm.is_some());
         *current = Arc::new(SuperVersion {
