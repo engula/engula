@@ -1,5 +1,4 @@
-bench_get = false
-num_tasks = 100000
+num_tasks = 1000
 value_size = 100
 num_entries = 1000000
 # journal_urls = ["http://127.0.0.1:10001"]
@@ -15,7 +14,7 @@ num_entries = 1000000
 [compute]
 num_shards = 8
 num_levels = 4
-memtable_size_mb = 1024
+memtable_size_mb = 16
 write_channel_size = 1024
 
 [journal]

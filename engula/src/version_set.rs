@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tokio::{sync::Mutex, task};
+use metrics::{counter, histogram};
+use tokio::{sync::Mutex, task, time::Instant};
 use tracing::info;
 
 use crate::{
@@ -84,6 +85,7 @@ impl VersionSet {
 
     pub async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<Arc<Version>> {
         info!("[{}] start flush size {}", self.name, mem.size());
+        let start = Instant::now();
         let number = self.manifest.next_number().await?;
         let mut builder = self.storage.new_builder(number).await?;
         let snapshot = mem.snapshot().await;
@@ -91,7 +93,15 @@ impl VersionSet {
             builder.add(ent.0, ent.1, ent.2).await;
         }
         let table = builder.finish().await?;
-        info!("[{}] finish flush table {:?}", self.name, table);
+        let throughput = mem.size() as f64 / start.elapsed().as_secs_f64();
+        counter!("engula.flush.bytes", mem.size() as u64);
+        histogram!("engula.flush.throughput", throughput);
+        info!(
+            "[{}] finish flush table {:?} throughput {} MB/s",
+            self.name,
+            table,
+            throughput as u64 / 1024 / 1024
+        );
         let version = self.manifest.add_table(self.id, table).await?;
         self.install_version(version).await
     }

@@ -4,7 +4,8 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tokio::io::AsyncWriteExt;
+use metrics::{counter, histogram};
+use tokio::{io::AsyncWriteExt, time::Instant};
 
 use super::{Fs, RandomAccessReader, SequentialWriter};
 use crate::error::{Error, Result};
@@ -64,8 +65,13 @@ impl SequentialWriter for SequentialFile {
         if self.error.is_some() {
             return;
         }
+        let start = Instant::now();
         if let Err(err) = self.file.write_all(&data).await {
             self.error = Some(err.into());
+        } else {
+            let throughput = data.len() as f64 / start.elapsed().as_secs_f64();
+            counter!("engula.fs.local.write.bytes", data.len() as u64);
+            histogram!("engula.fs.local.write.throughput", throughput);
         }
     }
 
@@ -73,7 +79,9 @@ impl SequentialWriter for SequentialFile {
         if let Some(err) = &self.error {
             return Err(err.clone());
         }
+        let start = Instant::now();
         self.file.sync_data().await?;
+        histogram!("engula.fs.local.finish.seconds", start.elapsed());
         Ok(())
     }
 }
@@ -94,7 +102,11 @@ impl RandomAccessReader for RandomAccessFile {
         let mut buf = Vec::new();
         buf.resize(size as usize, 0);
         // TODO: this is a blocking read.
+        let start = Instant::now();
         self.file.read_at(&mut buf, offset)?;
+        let throughput = size as f64 / start.elapsed().as_secs_f64();
+        counter!("engula.fs.local.read.bytes", size);
+        histogram!("engula.fs.local.read.throughput", throughput);
         Ok(buf)
     }
 }

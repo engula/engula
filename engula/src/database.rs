@@ -8,9 +8,11 @@ use std::{
 };
 
 use futures::StreamExt;
+use metrics::histogram;
 use tokio::{
     sync::{mpsc, oneshot, Mutex, RwLock},
-    task, time,
+    task,
+    time::{self, Duration, Instant},
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, warn};
@@ -97,15 +99,21 @@ impl Database {
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let start = Instant::now();
         let ts = self.next_ts.load(Ordering::SeqCst);
         let core = self.select_core(key);
-        core.get(ts, key).await
+        let value = core.get(ts, key).await?;
+        histogram!("engula.get.ms", start.elapsed().as_millis() as f64);
+        Ok(value)
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let start = Instant::now();
         let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
         let core = self.select_core(&key);
-        core.put(ts, key, value).await
+        core.put(ts, key, value).await?;
+        histogram!("engula.put.ms", start.elapsed().as_millis() as f64);
+        Ok(())
     }
 
     pub async fn count(&self) -> Result<usize> {
@@ -327,7 +335,7 @@ impl SuperVersionHandle {
 }
 
 async fn update_version(handle: Arc<SuperVersionHandle>) {
-    let mut interval = time::interval(time::Duration::from_secs(1));
+    let mut interval = time::interval(Duration::from_secs(1));
     loop {
         interval.tick().await;
         match handle.vset.current().await {

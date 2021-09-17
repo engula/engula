@@ -9,11 +9,12 @@ service Compaction {
 }
 
 message CompactionInput {
-  repeated format.TableDesc tables = 1;
-  uint64 output_table_number = 2;
+  repeated engula.format.TableDesc tables = 1;
+  uint64 input_size = 2;
+  uint64 output_table_number = 3;
 }
 
 message CompactionOutput {
-  repeated format.TableDesc tables = 1;
-  format.TableDesc output_table = 2;
+  repeated engula.format.TableDesc tables = 1;
+  engula.format.TableDesc output_table = 2;
 }

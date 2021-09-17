@@ -6,7 +6,6 @@ use url::Url;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub bench_get: bool,
     pub num_tasks: usize,
     pub value_size: usize,
     pub num_entries: usize,

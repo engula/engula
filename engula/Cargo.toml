@@ -14,20 +14,31 @@ path = "bin/engula.rs"
 [dependencies]
 clap = "3.0.0-beta.4"
 toml = "0.5"
+tonic = "0.5"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
+tracing-futures = "0.2"
 tracing-appender = "0.1"
 tracing-subscriber = "0.2"
-futures = "0.3"
-tonic = "0.5"
+tracing-opentelemetry = "0.15"
+opentelemetry = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.15", features = [
+    "rt-tokio",
+    "collector_client",
+    "reqwest_collector_client",
+] }
+opentelemetry-prometheus = "0.9"
+metrics = "0.17"
+metrics-exporter-prometheus = "0.6"
 prost = "0.8"
 serde = "1.0"
 serde_derive = "1.0"
 async-trait = "0.1"
 async-stream = "0.3"
-thiserror = "1.0"
 bytes = "1.1"
+futures = "0.3"
+thiserror = "1.0"
 url = "2.2"
 parquet = "5.3"
 bit-vec = "0.6"

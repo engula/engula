@@ -8,6 +8,8 @@ use super::config::Config;
 
 #[derive(Clap, Debug)]
 pub struct Command {
+    #[clap(long)]
+    get: bool,
     #[clap(short, long)]
     config: String,
 }
@@ -18,7 +20,7 @@ impl Command {
         println!("{:#?}", config);
         let db = config.new_db().await?;
         self.bench_put(db.clone(), &config).await;
-        if config.bench_get {
+        if self.get {
             self.bench_get(db.clone(), &config).await;
         }
         Ok(())

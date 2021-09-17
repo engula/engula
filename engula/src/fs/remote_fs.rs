@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use tokio::{sync::mpsc, task};
+use metrics::{counter, histogram};
+use tokio::{sync::mpsc, task, time::Instant};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Request};
 use tracing::error;
@@ -119,7 +120,9 @@ impl SequentialWriter for RemoteWriter {
         self.write_handle.take().unwrap().await??;
         let input = FinishRequest { fd: self.fd };
         let request = Request::new(input);
+        let start = Instant::now();
         self.client.finish(request).await?;
+        histogram!("engula.fs.remote.finish.seconds", start.elapsed());
         Ok(())
     }
 }
@@ -145,7 +148,11 @@ impl RandomAccessReader for RemoteReader {
             size,
         };
         let request = Request::new(input);
+        let start = Instant::now();
         let response = client.read(request).await?;
+        let throughput = size as f64 / start.elapsed().as_secs_f64();
+        counter!("engula.fs.remote.read.bytes", size);
+        histogram!("engula.fs.remote.read.throughput", throughput);
         let output = response.into_inner();
         Ok(output.data)
     }

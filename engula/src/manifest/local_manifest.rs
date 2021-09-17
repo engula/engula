@@ -4,7 +4,12 @@ use std::sync::{
 };
 
 use async_trait::async_trait;
-use tokio::{sync::Mutex, task, time};
+use metrics::{counter, histogram};
+use tokio::{
+    sync::Mutex,
+    task,
+    time::{self, Duration, Instant},
+};
 use tracing::{error, info};
 
 use super::{Manifest, ManifestOptions, VersionDesc};
@@ -133,9 +138,19 @@ impl Core {
         }
         while let Some(input) = self.pick_compaction().await {
             info!("[{}] start compaction {:?}", self.name, input);
+            let start = Instant::now();
+            let input_size = input.input_size;
             match self.runtime.compact(input).await {
                 Ok(output) => {
-                    info!("[{}] finish compaction {:?}", self.name, output);
+                    let throughput = input_size as f64 / start.elapsed().as_secs_f64();
+                    counter!("engula.compact.bytes", input_size as u64);
+                    histogram!("engula.compact.throughput", throughput);
+                    info!(
+                        "[{}] finish compaction {:?} throughput {} MB/s",
+                        self.name,
+                        output,
+                        throughput as u64 / 1024 / 1024
+                    );
                     self.install_compaction(output).await;
                 }
                 Err(err) => error!("[{}] compaction failed: {}", self.name, err),
@@ -168,6 +183,7 @@ impl Core {
         }
         Some(CompactionInput {
             tables: input_tables,
+            input_size,
             output_table_number: self.next_number(),
         })
     }
@@ -200,7 +216,7 @@ async fn purge_obsoleted_tables(
     obsoleted_tables: Arc<Mutex<Vec<TableDesc>>>,
 ) {
     // This is ugly and unsafe, but good enough for the demo.
-    let mut interval = time::interval(time::Duration::from_secs(3));
+    let mut interval = time::interval(Duration::from_secs(3));
     loop {
         interval.tick().await;
         for table in obsoleted_tables.lock().await.split_off(0) {

@@ -13,7 +13,8 @@ use aws_sdk_s3::{
 use aws_types::credentials::Credentials;
 use bytes::Buf;
 use futures::executor::block_on;
-use tokio::task;
+use metrics::{counter, histogram};
+use tokio::{task, time::Instant};
 use tracing::error;
 
 use crate::{
@@ -167,6 +168,7 @@ impl S3Object {
 impl RandomAccessReader for S3Object {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
         let range = format!("bytes={}-{}", offset, size);
+        let start = Instant::now();
         let result = self
             .client
             .get_object()
@@ -177,7 +179,12 @@ impl RandomAccessReader for S3Object {
             .await;
         match result {
             Ok(output) => match output.body.collect().await {
-                Ok(v) => Ok(v.chunk().to_owned()),
+                Ok(v) => {
+                    let throughput = size as f64 / start.elapsed().as_secs_f64();
+                    counter!("engula.fs.s3.read.bytes", size as u64);
+                    histogram!("engula.fs.s3.read.throughput", throughput);
+                    Ok(v.chunk().to_owned())
+                }
                 Err(err) => Err(Error::AwsSdk(err.to_string())),
             },
             Err(err) => {
@@ -227,6 +234,8 @@ impl S3Writer {
         let upload_id = self.upload_id.clone();
         let part_number = (self.part_handles.len() + 1) as i32;
         let part_handle = task::spawn(async move {
+            let size = part.len();
+            let start = Instant::now();
             let result = object
                 .client
                 .upload_part()
@@ -237,6 +246,9 @@ impl S3Writer {
                 .body(part.into())
                 .send()
                 .await;
+            let throughput = size as f64 / start.elapsed().as_secs_f64();
+            counter!("engula.fs.s3.write.bytes", size as u64);
+            histogram!("engula.fs.s3.write.throughput", throughput);
             match result {
                 Ok(output) => {
                     let part = CompletedPart::builder()
@@ -296,6 +308,7 @@ impl SequentialWriter for S3Writer {
         let upload = CompletedMultipartUpload::builder()
             .set_parts(Some(parts))
             .build();
+        let start = Instant::now();
         let result = self
             .object
             .client
@@ -306,6 +319,7 @@ impl SequentialWriter for S3Writer {
             .multipart_upload(upload)
             .send()
             .await;
+        histogram!("engula.fs.s3.finish.seconds", start.elapsed());
         match result {
             Ok(_) => Ok(()),
             Err(err) => {
