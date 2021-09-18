@@ -28,16 +28,18 @@ impl Command {
 
     async fn bench_get(&self, db: Arc<Database>, config: &Config) {
         let mut tasks = Vec::new();
-        let num_entries_per_task = config.num_entries / config.num_tasks;
         let barrier = Arc::new(Barrier::new(config.num_tasks));
+        let num_entries_per_task = config.num_entries / config.num_tasks;
 
         let now = Instant::now();
-        for _ in 0..config.num_tasks {
+        for task_id in 0..config.num_tasks {
             let db = db.clone();
             let barrier = barrier.clone();
+            let start = task_id * num_entries_per_task;
+            let end = (task_id + 1) * num_entries_per_task;
             let task = tokio::task::spawn(async move {
                 barrier.wait().await;
-                for i in 0..num_entries_per_task {
+                for i in start..end {
                     let key = i.to_be_bytes();
                     db.get(&key).await.unwrap().unwrap();
                 }
@@ -56,18 +58,20 @@ impl Command {
 
     async fn bench_put(&self, db: Arc<Database>, config: &Config) {
         let mut tasks = Vec::new();
-        let num_entries_per_task = config.num_entries / config.num_tasks;
         let barrier = Arc::new(Barrier::new(config.num_tasks));
+        let num_entries_per_task = config.num_entries / config.num_tasks;
 
         let now = Instant::now();
-        for _ in 0..config.num_tasks {
+        for task_id in 0..config.num_tasks {
             let mut value = Vec::new();
             value.resize(config.value_size, 0);
             let db = db.clone();
             let barrier = barrier.clone();
+            let start = task_id * num_entries_per_task;
+            let end = (task_id + 1) * num_entries_per_task;
             let task = tokio::task::spawn(async move {
                 barrier.wait().await;
-                for i in 0..num_entries_per_task {
+                for i in start..end {
                     let key = i.to_be_bytes();
                     db.put(key.to_vec(), value.clone()).await.unwrap();
                 }

@@ -103,7 +103,7 @@ impl Database {
         let ts = self.next_ts.load(Ordering::SeqCst);
         let core = self.select_core(key);
         let value = core.get(ts, key).await?;
-        histogram!("engula.get.ms", start.elapsed().as_millis() as f64);
+        histogram!("engula.get.us", start.elapsed().as_micros() as f64);
         Ok(value)
     }
 
@@ -112,7 +112,7 @@ impl Database {
         let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
         let core = self.select_core(&key);
         core.put(ts, key, value).await?;
-        histogram!("engula.put.ms", start.elapsed().as_millis() as f64);
+        histogram!("engula.put.us", start.elapsed().as_micros() as f64);
         Ok(())
     }
 

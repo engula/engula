@@ -70,8 +70,8 @@ fn init_prometheus(addr: &str) {
         .install()
         .unwrap();
 
-    register_histogram!("engula.get.ms");
-    register_histogram!("engula.put.ms");
+    register_histogram!("engula.get.us");
+    register_histogram!("engula.put.us");
     register_counter!("engula.cache.hit");
     register_counter!("engula.cache.miss");
 
