@@ -62,5 +62,10 @@ async fn main() -> Result<()> {
         assert_eq!(got, Some(v.clone()));
     }
 
+    println!("Successfully write data files under: {}!", dirname);
+    for files in std::fs::read_dir(dirname)? {
+        println!("{}", files?.file_name().into_string().unwrap());
+    }
+
     Ok(())
 }
