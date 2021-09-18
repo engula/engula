@@ -646,6 +646,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures",
+ "lru",
  "metrics",
  "metrics-exporter-prometheus",
  "opentelemetry",
@@ -1118,6 +1119,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "lru"
+version = "0.7.0"
+source = "git+https://github.com/jeromefroe/lru-rs?tag=0.7.0#09f68c63755b35f9cf5cb5d6765cf8dc080f9ea3"
+dependencies = [
+ "hashbrown",
 ]
 
 [[package]]

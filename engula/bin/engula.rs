@@ -72,6 +72,8 @@ fn init_prometheus(addr: &str) {
 
     register_histogram!("engula.get.ms");
     register_histogram!("engula.put.ms");
+    register_counter!("engula.cache.hit");
+    register_counter!("engula.cache.miss");
 
     register_counter!("engula.flush.bytes");
     register_histogram!("engula.flush.throughput");

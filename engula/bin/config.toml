@@ -1,6 +1,6 @@
 num_tasks = 1000
 value_size = 100
-num_entries = 1000000
+num_entries = 100000
 # journal_urls = ["http://127.0.0.1:10001"]
 # storage_urls = ["http://127.0.0.1:10002"]
 # manifest_url = "http://127.0.0.1:10003"
@@ -25,4 +25,5 @@ chunk_size = 1024
 [storage]
 path = "/tmp/engula/storage"
 sst_block_size_kb = 16
+sst_cache_size_mb = 16
 row_group_size_mb = 16

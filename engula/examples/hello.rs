@@ -10,7 +10,8 @@ async fn main() -> Result<()> {
     // Creates a hybrid storage that reads from a sstable storage and
     // writes to a sstable storage and a parquet storage.
     let fs = Arc::new(LocalFs::new(dirname)?);
-    let sstable_options = SstableOptions::default();
+    let cache = Arc::new(LruCache::new(4 * 1024 * 1024, 4));
+    let sstable_options = SstableOptions::with_cache(cache);
     let sstable_storage = Arc::new(SstableStorage::new(fs.clone(), sstable_options));
     let parquet_options = ParquetOptions::default();
     let parquet_storage = Arc::new(ParquetStorage::new(fs.clone(), parquet_options));

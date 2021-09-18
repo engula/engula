@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::BufMut;
+use metrics::counter;
 
 use super::{
     block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE},
@@ -27,6 +28,13 @@ impl SstableOptions {
         SstableOptions {
             block_size: 16 * 1024,
             block_cache: None,
+        }
+    }
+
+    pub fn with_cache(cache: Arc<dyn Cache>) -> SstableOptions {
+        SstableOptions {
+            block_size: 16 * 1024,
+            block_cache: Some(cache),
         }
     }
 }
@@ -271,7 +279,13 @@ impl BlockCache {
     async fn get(&self, number: u64, offset: u64) -> Option<Arc<Vec<u8>>> {
         if let Some(cache) = self.cache.as_ref() {
             let key = make_cache_key(number, offset);
-            cache.get(&key).await
+            if let Some(value) = cache.get(&key).await {
+                counter!("engula.cache.hit", 1);
+                Some(value)
+            } else {
+                counter!("engula.cache.miss", 1);
+                None
+            }
         } else {
             None
         }

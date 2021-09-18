@@ -10,6 +10,7 @@ mod memtable;
 mod storage;
 mod version_set;
 
+pub use cache::{Cache, LruCache};
 pub use compaction::{
     CompactionRuntime, CompactionServer, CompactionService, LocalCompaction, RemoteCompaction,
 };
