@@ -1,13 +1,13 @@
 mod journal_service;
 mod local_journal;
-mod quorum_journal;
+mod remote_journal;
 mod write;
 
 pub use journal_server::JournalServer;
 pub use journal_service::JournalService;
 pub use local_journal::LocalJournal;
 pub use proto::*;
-pub use quorum_journal::QuorumJournal;
+pub use remote_journal::RemoteJournal;
 pub use write::{Write, WriteBatch};
 
 use async_trait::async_trait;
@@ -22,14 +22,14 @@ mod proto {
 #[derive(Clone, Debug)]
 pub struct JournalOptions {
     pub sync: bool,
-    pub chunk_size: usize,
+    pub size: usize,
 }
 
 impl JournalOptions {
     pub fn default() -> JournalOptions {
         JournalOptions {
-            sync: false,
-            chunk_size: 1024,
+            sync: true,
+            size: 1024 * 1024,
         }
     }
 }

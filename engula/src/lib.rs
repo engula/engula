@@ -19,7 +19,7 @@ pub use error::{Error, Result};
 pub use format::{ParquetOptions, SstableOptions};
 pub use fs::{Fs, FsServer, FsService, LocalFs, RemoteFs, S3Fs, S3Options};
 pub use journal::{
-    Journal, JournalOptions, JournalServer, JournalService, LocalJournal, QuorumJournal,
+    Journal, JournalOptions, JournalServer, JournalService, LocalJournal, RemoteJournal,
 };
 pub use manifest::{
     LocalManifest, Manifest, ManifestOptions, ManifestServer, ManifestService, RemoteManifest,

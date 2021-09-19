@@ -1,12 +1,14 @@
-use std::path::Path;
+use std::{io::SeekFrom, path::Path};
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use metrics::histogram;
 use tokio::{
     fs::File,
-    io::AsyncWriteExt,
+    io::{AsyncSeekExt, AsyncWriteExt},
     sync::{mpsc, Mutex},
     task,
+    time::Instant,
 };
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -14,29 +16,36 @@ use super::{write::WriteBatch, Journal, JournalOptions};
 use crate::error::Result;
 
 struct JournalFile {
+    options: JournalOptions,
     file: File,
-    sync: bool,
+    size: usize,
 }
 
 impl JournalFile {
-    fn new(file: std::fs::File, sync: bool) -> JournalFile {
+    fn new(options: JournalOptions, file: std::fs::File) -> JournalFile {
         JournalFile {
+            options,
             file: File::from_std(file),
-            sync,
+            size: 0,
         }
     }
 
     async fn append(&mut self, data: &[u8]) -> Result<()> {
+        let start = Instant::now();
         self.file.write_all(data).await?;
-        if self.sync {
+        if self.options.sync {
             self.file.sync_data().await?;
+        }
+        histogram!("engula.journal.local.append.seconds", start.elapsed());
+        self.size += data.len();
+        if self.size >= self.options.size {
+            self.file.seek(SeekFrom::Start(0)).await?;
         }
         Ok(())
     }
 }
 
 pub struct LocalJournal {
-    options: JournalOptions,
     file: Mutex<JournalFile>,
 }
 
@@ -47,10 +56,10 @@ impl LocalJournal {
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(filename)?;
-        let file = JournalFile::new(file, options.sync);
+        let file = JournalFile::new(options, file);
         Ok(LocalJournal {
-            options,
             file: Mutex::new(file),
         })
     }
@@ -66,7 +75,7 @@ impl Journal for LocalJournal {
     async fn append_stream(&self, rx: mpsc::Receiver<WriteBatch>) -> Result<()> {
         let mut file = self.file.lock().await;
         let mut buffer = Vec::with_capacity(1024 * 1024);
-        let mut stream = ReceiverStream::new(rx).ready_chunks(self.options.chunk_size);
+        let mut stream = ReceiverStream::new(rx).ready_chunks(1024);
         while let Some(mut batches) = stream.next().await {
             buffer.clear();
             for batch in &mut batches {

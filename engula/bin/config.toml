@@ -1,7 +1,7 @@
 num_tasks = 1000
 value_size = 100
 num_entries = 100000
-# journal_urls = ["http://127.0.0.1:10001"]
+# journal_url = "http://127.0.0.1:10001"
 # storage_urls = ["http://127.0.0.1:10002"]
 # manifest_url = "http://127.0.0.1:10003"
 # compaction_url = "http://127.0.0.1:10004"
@@ -20,7 +20,7 @@ write_channel_size = 1024
 [journal]
 path = "/tmp/engula/journal"
 sync = true
-chunk_size = 1024
+size = 1073741824
 
 [storage]
 path = "/tmp/engula/storage"

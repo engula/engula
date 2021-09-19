@@ -1,8 +1,9 @@
 #!/bin/bash
 
-device=$1
+disk=$1
+path=$2
 
-sudo mkfs -t ext4 $device
-sudo mkdir /data
-sudo mount $device /data
-sudo chmod 0777 -R /data
+sudo mkfs -t ext4 $disk
+sudo mkdir $path
+sudo mount $disk $path
+sudo chmod 0777 -R $path

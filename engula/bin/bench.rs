@@ -10,14 +10,10 @@ use super::config::Config;
 pub struct Command {
     #[clap(long)]
     get: bool,
-    #[clap(short, long)]
-    config: String,
 }
 
 impl Command {
-    pub async fn run(&self) -> Result<()> {
-        let config = Config::from_file(&self.config).unwrap();
-        println!("{:#?}", config);
+    pub async fn run(&self, config: &Config) -> Result<()> {
         let db = config.new_db().await?;
         self.bench_put(db.clone(), &config).await;
         if self.get {

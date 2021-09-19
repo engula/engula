@@ -7,7 +7,6 @@ use super::{proto::*, JournalOptions, LocalJournal};
 use crate::error::Result;
 
 pub struct JournalService {
-    options: JournalOptions,
     journal: Arc<LocalJournal>,
 }
 
@@ -15,7 +14,6 @@ impl JournalService {
     pub fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<JournalService> {
         let journal = LocalJournal::new(dirname, options.clone())?;
         Ok(JournalService {
-            options,
             journal: Arc::new(journal),
         })
     }
@@ -35,7 +33,7 @@ impl journal_server::Journal for JournalService {
     ) -> TonicResult<Response<Self::AppendStream>> {
         let journal = self.journal.clone();
         let mut buffer = Vec::with_capacity(1024 * 1024);
-        let mut stream = request.into_inner().ready_chunks(self.options.chunk_size);
+        let mut stream = request.into_inner().ready_chunks(1024);
         let output = async_stream::try_stream! {
             while let Some(batch) = stream.next().await {
                 buffer.clear();

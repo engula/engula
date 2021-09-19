@@ -6,16 +6,12 @@ use super::config::Config;
 
 #[derive(Clap)]
 pub struct Command {
-    #[clap(short, long)]
-    config: String,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 impl Command {
-    pub async fn run(&self) -> Result<()> {
-        let config = Config::from_file(&self.config).unwrap();
-        println!("{:#?}", config);
+    pub async fn run(&self, config: &Config) -> Result<()> {
         match &self.subcmd {
             SubCommand::Journal(cmd) => cmd.run(&config).await?,
             SubCommand::Storage(cmd) => cmd.run(&config).await?,

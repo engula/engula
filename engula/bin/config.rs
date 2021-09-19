@@ -12,7 +12,7 @@ pub struct Config {
     pub aws: Option<AwsConfig>,
     pub compute: ComputeConfig,
     pub journal: JournalConfig,
-    pub journal_urls: Option<Vec<String>>,
+    pub journal_url: Option<String>,
     pub storage: StorageConfig,
     pub storage_urls: Option<Vec<String>>,
     pub manifest_url: Option<String>,
@@ -38,8 +38,8 @@ impl Config {
 
     pub async fn new_journal(&self) -> Result<Arc<dyn Journal>> {
         let options = self.journal.as_options();
-        if let Some(urls) = &self.journal_urls {
-            let journal = QuorumJournal::new(urls, options).await?;
+        if let Some(url) = &self.journal_url {
+            let journal = RemoteJournal::new(url).await?;
             Ok(Arc::new(journal))
         } else {
             let journal = LocalJournal::new(&self.journal.path, options)?;
@@ -178,14 +178,14 @@ impl ComputeConfig {
 pub struct JournalConfig {
     pub path: String,
     pub sync: bool,
-    pub chunk_size: usize,
+    pub size: usize,
 }
 
 impl JournalConfig {
     pub fn as_options(&self) -> JournalOptions {
         JournalOptions {
             sync: self.sync,
-            chunk_size: self.chunk_size,
+            size: self.size,
         }
     }
 }

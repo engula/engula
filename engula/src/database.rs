@@ -65,8 +65,15 @@ impl Database {
             options.memtable_size /= options.num_shards;
             let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
             let (memtable_tx, memtable_rx) = mpsc::channel(options.write_channel_size);
-            let vset = VersionSet::new(i as u64, storage.clone(), manifest.clone());
-            let core = Core::new(options, write_tx, memtable_tx, vset).await?;
+            let core = Core::new(
+                i as u64,
+                options,
+                storage.clone(),
+                manifest.clone(),
+                write_tx,
+                memtable_tx,
+            )
+            .await?;
             let core = Arc::new(core);
 
             // Spawns a task to handle writes per core.
@@ -133,6 +140,7 @@ impl Database {
 }
 
 struct Core {
+    name: String,
     options: Options,
     write_tx: mpsc::Sender<Write>,
     memtable_tx: Arc<mpsc::Sender<Vec<Write>>>,
@@ -142,18 +150,22 @@ struct Core {
 
 impl Core {
     async fn new(
+        id: u64,
         options: Options,
+        storage: Arc<dyn Storage>,
+        manifest: Arc<dyn Manifest>,
         write_tx: mpsc::Sender<Write>,
         memtable_tx: mpsc::Sender<Vec<Write>>,
-        version_set: VersionSet,
     ) -> Result<Core> {
-        let super_handle = SuperVersionHandle::new(version_set).await?;
+        let vset = VersionSet::new(id, storage.clone(), manifest.clone());
+        let super_handle = SuperVersionHandle::new(vset).await?;
         let super_handle = Arc::new(super_handle);
         let super_handle_clone = super_handle.clone();
         task::spawn(async move {
             update_version(super_handle_clone).await;
         });
         Ok(Core {
+            name: format!("shard:{}", id),
             options,
             write_tx,
             memtable_tx: Arc::new(memtable_tx),
@@ -214,14 +226,24 @@ impl Core {
     async fn flush_memtable(&self) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
-            warn!("stall because of pending flush");
+            warn!("[{}] stop writes because of pending flush", self.name);
+            let start = Instant::now();
             handle.await.unwrap();
+            histogram!("engula.stall.seconds", start.elapsed());
+            warn!("[{}] resume writes after {:?}", self.name, start.elapsed());
         }
+
+        let shard_name = self.name.clone();
         let super_handle = self.super_handle.clone();
         let imm = super_handle.switch_memtable().await;
         let handle = task::spawn(async move {
             while let Err(err) = super_handle.flush_memtable(imm.clone()).await {
-                error!("flush memtable size {}: {}", imm.size(), err);
+                error!(
+                    "[{}] flush memtable size {}: {}",
+                    shard_name,
+                    imm.size(),
+                    err
+                );
             }
         });
         *flush_handle = Some(handle);
