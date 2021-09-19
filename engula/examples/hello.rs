@@ -7,8 +7,11 @@ async fn main() -> Result<()> {
     let dirname = "/tmp/engula_test/hello";
     let _ = std::fs::remove_dir_all(dirname);
 
-    println!("🚧 Creating a hybrid storage under {} that read from a sstable storage and \
-    write to a sstable storage and a parquet storage...", dirname);
+    println!(
+        "🚧 Creating a hybrid storage under {} that read from a sstable storage and \
+        write to a sstable storage and a parquet storage...",
+        dirname
+    );
 
     let fs = Arc::new(LocalFs::new(dirname)?);
     let cache = Arc::new(LruCache::new(4 * 1024 * 1024, 4));
@@ -37,7 +40,7 @@ async fn main() -> Result<()> {
     let db = Arc::new(db);
 
     println!("🚀 Putting to the database concurrently...");
-    
+
     let num_tasks = 4u64;
     let num_entries = 1024u64;
     let mut tasks = Vec::new();
@@ -65,7 +68,10 @@ async fn main() -> Result<()> {
         assert_eq!(got, Some(v.clone()));
     }
 
-    println!("🏆 Successfully created a hybrid storage under: {}!", dirname);
+    println!(
+        "🏆 Successfully created a hybrid storage under: {}!",
+        dirname
+    );
 
     Ok(())
 }
