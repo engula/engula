@@ -12,7 +12,7 @@ pub struct JournalService {
 
 impl JournalService {
     pub fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<JournalService> {
-        let journal = LocalJournal::new(dirname, options.clone())?;
+        let journal = LocalJournal::new(dirname, options)?;
         Ok(JournalService {
             journal: Arc::new(journal),
         })

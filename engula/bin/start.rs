@@ -13,10 +13,10 @@ pub struct Command {
 impl Command {
     pub async fn run(&self, config: &Config) -> Result<()> {
         match &self.subcmd {
-            SubCommand::Journal(cmd) => cmd.run(&config).await?,
-            SubCommand::Storage(cmd) => cmd.run(&config).await?,
-            SubCommand::Manifest(cmd) => cmd.run(&config).await?,
-            SubCommand::Compaction(cmd) => cmd.run(&config).await?,
+            SubCommand::Journal(cmd) => cmd.run(config).await?,
+            SubCommand::Storage(cmd) => cmd.run(config).await?,
+            SubCommand::Manifest(cmd) => cmd.run(config).await?,
+            SubCommand::Compaction(cmd) => cmd.run(config).await?,
         }
         Ok(())
     }

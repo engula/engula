@@ -15,9 +15,9 @@ pub struct Command {
 impl Command {
     pub async fn run(&self, config: &Config) -> Result<()> {
         let db = config.new_db().await?;
-        self.bench_put(db.clone(), &config).await;
+        self.bench_put(db.clone(), config).await;
         if self.get {
-            self.bench_get(db.clone(), &config).await;
+            self.bench_get(db.clone(), config).await;
         }
         Ok(())
     }
