@@ -39,6 +39,7 @@ impl JournalFile {
         histogram!("engula.journal.local.append.seconds", start.elapsed());
         self.size += data.len();
         if self.size >= self.options.size {
+            self.size = 0;
             self.file.seek(SeekFrom::Start(0)).await?;
         }
         Ok(())

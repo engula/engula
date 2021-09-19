@@ -1,6 +1,6 @@
 num_tasks = 1000
 value_size = 100
-num_entries = 100000
+num_entries = 10000
 # journal_url = "http://127.0.0.1:10001"
 # storage_urls = ["http://127.0.0.1:10002"]
 # manifest_url = "http://127.0.0.1:10003"
@@ -15,7 +15,7 @@ num_entries = 100000
 num_shards = 8
 num_levels = 4
 memtable_size_mb = 16
-write_channel_size = 1024
+write_channel_size = 128
 
 [journal]
 path = "/tmp/engula/journal"

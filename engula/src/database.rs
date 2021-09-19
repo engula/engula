@@ -220,19 +220,19 @@ impl Core {
                     self.flush_memtable().await;
                 }
             }
-            // Gives way to clients.
-            task::yield_now().await;
         }
     }
 
     async fn flush_memtable(&self) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
-            warn!("[{}] stop writes because of pending flush", self.name);
             let start = Instant::now();
             handle.await.unwrap();
-            histogram!("engula.stall.seconds", start.elapsed());
-            warn!("[{}] resume writes after {:?}", self.name, start.elapsed());
+            let elapsed = start.elapsed();
+            if elapsed >= Duration::from_millis(1) {
+                histogram!("engula.stall.seconds", elapsed);
+                warn!("[{}] stop writes for {:?}", self.name, start.elapsed());
+            }
         }
 
         let shard_name = self.name.clone();
