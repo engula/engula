@@ -7,8 +7,9 @@ async fn main() -> Result<()> {
     let dirname = "/tmp/engula_test/hello";
     let _ = std::fs::remove_dir_all(dirname);
 
-    // Creates a hybrid storage that reads from a sstable storage and
-    // writes to a sstable storage and a parquet storage.
+    println!("🚧 Creating a hybrid storage under {} that read from a sstable storage and \
+    write to a sstable storage and a parquet storage...", dirname);
+
     let fs = Arc::new(LocalFs::new(dirname)?);
     let cache = Arc::new(LruCache::new(4 * 1024 * 1024, 4));
     let sstable_options = SstableOptions::with_cache(cache);
@@ -35,7 +36,8 @@ async fn main() -> Result<()> {
     let db = Database::new(options, journal, storage, manifest).await?;
     let db = Arc::new(db);
 
-    // Puts to the database concurrently.
+    println!("🚀 Putting to the database concurrently...");
+    
     let num_tasks = 4u64;
     let num_entries = 1024u64;
     let mut tasks = Vec::new();
@@ -55,17 +57,15 @@ async fn main() -> Result<()> {
         task.await?;
     }
 
-    // Verifies the written entries.
+    println!("📜 Verifying the written entries...");
+
     for i in 0..num_entries {
         let v = i.to_be_bytes().to_vec();
         let got = db.get(&v).await.unwrap();
         assert_eq!(got, Some(v.clone()));
     }
 
-    println!("Successfully write data files under: {}!", dirname);
-    for files in std::fs::read_dir(dirname)? {
-        println!("{}", files?.file_name().into_string().unwrap());
-    }
+    println!("🏆 Successfully created a hybrid storage under: {}!", dirname);
 
     Ok(())
 }
