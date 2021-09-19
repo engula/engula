@@ -220,6 +220,8 @@ impl Core {
                     self.flush_memtable().await;
                 }
             }
+            // Gives way to clients.
+            task::yield_now().await;
         }
     }
 

@@ -1,11 +1,12 @@
 use std::{
     os::unix::fs::FileExt,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use async_trait::async_trait;
 use metrics::{counter, histogram};
-use tokio::{io::AsyncWriteExt, time::Instant};
+use tokio::{io::AsyncWriteExt, task, time::Instant};
 
 use super::{Fs, RandomAccessReader, SequentialWriter};
 use crate::error::{Error, Result};
@@ -87,26 +88,32 @@ impl SequentialWriter for SequentialFile {
 }
 
 struct RandomAccessFile {
-    file: std::fs::File,
+    file: Arc<std::fs::File>,
 }
 
 impl RandomAccessFile {
     fn new(file: std::fs::File) -> RandomAccessFile {
-        RandomAccessFile { file }
+        RandomAccessFile {
+            file: Arc::new(file),
+        }
     }
 }
 
 #[async_trait]
 impl RandomAccessReader for RandomAccessFile {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        buf.resize(size as usize, 0);
+        let file = self.file.clone();
         // TODO: this is a blocking read.
-        let start = Instant::now();
-        self.file.read_at(&mut buf, offset)?;
-        let throughput = size as f64 / start.elapsed().as_secs_f64();
-        counter!("engula.fs.local.read.bytes", size);
-        histogram!("engula.fs.local.read.throughput", throughput);
-        Ok(buf)
+        task::spawn_blocking(move || {
+            let mut buf = Vec::new();
+            buf.resize(size as usize, 0);
+            let start = Instant::now();
+            file.read_at(&mut buf, offset)?;
+            let throughput = size as f64 / start.elapsed().as_secs_f64();
+            counter!("engula.fs.local.read.bytes", size);
+            histogram!("engula.fs.local.read.throughput", throughput);
+            Ok(buf)
+        })
+        .await?
     }
 }
