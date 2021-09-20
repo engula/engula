@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use clap::Clap;
 use engula::*;
-use tokio::{runtime, sync::Barrier};
+use tokio::sync::Barrier;
 
 use super::config::Config;
 
@@ -13,34 +13,14 @@ pub struct Command {
 }
 
 impl Command {
-    pub fn run(&self, config: Config) -> Result<()> {
-        let num_db_cores = num_cpus::get() - config.num_cores;
-        let db_rt = new_runtime(num_db_cores);
-        let bench_rt = new_runtime(config.num_cores);
-
-        let db = db_rt.block_on(config.new_db())?;
-        let db_clone = db.clone();
-        let config_clone = config.clone();
-        bench_rt.block_on(async move {
-            bench_put(db_clone, config_clone).await;
-        });
-
+    pub async fn run(&self, config: Config) -> Result<()> {
+        let db = config.new_db().await?;
+        bench_put(db.clone(), config.clone()).await;
         if self.get {
-            bench_rt.block_on(async move {
-                bench_get(db, config).await;
-            });
+            bench_get(db, config).await;
         }
-
         Ok(())
     }
-}
-
-fn new_runtime(num_threads: usize) -> runtime::Runtime {
-    runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(num_threads)
-        .build()
-        .unwrap()
 }
 
 async fn bench_get(db: Arc<Database>, config: Config) {

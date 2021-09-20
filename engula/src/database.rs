@@ -15,7 +15,7 @@ use tokio::{
     time::{self, Duration, Instant},
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     error::Result,
@@ -57,7 +57,7 @@ impl Database {
         manifest: Arc<dyn Manifest>,
     ) -> Result<Database> {
         let (journal_tx, journal_rx) = mpsc::channel(options.write_channel_size);
-        let journal_tx = Arc::new(journal_tx);
+        let (drop_memtable_tx, drop_memtable_rx) = mpsc::channel(options.write_channel_size);
 
         let mut cores = Vec::new();
         for i in 0..options.num_shards {
@@ -72,6 +72,7 @@ impl Database {
                 manifest.clone(),
                 write_tx,
                 memtable_tx,
+                drop_memtable_tx.clone(),
             )
             .await?;
             let core = Arc::new(core);
@@ -97,6 +98,10 @@ impl Database {
             if let Err(err) = journal.append_stream(journal_rx).await {
                 error!("append journal: {}", err);
             }
+        });
+        // Spawns a task to drop memtables in the background.
+        task::spawn(async move {
+            drop_memtable(drop_memtable_rx).await;
         });
 
         Ok(Database {
@@ -156,9 +161,10 @@ impl Core {
         manifest: Arc<dyn Manifest>,
         write_tx: mpsc::Sender<Write>,
         memtable_tx: mpsc::Sender<Vec<Write>>,
+        drop_memtable_tx: mpsc::Sender<Arc<dyn MemTable>>,
     ) -> Result<Core> {
         let vset = VersionSet::new(id, storage.clone(), manifest.clone());
-        let super_handle = SuperVersionHandle::new(vset).await?;
+        let super_handle = SuperVersionHandle::new(vset, drop_memtable_tx).await?;
         let super_handle = Arc::new(super_handle);
         let super_handle_clone = super_handle.clone();
         task::spawn(async move {
@@ -190,7 +196,7 @@ impl Core {
         self.super_handle.count().await
     }
 
-    async fn write_batch(&self, rx: mpsc::Receiver<Write>, tx: Arc<mpsc::Sender<WriteBatch>>) {
+    async fn write_batch(&self, rx: mpsc::Receiver<Write>, tx: mpsc::Sender<WriteBatch>) {
         let mut stream = ReceiverStream::new(rx).ready_chunks(self.options.write_channel_size);
         while let Some(writes) = stream.next().await {
             let mut buffer = Vec::with_capacity(1024 * 1024);
@@ -233,7 +239,7 @@ impl Core {
         let super_handle = self.super_handle.clone();
         let imm = super_handle.switch_memtable().await;
         let handle = task::spawn(async move {
-            while let Err(err) = super_handle.flush_memtable(imm.clone()).await {
+            if let Err(err) = super_handle.flush_memtable(imm.clone()).await {
                 error!(
                     "[{}] flush memtable size {}: {}",
                     shard_name,
@@ -256,10 +262,14 @@ struct SuperVersionHandle {
     vset: VersionSet,
     current: RwLock<Arc<SuperVersion>>,
     sequence: Mutex<u64>,
+    drop_memtable_tx: mpsc::Sender<Arc<dyn MemTable>>,
 }
 
 impl SuperVersionHandle {
-    async fn new(vset: VersionSet) -> Result<SuperVersionHandle> {
+    async fn new(
+        vset: VersionSet,
+        drop_memtable_tx: mpsc::Sender<Arc<dyn MemTable>>,
+    ) -> Result<SuperVersionHandle> {
         let version = vset.current().await?;
         let current = SuperVersion {
             mem: Arc::new(BTreeTable::new()),
@@ -270,6 +280,7 @@ impl SuperVersionHandle {
             vset,
             current: RwLock::new(Arc::new(current)),
             sequence: Mutex::new(0),
+            drop_memtable_tx,
         })
     }
 
@@ -310,6 +321,7 @@ impl SuperVersionHandle {
         // We clone it here to prevent dropping it inside the lock.
         let version = self.vset.flush_memtable(mem.clone()).await?;
         self.install_flush_version(version).await;
+        let _ = self.drop_memtable_tx.send(mem).await;
         Ok(())
     }
 
@@ -365,5 +377,16 @@ async fn update_version(handle: Arc<SuperVersionHandle>) {
             Ok(version) => handle.install_version(version).await,
             Err(err) => error!("current: {}", err),
         }
+    }
+}
+
+async fn drop_memtable(mut rx: mpsc::Receiver<Arc<dyn MemTable>>) {
+    while let Some(mem) = rx.recv().await {
+        // Waits until all references have been dropped.
+        time::sleep(Duration::from_millis(10)).await;
+        let size = mem.size();
+        let start = Instant::now();
+        drop(mem);
+        info!("drop memtable size {} takes {:?}", size, start.elapsed());
     }
 }

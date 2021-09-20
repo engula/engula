@@ -11,7 +11,6 @@ pub struct Command {
 }
 
 impl Command {
-    #[tokio::main]
     pub async fn run(&self, config: Config) -> Result<()> {
         match &self.subcmd {
             SubCommand::Journal(cmd) => cmd.run(config).await?,

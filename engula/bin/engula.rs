@@ -30,7 +30,8 @@ enum SubCommand {
     Start(start::Command),
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cmd: Command = Command::parse();
 
     let filter = tracing_subscriber::filter::LevelFilter::INFO;
@@ -66,8 +67,8 @@ fn main() {
     println!("clear storage data at {}", config.storage.path);
     let _ = std::fs::remove_dir_all(&config.storage.path);
     match &cmd.subcmd {
-        SubCommand::Bench(cmd) => cmd.run(config).unwrap(),
-        SubCommand::Start(cmd) => cmd.run(config).unwrap(),
+        SubCommand::Bench(cmd) => cmd.run(config).await.unwrap(),
+        SubCommand::Start(cmd) => cmd.run(config).await.unwrap(),
     }
 
     opentelemetry::global::shutdown_tracer_provider();
