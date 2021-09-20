@@ -43,6 +43,7 @@ url = "2.2"
 lru = { git = "https://github.com/jeromefroe/lru-rs", tag = "0.7.0" }
 parquet = "5.3"
 bit-vec = "0.6"
+num_cpus = "1.13"
 aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types" }
 aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3" }
 

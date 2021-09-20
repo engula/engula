@@ -11,7 +11,8 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(&self, config: &Config) -> Result<()> {
+    #[tokio::main]
+    pub async fn run(&self, config: Config) -> Result<()> {
         match &self.subcmd {
             SubCommand::Journal(cmd) => cmd.run(config).await?,
             SubCommand::Storage(cmd) => cmd.run(config).await?,
@@ -37,7 +38,7 @@ struct JournalCommand {
 }
 
 impl JournalCommand {
-    async fn run(&self, config: &Config) -> Result<()> {
+    async fn run(&self, config: Config) -> Result<()> {
         let addr = self.addr.parse().unwrap();
         let options = config.journal.as_options();
         println!(
@@ -60,7 +61,7 @@ struct StorageCommand {
 }
 
 impl StorageCommand {
-    async fn run(&self, config: &Config) -> Result<()> {
+    async fn run(&self, config: Config) -> Result<()> {
         let addr = self.addr.parse().unwrap();
         println!(
             "start storage addr {} path {}",
@@ -82,7 +83,7 @@ struct ManifestCommand {
 }
 
 impl ManifestCommand {
-    async fn run(&self, config: &Config) -> Result<()> {
+    async fn run(&self, config: Config) -> Result<()> {
         println!("start manifest addr {}", self.addr);
         let addr = self.addr.parse().unwrap();
         let options = config.compute.as_manifest_options();
@@ -105,7 +106,7 @@ struct CompactionCommand {
 }
 
 impl CompactionCommand {
-    async fn run(&self, config: &Config) -> Result<()> {
+    async fn run(&self, config: Config) -> Result<()> {
         println!("start compaction addr {}", self.addr);
         let addr = self.addr.parse().unwrap();
         let storage = config.new_storage(false).await?;

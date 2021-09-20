@@ -4,8 +4,9 @@ use engula::*;
 use serde_derive::Deserialize;
 use url::Url;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Config {
+    pub num_cores: usize,
     pub num_tasks: usize,
     pub value_size: usize,
     pub num_entries: usize,
@@ -142,14 +143,14 @@ impl Config {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct AwsConfig {
     region: String,
     access_key: String,
     secret_access_key: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ComputeConfig {
     num_shards: usize,
     num_levels: usize,
@@ -174,7 +175,7 @@ impl ComputeConfig {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct JournalConfig {
     pub path: String,
     pub sync: bool,
@@ -190,7 +191,7 @@ impl JournalConfig {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct StorageConfig {
     pub path: String,
     pub sst_block_size_kb: usize,

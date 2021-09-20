@@ -1,3 +1,4 @@
+num_cores = 2
 num_tasks = 1000
 value_size = 100
 num_entries = 10000

@@ -649,6 +649,7 @@ dependencies = [
  "lru",
  "metrics",
  "metrics-exporter-prometheus",
+ "num_cpus",
  "opentelemetry",
  "opentelemetry-jaeger",
  "opentelemetry-prometheus",

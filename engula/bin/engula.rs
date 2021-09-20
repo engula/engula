@@ -30,8 +30,7 @@ enum SubCommand {
     Start(start::Command),
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cmd: Command = Command::parse();
 
     let filter = tracing_subscriber::filter::LevelFilter::INFO;
@@ -44,7 +43,7 @@ async fn main() {
     let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name("engula")
         .with_collector_endpoint(format!("http://{}/api/traces", cmd.jaeger_addr))
-        .install_batch(opentelemetry::runtime::Tokio)
+        .install_simple()
         .unwrap();
     let otel_layer = tracing_opentelemetry::layer()
         .with_tracer(tracer)
@@ -67,8 +66,8 @@ async fn main() {
     println!("clear storage data at {}", config.storage.path);
     let _ = std::fs::remove_dir_all(&config.storage.path);
     match &cmd.subcmd {
-        SubCommand::Bench(cmd) => cmd.run(&config).await.unwrap(),
-        SubCommand::Start(cmd) => cmd.run(&config).await.unwrap(),
+        SubCommand::Bench(cmd) => cmd.run(config).unwrap(),
+        SubCommand::Start(cmd) => cmd.run(config).unwrap(),
     }
 
     opentelemetry::global::shutdown_tracer_provider();

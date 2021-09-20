@@ -131,11 +131,11 @@ impl Database {
         Ok(sum)
     }
 
-    fn select_core(&self, key: &[u8]) -> Arc<Core> {
+    fn select_core(&self, key: &[u8]) -> &Core {
         let mut hasher = DefaultHasher::new();
         hasher.write(key);
         let hash = hasher.finish() as usize;
-        self.cores[hash % self.cores.len()].clone()
+        &self.cores[hash % self.cores.len()]
     }
 }
 
@@ -210,15 +210,9 @@ impl Core {
 
     async fn write_memtable(&self, mut rx: mpsc::Receiver<Vec<Write>>) {
         while let Some(writes) = rx.recv().await {
-            for write in writes {
-                let memtable_size = self
-                    .super_handle
-                    .put(write.ts, write.key, write.value)
-                    .await;
-                write.tx.send(()).unwrap();
-                if memtable_size >= self.options.memtable_size / 2 {
-                    self.flush_memtable().await;
-                }
+            let memtable_size = self.super_handle.write(writes).await;
+            if memtable_size >= self.options.memtable_size / 2 {
+                self.flush_memtable().await;
             }
         }
     }
@@ -292,9 +286,12 @@ impl SuperVersionHandle {
         current.version.get(ts, key).await
     }
 
-    async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) -> usize {
+    async fn write(&self, writes: Vec<Write>) -> usize {
         let current = self.current.read().await.clone();
-        current.mem.put(ts, key, value).await;
+        for write in writes {
+            current.mem.put(write.ts, write.key, write.value).await;
+            write.tx.send(()).unwrap();
+        }
         current.mem.size()
     }
 
@@ -309,7 +306,9 @@ impl SuperVersionHandle {
     }
 
     async fn flush_memtable(&self, mem: Arc<dyn MemTable>) -> Result<()> {
-        let version = self.vset.flush_memtable(mem).await?;
+        // This may be the last reference of the memtable.
+        // We clone it here to prevent dropping it inside the lock.
+        let version = self.vset.flush_memtable(mem.clone()).await?;
         self.install_flush_version(version).await;
         Ok(())
     }
