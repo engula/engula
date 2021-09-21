@@ -1,11 +1,11 @@
-use std::{io::SeekFrom, path::Path};
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use futures::StreamExt;
 use metrics::histogram;
 use tokio::{
     fs::File,
-    io::{AsyncSeekExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     sync::{mpsc, Mutex},
     task,
     time::Instant,
@@ -16,18 +16,51 @@ use super::{write::WriteBatch, Journal, JournalOptions};
 use crate::error::Result;
 
 struct JournalFile {
+    dirname: PathBuf,
     options: JournalOptions,
+    file_number: usize,
     file: File,
     size: usize,
 }
 
 impl JournalFile {
-    fn new(options: JournalOptions, file: std::fs::File) -> JournalFile {
-        JournalFile {
+    fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<JournalFile> {
+        let dirname = dirname.as_ref().to_owned();
+        let _ = std::fs::remove_dir_all(&dirname);
+        std::fs::create_dir_all(&dirname)?;
+        let file = JournalFile::open_file(&dirname, 0)?;
+        Ok(JournalFile {
+            dirname,
             options,
-            file: File::from_std(file),
+            file_number: 0,
+            file,
             size: 0,
-        }
+        })
+    }
+
+    fn file_name(number: usize) -> String {
+        format!("{}.log", number)
+    }
+
+    fn open_file<P: AsRef<Path>>(dirname: P, number: usize) -> Result<File> {
+        let filename = JournalFile::file_name(number);
+        let path = dirname.as_ref().join(filename);
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        Ok(File::from_std(file))
+    }
+
+    fn next_file(&mut self) -> Result<()> {
+        let previous_name = JournalFile::file_name(self.file_number);
+        let previous_path = self.dirname.join(previous_name);
+        self.file_number += 1;
+        self.file = JournalFile::open_file(&self.dirname, self.file_number)?;
+        self.size = 0;
+        std::fs::remove_file(previous_path)?;
+        Ok(())
     }
 
     async fn append(&mut self, data: &[u8]) -> Result<()> {
@@ -39,8 +72,7 @@ impl JournalFile {
         histogram!("engula.journal.local.append.seconds", start.elapsed());
         self.size += data.len();
         if self.size >= self.options.size {
-            self.size = 0;
-            self.file.seek(SeekFrom::Start(0)).await?;
+            self.next_file()?;
         }
         Ok(())
     }
@@ -52,14 +84,7 @@ pub struct LocalJournal {
 
 impl LocalJournal {
     pub fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<LocalJournal> {
-        std::fs::create_dir_all(&dirname)?;
-        let filename = dirname.as_ref().join("engula.log");
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(filename)?;
-        let file = JournalFile::new(options, file);
+        let file = JournalFile::new(dirname, options)?;
         Ok(LocalJournal {
             file: Mutex::new(file),
         })

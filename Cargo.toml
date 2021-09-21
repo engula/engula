@@ -1,2 +1,5 @@
 [workspace]
 members = ["engula"]
+
+[profile.release]
+debug = true

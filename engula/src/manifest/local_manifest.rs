@@ -156,6 +156,9 @@ impl Core {
                 Err(err) => error!("[{}] compaction failed: {}", self.name, err),
             }
         }
+        self.pending_compaction
+            .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
+            .unwrap();
     }
 
     async fn need_compact(&self) -> bool {

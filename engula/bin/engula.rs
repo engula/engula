@@ -54,20 +54,19 @@ async fn main() {
         .with(otel_layer)
         .init();
     let prometheus_addr: SocketAddr = cmd.prometheus_addr.parse().unwrap();
-    PrometheusBuilder::new()
-        .listen_address(prometheus_addr)
-        .install()
-        .unwrap();
-    register_metrics();
 
     let config = config::Config::from_file(&cmd.config_file).unwrap();
     println!("{:#?}", config);
-    println!("clear journal data at {}", config.journal.path);
-    let _ = std::fs::remove_dir_all(&config.journal.path);
-    println!("clear storage data at {}", config.storage.path);
-    let _ = std::fs::remove_dir_all(&config.storage.path);
     match &cmd.subcmd {
-        SubCommand::Bench(cmd) => cmd.run(config).await.unwrap(),
+        SubCommand::Bench(cmd) => {
+            // This panic in some cases, haven't figure it out.
+            PrometheusBuilder::new()
+                .listen_address(prometheus_addr)
+                .install()
+                .unwrap();
+            register_metrics();
+            cmd.run(config).await.unwrap();
+        }
         SubCommand::Start(cmd) => cmd.run(config).await.unwrap(),
     }
 
