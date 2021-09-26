@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use super::{CompactionInput, CompactionOutput, CompactionRuntime};
 use crate::{
     error::Result,
-    format::{Iterator, MergingIterator},
+    format::{Iterator, MergingIterator, TableReaderOptions},
     storage::Storage,
 };
 
@@ -22,9 +22,16 @@ impl LocalCompaction {
 #[async_trait]
 impl CompactionRuntime for LocalCompaction {
     async fn compact(&self, input: CompactionInput) -> Result<CompactionOutput> {
+        let options = TableReaderOptions {
+            cache: None,
+            prefetch: true,
+        };
         let mut children = Vec::new();
         for desc in &input.tables {
-            let reader = self.storage.new_reader(desc.clone()).await?;
+            let reader = self
+                .storage
+                .new_reader(desc.clone(), options.clone())
+                .await?;
             let iter = reader.new_iterator();
             children.push(iter);
         }

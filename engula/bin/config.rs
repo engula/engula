@@ -153,6 +153,7 @@ pub struct AwsConfig {
 pub struct ComputeConfig {
     num_shards: usize,
     num_levels: usize,
+    cache_size_mb: usize,
     memtable_size_mb: usize,
     write_channel_size: usize,
 }
@@ -161,6 +162,7 @@ impl ComputeConfig {
     pub fn as_options(&self) -> Options {
         Options {
             num_shards: self.num_shards,
+            cache_size: self.cache_size_mb * 1024 * 1024,
             memtable_size: self.memtable_size_mb * 1024 * 1024,
             write_channel_size: self.write_channel_size,
         }
@@ -194,17 +196,13 @@ impl JournalConfig {
 pub struct StorageConfig {
     pub path: String,
     pub sst_block_size_kb: usize,
-    pub sst_cache_size_mb: usize,
     pub row_group_size_mb: usize,
 }
 
 impl StorageConfig {
     pub fn as_sstable_options(&self) -> SstableOptions {
-        let cache_size = self.sst_cache_size_mb * 1024 * 1024;
-        let cache = LruCache::new(cache_size, 32);
         SstableOptions {
             block_size: self.sst_block_size_kb * 1024,
-            block_cache: Some(Arc::new(cache)),
         }
     }
 

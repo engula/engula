@@ -6,7 +6,7 @@ use prost::Message;
 use super::Storage;
 use crate::{
     error::Result,
-    format::{TableBuilder, TableDesc, TableReader, Timestamp},
+    format::{TableBuilder, TableDesc, TableReader, TableReaderOptions, Timestamp},
 };
 
 pub struct HybridStorage {
@@ -22,8 +22,12 @@ impl HybridStorage {
 
 #[async_trait]
 impl Storage for HybridStorage {
-    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
-        self.read.new_reader(desc).await
+    async fn new_reader(
+        &self,
+        desc: TableDesc,
+        options: TableReaderOptions,
+    ) -> Result<Box<dyn TableReader>> {
+        self.read.new_reader(desc, options).await
     }
 
     async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>> {

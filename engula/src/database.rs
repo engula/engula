@@ -18,8 +18,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info, warn};
 
 use crate::{
+    cache::{Cache, LruCache},
     error::Result,
-    format::Timestamp,
+    format::{TableReaderOptions, Timestamp},
     journal::{Journal, Write, WriteBatch},
     manifest::Manifest,
     memtable::{BTreeTable, MemTable},
@@ -30,6 +31,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Options {
     pub num_shards: usize,
+    pub cache_size: usize,
     pub memtable_size: usize,
     pub write_channel_size: usize,
 }
@@ -38,6 +40,7 @@ impl Options {
     pub fn default() -> Options {
         Options {
             num_shards: 8,
+            cache_size: 0,
             memtable_size: 16 * 1024,
             write_channel_size: 1024,
         }
@@ -163,7 +166,17 @@ impl Core {
         memtable_tx: mpsc::Sender<Vec<Write>>,
         drop_memtable_tx: mpsc::Sender<Arc<dyn MemTable>>,
     ) -> Result<Core> {
-        let vset = VersionSet::new(id, storage.clone(), manifest.clone());
+        let cache = if options.cache_size == 0 {
+            None
+        } else {
+            let cache: Arc<dyn Cache> = Arc::new(LruCache::new(options.cache_size, 32));
+            Some(cache)
+        };
+        let table_options = TableReaderOptions {
+            cache,
+            prefetch: false,
+        };
+        let vset = VersionSet::new(id, storage.clone(), manifest.clone(), table_options);
         let super_handle = SuperVersionHandle::new(vset, drop_memtable_tx).await?;
         let super_handle = Arc::new(super_handle);
         let super_handle_clone = super_handle.clone();

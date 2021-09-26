@@ -5,7 +5,10 @@ use async_trait::async_trait;
 use super::Storage;
 use crate::{
     error::Result,
-    format::{ParquetBuilder, ParquetOptions, ParquetReader, TableBuilder, TableDesc, TableReader},
+    format::{
+        ParquetBuilder, ParquetOptions, ParquetReader, TableBuilder, TableDesc, TableReader,
+        TableReaderOptions,
+    },
     fs::Fs,
 };
 
@@ -26,10 +29,14 @@ impl ParquetStorage {
 
 #[async_trait]
 impl Storage for ParquetStorage {
-    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
+    async fn new_reader(
+        &self,
+        desc: TableDesc,
+        options: TableReaderOptions,
+    ) -> Result<Box<dyn TableReader>> {
         let file_name = parquet_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = ParquetReader::new(file, desc)?;
+        let reader = ParquetReader::new(options, file, desc)?;
         Ok(Box::new(reader))
     }
 

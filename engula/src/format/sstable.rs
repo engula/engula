@@ -7,7 +7,7 @@ use metrics::counter;
 use super::{
     block::{BlockBuilder, BlockHandle, BlockIterator, BLOCK_HANDLE_SIZE},
     iterator::Iterator,
-    table::{TableBuilder, TableReader},
+    table::{TableBuilder, TableReader, TableReaderOptions},
     two_level_iterator::{IterGenerator, TwoLevelIterator},
     TableDesc, Timestamp,
 };
@@ -17,33 +17,16 @@ use crate::{
     fs::{RandomAccessReader, SequentialWriter},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SstableOptions {
     pub block_size: usize,
-    pub block_cache: Option<Arc<dyn Cache>>,
 }
 
 impl SstableOptions {
     pub fn default() -> SstableOptions {
         SstableOptions {
             block_size: 16 * 1024,
-            block_cache: None,
         }
-    }
-
-    pub fn with_cache(cache: Arc<dyn Cache>) -> SstableOptions {
-        SstableOptions {
-            block_size: 16 * 1024,
-            block_cache: Some(cache),
-        }
-    }
-}
-
-impl std::fmt::Debug for SstableOptions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SstOptions")
-            .field("block_size", &self.block_size)
-            .finish()
     }
 }
 
@@ -138,16 +121,16 @@ pub struct SstableReader {
 
 impl SstableReader {
     pub async fn new(
-        options: SstableOptions,
+        options: TableReaderOptions,
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
     ) -> Result<SstableReader> {
-        assert!(desc.sst_table_size >= FOOTER_SIZE);
+        assert!(desc.sstable_size >= FOOTER_SIZE);
         let data = file
-            .read_at(desc.sst_table_size - FOOTER_SIZE, FOOTER_SIZE)
+            .read_at(desc.sstable_size - FOOTER_SIZE, FOOTER_SIZE)
             .await?;
         let footer = Footer::decode_from(&data);
-        let reader = BlockReader::new(file, desc, options.block_cache);
+        let reader = BlockReader::new(file, desc, options).await?;
         let index_block = reader.read_block(&footer.index_handle).await?;
         Ok(SstableReader {
             reader: Arc::new(reader),
@@ -218,7 +201,7 @@ impl BlockWriter {
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,
-            sst_table_size: self.offset,
+            sstable_size: self.offset,
             ..Default::default()
         })
     }
@@ -228,25 +211,41 @@ struct BlockReader {
     file: Box<dyn RandomAccessReader>,
     desc: TableDesc,
     cache: BlockCache,
+    prefetch_buffer: Vec<u8>,
 }
 
 impl BlockReader {
-    fn new(
+    async fn new(
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
-        cache: Option<Arc<dyn Cache>>,
-    ) -> BlockReader {
-        BlockReader {
+        options: TableReaderOptions,
+    ) -> Result<BlockReader> {
+        let cache = BlockCache::new(options.cache);
+        let prefetch_buffer = if options.prefetch {
+            file.read_at(0, desc.sstable_size).await?
+        } else {
+            Vec::new()
+        };
+        Ok(BlockReader {
             file,
             desc,
-            cache: BlockCache::new(cache),
-        }
+            cache,
+            prefetch_buffer,
+        })
     }
 
     async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<Vec<u8>>> {
         if let Some(block) = self.cache.get(self.desc.table_number, handle.offset).await {
             return Ok(block);
         }
+
+        let start = handle.offset as usize;
+        let limit = (handle.offset + handle.size) as usize;
+        if self.prefetch_buffer.len() >= limit {
+            let block = self.prefetch_buffer[start..limit].to_vec();
+            return Ok(Arc::new(block));
+        }
+
         let block = self.file.read_at(handle.offset, handle.size).await?;
         let block = Arc::new(block);
         assert_eq!(block.len() as u64, handle.size);
@@ -330,10 +329,9 @@ mod tests {
     async fn test() {
         const NUM: u64 = 1024;
         let fs = LocalFs::new("/tmp/engula_test/sstable").unwrap();
-        let options = SstableOptions::default();
         let desc = {
             let file = fs.new_sequential_writer("test.sst").await.unwrap();
-            let mut builder = SstableBuilder::new(options.clone(), file, 0);
+            let mut builder = SstableBuilder::new(SstableOptions::default(), file, 0);
             for i in 0..NUM {
                 let v = i.to_be_bytes();
                 builder.add(i, &v, &v).await;
@@ -341,7 +339,7 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstableReader::new(options.clone(), file, desc)
+        let reader = SstableReader::new(TableReaderOptions::default(), file, desc)
             .await
             .unwrap();
         let mut iter = reader.new_iterator();

@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{
     error::Result,
-    format::{TableDesc, TableReader, Timestamp},
+    format::{TableDesc, TableReader, TableReaderOptions, Timestamp},
     manifest::{Manifest, VersionDesc},
     memtable::MemTable,
     storage::Storage,
@@ -60,10 +60,16 @@ pub struct VersionSet {
     current: Mutex<Arc<Version>>,
     storage: Arc<dyn Storage>,
     manifest: Arc<dyn Manifest>,
+    table_options: TableReaderOptions,
 }
 
 impl VersionSet {
-    pub fn new(id: u64, storage: Arc<dyn Storage>, manifest: Arc<dyn Manifest>) -> VersionSet {
+    pub fn new(
+        id: u64,
+        storage: Arc<dyn Storage>,
+        manifest: Arc<dyn Manifest>,
+        table_options: TableReaderOptions,
+    ) -> VersionSet {
         let version = Version {
             sequence: 0,
             tables: Vec::new(),
@@ -75,6 +81,7 @@ impl VersionSet {
             current: Mutex::new(Arc::new(version)),
             storage,
             manifest,
+            table_options,
         }
     }
 
@@ -121,7 +128,10 @@ impl VersionSet {
                 // Reuses existing tables.
                 tables.push(table.clone());
             } else {
-                let reader = self.storage.new_reader(desc.clone()).await?;
+                let reader = self
+                    .storage
+                    .new_reader(desc.clone(), self.table_options.clone())
+                    .await?;
                 let table = Arc::new(Table { desc, reader });
                 tables.push(table);
             }

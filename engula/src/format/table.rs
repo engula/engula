@@ -1,7 +1,24 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use super::{iterator::Iterator, TableDesc, Timestamp};
-use crate::error::Result;
+use crate::{cache::Cache, error::Result};
+
+#[derive(Clone)]
+pub struct TableReaderOptions {
+    pub cache: Option<Arc<dyn Cache>>,
+    pub prefetch: bool,
+}
+
+impl TableReaderOptions {
+    pub fn default() -> TableReaderOptions {
+        TableReaderOptions {
+            cache: None,
+            prefetch: false,
+        }
+    }
+}
 
 #[async_trait]
 pub trait TableReader: Send + Sync {

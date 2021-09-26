@@ -177,7 +177,7 @@ impl Core {
         let mut input_size = 0;
         let mut input_tables = Vec::new();
         for table in current.tables.iter().rev() {
-            let table_size = table.sst_table_size + table.parquet_table_size;
+            let table_size = table.sstable_size + table.parquet_size;
             if input_size < table_size / 2 && input_tables.len() >= 2 {
                 break;
             }

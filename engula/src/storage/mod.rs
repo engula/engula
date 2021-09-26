@@ -10,12 +10,16 @@ use async_trait::async_trait;
 
 use crate::{
     error::Result,
-    format::{TableBuilder, TableDesc, TableReader},
+    format::{TableBuilder, TableDesc, TableReader, TableReaderOptions},
 };
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>>;
+    async fn new_reader(
+        &self,
+        desc: TableDesc,
+        options: TableReaderOptions,
+    ) -> Result<Box<dyn TableReader>>;
 
     async fn new_builder(&self, table_number: u64) -> Result<Box<dyn TableBuilder>>;
 
@@ -63,7 +67,10 @@ mod tests {
                 builder.add(i, &v, &v).await;
             }
             let desc = builder.finish().await.unwrap();
-            let reader = storage.new_reader(desc.clone()).await.unwrap();
+            let reader = storage
+                .new_reader(desc.clone(), TableReaderOptions::default())
+                .await
+                .unwrap();
             let mut iter = reader.new_iterator();
             iter.seek_to_first().await;
             for i in 0..NUM {

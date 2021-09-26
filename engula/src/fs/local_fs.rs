@@ -6,7 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use metrics::{counter, histogram};
-use tokio::{io::AsyncWriteExt, task, time::Instant};
+use tokio::{io::AsyncWriteExt, time::Instant};
 
 use super::{Fs, RandomAccessReader, SequentialWriter};
 use crate::error::{Error, Result};
@@ -105,16 +105,13 @@ impl RandomAccessReader for RandomAccessFile {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
         let file = self.file.clone();
         // TODO: this is a blocking read.
-        task::spawn_blocking(move || {
-            let mut buf = Vec::new();
-            buf.resize(size as usize, 0);
-            let start = Instant::now();
-            file.read_at(&mut buf, offset)?;
-            let throughput = size as f64 / start.elapsed().as_secs_f64();
-            counter!("engula.fs.local.read.bytes", size);
-            histogram!("engula.fs.local.read.throughput", throughput);
-            Ok(buf)
-        })
-        .await?
+        let mut buf = Vec::new();
+        buf.resize(size as usize, 0);
+        let start = Instant::now();
+        file.read_at(&mut buf, offset)?;
+        let throughput = size as f64 / start.elapsed().as_secs_f64();
+        counter!("engula.fs.local.read.bytes", size);
+        histogram!("engula.fs.local.read.throughput", throughput);
+        Ok(buf)
     }
 }

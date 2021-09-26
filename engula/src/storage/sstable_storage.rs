@@ -5,7 +5,10 @@ use async_trait::async_trait;
 use super::Storage;
 use crate::{
     error::Result,
-    format::{SstableBuilder, SstableOptions, SstableReader, TableBuilder, TableDesc, TableReader},
+    format::{
+        SstableBuilder, SstableOptions, SstableReader, TableBuilder, TableDesc, TableReader,
+        TableReaderOptions,
+    },
     fs::Fs,
 };
 
@@ -26,10 +29,14 @@ impl SstableStorage {
 
 #[async_trait]
 impl Storage for SstableStorage {
-    async fn new_reader(&self, desc: TableDesc) -> Result<Box<dyn TableReader>> {
+    async fn new_reader(
+        &self,
+        desc: TableDesc,
+        options: TableReaderOptions,
+    ) -> Result<Box<dyn TableReader>> {
         let file_name = sstable_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = SstableReader::new(self.options.clone(), file, desc).await?;
+        let reader = SstableReader::new(options, file, desc).await?;
         Ok(Box::new(reader))
     }
 

@@ -19,7 +19,7 @@ use parquet::{
 
 use super::{
     iterator::{Entry, Iterator},
-    table::{TableBuilder, TableReader},
+    table::{TableBuilder, TableReader, TableReaderOptions},
     TableDesc, Timestamp,
 };
 use crate::{
@@ -101,8 +101,12 @@ pub struct ParquetReader {
 }
 
 impl ParquetReader {
-    pub fn new(file: Box<dyn RandomAccessReader>, desc: TableDesc) -> Result<ParquetReader> {
-        let file = ColumnChunkReader::new(file, desc);
+    pub fn new(
+        options: TableReaderOptions,
+        file: Box<dyn RandomAccessReader>,
+        desc: TableDesc,
+    ) -> Result<ParquetReader> {
+        let file = ColumnChunkReader::new(file, desc, options)?;
         let reader = SerializedFileReader::new(file)?;
         Ok(ParquetReader { reader })
     }
@@ -259,7 +263,7 @@ impl RowGroupWriter {
         self.file.finish().await?;
         Ok(TableDesc {
             table_number: self.number,
-            parquet_table_size: buffer_size,
+            parquet_size: buffer_size,
             ..Default::default()
         })
     }
@@ -270,17 +274,31 @@ type ParquetResult<T> = std::result::Result<T, ParquetError>;
 struct ColumnChunkReader {
     file: Box<dyn RandomAccessReader>,
     desc: TableDesc,
+    prefetch_buffer: Vec<u8>,
 }
 
 impl ColumnChunkReader {
-    fn new(file: Box<dyn RandomAccessReader>, desc: TableDesc) -> ColumnChunkReader {
-        ColumnChunkReader { file, desc }
+    fn new(
+        file: Box<dyn RandomAccessReader>,
+        desc: TableDesc,
+        options: TableReaderOptions,
+    ) -> Result<ColumnChunkReader> {
+        let prefetch_buffer = if options.prefetch {
+            block_on(file.read_at(0, desc.parquet_size))?
+        } else {
+            Vec::new()
+        };
+        Ok(ColumnChunkReader {
+            file,
+            desc,
+            prefetch_buffer,
+        })
     }
 }
 
 impl Length for ColumnChunkReader {
     fn len(&self) -> u64 {
-        self.desc.parquet_table_size
+        self.desc.parquet_size
     }
 }
 
@@ -288,7 +306,13 @@ impl ChunkReader for ColumnChunkReader {
     type T = Cursor<Vec<u8>>;
 
     fn get_read(&self, start: u64, length: usize) -> ParquetResult<Self::T> {
-        match block_on(self.file.read_at(start, length as u64)) {
+        let start = start as usize;
+        let limit = start + length;
+        if self.prefetch_buffer.len() >= limit {
+            let data = self.prefetch_buffer[start..limit].to_vec();
+            return Ok(Cursor::new(data));
+        }
+        match block_on(self.file.read_at(start as u64, length as u64)) {
             Ok(data) => Ok(Cursor::new(data)),
             Err(err) => Err(ParquetError::General(err.to_string())),
         }
@@ -307,10 +331,9 @@ mod tests {
     async fn test() {
         const NUM: u64 = 1024;
         let fs = LocalFs::new("/tmp/engula_test").unwrap();
-        let options = ParquetOptions::default();
         let desc = {
             let file = fs.new_sequential_writer("test.parquet").await.unwrap();
-            let mut builder = ParquetBuilder::new(options.clone(), file, 0);
+            let mut builder = ParquetBuilder::new(ParquetOptions::default(), file, 0);
             for i in 0..NUM {
                 let v = i.to_be_bytes();
                 builder.add(i, &v, &v).await;
@@ -318,7 +341,7 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.parquet").await.unwrap();
-        let reader = ParquetReader::new(file, desc).unwrap();
+        let reader = ParquetReader::new(TableReaderOptions::default(), file, desc).unwrap();
         let mut iter = reader.new_iterator();
         iter.seek_to_first().await;
         for i in 0..NUM {
