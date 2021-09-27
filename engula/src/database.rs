@@ -399,7 +399,9 @@ async fn drop_memtable(mut rx: mpsc::Receiver<Arc<dyn MemTable>>) {
         time::sleep(Duration::from_millis(10)).await;
         let size = mem.size();
         let start = Instant::now();
-        drop(mem);
+        // Dropping the memtable takes too long and blocks other tasks,
+        // this is a dirty workaround only applied to the demo.
+        std::mem::forget(mem);
         info!("drop memtable size {} takes {:?}", size, start.elapsed());
     }
 }

@@ -16,7 +16,7 @@ num_shards = 8
 num_levels = 4
 cache_size_mb = 16
 memtable_size_mb = 16
-write_channel_size = 128
+write_channel_size = 64
 
 [journal]
 path = "/tmp/engula/journal"

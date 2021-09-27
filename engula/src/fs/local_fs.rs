@@ -75,6 +75,7 @@ impl SequentialWriter for SequentialFile {
             counter!("engula.fs.local.write.bytes", data.len() as u64);
             histogram!("engula.fs.local.write.throughput", throughput);
         }
+        let _ = self.file.sync_data().await;
     }
 
     async fn finish(&mut self) -> Result<()> {

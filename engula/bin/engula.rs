@@ -14,7 +14,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 struct Command {
     #[clap(long, default_value = "/tmp/engula")]
     log_dir: String,
-    #[clap(short, long, default_value = "engula/bin/config.toml")]
+    #[clap(short, long, default_value = "engula/bin/default.toml")]
     config_file: String,
     #[clap(long, default_value = "127.0.0.1:14268")]
     jaeger_addr: String,
