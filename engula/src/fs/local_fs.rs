@@ -4,8 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use metrics::{counter, histogram};
-use tokio::{io::AsyncWriteExt, time::Instant};
+use tokio::io::AsyncWriteExt;
 
 use super::{Fs, RandomAccessReader, SequentialWriter};
 use crate::error::{Error, Result};
@@ -66,13 +65,8 @@ impl SequentialWriter for SequentialFile {
         if self.error.is_some() {
             return;
         }
-        let start = Instant::now();
         if let Err(err) = self.file.write_all(&data).await {
             self.error = Some(err.into());
-        } else {
-            let throughput = data.len() as f64 / start.elapsed().as_secs_f64();
-            counter!("engula.fs.local.write.bytes", data.len() as u64);
-            histogram!("engula.fs.local.write.throughput", throughput);
         }
         let _ = self.file.sync_data().await;
     }
@@ -81,9 +75,7 @@ impl SequentialWriter for SequentialFile {
         if let Some(err) = &self.error {
             return Err(err.clone());
         }
-        let start = Instant::now();
         self.file.sync_data().await?;
-        histogram!("engula.fs.local.finish.seconds", start.elapsed());
         Ok(())
     }
 }

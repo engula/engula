@@ -2,13 +2,11 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use metrics::histogram;
 use tokio::{
     fs::File,
     io::AsyncWriteExt,
     sync::{mpsc, Mutex},
     task,
-    time::Instant,
 };
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -63,12 +61,10 @@ impl JournalFile {
     }
 
     async fn append(&mut self, data: &[u8]) -> Result<()> {
-        let start = Instant::now();
         self.file.write_all(data).await?;
         if self.options.sync {
             self.file.sync_data().await?;
         }
-        histogram!("engula.journal.local.append.seconds", start.elapsed());
         self.size += data.len();
         if self.size >= self.options.size {
             self.next_file()?;

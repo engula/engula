@@ -87,19 +87,4 @@ fn register_metrics() {
     register_counter!("engula.fs.s3.write.bytes");
     register_histogram!("engula.fs.s3.write.throughput");
     register_histogram!("engula.fs.s3.finish.seconds");
-
-    register_counter!("engula.fs.local.read.bytes");
-    register_histogram!("engula.fs.local.read.throughput");
-    register_counter!("engula.fs.local.write.bytes");
-    register_histogram!("engula.fs.local.write.throughput");
-    register_histogram!("engula.fs.local.finish.seconds");
-
-    register_counter!("engula.fs.remote.read.bytes");
-    register_histogram!("engula.fs.remote.read.throughput");
-    register_counter!("engula.fs.remote.write.bytes");
-    register_histogram!("engula.fs.remote.write.throughput");
-    register_histogram!("engula.fs.remote.finish.seconds");
-
-    register_histogram!("engula.stall.seconds");
-    register_histogram!("engula.journal.local.append.seconds");
 }
