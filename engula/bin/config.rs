@@ -6,9 +6,10 @@ use url::Url;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
-    pub num_tasks: usize,
     pub value_size: usize,
     pub num_entries: usize,
+    pub num_put_tasks: usize,
+    pub num_get_tasks: usize,
     pub aws: Option<AwsConfig>,
     pub compute: ComputeConfig,
     pub journal: JournalConfig,

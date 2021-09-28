@@ -1,5 +1,9 @@
 use async_trait::async_trait;
-use tokio::{sync::mpsc, task};
+use futures::StreamExt;
+use tokio::{
+    sync::{mpsc, oneshot},
+    task,
+};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Request};
 use tracing::error;
@@ -124,29 +128,49 @@ impl SequentialWriter for RemoteWriter {
     }
 }
 
+struct Read {
+    tx: oneshot::Sender<Vec<u8>>,
+    offset: u64,
+    size: u64,
+}
+
 struct RemoteReader {
-    fd: u64,
-    client: FsClient,
+    read_tx: mpsc::Sender<Read>,
 }
 
 impl RemoteReader {
-    fn new(fd: u64, client: FsClient) -> RemoteReader {
-        RemoteReader { fd, client }
+    fn new(fd: u64, mut client: FsClient) -> RemoteReader {
+        let (tx, rx): (mpsc::Sender<Read>, mpsc::Receiver<Read>) = mpsc::channel(1024);
+        let _: task::JoinHandle<Result<()>> = task::spawn(async move {
+            let mut stream = ReceiverStream::new(rx).ready_chunks(1024);
+            while let Some(reads) = stream.next().await {
+                let mut offsets = Vec::with_capacity(reads.len());
+                let mut sizes = Vec::with_capacity(reads.len());
+                for read in &reads {
+                    offsets.push(read.offset);
+                    sizes.push(read.size);
+                }
+                let input = ReadRequest { fd, offsets, sizes };
+                let request = Request::new(input);
+                let response = client.read(request).await?;
+                let output = response.into_inner();
+                for (read, data) in reads.into_iter().zip(output.data) {
+                    read.tx.send(data).unwrap();
+                }
+            }
+            Ok(())
+        });
+        RemoteReader { read_tx: tx }
     }
 }
 
 #[async_trait]
 impl RandomAccessReader for RemoteReader {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
-        let mut client = self.client.clone();
-        let input = ReadRequest {
-            fd: self.fd,
-            offset,
-            size,
-        };
-        let request = Request::new(input);
-        let response = client.read(request).await?;
-        let output = response.into_inner();
-        Ok(output.data)
+        let (tx, rx) = oneshot::channel();
+        let read = Read { tx, offset, size };
+        self.read_tx.send(read).await?;
+        let data = rx.await?;
+        Ok(data)
     }
 }

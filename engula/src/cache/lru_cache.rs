@@ -62,12 +62,14 @@ impl std::ops::Drop for LruCache {
     fn drop(&mut self) {
         let hits = self.num_hits.load(Ordering::Relaxed);
         let misses = self.num_misses.load(Ordering::Relaxed);
-        println!(
-            "cache hits {} misses {} percent {}",
-            hits,
-            misses,
-            hits * 100 / (hits + misses)
-        );
+        if hits > 0 {
+            println!(
+                "cache hits {} misses {} ratio {}",
+                hits,
+                misses,
+                hits as f64 / (hits + misses) as f64,
+            );
+        }
     }
 }
 struct LruShard {

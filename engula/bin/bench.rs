@@ -28,13 +28,15 @@ impl Command {
     }
 }
 
-async fn bench_get(db: Arc<Database>, config: Config) {
+async fn bench_put(db: Arc<Database>, config: Config) {
     let mut tasks = Vec::new();
-    let barrier = Arc::new(Barrier::new(config.num_tasks));
-    let num_entries_per_task = config.num_entries / config.num_tasks;
+    let barrier = Arc::new(Barrier::new(config.num_put_tasks));
+    let num_entries_per_task = config.num_entries / config.num_put_tasks;
 
     let now = Instant::now();
-    for task_id in 0..config.num_tasks {
+    for task_id in 0..config.num_put_tasks {
+        let mut value = Vec::new();
+        value.resize(config.value_size, 0);
         let db = db.clone();
         let barrier = barrier.clone();
         let start = task_id * num_entries_per_task;
@@ -43,7 +45,7 @@ async fn bench_get(db: Arc<Database>, config: Config) {
             barrier.wait().await;
             for i in start..end {
                 let key = i.to_be_bytes();
-                db.get(&key).await.unwrap().unwrap();
+                db.put(key.to_vec(), value.clone()).await.unwrap();
             }
         });
         tasks.push(task);
@@ -58,15 +60,13 @@ async fn bench_get(db: Arc<Database>, config: Config) {
     println!("qps: {}", qps);
 }
 
-async fn bench_put(db: Arc<Database>, config: Config) {
+async fn bench_get(db: Arc<Database>, config: Config) {
     let mut tasks = Vec::new();
-    let barrier = Arc::new(Barrier::new(config.num_tasks));
-    let num_entries_per_task = config.num_entries / config.num_tasks;
+    let barrier = Arc::new(Barrier::new(config.num_get_tasks));
+    let num_entries_per_task = config.num_entries / config.num_get_tasks;
 
     let now = Instant::now();
-    for task_id in 0..config.num_tasks {
-        let mut value = Vec::new();
-        value.resize(config.value_size, 0);
+    for task_id in 0..config.num_get_tasks {
         let db = db.clone();
         let barrier = barrier.clone();
         let start = task_id * num_entries_per_task;
@@ -75,7 +75,7 @@ async fn bench_put(db: Arc<Database>, config: Config) {
             barrier.wait().await;
             for i in start..end {
                 let key = i.to_be_bytes();
-                db.put(key.to_vec(), value.clone()).await.unwrap();
+                db.get(&key).await.unwrap().unwrap();
             }
         });
         tasks.push(task);

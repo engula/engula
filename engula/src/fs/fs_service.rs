@@ -72,7 +72,11 @@ impl fs_server::Fs for FsService {
     async fn read(&self, request: Request<ReadRequest>) -> TonicResult<Response<ReadResponse>> {
         let input = request.into_inner();
         if let Some(reader) = self.get_reader(input.fd).await {
-            let data = reader.read_at(input.offset, input.size).await?;
+            let mut data = Vec::with_capacity(input.sizes.len());
+            for i in 0..input.sizes.len() {
+                let buf = reader.read_at(input.offsets[i], input.sizes[i]).await?;
+                data.push(buf);
+            }
             Ok(Response::new(ReadResponse { data }))
         } else {
             Err(Status::new(

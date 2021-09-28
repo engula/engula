@@ -28,11 +28,11 @@ message OpenResponse { uint64 fd = 1; }
 
 message ReadRequest {
   uint64 fd = 1;
-  uint64 offset = 2;
-  uint64 size = 3;
+  repeated uint64 offsets = 2;
+  repeated uint64 sizes = 3;
 }
 
-message ReadResponse { bytes data = 1; }
+message ReadResponse { repeated bytes data = 1; }
 
 message WriteRequest {
   uint64 fd = 1;
