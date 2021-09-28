@@ -1,7 +1,6 @@
 use std::{
-    os::unix::fs::FileExt,
+    io::Read,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -17,7 +16,6 @@ pub struct LocalFs {
 
 impl LocalFs {
     pub fn new<P: AsRef<Path>>(dirname: P) -> Result<LocalFs> {
-        let _ = std::fs::remove_dir_all(&dirname);
         std::fs::create_dir_all(&dirname)?;
         Ok(LocalFs {
             dirname: dirname.as_ref().to_owned(),
@@ -40,7 +38,8 @@ impl Fs for LocalFs {
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
         let path = self.dirname.join(fname);
         let file = std::fs::File::open(path)?;
-        Ok(Box::new(RandomAccessFile::new(file)))
+        let file = RandomAccessFile::new(file)?;
+        Ok(Box::new(file))
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
@@ -90,29 +89,23 @@ impl SequentialWriter for SequentialFile {
 }
 
 struct RandomAccessFile {
-    file: Arc<std::fs::File>,
+    data: Vec<u8>,
 }
 
 impl RandomAccessFile {
-    fn new(file: std::fs::File) -> RandomAccessFile {
-        RandomAccessFile {
-            file: Arc::new(file),
-        }
+    fn new(mut file: std::fs::File) -> Result<RandomAccessFile> {
+        // This is a workaround for asynchronous random file reads.
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        Ok(RandomAccessFile { data })
     }
 }
 
 #[async_trait]
 impl RandomAccessReader for RandomAccessFile {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
-        let file = self.file.clone();
-        // TODO: this is a blocking read.
-        let mut buf = Vec::new();
-        buf.resize(size as usize, 0);
-        let start = Instant::now();
-        file.read_at(&mut buf, offset)?;
-        let throughput = size as f64 / start.elapsed().as_secs_f64();
-        counter!("engula.fs.local.read.bytes", size);
-        histogram!("engula.fs.local.read.throughput", throughput);
-        Ok(buf)
+        let start = offset as usize;
+        let limit = (offset + size) as usize;
+        Ok(self.data[start..limit].to_vec())
     }
 }

@@ -65,6 +65,7 @@ impl Database {
         let mut cores = Vec::new();
         for i in 0..options.num_shards {
             let mut options = options.clone();
+            options.cache_size /= options.num_shards;
             options.memtable_size /= options.num_shards;
             let (write_tx, write_rx) = mpsc::channel(options.write_channel_size);
             let (memtable_tx, memtable_rx) = mpsc::channel(options.write_channel_size);
@@ -137,6 +138,12 @@ impl Database {
             sum += core.count().await?;
         }
         Ok(sum)
+    }
+
+    pub async fn flush(&self) {
+        for core in &self.cores {
+            core.flush_memtable().await;
+        }
     }
 
     fn select_core(&self, key: &[u8]) -> &Core {

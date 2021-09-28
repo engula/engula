@@ -76,8 +76,6 @@ async fn main() {
 fn register_metrics() {
     register_histogram!("engula.get.us");
     register_histogram!("engula.put.us");
-    register_counter!("engula.cache.hit");
-    register_counter!("engula.cache.miss");
 
     register_counter!("engula.flush.bytes");
     register_histogram!("engula.flush.throughput");

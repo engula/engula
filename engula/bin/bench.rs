@@ -14,10 +14,15 @@ pub struct Command {
 
 impl Command {
     pub async fn run(&self, config: Config) -> Result<()> {
+        let _ = std::fs::remove_dir_all(&config.journal.path);
+        let _ = std::fs::remove_dir_all(&config.storage.path);
         let db = config.new_db().await?;
         bench_put(db.clone(), config.clone()).await;
         if self.get {
-            bench_get(db, config).await;
+            db.flush().await;
+            // This serves as a warm up.
+            bench_get(db.clone(), config.clone()).await;
+            bench_get(db.clone(), config.clone()).await;
         }
         Ok(())
     }

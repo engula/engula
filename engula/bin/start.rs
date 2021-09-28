@@ -44,6 +44,7 @@ impl JournalCommand {
             "start journal addr {} path {}",
             self.addr, config.journal.path,
         );
+        let _ = std::fs::remove_dir_all(&config.journal.path);
         let service = JournalService::new(&config.journal.path, options)?;
         Server::builder()
             .add_service(JournalServer::new(service))
@@ -66,6 +67,7 @@ impl StorageCommand {
             "start storage addr {} path {}",
             self.addr, config.storage.path,
         );
+        let _ = std::fs::remove_dir_all(&config.storage.path);
         let service = FsService::new(&config.storage.path)?;
         Server::builder()
             .add_service(FsServer::new(service))

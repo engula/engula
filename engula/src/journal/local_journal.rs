@@ -26,7 +26,6 @@ struct JournalFile {
 impl JournalFile {
     fn new<P: AsRef<Path>>(dirname: P, options: JournalOptions) -> Result<JournalFile> {
         let dirname = dirname.as_ref().to_owned();
-        let _ = std::fs::remove_dir_all(&dirname);
         std::fs::create_dir_all(&dirname)?;
         let file = JournalFile::open_file(&dirname, 0)?;
         Ok(JournalFile {

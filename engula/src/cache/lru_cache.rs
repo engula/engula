@@ -1,4 +1,11 @@
-use std::{collections::hash_map::DefaultHasher, hash::Hasher, sync::Arc};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::Hasher,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -7,6 +14,8 @@ use super::Cache;
 
 pub struct LruCache {
     shards: Vec<Mutex<LruShard>>,
+    num_hits: AtomicUsize,
+    num_misses: AtomicUsize,
 }
 
 impl LruCache {
@@ -16,7 +25,11 @@ impl LruCache {
             let shard = LruShard::new(capacity / num_shards);
             shards.push(Mutex::new(shard));
         }
-        LruCache { shards }
+        LruCache {
+            shards,
+            num_hits: AtomicUsize::new(0),
+            num_misses: AtomicUsize::new(0),
+        }
     }
 
     fn index(&self, key: &[u8]) -> usize {
@@ -30,7 +43,13 @@ impl LruCache {
 impl Cache for LruCache {
     async fn get(&self, key: &[u8]) -> Option<Arc<Vec<u8>>> {
         let mut shard = self.shards[self.index(key)].lock().await;
-        shard.get(key).await
+        if let Some(value) = shard.get(key).await {
+            self.num_hits.fetch_add(1, Ordering::Relaxed);
+            Some(value)
+        } else {
+            self.num_misses.fetch_add(1, Ordering::Relaxed);
+            None
+        }
     }
 
     async fn put(&self, key: Vec<u8>, value: Arc<Vec<u8>>) {
@@ -39,6 +58,18 @@ impl Cache for LruCache {
     }
 }
 
+impl std::ops::Drop for LruCache {
+    fn drop(&mut self) {
+        let hits = self.num_hits.load(Ordering::Relaxed);
+        let misses = self.num_misses.load(Ordering::Relaxed);
+        println!(
+            "cache hits {} misses {} percent {}",
+            hits,
+            misses,
+            hits * 100 / (hits + misses)
+        );
+    }
+}
 struct LruShard {
     cache: lru::LruCache<Vec<u8>, Arc<Vec<u8>>>,
     capacity: usize,
