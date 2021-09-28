@@ -26,5 +26,5 @@ size = 1073741824
 
 [storage]
 path = "/tmp/engula/storage"
-sst_block_size_kb = 8
-row_group_size_mb = 8
+sst_block_size_kb = 4
+row_group_size_mb = 16

@@ -14,20 +14,23 @@ use crate::error::Result;
 type FsClient = fs_client::FsClient<Channel>;
 
 pub struct RemoteFs {
+    url: String,
     client: FsClient,
 }
 
 impl RemoteFs {
     pub async fn new(url: &str) -> Result<RemoteFs> {
-        let client = FsClient::connect(url.to_owned()).await?;
-        Ok(RemoteFs { client })
+        Ok(RemoteFs {
+            url: url.to_owned(),
+            client: FsClient::connect(url.to_owned()).await?,
+        })
     }
 }
 
 #[async_trait]
 impl Fs for RemoteFs {
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
-        let mut client = self.client.clone();
+        let mut client = FsClient::connect(self.url.clone()).await?;
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: AccessMode::Write as i32,
@@ -36,7 +39,7 @@ impl Fs for RemoteFs {
         match client.open(request).await {
             Ok(response) => {
                 let output = response.into_inner();
-                let writer = RemoteWriter::new(output.fd, client.clone());
+                let writer = RemoteWriter::new(output.fd, client);
                 Ok(Box::new(writer))
             }
             Err(err) => {
@@ -47,7 +50,7 @@ impl Fs for RemoteFs {
     }
 
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
-        let mut client = self.client.clone();
+        let mut client = FsClient::connect(self.url.clone()).await?;
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: AccessMode::Read as i32,
@@ -56,7 +59,7 @@ impl Fs for RemoteFs {
         match client.open(request).await {
             Ok(response) => {
                 let output = response.into_inner();
-                let reader = RemoteReader::new(output.fd, client.clone());
+                let reader = RemoteReader::new(output.fd, client);
                 Ok(Box::new(reader))
             }
             Err(err) => {
