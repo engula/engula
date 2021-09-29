@@ -81,7 +81,7 @@ async fn bench_get(db: Arc<Database>, config: Config, warmup: bool) {
         let task = tokio::task::spawn(async move {
             barrier.wait().await;
             if warmup {
-                for i in start..end {
+                for i in (start..end).step_by(10) {
                     let key = i.to_be_bytes();
                     db.get(&key).await.unwrap().unwrap();
                 }

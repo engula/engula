@@ -155,6 +155,7 @@ pub struct ComputeConfig {
     num_shards: usize,
     num_levels: usize,
     cache_size_mb: usize,
+    num_cache_shards: usize,
     memtable_size_mb: usize,
     write_channel_size: usize,
 }
@@ -164,6 +165,7 @@ impl ComputeConfig {
         Options {
             num_shards: self.num_shards,
             cache_size: self.cache_size_mb * 1024 * 1024,
+            num_cache_shards: self.num_cache_shards,
             memtable_size: self.memtable_size_mb * 1024 * 1024,
             write_channel_size: self.write_channel_size,
         }

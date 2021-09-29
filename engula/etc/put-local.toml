@@ -4,8 +4,7 @@ num_put_tasks = 5000
 num_get_tasks = 8
 # journal_url = "http://127.0.0.1:10001"
 # storage_urls = ["http://127.0.0.1:10002"]
-# manifest_url = "http://127.0.0.1:10003"
-# compaction_url = "http://127.0.0.1:10004"
+# compaction_url = "http://127.0.0.1:10003"
 
 # [aws]
 # region
@@ -16,6 +15,7 @@ num_get_tasks = 8
 num_shards = 4
 num_levels = 4
 cache_size_mb = 0
+num_cache_shards = 1024
 memtable_size_mb = 128
 write_channel_size = 1024
 

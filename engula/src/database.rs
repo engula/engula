@@ -32,6 +32,7 @@ use crate::{
 pub struct Options {
     pub num_shards: usize,
     pub cache_size: usize,
+    pub num_cache_shards: usize,
     pub memtable_size: usize,
     pub write_channel_size: usize,
 }
@@ -41,6 +42,7 @@ impl Options {
         Options {
             num_shards: 8,
             cache_size: 0,
+            num_cache_shards: 32,
             memtable_size: 16 * 1024,
             write_channel_size: 1024,
         }
@@ -183,7 +185,8 @@ impl Core {
         let cache = if options.cache_size == 0 {
             None
         } else {
-            let cache: Arc<dyn Cache> = Arc::new(LruCache::new(options.cache_size, 32));
+            let cache: Arc<dyn Cache> =
+                Arc::new(LruCache::new(options.cache_size, options.num_cache_shards));
             Some(cache)
         };
         let table_options = TableReaderOptions {

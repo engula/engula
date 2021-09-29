@@ -16,6 +16,7 @@ num_get_tasks = 10
 num_shards = 4
 num_levels = 4
 cache_size_mb = 4
+num_cache_shards = 4
 memtable_size_mb = 4
 write_channel_size = 1024
 
