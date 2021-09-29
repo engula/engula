@@ -223,7 +223,7 @@ mod tests {
     #[tokio::test]
     async fn test() {
         let dir = env!("CARGO_MANIFEST_DIR");
-        let file = Path::new(dir).join("bin/default.toml");
+        let file = Path::new(dir).join("etc/default.toml");
         let config = Config::from_file(file).unwrap();
         config.new_db().await.unwrap();
     }

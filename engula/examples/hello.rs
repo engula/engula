@@ -4,12 +4,12 @@ use engula::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let dirname = "/tmp/engula_test/hello";
+    let dirname = "/tmp/engula/hello";
     let _ = std::fs::remove_dir_all(dirname);
 
     println!(
-        "🚧 Creating a hybrid storage under {} that read from a sstable storage and \
-        write to a sstable storage and a parquet storage...",
+        "🚧 Creating a hybrid storage under {} that reads from a sstable storage and \
+        writes to a sstable storage and a parquet storage...",
         dirname
     );
 

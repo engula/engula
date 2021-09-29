@@ -115,19 +115,26 @@ impl Database {
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let start = Instant::now();
-        let ts = self.next_ts.load(Ordering::SeqCst);
         let core = self.select_core(key);
-        let value = core.get(ts, key).await?;
+        core.get(u64::MAX, key).await
+    }
+
+    pub async fn timed_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let start = Instant::now();
+        let value = self.get(key).await?;
         histogram!("engula.get.us", start.elapsed().as_micros() as f64);
         Ok(value)
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let start = Instant::now();
         let ts = self.next_ts.fetch_add(1, Ordering::SeqCst);
         let core = self.select_core(&key);
-        core.put(ts, key, value).await?;
+        core.put(ts, key, value).await
+    }
+
+    pub async fn timed_put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        let start = Instant::now();
+        self.put(key, value).await?;
         histogram!("engula.put.us", start.elapsed().as_micros() as f64);
         Ok(())
     }
@@ -142,7 +149,7 @@ impl Database {
 
     pub async fn flush(&self) {
         for core in &self.cores {
-            core.flush_memtable().await;
+            core.flush_memtable(true).await;
         }
     }
 
@@ -183,7 +190,7 @@ impl Core {
             cache,
             prefetch: false,
         };
-        let vset = VersionSet::new(id, storage.clone(), manifest.clone(), table_options);
+        let vset = VersionSet::new(id, storage.clone(), manifest.clone(), table_options).await?;
         let super_handle = SuperVersionHandle::new(vset, drop_memtable_tx).await?;
         let super_handle = Arc::new(super_handle);
         let super_handle_clone = super_handle.clone();
@@ -238,12 +245,12 @@ impl Core {
         while let Some(writes) = rx.recv().await {
             let memtable_size = self.super_handle.write(writes).await;
             if memtable_size >= self.options.memtable_size / 2 {
-                self.flush_memtable().await;
+                self.flush_memtable(false).await;
             }
         }
     }
 
-    async fn flush_memtable(&self) {
+    async fn flush_memtable(&self, wait: bool) {
         let mut flush_handle = self.flush_handle.lock().await;
         if let Some(handle) = flush_handle.take() {
             let start = Instant::now();
@@ -267,7 +274,12 @@ impl Core {
                 );
             }
         });
-        *flush_handle = Some(handle);
+
+        if wait {
+            handle.await.unwrap();
+        } else {
+            *flush_handle = Some(handle);
+        }
     }
 }
 

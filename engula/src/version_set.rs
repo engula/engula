@@ -64,25 +64,28 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
-    pub fn new(
+    pub async fn new(
         id: u64,
         storage: Arc<dyn Storage>,
         manifest: Arc<dyn Manifest>,
         table_options: TableReaderOptions,
-    ) -> VersionSet {
+    ) -> Result<VersionSet> {
         let version = Version {
             sequence: 0,
             tables: Vec::new(),
             storage: storage.clone(),
         };
-        VersionSet {
+        let vset = VersionSet {
             id,
             name: format!("shard:{}", id),
             current: Mutex::new(Arc::new(version)),
             storage,
             manifest,
             table_options,
-        }
+        };
+        // Initializes the current version.
+        vset.current().await?;
+        Ok(vset)
     }
 
     pub async fn current(&self) -> Result<Arc<Version>> {

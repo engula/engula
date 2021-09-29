@@ -1,6 +1,6 @@
 value_size = 100
-num_entries = 100000
-num_put_tasks = 1000
+num_entries = 10000
+num_put_tasks = 100
 num_get_tasks = 10
 # journal_url = "http://127.0.0.1:10001"
 # storage_urls = ["http://127.0.0.1:10002"]

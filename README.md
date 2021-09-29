@@ -15,7 +15,6 @@ Engula is in the demo stage now.
 Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
 
 Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.
-We also offer full-time jobs. For more information, please get in touch with **careers@engula.com**.
 
 ## Usage
 
@@ -28,12 +27,12 @@ use engula::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let dirname = "/tmp/engula_test/hello";
+    let dirname = "/tmp/engula/hello";
     let _ = std::fs::remove_dir_all(dirname);
 
     println!(
-        "🚧 Creating a hybrid storage under {} that read from a sstable storage and \
-        write to a sstable storage and a parquet storage...",
+        "🚧 Creating a hybrid storage under {} that reads from a sstable storage and \
+        writes to a sstable storage and a parquet storage...",
         dirname
     );
 

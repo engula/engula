@@ -9,20 +9,27 @@ use super::config::Config;
 #[derive(Clap, Debug)]
 pub struct Command {
     #[clap(long)]
+    put: bool,
+    #[clap(long)]
     get: bool,
 }
 
 impl Command {
     pub async fn run(&self, config: Config) -> Result<()> {
-        let _ = std::fs::remove_dir_all(&config.journal.path);
-        let _ = std::fs::remove_dir_all(&config.storage.path);
+        if self.put {
+            let _ = std::fs::remove_dir_all(&config.journal.path);
+            let _ = std::fs::remove_dir_all(&config.storage.path);
+        }
+
         let db = config.new_db().await?;
-        bench_put(db.clone(), config.clone()).await;
-        if self.get {
+        if self.put {
+            bench_put(db.clone(), config.clone()).await;
             db.flush().await;
-            // This serves as a warm up.
-            bench_get(db.clone(), config.clone()).await;
-            bench_get(db.clone(), config.clone()).await;
+        }
+        if self.get {
+            // Warms up
+            bench_get(db.clone(), config.clone(), true).await;
+            bench_get(db.clone(), config.clone(), false).await;
         }
         Ok(())
     }
@@ -45,7 +52,7 @@ async fn bench_put(db: Arc<Database>, config: Config) {
             barrier.wait().await;
             for i in start..end {
                 let key = i.to_be_bytes();
-                db.put(key.to_vec(), value.clone()).await.unwrap();
+                db.timed_put(key.to_vec(), value.clone()).await.unwrap();
             }
         });
         tasks.push(task);
@@ -60,7 +67,7 @@ async fn bench_put(db: Arc<Database>, config: Config) {
     println!("qps: {}", qps);
 }
 
-async fn bench_get(db: Arc<Database>, config: Config) {
+async fn bench_get(db: Arc<Database>, config: Config, warmup: bool) {
     let mut tasks = Vec::new();
     let barrier = Arc::new(Barrier::new(config.num_get_tasks));
     let num_entries_per_task = config.num_entries / config.num_get_tasks;
@@ -73,9 +80,16 @@ async fn bench_get(db: Arc<Database>, config: Config) {
         let end = (task_id + 1) * num_entries_per_task;
         let task = tokio::task::spawn(async move {
             barrier.wait().await;
-            for i in start..end {
-                let key = i.to_be_bytes();
-                db.get(&key).await.unwrap().unwrap();
+            if warmup {
+                for i in start..end {
+                    let key = i.to_be_bytes();
+                    db.get(&key).await.unwrap().unwrap();
+                }
+            } else {
+                for i in start..end {
+                    let key = i.to_be_bytes();
+                    db.timed_get(&key).await.unwrap().unwrap();
+                }
             }
         });
         tasks.push(task);
