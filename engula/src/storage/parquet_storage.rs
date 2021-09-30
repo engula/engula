@@ -36,7 +36,7 @@ impl Storage for ParquetStorage {
     ) -> Result<Box<dyn TableReader>> {
         let file_name = parquet_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = ParquetReader::new(options, file, desc)?;
+        let reader = ParquetReader::new(file, desc, options).await?;
         Ok(Box::new(reader))
     }
 

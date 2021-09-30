@@ -36,7 +36,7 @@ impl Storage for SstableStorage {
     ) -> Result<Box<dyn TableReader>> {
         let file_name = sstable_name(desc.table_number);
         let file = self.fs.new_random_access_reader(&file_name).await?;
-        let reader = SstableReader::new(options, file, desc).await?;
+        let reader = SstableReader::new(file, desc, options).await?;
         Ok(Box::new(reader))
     }
 

@@ -144,7 +144,7 @@ struct RemoteReader {
 impl RemoteReader {
     fn new(fd: u64, mut client: FsClient) -> RemoteReader {
         let (tx, rx): (mpsc::Sender<Read>, mpsc::Receiver<Read>) = mpsc::channel(1024);
-        let _: task::JoinHandle<Result<()>> = task::spawn(async move {
+        task::spawn(async move {
             let mut stream = ReceiverStream::new(rx).ready_chunks(1024);
             while let Some(reads) = stream.next().await {
                 let mut offsets = Vec::with_capacity(reads.len());
@@ -155,13 +155,12 @@ impl RemoteReader {
                 }
                 let input = ReadRequest { fd, offsets, sizes };
                 let request = Request::new(input);
-                let response = client.read(request).await?;
+                let response = client.read(request).await.unwrap();
                 let output = response.into_inner();
                 for (read, data) in reads.into_iter().zip(output.data) {
                     read.tx.send(data).unwrap();
                 }
             }
-            Ok(())
         });
         RemoteReader { read_tx: tx }
     }

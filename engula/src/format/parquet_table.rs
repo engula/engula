@@ -1,7 +1,6 @@
 use std::{convert::TryInto, io::Cursor, sync::Arc};
 
 use async_trait::async_trait;
-use futures::executor::block_on;
 use parquet::{
     column::writer::ColumnWriter,
     data_type::ByteArray,
@@ -101,12 +100,12 @@ pub struct ParquetReader {
 }
 
 impl ParquetReader {
-    pub fn new(
-        options: TableReaderOptions,
+    pub async fn new(
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
+        options: TableReaderOptions,
     ) -> Result<ParquetReader> {
-        let file = ColumnChunkReader::new(file, desc, options)?;
+        let file = ColumnChunkReader::new(file, desc, options).await?;
         let reader = SerializedFileReader::new(file)?;
         Ok(ParquetReader { reader })
     }
@@ -272,33 +271,23 @@ impl RowGroupWriter {
 type ParquetResult<T> = std::result::Result<T, ParquetError>;
 
 struct ColumnChunkReader {
-    file: Box<dyn RandomAccessReader>,
-    desc: TableDesc,
-    prefetch_buffer: Vec<u8>,
+    data: Vec<u8>,
 }
 
 impl ColumnChunkReader {
-    fn new(
+    async fn new(
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
-        options: TableReaderOptions,
+        _: TableReaderOptions,
     ) -> Result<ColumnChunkReader> {
-        let prefetch_buffer = if options.prefetch {
-            block_on(file.read_at(0, desc.parquet_size))?
-        } else {
-            Vec::new()
-        };
-        Ok(ColumnChunkReader {
-            file,
-            desc,
-            prefetch_buffer,
-        })
+        let data = file.read_at(0, desc.parquet_size).await?;
+        Ok(ColumnChunkReader { data })
     }
 }
 
 impl Length for ColumnChunkReader {
     fn len(&self) -> u64 {
-        self.desc.parquet_size
+        self.data.len() as u64
     }
 }
 
@@ -308,14 +297,8 @@ impl ChunkReader for ColumnChunkReader {
     fn get_read(&self, start: u64, length: usize) -> ParquetResult<Self::T> {
         let start = start as usize;
         let limit = start + length;
-        if self.prefetch_buffer.len() >= limit {
-            let data = self.prefetch_buffer[start..limit].to_vec();
-            return Ok(Cursor::new(data));
-        }
-        match block_on(self.file.read_at(start as u64, length as u64)) {
-            Ok(data) => Ok(Cursor::new(data)),
-            Err(err) => Err(ParquetError::General(err.to_string())),
-        }
+        let data = self.data[start..limit].to_vec();
+        Ok(Cursor::new(data))
     }
 }
 
@@ -341,7 +324,9 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.parquet").await.unwrap();
-        let reader = ParquetReader::new(TableReaderOptions::default(), file, desc).unwrap();
+        let reader = ParquetReader::new(file, desc, TableReaderOptions::default())
+            .await
+            .unwrap();
         let mut iter = reader.new_iterator();
         iter.seek_to_first().await;
         for i in 0..NUM {

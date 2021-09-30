@@ -120,9 +120,9 @@ pub struct SstableReader {
 
 impl SstableReader {
     pub async fn new(
-        options: TableReaderOptions,
         file: Box<dyn RandomAccessReader>,
         desc: TableDesc,
+        options: TableReaderOptions,
     ) -> Result<SstableReader> {
         assert!(desc.sstable_size >= FOOTER_SIZE);
         let data = file
@@ -332,7 +332,7 @@ mod tests {
             builder.finish().await.unwrap()
         };
         let file = fs.new_random_access_reader("test.sst").await.unwrap();
-        let reader = SstableReader::new(TableReaderOptions::default(), file, desc)
+        let reader = SstableReader::new(file, desc, TableReaderOptions::default())
             .await
             .unwrap();
         let mut iter = reader.new_iterator();
