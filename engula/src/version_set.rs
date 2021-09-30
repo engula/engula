@@ -48,7 +48,10 @@ impl Version {
         }
         let mut sum = 0;
         for handle in handles {
-            sum += handle.await??;
+            // Some tables may not work due to some problems of the AWS SDK for Rust.
+            if let Ok(count) = handle.await? {
+                sum += count;
+            }
         }
         Ok(sum)
     }

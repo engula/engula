@@ -57,10 +57,10 @@ impl Config {
                 let cool = self.new_inner_storage(url).await?;
                 let hybrid = if online {
                     // Online services read from the hot storage.
-                    HybridStorage::new(hot.clone(), vec![hot, cool])
+                    HybridStorage::new(hot.clone(), vec![hot, cool.clone()], Some(cool))
                 } else {
                     // Offline services read from the cool storage.
-                    HybridStorage::new(cool.clone(), vec![hot, cool])
+                    HybridStorage::new(cool.clone(), vec![hot, cool.clone()], Some(cool))
                 };
                 Ok(Arc::new(hybrid))
             } else {

@@ -13,11 +13,20 @@ use crate::{
 pub struct HybridStorage {
     read: Arc<dyn Storage>,
     writes: Vec<Arc<dyn Storage>>,
+    select: Option<Arc<dyn Storage>>,
 }
 
 impl HybridStorage {
-    pub fn new(read: Arc<dyn Storage>, writes: Vec<Arc<dyn Storage>>) -> HybridStorage {
-        HybridStorage { read, writes }
+    pub fn new(
+        read: Arc<dyn Storage>,
+        writes: Vec<Arc<dyn Storage>>,
+        select: Option<Arc<dyn Storage>>,
+    ) -> HybridStorage {
+        HybridStorage {
+            read,
+            writes,
+            select,
+        }
     }
 }
 
@@ -42,7 +51,11 @@ impl Storage for HybridStorage {
     }
 
     async fn count_table(&self, table_number: u64) -> Result<usize> {
-        self.read.count_table(table_number).await
+        if let Some(storage) = self.select.as_ref() {
+            storage.count_table(table_number).await
+        } else {
+            Ok(0)
+        }
     }
 
     async fn remove_table(&self, table_number: u64) -> Result<()> {

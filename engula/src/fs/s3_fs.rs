@@ -31,53 +31,39 @@ pub struct S3Options {
 }
 
 pub struct S3Fs {
-    client: Client,
-    bucket: String,
+    options: S3Options,
 }
 
 impl S3Fs {
     pub fn new(options: S3Options) -> S3Fs {
-        let region = Region::new(options.region);
-        let credentials =
-            Credentials::from_keys(options.access_key, options.secret_access_key, None);
+        S3Fs { options }
+    }
+
+    fn new_client(&self) -> Client {
+        let region = Region::new(self.options.region.clone());
+        let credentials = Credentials::from_keys(
+            self.options.access_key.clone(),
+            self.options.secret_access_key.clone(),
+            None,
+        );
         let config = Config::builder()
             .region(Some(region))
             .credentials_provider(credentials)
             .build();
-        let client = Client::from_conf(config);
-        S3Fs {
-            client,
-            bucket: options.bucket,
-        }
-    }
-
-    #[allow(dead_code)]
-    async fn list(&self) -> Result<Vec<String>> {
-        let output = self
-            .client
-            .list_objects()
-            .bucket(self.bucket.clone())
-            .send()
-            .await?;
-        Ok(output
-            .contents
-            .unwrap()
-            .into_iter()
-            .map(|x| x.key.unwrap())
-            .collect())
+        Client::from_conf(config)
     }
 
     async fn select(&self, key: &str, expr: &str) -> Result<Vec<u8>> {
+        let client = self.new_client();
         let parquet_input = InputSerialization::builder()
             .parquet(ParquetInput::builder().build())
             .build();
         let json_output = OutputSerialization::builder()
             .json(JsonOutput::builder().build())
             .build();
-        let mut output = self
-            .client
+        let mut output = client
             .select_object_content()
-            .bucket(self.bucket.clone())
+            .bucket(self.options.bucket.clone())
             .key(key)
             .expression(expr)
             .expression_type(ExpressionType::Sql)
@@ -103,7 +89,11 @@ impl S3Fs {
     }
 
     fn new_object(&self, key: &str) -> S3Object {
-        S3Object::new(self.client.clone(), self.bucket.clone(), key.to_owned())
+        S3Object::new(
+            self.new_client(),
+            self.options.bucket.clone(),
+            key.to_owned(),
+        )
     }
 }
 
@@ -121,24 +111,25 @@ impl Fs for S3Fs {
     }
 
     async fn count_file(&self, fname: &str) -> Result<usize> {
-        let data = self.select(fname, "SELECT count(*) from S3Object").await?;
+        let data = self.select(fname, "SELECT count(*) FROM S3Object").await?;
         let text = String::from_utf8(data).unwrap();
-        let count = text.parse().unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let count = json["_1"].as_u64().unwrap() as usize;
         Ok(count)
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
-        let result = self
-            .client
+        let client = self.new_client();
+        let result = client
             .delete_object()
-            .bucket(self.bucket.clone())
+            .bucket(self.options.bucket.clone())
             .key(fname.to_owned())
             .send()
             .await;
         match result {
             Ok(_) => Ok(()),
             Err(err) => {
-                error!("[{}] remove file {}: {}", self.bucket, fname, err);
+                error!("[{}] remove file {}: {}", self.options.bucket, fname, err);
                 Err(err.into())
             }
         }

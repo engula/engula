@@ -12,6 +12,8 @@ pub struct Command {
     put: bool,
     #[clap(long)]
     get: bool,
+    #[clap(long)]
+    count: bool,
 }
 
 impl Command {
@@ -31,6 +33,11 @@ impl Command {
             bench_get(db.clone(), config.clone(), true).await;
             bench_get(db.clone(), config.clone(), false).await;
         }
+        if self.count {
+            let count = db.count().await?;
+            println!("count = {}", count);
+        }
+
         Ok(())
     }
 }

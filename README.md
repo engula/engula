@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
     let storage = Arc::new(HybridStorage::new(
         sstable_storage.clone(),
         vec![sstable_storage, parquet_storage],
+        None,
     ));
 
     let journal_options = JournalOptions::default();
@@ -64,7 +65,7 @@ async fn main() -> Result<()> {
     println!("🚀 Putting to the database concurrently...");
 
     let num_tasks = 4u64;
-    let num_entries = 1024u64;
+    let num_entries = 256u64;
     let mut tasks = Vec::new();
     for _ in 0..num_tasks {
         let db = db.clone();

@@ -56,6 +56,7 @@ mod tests {
         let hybrid_storage = HybridStorage::new(
             sstable_storage.clone(),
             vec![sstable_storage.clone(), parquet_storage.clone()],
+            None,
         );
         let hybrid_storage: Arc<dyn Storage> = Arc::new(hybrid_storage);
 
