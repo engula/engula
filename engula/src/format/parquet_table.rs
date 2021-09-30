@@ -78,6 +78,9 @@ impl TableBuilder for ParquetBuilder {
             if let Err(error) = self.writer.write_group(&self.columns) {
                 self.error = Some(error);
             }
+            self.columns[0].clear();
+            self.columns[1].clear();
+            self.columns[2].clear();
             self.current_group_size = 0;
         }
     }

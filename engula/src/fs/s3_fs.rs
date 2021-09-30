@@ -167,7 +167,7 @@ impl S3Object {
 #[async_trait]
 impl RandomAccessReader for S3Object {
     async fn read_at(&self, offset: u64, size: u64) -> Result<Vec<u8>> {
-        let range = format!("bytes={}-{}", offset, size);
+        let range = format!("bytes={}-{}", offset, offset + size);
         let start = Instant::now();
         let result = self
             .client
@@ -179,11 +179,13 @@ impl RandomAccessReader for S3Object {
             .await;
         match result {
             Ok(output) => match output.body.collect().await {
-                Ok(v) => {
+                Ok(mut bytes) => {
                     let throughput = size as f64 / start.elapsed().as_secs_f64();
                     counter!("engula.fs.s3.read.bytes", size as u64);
                     histogram!("engula.fs.s3.read.throughput", throughput);
-                    Ok(v.chunk().to_owned())
+                    let mut data = vec![0; bytes.remaining()];
+                    bytes.copy_to_slice(&mut data);
+                    Ok(data)
                 }
                 Err(err) => Err(Error::AwsSdk(err.to_string())),
             },

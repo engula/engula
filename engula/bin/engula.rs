@@ -16,8 +16,6 @@ struct Command {
     log_dir: String,
     #[clap(short, long, default_value = "engula/etc/default.toml")]
     config_file: String,
-    #[clap(long, default_value = "127.0.0.1:14268")]
-    jaeger_addr: String,
     #[clap(long, default_value = "127.0.0.1:19090")]
     prometheus_addr: String,
     #[clap(subcommand)]
@@ -41,18 +39,7 @@ async fn main() {
         .pretty()
         .with_writer(writer)
         .with_filter(filter);
-    let tracer = opentelemetry_jaeger::new_pipeline()
-        .with_service_name("engula")
-        .with_collector_endpoint(format!("http://{}/api/traces", cmd.jaeger_addr))
-        .install_simple()
-        .unwrap();
-    let otel_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(filter);
-    tracing_subscriber::registry()
-        .with(fmt_layer)
-        .with(otel_layer)
-        .init();
+    tracing_subscriber::registry().with(fmt_layer).init();
     let prometheus_addr: SocketAddr = cmd.prometheus_addr.parse().unwrap();
 
     let config = config::Config::from_file(&cmd.config_file).unwrap();

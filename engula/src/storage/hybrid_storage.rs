@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use prost::Message;
+use tokio::task;
 
 use super::Storage;
 use crate::{
@@ -71,11 +72,15 @@ impl TableBuilder for HybridBuilder {
     }
 
     async fn finish(&mut self) -> Result<TableDesc> {
-        let mut final_desc = TableDesc::default();
-        for builder in &mut self.builders {
-            let desc = builder.finish().await?;
-            final_desc.merge(desc.encode_to_vec().as_ref()).unwrap();
+        let mut tasks = Vec::new();
+        for mut builder in self.builders.split_off(0) {
+            tasks.push(task::spawn(async move { builder.finish().await }));
         }
-        Ok(final_desc)
+        let mut desc = TableDesc::default();
+        for task in tasks {
+            let task_desc = task.await.unwrap()?;
+            desc.merge(task_desc.encode_to_vec().as_ref()).unwrap();
+        }
+        Ok(desc)
     }
 }
