@@ -14,7 +14,7 @@ path = "bin/engula.rs"
 [dependencies]
 clap = "3.0.0-beta.4"
 toml = "0.5"
-tonic = "0.5"
+tonic = { version = "0.5", features = ["compression"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
@@ -50,4 +50,4 @@ aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-al
 aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3" }
 
 [build-dependencies]
-tonic-build = "0.5"
+tonic-build = { version = "0.5", features = ["compression"] }

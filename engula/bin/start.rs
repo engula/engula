@@ -46,10 +46,12 @@ impl JournalCommand {
         );
         let _ = std::fs::remove_dir_all(&config.journal.path);
         let service = JournalService::new(&config.journal.path, options)?;
-        Server::builder()
-            .add_service(JournalServer::new(service))
-            .serve(addr)
-            .await?;
+        let service = if config.compression.unwrap_or(false) {
+            JournalServer::new(service).send_gzip().accept_gzip()
+        } else {
+            JournalServer::new(service)
+        };
+        Server::builder().add_service(service).serve(addr).await?;
         Ok(())
     }
 }
@@ -69,10 +71,12 @@ impl StorageCommand {
         );
         let _ = std::fs::remove_dir_all(&config.storage.path);
         let service = FsService::new(&config.storage.path)?;
-        Server::builder()
-            .add_service(FsServer::new(service))
-            .serve(addr)
-            .await?;
+        let service = if config.compression.unwrap_or(false) {
+            FsServer::new(service).send_gzip().accept_gzip()
+        } else {
+            FsServer::new(service)
+        };
+        Server::builder().add_service(service).serve(addr).await?;
         Ok(())
     }
 }
