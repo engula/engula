@@ -655,6 +655,7 @@ dependencies = [
  "opentelemetry-prometheus",
  "parquet",
  "prost",
+ "rand",
  "serde",
  "serde_derive",
  "serde_json",

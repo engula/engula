@@ -8,6 +8,8 @@ use url::Url;
 pub struct Config {
     pub value_size: usize,
     pub num_entries: usize,
+    pub compression: Option<bool>,
+    pub compression_ratio: Option<f64>,
     pub num_put_tasks: usize,
     pub num_get_tasks: usize,
     pub aws: Option<AwsConfig>,
@@ -40,7 +42,7 @@ impl Config {
     pub async fn new_journal(&self) -> Result<Arc<dyn Journal>> {
         let options = self.journal.as_options();
         if let Some(url) = &self.journal_url {
-            let journal = RemoteJournal::new(url).await?;
+            let journal = RemoteJournal::new(url, self.compression.unwrap_or(false)).await?;
             Ok(Arc::new(journal))
         } else {
             let journal = LocalJournal::new(&self.journal.path, options)?;
@@ -113,7 +115,7 @@ impl Config {
                 Ok(Arc::new(fs))
             }
             "http" => {
-                let fs = RemoteFs::new(url).await?;
+                let fs = RemoteFs::new(url, self.compression.unwrap_or(false)).await?;
                 Ok(Arc::new(fs))
             }
             _ => panic!("invalid fs scheme: {}", parsed_url.scheme()),

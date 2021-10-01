@@ -15,22 +15,30 @@ type FsClient = fs_client::FsClient<Channel>;
 
 pub struct RemoteFs {
     url: String,
-    client: FsClient,
+    compression: bool,
 }
 
 impl RemoteFs {
-    pub async fn new(url: &str) -> Result<RemoteFs> {
+    pub async fn new(url: &str, compression: bool) -> Result<RemoteFs> {
         Ok(RemoteFs {
             url: url.to_owned(),
-            client: FsClient::connect(url.to_owned()).await?,
+            compression,
         })
+    }
+
+    async fn new_client(&self) -> Result<FsClient> {
+        let mut client = FsClient::connect(self.url.clone()).await?;
+        if self.compression {
+            client = client.send_gzip().accept_gzip();
+        }
+        Ok(client)
     }
 }
 
 #[async_trait]
 impl Fs for RemoteFs {
     async fn new_sequential_writer(&self, fname: &str) -> Result<Box<dyn SequentialWriter>> {
-        let mut client = FsClient::connect(self.url.clone()).await?;
+        let mut client = self.new_client().await?;
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: AccessMode::Write as i32,
@@ -50,7 +58,7 @@ impl Fs for RemoteFs {
     }
 
     async fn new_random_access_reader(&self, fname: &str) -> Result<Box<dyn RandomAccessReader>> {
-        let mut client = FsClient::connect(self.url.clone()).await?;
+        let mut client = self.new_client().await?;
         let input = OpenRequest {
             file_name: fname.to_owned(),
             access_mode: AccessMode::Read as i32,
@@ -70,7 +78,7 @@ impl Fs for RemoteFs {
     }
 
     async fn remove_file(&self, fname: &str) -> Result<()> {
-        let mut client = self.client.clone();
+        let mut client = self.new_client().await?;
         let input = RemoveRequest {
             file_name: fname.to_owned(),
         };

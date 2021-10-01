@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use clap::Clap;
 use engula::*;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tokio::sync::Barrier;
 
 use super::config::Config;
@@ -42,6 +43,15 @@ impl Command {
     }
 }
 
+fn rand_value(size: usize, ratio: f64) -> Vec<u8> {
+    let part_size = (size as f64 * ratio) as usize;
+    let part: Vec<u8> = thread_rng()
+        .sample_iter(Alphanumeric)
+        .take(part_size)
+        .collect();
+    part.repeat((1f64 / ratio) as usize)
+}
+
 async fn bench_put(db: Arc<Database>, config: Config) {
     let mut tasks = Vec::new();
     let barrier = Arc::new(Barrier::new(config.num_put_tasks));
@@ -49,17 +59,22 @@ async fn bench_put(db: Arc<Database>, config: Config) {
 
     let now = Instant::now();
     for task_id in 0..config.num_put_tasks {
-        let mut value = Vec::new();
-        value.resize(config.value_size, 0);
         let db = db.clone();
+        let config = config.clone();
         let barrier = barrier.clone();
+        let value = vec![0; config.value_size];
         let start = task_id * num_entries_per_task;
         let end = (task_id + 1) * num_entries_per_task;
         let task = tokio::task::spawn(async move {
             barrier.wait().await;
             for i in start..end {
-                let key = i.to_be_bytes();
-                db.timed_put(key.to_vec(), value.clone()).await.unwrap();
+                let key = i.to_be_bytes().to_vec();
+                if let Some(ratio) = config.compression_ratio {
+                    let value = rand_value(config.value_size, ratio);
+                    db.timed_put(key, value).await.unwrap();
+                } else {
+                    db.timed_put(key, value.clone()).await.unwrap();
+                }
             }
         });
         tasks.push(task);
@@ -74,9 +89,12 @@ async fn bench_put(db: Arc<Database>, config: Config) {
     println!("qps: {}", qps);
 }
 
-async fn bench_get(db: Arc<Database>, config: Config, warmup: bool) {
+async fn bench_get(db: Arc<Database>, mut config: Config, warmup: bool) {
     let mut tasks = Vec::new();
     let barrier = Arc::new(Barrier::new(config.num_get_tasks));
+    if warmup {
+        config.num_entries /= 10;
+    }
     let num_entries_per_task = config.num_entries / config.num_get_tasks;
 
     let now = Instant::now();
@@ -88,7 +106,7 @@ async fn bench_get(db: Arc<Database>, config: Config, warmup: bool) {
         let task = tokio::task::spawn(async move {
             barrier.wait().await;
             if warmup {
-                for i in (start..end).step_by(10) {
+                for i in start..end {
                     let key = i.to_be_bytes();
                     db.get(&key).await.unwrap().unwrap();
                 }

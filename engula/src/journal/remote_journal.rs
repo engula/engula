@@ -19,8 +19,11 @@ pub struct RemoteJournal {
 }
 
 impl RemoteJournal {
-    pub async fn new(url: &str) -> Result<RemoteJournal> {
-        let client = JournalClient::connect(url.to_owned()).await?;
+    pub async fn new(url: &str, compression: bool) -> Result<RemoteJournal> {
+        let mut client = JournalClient::connect(url.to_owned()).await?;
+        if compression {
+            client = client.send_gzip().accept_gzip();
+        }
         Ok(RemoteJournal { client })
     }
 }
