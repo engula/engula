@@ -8,12 +8,11 @@ Engula's design goals are as follows:
 
 - Elastic: unbundles components to leverage elastic resources on the cloud
 - Adaptive: optimizes its own data structures according to dynamic workloads
-- Extensible: provides flexible APIs and modules to program application logic
+- Extensible: provides flexible APIs and components to build higher-level applications
 - Platform independent: supports flexible deployments on local hosts, on-premise servers, and cloud platforms
 
-Engula is in the demo stage now.
+This branch contains the first demo.
 Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
-
 Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.
 
 ## Usage

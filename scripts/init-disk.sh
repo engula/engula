@@ -1,6 +1,6 @@
 #!/bin/bash
 
-disk=$1
+disk=/dev/$1
 path=$2
 
 sudo mkfs -t ext4 $disk

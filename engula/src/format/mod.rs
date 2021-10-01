@@ -3,7 +3,6 @@ mod sstable;
 mod table;
 
 mod block;
-mod filter;
 mod iterator;
 mod merging_iterator;
 mod two_level_iterator;
