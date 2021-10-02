@@ -2,7 +2,7 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::Hasher,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -170,6 +170,7 @@ struct Core {
     memtable_tx: Arc<mpsc::Sender<Vec<Write>>>,
     super_handle: Arc<SuperVersionHandle>,
     flush_handle: Mutex<Option<task::JoinHandle<()>>>,
+    flush_completed: Arc<AtomicBool>,
 }
 
 impl Core {
@@ -207,6 +208,7 @@ impl Core {
             memtable_tx: Arc::new(memtable_tx),
             super_handle,
             flush_handle: Mutex::new(None),
+            flush_completed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -255,6 +257,9 @@ impl Core {
 
     async fn flush_memtable(&self, wait: bool) {
         let mut flush_handle = self.flush_handle.lock().await;
+        if !self.flush_completed.load(Ordering::SeqCst) && !wait {
+            return;
+        }
         if let Some(handle) = flush_handle.take() {
             let start = Instant::now();
             handle.await.unwrap();
@@ -267,6 +272,8 @@ impl Core {
         let shard_name = self.name.clone();
         let super_handle = self.super_handle.clone();
         let imm = super_handle.switch_memtable().await;
+        let flush_completed = self.flush_completed.clone();
+        flush_completed.store(false, Ordering::SeqCst);
         let handle = task::spawn(async move {
             if let Err(err) = super_handle.flush_memtable(imm.clone()).await {
                 error!(
@@ -276,6 +283,7 @@ impl Core {
                     err
                 );
             }
+            flush_completed.store(true, Ordering::SeqCst);
         });
 
         if wait {

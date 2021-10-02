@@ -1,0 +1,33 @@
+value_size = 1000
+num_entries = 10000000
+num_put_tasks = 1000
+num_get_tasks = 100
+journal_url = "http://3.139.237.142:10001"
+storage_urls = [
+    "http://13.59.85.195:10001?format=sstable",
+    "s3:engula-demo?format=parquet",
+]
+compaction_url = "http://3.142.212.96:10001"
+
+[aws]
+region = "us-east-2"
+access_key = "<YOUR_ACCESS_KEY>"
+secret_access_key = "<YOUR_SECRET_ACCESS_KEY>"
+
+[compute]
+num_shards = 4
+num_levels = 4
+cache_size_mb = 128
+num_cache_shards = 1024
+memtable_size_mb = 128
+write_channel_size = 1024
+
+[journal]
+path = "/data1/engula/journal"
+sync = false
+size = 1073741824
+
+[storage]
+path = "/data1/engula/storage"
+sst_block_size_kb = 4
+row_group_size_mb = 16
