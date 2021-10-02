@@ -12,8 +12,11 @@ Engula's design goals are as follows:
 - Platform independent: supports flexible deployments on local hosts, on-premise servers, and cloud platforms
 
 This branch contains the first demo.
-Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.
-Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.
+~~Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.~~
+~~Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.~~
+
+**This demo has ended. Please check [the report](https://engula.com/posts/demo-1/) for more details.**
+Welcome to discuss this demo [here](https://github.com/engula/engula/issues/1).
 
 ## Usage
 

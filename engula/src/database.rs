@@ -208,7 +208,7 @@ impl Core {
             memtable_tx: Arc::new(memtable_tx),
             super_handle,
             flush_handle: Mutex::new(None),
-            flush_completed: Arc::new(AtomicBool::new(false)),
+            flush_completed: Arc::new(AtomicBool::new(true)),
         })
     }
 
