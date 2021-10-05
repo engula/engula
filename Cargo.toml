@@ -2,4 +2,8 @@
 members = ["engula"]
 
 [profile.release]
-debug = true
+debug = 1
+codegen-units = 1
+
+[profile.dev]
+split-debuginfo = "unpacked"
