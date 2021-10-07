@@ -13,19 +13,31 @@ num_get_tasks = 10
 # secret_access_key
 
 [compute]
+# The number of shards for memtables and storage files.
+# This control the concurrency of flushes and compactions.
 num_shards = 4
+# The maximum number of levels to trigger compactions.
 num_levels = 4
+# The size of the cache in MiB.
 cache_size_mb = 128
+# The number of shards in the cache.
 num_cache_shards = 1024
+# The maximum size of memtables for all shards in MiB.
 memtable_size_mb = 1024
 write_channel_size = 1024
 
 [journal]
+# The path to store journal logs.
 path = "/tmp/engula/journal"
+# Whether to sync data after writes.
 sync = true
+# The maximum size of a journal file.
 size = 1073741824
 
 [storage]
+# The path to store storage files.
 path = "/tmp/engula/storage"
+# The block size of SSTable files in KiB.
 sst_block_size_kb = 4
+# The row group size of Parquet files in MiB.
 row_group_size_mb = 16
