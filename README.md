@@ -18,7 +18,73 @@ This branch contains the first demo.
 **This demo has ended. Please check [the report](https://engula.com/posts/demo-1/) for more details.**
 Welcome to discuss this demo [here](https://github.com/engula/engula/issues/1).
 
-## Usage
+## Run Experiments
+
+### Build
+
+To build the benchmark tool:
+
+```
+cargo build --release
+```
+
+When the build finishes, you can find the binary in `target/release/engula`.
+
+### Run
+
+`engula` consists of two sub-commands: `start` and `bench`.
+
+#### Run a Component
+
+The `start` command allows you to run a component as a gRPC service.
+`engula` provides four components: journal, storage, manifest, and compaction.
+
+For example, to run the journal service at a specific address with a configuration file:
+
+```
+engula -c default.toml start journal --addr 0.0.0.0:10001
+```
+
+#### Run the Benchmark
+
+The `bench` command allows you to run benchmarks against specific components.
+There are two kinds of benchmarks: `put` and `get`.
+
+The `put` benchmark runs concurrent tasks to put entries to the database.
+The `get` benchmark runs concurrent tasks to get entries from the database.
+The number of tasks, entries, and the size of values are all configurable in the configuration file.
+
+In addition, there are two kinds of components: local and remote.
+Local components run in the same process with the benchmark tool (embedded).
+Remote components run in a standalone process and communicate with the benchmark tool through gRPC.
+
+The benchmark tool runs local components by default.
+For example, to run the `put` benchmark:
+
+```
+engula -c default.toml bench --put
+```
+
+You can specify the URL of individual remote components to benchmark against them.
+For example, to benchmark against the journal we started above, specify its URL in the configuration file:
+
+```
+journal_url = "http://127.0.0.1:10001"
+```
+
+Please check `engula -h` and [default.toml](https://github.com/engula/engula/blob/demo-1/engula/etc/default.toml) for more details about usages and configurations.
+
+### About the Report
+
+To run experiments on [the report](https://engula.com/posts/demo-1/), you need to do the following steps:
+
+- Provision EC2 instances according to the report.
+- Build the benchmark tool and deploy it to specific instances.
+- Run the corresponding components and benchmarks on the specific instances with the provided configuration files in [engula/etc](https://github.com/engula/engula/tree/demo-1/engula/etc).
+
+Of course, you can also try to play with the benchmark tool in different ways, have fun :)
+
+## Use the Storage Engine
 
 You can run [the example](engula/examples/hello.rs) with:
 
