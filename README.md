@@ -11,12 +11,16 @@ Engula's design goals are as follows:
 - Extensible: provides flexible APIs and components to build higher-level applications
 - Platform independent: supports flexible deployments on local hosts, on-premise servers, and cloud platforms
 
-This branch contains the first demo.
-~~Please check **[the roadmap](https://github.com/engula/engula/issues/1)** for more details.~~
-~~Welcome to **review [the design](docs/design.md)** and **join [the room](https://gitter.im/engula/contributors)** to discuss with us.~~
+**Welcome to review [the design](docs/design.md) and discuss with us.**
 
-**This demo has ended. Please check [the report](https://engula.com/posts/demo-1/) for more details.**
-Welcome to discuss this demo [here](https://github.com/engula/engula/issues/1).
+Engula is in the demo stage now. We have planned two demos:
+
+- Demo 1 explores the path towards an elastic storage engine
+- Demo 2 explores the path towards an adaptive storage engine
+
+**Demo 1 has released in Oct 2021. Please check [the report](https://engula.com/posts/demo-1/) for more details.**
+
+**Demo 2 is now in progress and will release in Nov 2021. Please check [the roadmap](https://github.com/engula/engula/discussions/29) for more details.**
 
 ## Run Experiments
 
