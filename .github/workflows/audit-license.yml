@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
-reorder_imports = true
-reorder_impl_items = true
-condense_wildcard_suffixes = true
-wrap_comments = true
-normalize_comments = true
-normalize_doc_attributes = true
-format_code_in_doc_comments = true
+name: Audit License
+
+on: [push, pull_request]
+
+jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: apache/skywalking-eyes@main
+        with:
+          config: tools/ci/licenserc.yml
