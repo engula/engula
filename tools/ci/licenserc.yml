@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
-reorder_imports = true
-reorder_impl_items = true
-condense_wildcard_suffixes = true
-wrap_comments = true
-normalize_comments = true
-normalize_doc_attributes = true
-format_code_in_doc_comments = true
+header:
+  license:
+    spdx-id: Apache-2.0
+    copyright-owner: The Engula Authors
+  paths-ignore:
+    - '*.md'
+    - '.gitignore'
+    - 'Cargo.lock'
+    - 'LICENSE'
