@@ -1,5 +1,7 @@
 # [Engula](https://engula.com)
 
+[![Discord](https://img.shields.io/discord/873004811774214145?logo=Discord&style=flat-square)](https://discord.gg/AN6vgVXaHC)
+
 Engula is a storage engine that empowers engineers to build reliable and cost-effective databases with less effort and more confidence.
 
 Engula's design goals are as follows:
@@ -8,6 +10,8 @@ Engula's design goals are as follows:
 - Adaptive: optimizes for dynamic workloads and diverse applications
 - Extensible: provides pluggable APIs and components for customization
 - Platform independent: allows flexible deployments on local hosts, on-premise servers, and cloud platforms
+
+## Status
 
 This is the main branch, which is still in the initial phase.
 
