@@ -20,4 +20,7 @@ header:
     - '*.md'
     - '.gitignore'
     - 'Cargo.lock'
+    - 'Cargo.toml'
     - 'LICENSE'
+    - 'rust-toolchain.toml'
+    - 'rustfmt.toml'
