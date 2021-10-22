@@ -17,7 +17,8 @@ header:
     spdx-id: Apache-2.0
     copyright-owner: The Engula Authors
   paths-ignore:
-    - '*.md'
+    - 'docs'
+    - '**/*.md'
     - '.gitignore'
     - 'Cargo.lock'
     - 'Cargo.toml'
