@@ -14,23 +14,25 @@ Engula's design goals are as follows:
 - **Extensible**: provides pluggable APIs and modules for customization
 - **Platform independent**: allows flexible deployments on local hosts, on-premise servers, and cloud platforms
 
-## Design
+## Status
 
-For internal designs of Engula, see the [docs](docs).
-
-## Discussion
-
-For discussions about ideas, designs, and roadmaps, see the [discussions](https://github.com/engula/engula/discussions).
-
-## Project Status
-
-This is the main branch, which is in the initial stage.
+We are working on version 0.1. Please check [the roadmap] for more details.
 
 We have released Demo 1 in Oct 2021.
 You can check [the branch](https://github.com/engula/engula/tree/demo-1) and [the report](https://engula.com/posts/demo-1/) for more details.
 
 Demo 2 is now in progress and will release in Nov 2021.
 You can check [the discussion](https://github.com/engula/engula/discussions/29) for more details.
+
+## Design
+
+![Architecture](docs/images/architecture.drawio.svg)
+
+For internal designs of Engula, please see the [docs](docs).
+
+## Discussion
+
+For discussions about ideas, designs, and roadmaps, please see the [discussions](https://github.com/engula/engula/discussions).
 
 ## Contributing
 
