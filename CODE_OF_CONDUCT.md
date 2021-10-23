@@ -4,9 +4,9 @@
 
 **Contact**: any moderator listed below
 
-| Moderator     | GitHub       | Email                          |
-| ------------- | ------------ | :----------------------------- |
-| Huachao Huang | huachaohuang | mailto:huachao.huang@gmail.com |
+| Moderator     | GitHub       | Email                   |
+| ------------- | ------------ | :---------------------- |
+| Huachao Huang | huachaohuang | huachao.huang@gmail.com |
 
 * We are committed to providing a friendly, safe and welcoming environment for all, regardless of level of experience, gender identity and expression, sexual orientation, disability, personal appearance, body size, race, ethnicity, age, religion, nationality, or other similar characteristic.
 * Please avoid using overtly sexual aliases or other nicknames that might detract from a friendly, safe and welcoming environment for all.
