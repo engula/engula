@@ -31,3 +31,7 @@ You can check [the branch](https://github.com/engula/engula/tree/demo-1) and [th
 
 Demo 2 is now in progress and will release in Nov 2021.
 You can check [the discussion](https://github.com/engula/engula/discussions/29) for more details.
+
+## Contributing
+
+If you are interested in contributing to the Engula project, please take a look at the [CONTRIBUTING.md](CONTRIBUTING.md).
