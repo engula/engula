@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/engula"]
+members = ["src/platform/storage"]
