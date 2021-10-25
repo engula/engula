@@ -14,10 +14,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engula"
-version = "0.1.0"
-
-[[package]]
 name = "engula-platform-storage"
 version = "0.1.0"
 dependencies = [
