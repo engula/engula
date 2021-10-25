@@ -9,6 +9,12 @@ You can check that document for more details before this document is thorough.
 
 [demo-1-url]: https://github.com/engula/engula/blob/demo-1/docs/design.md
 
+# Data Model
+
+An Engula deployment is called a universe. A universe contains multiple databases. A database contains multiple collections.
+
+A `Collection` represents a collection of data in a database. Applications use data APIs to manipulate data in collections. Engula provides some built-in data APIs for convenience. Applications can also build their data APIs outside of Engula.
+
 # Architecture
 
 ![Architecture](images/architecture.drawio.svg)
@@ -26,3 +32,11 @@ To handle a command, `Compute` writes the command to `Journal` and then applies 
 To handle a query, `Compute` tries to query the result from `Cache` first. On cache misses, `Compute` loads the required data from `Storage`.
 
 Periodically, `Compute` may schedule some background jobs to reorganize data in `Storage`. `Compute` dedicates the execution of background jobs to `Background`, which doesn't interfere with foreground service.
+
+# Storage Structure
+
+The storage of a database consists of a `BaseStore` and a `DeltaStore`.
+
+The `BaseStore` stores data files of a database. The `BaseStore` uses a `Manifest` to record the layout and metadata of data files. Data files of a database are divided into collections but can be atomically committed to the `Manifest`.
+
+The `DeltaStore` stores recent updates of a database. The `DeltaStore` uses a `Journal` to persist updates and a `WriteBuffer` to accumulate updates. The `DeltaStore` is optional. Applications that tolerate the loss of recent updates can ignore the `DeltaStore`.
