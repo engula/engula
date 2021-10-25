@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/platform/storage"]
+members = ["src/kernel/manifest", "src/platform/storage"]
