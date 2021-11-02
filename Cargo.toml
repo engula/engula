@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/kernel/manifest", "src/platform/storage"]
+members = ["src/engula", "src/engula-kernel", "src/engula-platform"]
