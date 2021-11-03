@@ -12,31 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{crate_version, Parser};
+use std::net::SocketAddr;
 
-mod node;
+use crate::node::Node;
 
-#[derive(Parser)]
-#[clap(version = crate_version!())]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
+/// An HTTP server that serves a node.
+pub struct NodeServer {}
 
-impl Command {
-    fn run(&self) {
-        match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
-        }
+impl NodeServer {
+    pub fn bind(_addr: &SocketAddr) -> NodeServer {
+        NodeServer {}
     }
-}
 
-#[derive(Parser)]
-enum SubCommand {
-    Node(node::Command),
-}
-
-fn main() {
-    let cmd: Command = Command::parse();
-    cmd.run();
+    pub fn serve(&self, _node: Node) {}
 }

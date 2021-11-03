@@ -12,31 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{crate_version, Parser};
+use crate::{
+    error::Result,
+    unit::{UnitDesc, UnitSpec},
+};
 
-mod node;
+/// A node manages a set of units.
+pub struct Node {}
 
-#[derive(Parser)]
-#[clap(version = crate_version!())]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
-
-impl Command {
-    fn run(&self) {
-        match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
-        }
+impl Node {
+    pub async fn list_units(&self) -> Vec<UnitDesc> {
+        Vec::new()
     }
-}
 
-#[derive(Parser)]
-enum SubCommand {
-    Node(node::Command),
-}
+    pub async fn create_unit(&self, _unit: &UnitSpec) -> Result<()> {
+        Ok(())
+    }
 
-fn main() {
-    let cmd: Command = Command::parse();
-    cmd.run();
+    pub async fn delete_unit(&self, _uid: &str) -> Result<()> {
+        Ok(())
+    }
 }
