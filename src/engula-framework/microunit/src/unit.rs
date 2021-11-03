@@ -12,8 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// A unit descriptor
+use crate::error::Result;
+
+/// A unit description that describes the current state of a unit.
 pub struct UnitDesc {}
 
-/// A unit specification
+/// A unit specification that specifies the desired state of a unit.
 pub struct UnitSpec {}
+
+/// A unit handle.
+pub trait Unit {}
+
+/// A unit builder spawns a specific kind of units.
+pub trait UnitBuilder {
+    fn spawn(&self, spec: UnitSpec) -> Result<Box<dyn Unit>>;
+}
