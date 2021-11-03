@@ -1,7 +1,8 @@
 [package]
-name = "engula-kernel-manifest"
+name = "manifest"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 async-trait = "0.1"
