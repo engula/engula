@@ -13,30 +13,36 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-
-mod node;
+use engula_framework::microunit::{Node, NodeServer};
 
 #[derive(Parser)]
 #[clap(version = crate_version!())]
-struct Command {
+pub struct Command {
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 impl Command {
-    fn run(&self) {
+    pub fn run(&self) {
         match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
+            SubCommand::Start(cmd) => cmd.run(),
         }
     }
 }
 
 #[derive(Parser)]
 enum SubCommand {
-    Node(node::Command),
+    Start(StartCommand),
 }
 
-fn main() {
-    let cmd: Command = Command::parse();
-    cmd.run();
+#[derive(Parser)]
+struct StartCommand {
+    addr: String,
+}
+
+impl StartCommand {
+    fn run(&self) {
+        let addr = self.addr.parse().unwrap();
+        NodeServer::bind(&addr).serve(Node {});
+    }
 }

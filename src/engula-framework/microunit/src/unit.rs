@@ -12,31 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{crate_version, Parser};
+use crate::error::Result;
 
-mod node;
+/// A unit description that describes the current state of a unit.
+pub struct UnitDesc {}
 
-#[derive(Parser)]
-#[clap(version = crate_version!())]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
+/// A unit specification that specifies the desired state of a unit.
+pub struct UnitSpec {}
 
-impl Command {
-    fn run(&self) {
-        match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
-        }
-    }
-}
+/// A unit handle.
+pub trait Unit {}
 
-#[derive(Parser)]
-enum SubCommand {
-    Node(node::Command),
-}
-
-fn main() {
-    let cmd: Command = Command::parse();
-    cmd.run();
+/// A unit builder spawns a specific kind of units.
+pub trait UnitBuilder {
+    fn spawn(&self, spec: UnitSpec) -> Result<Box<dyn Unit>>;
 }

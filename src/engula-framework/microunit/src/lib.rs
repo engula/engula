@@ -12,31 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{crate_version, Parser};
-
+mod error;
 mod node;
+mod node_server;
+mod unit;
 
-#[derive(Parser)]
-#[clap(version = crate_version!())]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
-
-impl Command {
-    fn run(&self) {
-        match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
-        }
-    }
-}
-
-#[derive(Parser)]
-enum SubCommand {
-    Node(node::Command),
-}
-
-fn main() {
-    let cmd: Command = Command::parse();
-    cmd.run();
-}
+pub use self::{
+    error::{Error, Result},
+    node::Node,
+    node_server::NodeServer,
+    unit::{Unit, UnitBuilder, UnitDesc, UnitSpec},
+};
