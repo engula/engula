@@ -12,17 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use crate::node::Node;
+use axum::{
+    extract::Extension, http::StatusCode, response::IntoResponse, routing::get, AddExtensionLayer,
+    Json, Router, Server,
+};
+
+use crate::{
+    node::Node,
+    unit::{UnitDesc, UnitSpec},
+};
 
 /// An HTTP server that serves a node.
-pub struct NodeServer {}
+pub struct NodeServer {
+    addr: SocketAddr,
+}
 
 impl NodeServer {
-    pub fn bind(_addr: &SocketAddr) -> NodeServer {
-        NodeServer {}
+    pub fn bind(addr: SocketAddr) -> NodeServer {
+        NodeServer { addr }
     }
 
-    pub fn serve(&self, _node: Node) {}
+    pub async fn serve(&self, node: Node) {
+        let router = Router::new()
+            .route("/units", get(list_units).post(create_unit))
+            .layer(AddExtensionLayer::new(Arc::new(node)));
+        Server::bind(&self.addr)
+            .serve(router.into_make_service())
+            .await
+            .unwrap();
+    }
+}
+
+async fn list_units(Extension(node): Extension<Arc<Node>>) -> impl IntoResponse {
+    let descs = node.list_units().await;
+    (StatusCode::OK, Json(descs))
+}
+
+async fn create_unit(
+    Json(spec): Json<UnitSpec>,
+    Extension(node): Extension<Arc<Node>>,
+) -> impl IntoResponse {
+    match node.create_unit(spec).await {
+        Ok(desc) => (StatusCode::CREATED, Json(desc)),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(UnitDesc::default())),
+    }
 }
