@@ -116,12 +116,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "datatypes"
+version = "0.1.0"
+
+[[package]]
 name = "engula"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "engula-api",
  "engula-framework",
  "tokio",
+]
+
+[[package]]
+name = "engula-api"
+version = "0.1.0"
+dependencies = [
+ "datatypes",
 ]
 
 [[package]]
