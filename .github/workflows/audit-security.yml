@@ -17,17 +17,17 @@ name: Audit Security
 on:
   push:
     paths:
-      - '**/**/Cargo.toml'
+      - '**/Cargo.lock'
   pull_request:
     paths:
-      - '**/**/Cargo.toml'
+      - '**/Cargo.lock'
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '25 4 * * *'
 
 jobs:
   audit-security:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'audit skip')"
+    if: "!contains(github.event.head_commit.message, 'skip audit')"
     steps:
       - uses: actions/checkout@v2
 
