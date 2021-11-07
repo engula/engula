@@ -17,4 +17,10 @@ pub enum Error {
     InvalidArgument,
 }
 
+impl ToString for Error {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

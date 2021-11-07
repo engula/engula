@@ -18,11 +18,9 @@ use axum::{
     extract::Extension, http::StatusCode, response::IntoResponse, routing::get, AddExtensionLayer,
     Json, Router, Server,
 };
+use serde_json::json;
 
-use crate::{
-    node::Node,
-    unit::{UnitDesc, UnitSpec},
-};
+use crate::{node::Node, unit::UnitSpec};
 
 /// An HTTP server that serves a node.
 pub struct NodeServer {
@@ -55,7 +53,17 @@ async fn create_unit(
     Extension(node): Extension<Arc<Node>>,
 ) -> impl IntoResponse {
     match node.create_unit(spec).await {
-        Ok(desc) => (StatusCode::CREATED, Json(desc)),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(UnitDesc::default())),
+        Ok(desc) => {
+            let resp = json!({
+                "desc": desc,
+            });
+            (StatusCode::CREATED, Json(resp))
+        }
+        Err(err) => {
+            let resp = json!({
+                "error": err.to_string(),
+            });
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(resp))
+        }
     }
 }
