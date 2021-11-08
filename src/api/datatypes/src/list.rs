@@ -12,18 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::Result;
+use std::marker::PhantomData;
 
-/// A unit description that describes the current state of a unit.
-pub struct UnitDesc {}
+use crate::DataValue;
 
-/// A unit specification that specifies the desired state of a unit.
-pub struct UnitSpec {}
+#[derive(Default)]
+pub struct List<V>(V);
 
-/// A unit handle.
-pub trait Unit {}
+impl<V: DataValue> DataValue for List<V> {
+    type Mutation = ListMutation<V>;
+    type Value = ListValue<V::Value>;
+}
 
-/// A unit builder spawns a specific kind of units.
-pub trait UnitBuilder {
-    fn spawn(&self, spec: UnitSpec) -> Result<Box<dyn Unit>>;
+pub type ListValue<V> = Vec<V>;
+
+#[derive(Default)]
+pub struct ListMutation<V> {
+    _v: PhantomData<V>,
+}
+
+impl<V: DataValue> ListMutation<V> {
+    pub fn append(&mut self, _v: V::Value) -> &mut Self {
+        self
+    }
+
+    pub fn update(&mut self, _i: u64, _m: V::Mutation) -> &mut Self {
+        self
+    }
 }

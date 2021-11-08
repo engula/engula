@@ -12,6 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct Error {}
+use engula_microunit::{async_trait, Result, Unit, UnitBuilder, UnitDesc, UnitSpec};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub struct HelloUnit {
+    id: String,
+}
+
+#[async_trait]
+impl Unit for HelloUnit {
+    async fn desc(&self) -> UnitDesc {
+        UnitDesc {
+            id: self.id.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct HelloUnitBuilder {}
+
+#[async_trait]
+impl UnitBuilder for HelloUnitBuilder {
+    fn kind(&self) -> &str {
+        "hello"
+    }
+
+    async fn spawn(&self, id: String, _spec: UnitSpec) -> Result<Box<dyn Unit>> {
+        let unit = HelloUnit { id };
+        Ok(Box::new(unit))
+    }
+}

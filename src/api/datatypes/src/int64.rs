@@ -12,14 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod node;
-mod node_server;
-mod unit;
+use crate::DataValue;
 
-pub use self::{
-    error::{Error, Result},
-    node::Node,
-    node_server::NodeServer,
-    unit::{Unit, UnitBuilder, UnitDesc, UnitSpec},
-};
+#[derive(Default)]
+pub struct Int64();
+
+impl DataValue for Int64 {
+    type Mutation = Int64Mutation;
+    type Value = Int64Value;
+}
+
+pub type Int64Value = i64;
+
+#[derive(Default)]
+pub struct Int64Mutation {}
+
+impl Int64Mutation {
+    pub fn add(&mut self, _v: i64) -> &mut Int64Mutation {
+        self
+    }
+
+    pub fn sub(&mut self, _v: i64) -> &mut Int64Mutation {
+        self
+    }
+}

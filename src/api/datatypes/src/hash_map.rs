@@ -12,17 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::SocketAddr;
+use std::marker::PhantomData;
 
-use crate::node::Node;
+use crate::DataValue;
 
-/// An HTTP server that serves a node.
-pub struct NodeServer {}
+pub struct HashMap<K, V>(K, V);
 
-impl NodeServer {
-    pub fn bind(_addr: &SocketAddr) -> NodeServer {
-        NodeServer {}
+impl<K, V: DataValue> DataValue for HashMap<K, V> {
+    type Mutation = HashMapMutation<K, V>;
+    type Value = HashMapValue<K, V>;
+}
+
+pub type HashMapValue<K, V> = std::collections::HashMap<K, V>;
+
+#[derive(Default)]
+pub struct HashMapMutation<K, V> {
+    _k: PhantomData<K>,
+    _v: PhantomData<V>,
+}
+
+impl<K, V: DataValue> HashMapMutation<K, V> {
+    pub fn insert(&mut self, _k: K, _v: V::Value) -> &mut Self {
+        self
     }
 
-    pub fn serve(&self, _node: Node) {}
+    pub fn update(&mut self, _k: K, _v: V::Mutation) -> &mut Self {
+        self
+    }
 }

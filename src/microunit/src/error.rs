@@ -12,24 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    error::Result,
-    unit::{UnitDesc, UnitSpec},
-};
+#[derive(Debug)]
+pub enum Error {
+    InvalidArgument,
+}
 
-/// A node manages a set of units.
-pub struct Node {}
-
-impl Node {
-    pub async fn list_units(&self) -> Vec<UnitDesc> {
-        Vec::new()
-    }
-
-    pub async fn create_unit(&self, _unit: &UnitSpec) -> Result<()> {
-        Ok(())
-    }
-
-    pub async fn delete_unit(&self, _uid: &str) -> Result<()> {
-        Ok(())
+impl ToString for Error {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
     }
 }
+
+pub type Result<T> = std::result::Result<T, Error>;

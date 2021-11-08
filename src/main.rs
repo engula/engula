@@ -14,6 +14,7 @@
 
 use clap::{crate_version, Parser};
 
+mod hello_unit;
 mod node;
 
 #[derive(Parser)]
@@ -24,9 +25,9 @@ struct Command {
 }
 
 impl Command {
-    fn run(&self) {
+    async fn run(&self) {
         match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run(),
+            SubCommand::Node(cmd) => cmd.run().await,
         }
     }
 }
@@ -36,7 +37,8 @@ enum SubCommand {
     Node(node::Command),
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cmd: Command = Command::parse();
-    cmd.run();
+    cmd.run().await;
 }
