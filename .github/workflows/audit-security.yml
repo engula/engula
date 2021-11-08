@@ -37,11 +37,6 @@ jobs:
           command: install
           args: cargo-audit
 
-      - name: Generate lockfile
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
-
       - name: Audit dependencies
         uses: actions-rs/cargo@v1
         with:
