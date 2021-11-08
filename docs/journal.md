@@ -8,7 +8,7 @@ Journal can be used as a standalone component or integrated with Engula.
 ## Semantics
 
 Journal divides logs into streams.
-A stream is a sequence of records.
+A stream stores a sequence of records.
 Each stream has a unique identifier called stream id.
 Each record within a stream is associated with a unique sequence number.
 Users should assign an increasing sequence number to records when appending to a stream.
@@ -19,6 +19,10 @@ Journal provides the following interfaces to manipulate a stream:
 - Read records since a sequence number
 - Append records with a sequence number
 - Release records up to a sequence number
+
+Released records can be garbage collected or archived.
+Whether released records are readable depends on the implementation.
+Nevertheless, implementations should guarantee to return continuous records. That is, the returned records must be a sub-sequence of the stream.
 
 ## Architecture
 
