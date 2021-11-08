@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct Error {}
+#[derive(Debug)]
+pub enum Error {
+    InvalidArgument,
+}
+
+impl ToString for Error {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
+    }
+}
 
 pub type Result<T> = std::result::Result<T, Error>;

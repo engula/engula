@@ -2,5 +2,12 @@
 name = "microunit"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
+async-trait = "0.1"
+axum = "0.3"
+tokio = "1.13"
+uuid = { version = "0.8", features = ["serde", "v4"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-use engula_framework::microunit::{Node, NodeServer};
+use engula_framework::microunit::{NodeBuilder, NodeServer};
+
+use crate::hello_unit::HelloUnitBuilder;
 
 #[derive(Parser)]
 #[clap(version = crate_version!())]
@@ -23,9 +25,9 @@ pub struct Command {
 }
 
 impl Command {
-    pub fn run(&self) {
+    pub async fn run(&self) {
         match &self.subcmd {
-            SubCommand::Start(cmd) => cmd.run(),
+            SubCommand::Start(cmd) => cmd.run().await,
         }
     }
 }
@@ -41,8 +43,11 @@ struct StartCommand {
 }
 
 impl StartCommand {
-    fn run(&self) {
+    async fn run(&self) {
         let addr = self.addr.parse().unwrap();
-        NodeServer::bind(&addr).serve(Node {});
+        let node = NodeBuilder::default()
+            .unit(HelloUnitBuilder::default())
+            .build();
+        NodeServer::bind(addr).serve(node).await;
     }
 }
