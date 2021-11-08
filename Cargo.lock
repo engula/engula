@@ -3,6 +3,13 @@
 version = 3
 
 [[package]]
+name = "api"
+version = "0.1.0"
+dependencies = [
+ "datatypes",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,38 +131,8 @@ name = "engula"
 version = "0.1.0"
 dependencies = [
  "clap",
- "engula-api",
- "engula-framework",
- "tokio",
-]
-
-[[package]]
-name = "engula-api"
-version = "0.1.0"
-dependencies = [
- "datatypes",
-]
-
-[[package]]
-name = "engula-framework"
-version = "0.1.0"
-dependencies = [
  "microunit",
-]
-
-[[package]]
-name = "engula-kernel"
-version = "0.1.0"
-dependencies = [
- "background",
- "manifest",
-]
-
-[[package]]
-name = "engula-platform"
-version = "0.1.0"
-dependencies = [
- "storage",
+ "tokio",
 ]
 
 [[package]]

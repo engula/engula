@@ -1,2 +1,12 @@
+[package]
+name = "engula"
+version = "0.1.0"
+edition = "2021"
+
 [workspace]
-members = ["src/engula", "src/engula-api", "src/engula-kernel", "src/engula-platform", "src/engula-framework"]
+members = ["src/api", "src/storage", "src/manifest", "src/background", "src/microunit"]
+
+[dependencies]
+engula-microunit = { package = "microunit", path = "src/microunit" }
+clap = "3.0.0-beta.5"
+tokio = { version = "1", features = ["full"] }
