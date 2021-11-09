@@ -1,5 +1,5 @@
 ---
-status: '[draft|accepted|released|discarded]'
+status: '[accepted|released|discarded]'
 discussion: https://github.com/engula/engula/discussions/0
 issue: https://github.com/engula/engula/issues/0
 ---

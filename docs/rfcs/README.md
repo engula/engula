@@ -19,7 +19,8 @@ The most common preparations for writing and submitting an RFC include talking t
 In short, to get a major feature added to Engula, one must first get the RFC merged under this directory as a markdown file. At that point the RFC is "active" and may be implemented with the goal of eventual inclusion into Engula.
 
 * Fork the this repository.
-* Copy `0000-template.md` to `1234-my-feature.md` (where "my-feature" is descriptive). The RFC number is the number of "pre-RFC" discussion in discussion forum.
+* Copy `0000-template.md` to `0000-my-feature.md` (where "my-feature" is descriptive). Don't assign an RFC number yet; This is going to be granted by maintainers and we'll rename the file accordingly then.
 * Fill in the RFC and submit a pull request. As a pull request the RFC will receive design feedback from the larger community, and the author should be prepared to revise it in response.
+* Ask the maintainers to get and increase the number in `next-rfc-number` file for the RFC.
 * The maintainers will discuss the RFC pull request in the comment thread of the pull request itself. Offline discussion will be summarized on the pull request comment thread.
 * When all stakeholders reach a consensus on the RFC, it will be merged as accepted, or closed as rejected.

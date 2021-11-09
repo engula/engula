@@ -1,9 +1,3 @@
----
-status: draft
-discussion: https://github.com/engula/engula/discussions/54
-issue: https://github.com/engula/engula/issues/58
----
-
 # Microunit
 
 This document describes the design of microunit.

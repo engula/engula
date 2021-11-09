@@ -1,9 +1,3 @@
----
-status: draft
-discussion: https://github.com/engula/engula/discussions/41
-issue: https://github.com/engula/engula/issues/57
----
-
 # About
 
 This document describes the top-level design of Engula.
