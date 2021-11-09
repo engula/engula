@@ -1,0 +1,9 @@
+---
+status: '[draft|accepted|released|discarded]'
+discussion: https://github.com/engula/engula/discussions/0
+issue: https://github.com/engula/engula/issues/0
+---
+
+<!-- 
+We don't have a template of the content yet. Generally, you should think of the motivation, the technical design, the test design, and alternatives of the proposal.
+-->

@@ -25,9 +25,9 @@ You can check [the branch](https://github.com/engula/engula/tree/demo-1) and [th
 
 ## Design
 
-![Architecture](docs/images/architecture.drawio.svg)
+![Architecture](docs/rfcs/images/architecture.drawio.svg)
 
-For internal designs of Engula, please see the [docs](docs).
+For internal designs of Engula, please see the [RFCs](docs/rfcs).
 
 ## Discussion
 
