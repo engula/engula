@@ -14,65 +14,70 @@
 
 extern crate linked_hash_map;
 
-use std::borrow::Borrow;
-use std::collections::hash_map::RandomState;
-use std::fmt;
-use std::hash::{BuildHasher, Hash};
+use std::{
+    borrow::Borrow,
+    collections::hash_map::RandomState,
+    fmt,
+    hash::{BuildHasher, Hash},
+};
 
 use linked_hash_map::LinkedHashMap;
 
-pub struct LruCache<K: Eq + Hash, V , S: BuildHasher = RandomState> {
+pub struct LruCache<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     map: LinkedHashMap<K, V, S>,
     max_size: usize,
 }
 
-impl <K: Eq + Hash, V>LruCache<K, V> {
+impl<K: Eq + Hash, V> LruCache<K, V> {
     pub fn new(size: usize) -> Self {
         LruCache {
             map: LinkedHashMap::new(),
-            max_size:size
+            max_size: size,
         }
     }
 }
 
-impl  <K: Eq + Hash, V , S: BuildHasher> LruCache<K, V, S> {
-    pub fn with_hasher(size: usize, hash_builder: S) -> Self{
-        LruCache{
+impl<K: Eq + Hash, V, S: BuildHasher> LruCache<K, V, S> {
+    pub fn with_hasher(size: usize, hash_builder: S) -> Self {
+        LruCache {
             map: LinkedHashMap::with_hasher(hash_builder),
             max_size: size,
         }
     }
 
     pub fn contains_key<Q: ?Sized>(&mut self, key: &Q) -> bool
-        where K: Borrow<Q>,
-              Q: Hash + Eq
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
     {
         self.get_mut(key).is_some()
     }
 
-    pub fn insert(&mut self, k: K, v: V) -> Option<V>{
-        let old_value = self.map.insert(k,v);
-        if self.len() > self.size(){
+    pub fn insert(&mut self, k: K, v: V) -> Option<V> {
+        let old_value = self.map.insert(k, v);
+        if self.len() > self.size() {
             self.remove_lru();
         }
         old_value
     }
 
     pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
-        where K: Borrow<Q>,
-              Q: Hash + Eq
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
     {
         self.map.get_refresh(key)
     }
 
     pub fn remove<Q: ?Sized>(&mut self, k: &Q) -> Option<V>
-        where K: Borrow<Q>,
-              Q: Hash + Eq
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
     {
         self.map.remove(k)
     }
 
-    pub fn size(&self) -> usize{
+    pub fn size(&self) -> usize {
         self.max_size
     }
 
@@ -83,7 +88,7 @@ impl  <K: Eq + Hash, V , S: BuildHasher> LruCache<K, V, S> {
         self.max_size = size;
     }
 
-    pub fn remove_lru (&mut self) -> Option<(K,V)> {
+    pub fn remove_lru(&mut self) -> Option<(K, V)> {
         self.map.pop_front()
     }
 
@@ -91,21 +96,25 @@ impl  <K: Eq + Hash, V , S: BuildHasher> LruCache<K, V, S> {
         self.map.len()
     }
 
-    pub fn is_empty(&self) -> bool{
+    pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 
-    pub fn clear(&mut self){
+    pub fn clear(&mut self) {
         self.map.clear()
     }
 
-    pub fn iter(&self) -> Iter<K, V> { Iter(self.map.iter()) }
+    pub fn iter(&self) -> Iter<K, V> {
+        Iter(self.map.iter())
+    }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> { IterMut(self.map.iter_mut()) }
+    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+        IterMut(self.map.iter_mut())
+    }
 }
 
 impl<K: Eq + Hash, V, S: BuildHasher> Extend<(K, V)> for LruCache<K, V, S> {
-    fn extend<I: IntoIterator<Item=(K, V)>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
         for (k, v) in iter {
             self.insert(k, v);
         }
@@ -119,8 +128,8 @@ impl<K: fmt::Debug + Eq + Hash, V: fmt::Debug, S: BuildHasher> fmt::Debug for Lr
 }
 
 impl<K: Eq + Hash, V, S: BuildHasher> IntoIterator for LruCache<K, V, S> {
-    type Item = (K, V);
     type IntoIter = IntoIter<K, V>;
+    type Item = (K, V);
 
     fn into_iter(self) -> IntoIter<K, V> {
         IntoIter(self.map.into_iter())
@@ -128,15 +137,21 @@ impl<K: Eq + Hash, V, S: BuildHasher> IntoIterator for LruCache<K, V, S> {
 }
 
 impl<'a, K: Eq + Hash, V, S: BuildHasher> IntoIterator for &'a LruCache<K, V, S> {
-    type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
-    fn into_iter(self) -> Iter<'a, K, V> { self.iter() }
+    type Item = (&'a K, &'a V);
+
+    fn into_iter(self) -> Iter<'a, K, V> {
+        self.iter()
+    }
 }
 
 impl<'a, K: Eq + Hash, V, S: BuildHasher> IntoIterator for &'a mut LruCache<K, V, S> {
-    type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
-    fn into_iter(self) -> IterMut<'a, K, V> { self.iter_mut() }
+    type Item = (&'a K, &'a mut V);
+
+    fn into_iter(self) -> IterMut<'a, K, V> {
+        self.iter_mut()
+    }
 }
 
 #[derive(Clone)]
@@ -169,37 +184,59 @@ impl<K, V> ExactSizeIterator for IntoIter<K, V> {
 pub struct Iter<'a, K: 'a, V: 'a>(linked_hash_map::Iter<'a, K, V>);
 
 impl<'a, K, V> Clone for Iter<'a, K, V> {
-    fn clone(&self) -> Iter<'a, K, V> { Iter(self.0.clone()) }
+    fn clone(&self) -> Iter<'a, K, V> {
+        Iter(self.0.clone())
+    }
 }
 
 impl<'a, K, V> Iterator for Iter<'a, K, V> {
     type Item = (&'a K, &'a V);
-    fn next(&mut self) -> Option<(&'a K, &'a V)> { self.0.next() }
-    fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+
+    fn next(&mut self) -> Option<(&'a K, &'a V)> {
+        self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
 }
 
 impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
-    fn next_back(&mut self) -> Option<(&'a K, &'a V)> { self.0.next_back() }
+    fn next_back(&mut self) -> Option<(&'a K, &'a V)> {
+        self.0.next_back()
+    }
 }
 
 impl<'a, K, V> ExactSizeIterator for Iter<'a, K, V> {
-    fn len(&self) -> usize { self.0.len() }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 pub struct IterMut<'a, K: 'a, V: 'a>(linked_hash_map::IterMut<'a, K, V>);
 
 impl<'a, K, V> Iterator for IterMut<'a, K, V> {
     type Item = (&'a K, &'a mut V);
-    fn next(&mut self) -> Option<(&'a K, &'a mut V)> { self.0.next() }
-    fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+
+    fn next(&mut self) -> Option<(&'a K, &'a mut V)> {
+        self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
 }
 
 impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
-    fn next_back(&mut self) -> Option<(&'a K, &'a mut V)> { self.0.next_back() }
+    fn next_back(&mut self) -> Option<(&'a K, &'a mut V)> {
+        self.0.next_back()
+    }
 }
 
 impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V> {
-    fn len(&self) -> usize { self.0.len() }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 #[cfg(test)]
@@ -325,13 +362,21 @@ mod tests {
         cache.insert(3, 30);
         cache.insert(4, 40);
         cache.insert(5, 50);
-        assert_eq!(cache.iter().collect::<Vec<_>>(),
-                   [(&3, &30), (&4, &40), (&5, &50)]);
-        assert_eq!(cache.iter_mut().collect::<Vec<_>>(),
-                   [(&3, &mut 30), (&4, &mut 40), (&5, &mut 50)]);
-        assert_eq!(cache.iter().rev().collect::<Vec<_>>(),
-                   [(&5, &50), (&4, &40), (&3, &30)]);
-        assert_eq!(cache.iter_mut().rev().collect::<Vec<_>>(),
-                   [(&5, &mut 50), (&4, &mut 40), (&3, &mut 30)]);
+        assert_eq!(
+            cache.iter().collect::<Vec<_>>(),
+            [(&3, &30), (&4, &40), (&5, &50)]
+        );
+        assert_eq!(
+            cache.iter_mut().collect::<Vec<_>>(),
+            [(&3, &mut 30), (&4, &mut 40), (&5, &mut 50)]
+        );
+        assert_eq!(
+            cache.iter().rev().collect::<Vec<_>>(),
+            [(&5, &50), (&4, &40), (&3, &30)]
+        );
+        assert_eq!(
+            cache.iter_mut().rev().collect::<Vec<_>>(),
+            [(&5, &mut 50), (&4, &mut 40), (&3, &mut 30)]
+        );
     }
 }
