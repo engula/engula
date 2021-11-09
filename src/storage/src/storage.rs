@@ -12,7 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
+use futures::stream::Stream;
 
+use crate::{async_trait, error::Result, storage_bucket::StorageBucket};
+
+/// An interface to manipulate buckets.
 #[async_trait]
-pub trait ObjectHandle {}
+pub trait Storage {
+    /// Returns a handle to the bucket.
+    async fn bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
+
+    /// Returns a stream of bucket names.
+    async fn list_buckets(&self) -> Box<dyn Stream<Item = Result<Vec<String>>>>;
+
+    /// Creates a bucket.
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
+
+    /// Deletes a bucket.
+    async fn delete_bucket(&self, name: &str) -> Result<()>;
+}

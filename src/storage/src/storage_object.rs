@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
+use crate::{async_trait, error::Result};
 
-use crate::{bucket_handle::BucketHandle, error::StorageResult};
-
+/// An interface to manipulate an object.
 #[async_trait]
-pub trait ObjectStorage {
-    fn bucket(&self, name: &str) -> Box<dyn BucketHandle>;
+pub trait StorageObject {
+    /// Returns the size of the object.
+    async fn size(&self) -> Result<usize>;
 
-    async fn create_bucket(&self, name: &str) -> StorageResult<()>;
-
-    async fn delete_bucket(&self, name: &str) -> StorageResult<()>;
+    /// Reads some bytes from the object at a specific offset.
+    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
 }

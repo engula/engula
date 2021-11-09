@@ -12,14 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_handle;
+#![feature(map_try_insert)]
+
 mod error;
-mod object_handle;
-mod object_storage;
+mod mem;
+mod storage;
+mod storage_bucket;
+mod storage_object;
+
+pub use async_trait::async_trait;
 
 pub use self::{
-    bucket_handle::BucketHandle,
-    error::{StorageError, StorageResult},
-    object_handle::ObjectHandle,
-    object_storage::ObjectStorage,
+    error::{Error, Result},
+    mem::MemStorage,
+    storage::Storage,
+    storage_bucket::{StorageBucket, UploadObject},
+    storage_object::StorageObject,
 };
