@@ -18,9 +18,11 @@ use crate::{bucket_handle::BucketHandle, error::StorageResult};
 
 #[async_trait]
 pub trait ObjectStorage {
-    fn bucket(&self, name: &str) -> Box<dyn BucketHandle>;
+    fn bucket(&self, name: impl Into<String>) -> Box<dyn BucketHandle>;
 
-    async fn create_bucket(&self, name: &str) -> StorageResult<()>;
+    async fn create_bucket(&self, name: &str, location: &str) -> StorageResult<()>;
 
     async fn delete_bucket(&self, name: &str) -> StorageResult<()>;
+
+    async fn list_buckets(&self) -> StorageResult<Vec<String>>;
 }

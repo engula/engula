@@ -12,19 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-use bytes::Bytes;
+pub mod bucket_handle;
+pub mod object_handle;
+pub mod storage;
 
-use crate::StorageResult;
-
-#[async_trait]
-pub trait ObjectWriter {
-    async fn write(&mut self, data: Bytes);
-
-    async fn finish(&mut self) -> StorageResult<()>;
-}
-
-#[async_trait]
-pub trait ObjectReader {
-    async fn read_at(&self, offset: i32, size: i32) -> StorageResult<Vec<u8>>;
-}
+pub use storage::RemoteS3Storage;

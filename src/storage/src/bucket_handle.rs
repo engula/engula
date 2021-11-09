@@ -13,12 +13,22 @@
 // limitations under the License.
 
 use async_trait::async_trait;
+use bytes::Bytes;
 
-use crate::{error::StorageResult, object_handle::ObjectHandle};
+use crate::{
+    error::StorageResult,
+    object_handle::{ObjectReader, ObjectWriter},
+};
 
 #[async_trait]
 pub trait BucketHandle {
-    fn object(&self, name: &str) -> Box<dyn ObjectHandle>;
+    async fn new_writer(&self, name: &str) -> StorageResult<Box<dyn ObjectWriter>>;
+
+    async fn new_reader(&self, name: &str) -> Box<dyn ObjectReader>;
+
+    async fn put_object(&self, name: &str, body: Bytes) -> StorageResult<()>;
 
     async fn delete_object(&self, name: &str) -> StorageResult<()>;
+
+    async fn delete_objects(&self, key: Vec<String>) -> StorageResult<()>;
 }
