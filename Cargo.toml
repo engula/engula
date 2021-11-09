@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["src/api", "src/storage", "src/manifest", "src/background", "src/microunit"]
+members = [
+    "src/api",
+    "src/journal",
+    "src/storage",
+    "src/manifest",
+    "src/background",
+    "src/microunit",
+]
 
 [dependencies]
 engula-storage = { package = "storage", path = "src/storage" }
