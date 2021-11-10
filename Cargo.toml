@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["src/api", "src/storage", "src/manifest", "src/background", "src/microunit"]
+members = ["src/api", "src/storage", "src/manifest", "src/background", "src/microunit", "src/cache"]
 
 [dependencies]
 engula-microunit = { package = "microunit", path = "src/microunit" }
