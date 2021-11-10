@@ -15,14 +15,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::BufMut;
-use futures::{
-    future,
-    stream::{self, Stream},
-};
+use futures::{future, stream};
 use tokio::sync::Mutex;
 
 use super::mem_object::MemObject;
-use crate::{async_trait, Error, Result, StorageBucket, StorageObject, UploadObject};
+use crate::{
+    async_trait, Error, Result, StorageBucket, StorageObject, StorageObjectUploader, Stream,
+};
 
 type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
 
@@ -43,10 +42,9 @@ impl MemBucket {
 impl StorageBucket for MemBucket {
     async fn object(&self, name: &str) -> Result<Box<dyn StorageObject>> {
         let objects = self.objects.lock().await;
-        if let Some(object) = objects.get(name) {
-            Ok(Box::new(object.clone()))
-        } else {
-            Err(Error::NotFound(format!("object '{}'", name)))
+        match objects.get(name) {
+            Some(object) => Ok(Box::new(object.clone())),
+            None => Err(Error::NotFound(format!("object '{}'", name))),
         }
     }
 
@@ -56,8 +54,11 @@ impl StorageBucket for MemBucket {
         Box::new(stream::once(future::ok(object_names)))
     }
 
-    async fn upload_object(&self, name: &str) -> Box<dyn UploadObject> {
-        Box::new(ObjectUploader::new(name.to_owned(), self.objects.clone()))
+    async fn upload_object(&self, name: &str) -> Box<dyn StorageObjectUploader> {
+        Box::new(MemObjectUploader::new(
+            name.to_owned(),
+            self.objects.clone(),
+        ))
     }
 
     async fn delete_object(&self, name: &str) -> Result<()> {
@@ -69,15 +70,15 @@ impl StorageBucket for MemBucket {
     }
 }
 
-struct ObjectUploader {
+struct MemObjectUploader {
     name: String,
     data: Vec<u8>,
     objects: Objects,
 }
 
-impl ObjectUploader {
-    fn new(name: String, objects: Objects) -> ObjectUploader {
-        ObjectUploader {
+impl MemObjectUploader {
+    fn new(name: String, objects: Objects) -> MemObjectUploader {
+        MemObjectUploader {
             name,
             data: Vec::new(),
             objects,
@@ -86,7 +87,7 @@ impl ObjectUploader {
 }
 
 #[async_trait]
-impl UploadObject for ObjectUploader {
+impl StorageObjectUploader for MemObjectUploader {
     async fn write(&mut self, buf: &[u8]) {
         self.data.put_slice(buf);
     }

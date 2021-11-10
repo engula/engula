@@ -12,9 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
+mod error;
+mod storage;
+mod storage_bucket;
+mod storage_object;
 
-mod api;
-mod mem;
+pub use async_trait::async_trait;
+// TODO: consider using std::stream::Stream when it is stablized.
+pub use futures::stream::Stream;
 
-pub use self::{api::*, mem::*};
+pub use self::{
+    error::{Error, Result},
+    storage::Storage,
+    storage_bucket::{StorageBucket, StorageObjectUploader},
+    storage_object::StorageObject,
+};

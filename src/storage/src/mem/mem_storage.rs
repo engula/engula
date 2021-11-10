@@ -14,14 +14,11 @@
 
 use std::collections::HashMap;
 
-use futures::{
-    future,
-    stream::{self, Stream},
-};
+use futures::{future, stream};
 use tokio::sync::Mutex;
 
 use super::mem_bucket::MemBucket;
-use crate::{async_trait, Error, Result, Storage, StorageBucket};
+use crate::{async_trait, Error, Result, Storage, StorageBucket, Stream};
 
 pub struct MemStorage {
     buckets: Mutex<HashMap<String, MemBucket>>,
@@ -39,10 +36,9 @@ impl Default for MemStorage {
 impl Storage for MemStorage {
     async fn bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>> {
         let buckets = self.buckets.lock().await;
-        if let Some(bucket) = buckets.get(name) {
-            Ok(Box::new(bucket.clone()))
-        } else {
-            Err(Error::NotFound(format!("bucket '{}'", name)))
+        match buckets.get(name) {
+            Some(bucket) => Ok(Box::new(bucket.clone())),
+            None => Err(Error::NotFound(format!("bucket '{}'", name))),
         }
     }
 

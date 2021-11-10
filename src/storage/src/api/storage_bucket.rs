@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use futures::stream::Stream;
-
-use crate::{async_trait, error::Result, storage_object::StorageObject};
+use super::{async_trait, error::Result, storage_object::StorageObject, Stream};
 
 /// An interface to manipulate objects in a bucket.
 #[async_trait]
@@ -26,7 +24,7 @@ pub trait StorageBucket {
     async fn list_objects(&self) -> Box<dyn Stream<Item = Result<Vec<String>>>>;
 
     /// Uploads an object.
-    async fn upload_object(&self, name: &str) -> Box<dyn UploadObject>;
+    async fn upload_object(&self, name: &str) -> Box<dyn StorageObjectUploader>;
 
     /// Deletes an object.
     async fn delete_object(&self, name: &str) -> Result<()>;
@@ -34,7 +32,7 @@ pub trait StorageBucket {
 
 /// An interface to upload an object.
 #[async_trait]
-pub trait UploadObject {
+pub trait StorageObjectUploader {
     /// Writes some bytes.
     async fn write(&mut self, buf: &[u8]);
 
