@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct StorageError {}
+use super::{async_trait, error::Result, storage_bucket::StorageBucket, Stream};
 
-pub type StorageResult<T> = Result<T, StorageError>;
+/// An interface to manipulate buckets.
+#[async_trait]
+pub trait Storage {
+    /// Returns a handle to the bucket.
+    async fn bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
+
+    /// Returns a stream of bucket names.
+    async fn list_buckets(&self) -> Stream<Result<String>>;
+
+    /// Creates a bucket.
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
+
+    /// Deletes a bucket.
+    async fn delete_bucket(&self, name: &str) -> Result<()>;
+}

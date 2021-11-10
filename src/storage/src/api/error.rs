@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
+use thiserror::Error;
 
-#[async_trait]
-pub trait ObjectHandle {}
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("`{0}` is not found")]
+    NotFound(String),
+    #[error("`{0}` already exists")]
+    AlreadyExist(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

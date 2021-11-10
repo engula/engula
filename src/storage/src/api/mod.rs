@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
+mod error;
+mod storage;
+mod storage_bucket;
+mod storage_object;
 
-use crate::{error::StorageResult, object_handle::ObjectHandle};
+pub use async_trait::async_trait;
 
-#[async_trait]
-pub trait BucketHandle {
-    fn object(&self, name: &str) -> Box<dyn ObjectHandle>;
+// TODO: use std::stream::Stream instead
+pub type Stream<T> = Box<dyn futures::stream::Stream<Item = T>>;
 
-    async fn delete_object(&self, name: &str) -> StorageResult<()>;
-}
+pub use self::{
+    error::{Error, Result},
+    storage::Storage,
+    storage_bucket::{StorageBucket, StorageObjectUploader},
+    storage_object::StorageObject,
+};

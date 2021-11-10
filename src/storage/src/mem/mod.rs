@@ -12,9 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
+mod mem_bucket;
+mod mem_object;
+mod mem_storage;
 
-mod api;
-mod mem;
+pub use self::mem_storage::MemStorage;
 
-pub use self::{api::*, mem::*};
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+
+    #[tokio::test]
+    async fn mem_storage() -> Result<()> {
+        let storage = MemStorage::default();
+        let _ = storage.create_bucket("a").await?;
+        Ok(())
+    }
+}
