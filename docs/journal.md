@@ -30,6 +30,7 @@ It is also possible to support stream subscriptions. We leave the exploration of
 
 Released records can be garbage collected or archived.
 Whether released records are readable depends on the implementation.
+For example, if records are archived, it should allow users to recover data from archives.
 Nevertheless, implementations should guarantee to return continuous records. That is, the returned records must be a sub-sequence of a stream.
 
 ## Guidelines
@@ -49,6 +50,6 @@ Users can choose an appropriate implementation for their applications.
 ## Discussions
 
 Casual discussions about the design and implementation should be proceeded in [this discussion][journal-discussion].
-Formal discussions about the design of a specific implementation should be proceeded with an RFC document.
+Formal discussions about the design of a specific implementation should be proceeded with an RFC.
 
 [journal-discussion]: https://github.com/engula/engula/discussions/70
