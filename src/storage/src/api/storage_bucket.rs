@@ -21,7 +21,7 @@ pub trait StorageBucket {
     async fn object(&self, name: &str) -> Result<Box<dyn StorageObject>>;
 
     /// Returns a stream of object names.
-    async fn list_objects(&self) -> Box<dyn Stream<Item = Result<Vec<String>>>>;
+    async fn list_objects(&self) -> Stream<Result<String>>;
 
     /// Uploads an object.
     async fn upload_object(&self, name: &str) -> Box<dyn StorageObjectUploader>;

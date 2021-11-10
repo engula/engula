@@ -14,8 +14,6 @@
 
 use std::{cmp::min, sync::Arc};
 
-use bytes::BufMut;
-
 use crate::{async_trait, Error, Result, StorageObject};
 
 #[derive(Clone)]
@@ -41,10 +39,10 @@ impl StorageObject for MemObject {
         Ok(self.data.len())
     }
 
-    async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {
+    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         if let Some(length) = self.data.len().checked_sub(offset) {
             let length = min(length, buf.len());
-            buf.put_slice(&self.data[offset..(offset + length)]);
+            buf[..length].copy_from_slice(&self.data[offset..(offset + length)]);
             Ok(length)
         } else {
             Err(Error::InvalidArgument(format!(

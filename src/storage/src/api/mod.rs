@@ -18,8 +18,9 @@ mod storage_bucket;
 mod storage_object;
 
 pub use async_trait::async_trait;
-// TODO: consider using std::stream::Stream when it is stablized.
-pub use futures::stream::Stream;
+
+// TODO: use std::stream::Stream instead
+pub type Stream<T> = Box<dyn futures::stream::Stream<Item = T>>;
 
 pub use self::{
     error::{Error, Result},

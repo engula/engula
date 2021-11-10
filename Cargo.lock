@@ -709,7 +709,6 @@ name = "storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes",
  "futures",
  "thiserror",
  "tokio",

@@ -20,6 +20,6 @@ pub trait StorageObject {
     /// Returns the size of the object.
     async fn size(&self) -> Result<usize>;
 
-    /// Reads some bytes from the object at a specific offset.
+    /// Reads a range from the object at a specific offset.
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
 }
