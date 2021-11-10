@@ -12,18 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-
-use crate::{error::Result, journal_stream::JournalStream};
+use super::{async_trait, error::Result, journal_stream::JournalStream, ResultStream};
 
 /// An interface to manipulate journal streams.
 #[async_trait]
 pub trait Journal {
-    /// Returns a journal stream.
+    /// Returns a handle to the journal stream.
     async fn stream(&self, name: &str) -> Result<Box<dyn JournalStream>>;
 
-    /// Returns the names of all journal streams.
-    async fn list_streams(&self) -> Result<Vec<String>>;
+    /// Returns a stream of journal stream names.
+    async fn list_streams(&self) -> ResultStream<String>;
 
     /// Creates a journal stream.
     async fn create_stream(&self, name: &str) -> Result<Box<dyn JournalStream>>;

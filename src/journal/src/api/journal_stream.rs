@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::stream::Stream;
+use super::{async_trait, error::Result, ResultStream};
 
-use crate::{error::Result, SequenceNumber};
+pub type SequenceNumber = u64;
 
-/// An interface to manipulate records in a journal stream.
+#[derive(Clone, Debug, Default)]
+pub struct JournalRecord {
+    pub sn: SequenceNumber,
+    pub data: Vec<u8>,
+}
+
+/// An interface to manipulate records of a journal stream.
 #[async_trait]
 pub trait JournalStream {
-    /// Reads records since a sequence number.
-    async fn read_records(&self, sn: SequenceNumber) -> Box<dyn Stream<Item = Result<Bytes>>>;
+    /// Reads records since a sequence number (inclusive).
+    async fn read_records(&self, sn: SequenceNumber) -> ResultStream<JournalRecord>;
 
     /// Appends a record with a sequence number.
-    async fn append_record(&self, sn: SequenceNumber, record: Bytes) -> Result<()>;
+    async fn append_record(&self, sn: SequenceNumber, data: Vec<u8>) -> Result<()>;
 
-    /// Releases records up to a sequence number.
+    /// Releases records up to a sequence number (exclusive).
     async fn release_records(&self, sn: SequenceNumber) -> Result<()>;
 }

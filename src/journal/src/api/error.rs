@@ -12,9 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
+use thiserror::Error;
 
-mod api;
-mod mem;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("`{0}` is not found")]
+    NotFound(String),
+    #[error("`{0}` already exists")]
+    AlreadyExists(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
+}
 
-pub use self::{api::*, mem::*};
+pub type Result<T> = std::result::Result<T, Error>;

@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct Error {}
+mod mem_journal;
+mod mem_stream;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub use self::{mem_journal::MemJournal, mem_stream::MemStream};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+
+    #[tokio::test]
+    async fn mem_journal() -> Result<()> {
+        let journal = MemJournal::default();
+        let _ = journal.create_stream("a").await?;
+        Ok(())
+    }
+}
