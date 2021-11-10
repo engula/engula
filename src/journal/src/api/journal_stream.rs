@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, ResultStream};
+use super::{async_trait, error::Result, Stream};
 
 pub type SequenceNumber = u64;
 
@@ -26,7 +26,7 @@ pub struct JournalRecord {
 #[async_trait]
 pub trait JournalStream {
     /// Reads records since a sequence number (inclusive).
-    async fn read_records(&self, sn: SequenceNumber) -> ResultStream<JournalRecord>;
+    async fn read_records(&self, sn: SequenceNumber) -> Stream<Result<JournalRecord>>;
 
     /// Appends a record with a sequence number.
     async fn append_record(&self, sn: SequenceNumber, data: Vec<u8>) -> Result<()>;

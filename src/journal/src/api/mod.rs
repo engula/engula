@@ -19,7 +19,7 @@ mod journal_stream;
 pub use async_trait::async_trait;
 
 // TODO: use std::stream::Stream instead
-pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = error::Result<T>>>;
+pub type Stream<T> = Box<dyn futures::stream::Stream<Item = T>>;
 
 pub use self::{
     error::{Error, Result},

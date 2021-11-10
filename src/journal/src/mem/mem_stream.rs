@@ -17,17 +17,15 @@ use std::{collections::VecDeque, sync::Arc};
 use futures::stream;
 use tokio::sync::Mutex;
 
-use crate::{
-    async_trait, Error, JournalRecord, JournalStream, Result, ResultStream, SequenceNumber,
-};
+use crate::{async_trait, Error, JournalRecord, JournalStream, Result, SequenceNumber, Stream};
 
 #[derive(Clone)]
 pub struct MemStream {
     records: Arc<Mutex<VecDeque<JournalRecord>>>,
 }
 
-impl MemStream {
-    pub fn new() -> MemStream {
+impl Default for MemStream {
+    fn default() -> MemStream {
         MemStream {
             records: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -36,13 +34,13 @@ impl MemStream {
 
 #[async_trait]
 impl JournalStream for MemStream {
-    async fn read_records(&self, sn: SequenceNumber) -> ResultStream<JournalRecord> {
+    async fn read_records(&self, sn: SequenceNumber) -> Stream<Result<JournalRecord>> {
         let records = self.records.lock().await;
         let index = records.partition_point(|x| x.sn < sn);
         let iter = records
             .range(index..)
             .cloned()
-            .map(|x| Ok(x))
+            .map(Ok)
             .collect::<Vec<Result<JournalRecord>>>();
         Box::new(stream::iter(iter))
     }

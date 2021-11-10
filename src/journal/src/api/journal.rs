@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, journal_stream::JournalStream, ResultStream};
+use super::{async_trait, error::Result, journal_stream::JournalStream, Stream};
 
 /// An interface to manipulate journal streams.
 #[async_trait]
@@ -21,7 +21,7 @@ pub trait Journal {
     async fn stream(&self, name: &str) -> Result<Box<dyn JournalStream>>;
 
     /// Returns a stream of journal stream names.
-    async fn list_streams(&self) -> ResultStream<String>;
+    async fn list_streams(&self) -> Stream<Result<String>>;
 
     /// Creates a journal stream.
     async fn create_stream(&self, name: &str) -> Result<Box<dyn JournalStream>>;
