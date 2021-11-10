@@ -2,7 +2,7 @@
 
 This document describes the top-level design of Storage.
 
-Storage provides an abstraction to store data as objects.
+Storage provides an abstraction to store data objects.
 Storage can be used as a standalone component or integrated with Engula.
 
 ## Semantics
@@ -24,10 +24,10 @@ Storage provides the following interfaces to manipulate objects in a bucket:
 - List objects
 - Upload an object
 - Delete an object
-- Read a part of an object at a specific position
+- Read a range from an object at a specific position
 
 It is also possible to support object-level expression evaluation for some object formats (e.g., CSV, JSON, Parquet), which is important to analytical workloads.
-We leave the exploration in this area to future work.
+We leave the exploration of this feature to future work.
 
 ## Guidelines
 
@@ -41,7 +41,7 @@ Storage can be implemented in the following forms:
 
 It is a good idea to combine different implementations into a more powerful one.
 For example, we can create a hybrid storage that persists data to a slow but highly-durable storage and then reads data from a fast and highly-available storage.
-Another example is to create a tiered storage that separates data with different hotness into multiple tiers to store data using different strategies.
+Another example is to create a tiered storage that separates data with different hotness into multiple tiers, which provide different cost-performance trade-offs.
 
 However, Storage doesn't assume how data should be persisted.
 It is up to the implementer to decide what guarantees it provides.
@@ -49,7 +49,7 @@ Users can choose an appropriate implementation for their applications.
 
 ## Discussions
 
-Casual discussions about the design and implementation should be proceeded in the [forum][storage-discussion].
+Casual discussions about the design and implementation should be proceeded in [this discussion][storage-discussion].
 Formal discussions about the design of a specific implementation should be submitted as an RFC.
 
 [storage-discussion]: https://github.com/engula/engula/discussions/79
