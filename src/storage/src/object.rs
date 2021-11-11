@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, storage_bucket::StorageBucket, Stream};
+use super::{async_trait, error::Result};
 
-/// An interface to manipulate buckets.
+/// An interface to manipulate an object.
 #[async_trait]
-pub trait Storage {
-    /// Returns a handle to the bucket.
-    async fn bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
+pub trait Object {
+    /// Returns the size of the object.
+    async fn size(&self) -> Result<usize>;
 
-    /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> Stream<Result<String>>;
-
-    /// Creates a bucket.
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>>;
-
-    /// Deletes a bucket.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
+    /// Reads a range from the object at a specific offset.
+    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
 }

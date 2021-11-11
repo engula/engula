@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use futures::stream;
 use tokio::sync::Mutex;
 
-use super::mem_bucket::MemBucket;
-use crate::{async_trait, Error, Result, Storage, StorageBucket, Stream};
+use super::bucket::MemBucket;
+use crate::{async_trait, BoxStream, Bucket, Error, Result, Storage};
 
 pub struct MemStorage {
     buckets: Mutex<HashMap<String, MemBucket>>,
@@ -34,7 +34,7 @@ impl Default for MemStorage {
 
 #[async_trait]
 impl Storage for MemStorage {
-    async fn bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>> {
+    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
         let buckets = self.buckets.lock().await;
         match buckets.get(name) {
             Some(bucket) => Ok(Box::new(bucket.clone())),
@@ -42,7 +42,7 @@ impl Storage for MemStorage {
         }
     }
 
-    async fn list_buckets(&self) -> Stream<Result<String>> {
+    async fn list_buckets(&self) -> BoxStream<Result<String>> {
         let buckets = self.buckets.lock().await;
         let bucket_names = buckets
             .keys()
@@ -52,12 +52,12 @@ impl Storage for MemStorage {
         Box::new(stream::iter(bucket_names))
     }
 
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn StorageBucket>> {
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
         let bucket = MemBucket::new();
         let mut buckets = self.buckets.lock().await;
         match buckets.try_insert(name.to_owned(), bucket.clone()) {
             Ok(_) => Ok(Box::new(bucket)),
-            Err(_) => Err(Error::AlreadyExist(format!("bucket '{}'", name))),
+            Err(_) => Err(Error::AlreadyExists(format!("bucket '{}'", name))),
         }
     }
 

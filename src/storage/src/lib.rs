@@ -14,7 +14,21 @@
 
 #![feature(map_try_insert)]
 
-mod api;
-mod mem;
+mod bucket;
+mod error;
+mod object;
+mod storage;
 
-pub use self::{api::*, mem::*};
+pub mod mem;
+
+pub use async_trait::async_trait;
+
+// TODO: use std::stream::Stream instead
+pub type BoxStream<T> = Box<dyn futures::stream::Stream<Item = T> + Unpin>;
+
+pub use self::{
+    bucket::{Bucket, ObjectUploader},
+    error::{Error, Result},
+    object::Object,
+    storage::Storage,
+};

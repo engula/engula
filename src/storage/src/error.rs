@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result};
+use thiserror::Error;
 
-/// An interface to manipulate an object.
-#[async_trait]
-pub trait StorageObject {
-    /// Returns the size of the object.
-    async fn size(&self) -> Result<usize>;
-
-    /// Reads a range from the object at a specific offset.
-    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("`{0}` is not found")]
+    NotFound(String),
+    #[error("`{0}` already exists")]
+    AlreadyExists(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
+    #[error(transparent)]
+    Unknown(#[from] Box<dyn std::error::Error>),
 }
+
+pub type Result<T> = std::result::Result<T, Error>;

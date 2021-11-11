@@ -12,21 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod mem_bucket;
-mod mem_object;
-mod mem_storage;
+mod bucket;
+mod object;
+mod storage;
 
-pub use self::mem_storage::MemStorage;
+pub use self::storage::MemStorage;
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+
     use super::*;
     use crate::*;
 
     #[tokio::test]
-    async fn mem_storage() -> Result<()> {
-        let storage = MemStorage::default();
-        let _ = storage.create_bucket("a").await?;
+    async fn test() -> Result<()> {
+        let s = MemStorage::default();
+        let bucket = s.create_bucket("a").await?;
+        let mut stream = bucket.list_objects().await;
+        while let Some(Ok(names)) = stream.next().await {
+            println!("buckets: {:?}", names);
+        }
         Ok(())
     }
 }

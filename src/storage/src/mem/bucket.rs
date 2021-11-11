@@ -17,10 +17,8 @@ use std::{collections::HashMap, sync::Arc};
 use futures::stream;
 use tokio::sync::Mutex;
 
-use super::mem_object::MemObject;
-use crate::{
-    async_trait, Error, Result, StorageBucket, StorageObject, StorageObjectUploader, Stream,
-};
+use super::object::MemObject;
+use crate::{async_trait, BoxStream, Bucket, Error, Object, ObjectUploader, Result};
 
 type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
 
@@ -38,8 +36,8 @@ impl MemBucket {
 }
 
 #[async_trait]
-impl StorageBucket for MemBucket {
-    async fn object(&self, name: &str) -> Result<Box<dyn StorageObject>> {
+impl Bucket for MemBucket {
+    async fn object(&self, name: &str) -> Result<Box<dyn Object>> {
         let objects = self.objects.lock().await;
         match objects.get(name) {
             Some(object) => Ok(Box::new(object.clone())),
@@ -47,7 +45,7 @@ impl StorageBucket for MemBucket {
         }
     }
 
-    async fn list_objects(&self) -> Stream<Result<String>> {
+    async fn list_objects(&self) -> BoxStream<Result<String>> {
         let objects = self.objects.lock().await;
         let object_names = objects
             .keys()
@@ -57,7 +55,7 @@ impl StorageBucket for MemBucket {
         Box::new(stream::iter(object_names))
     }
 
-    async fn upload_object(&self, name: &str) -> Box<dyn StorageObjectUploader> {
+    async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader> {
         Box::new(MemObjectUploader::new(
             name.to_owned(),
             self.objects.clone(),
@@ -90,7 +88,7 @@ impl MemObjectUploader {
 }
 
 #[async_trait]
-impl StorageObjectUploader for MemObjectUploader {
+impl ObjectUploader for MemObjectUploader {
     async fn write(&mut self, buf: &[u8]) {
         self.data.extend_from_slice(buf);
     }
@@ -100,7 +98,10 @@ impl StorageObjectUploader for MemObjectUploader {
         let mut objects = self.objects.lock().await;
         match objects.try_insert(self.name, object) {
             Ok(v) => Ok(v.len()),
-            Err(err) => Err(Error::AlreadyExist(format!("object '{}'", err.entry.key()))),
+            Err(err) => Err(Error::AlreadyExists(format!(
+                "object '{}'",
+                err.entry.key()
+            ))),
         }
     }
 }
