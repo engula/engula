@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, storage_object::StorageObject, Stream};
+use super::{async_trait, error::Result, object::Object, BoxStream};
 
 /// An interface to manipulate objects in a bucket.
 #[async_trait]
-pub trait StorageBucket {
+pub trait Bucket {
     /// Returns a handle to the object.
-    async fn object(&self, name: &str) -> Result<Box<dyn StorageObject>>;
+    async fn object(&self, name: &str) -> Result<Box<dyn Object>>;
 
     /// Returns a stream of object names.
-    async fn list_objects(&self) -> Stream<Result<String>>;
+    async fn list_objects(&self) -> BoxStream<Result<Vec<String>>>;
 
     /// Uploads an object.
-    async fn upload_object(&self, name: &str) -> Box<dyn StorageObjectUploader>;
+    async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader>;
 
     /// Deletes an object.
     async fn delete_object(&self, name: &str) -> Result<()>;
@@ -32,7 +32,7 @@ pub trait StorageBucket {
 
 /// An interface to upload an object.
 #[async_trait]
-pub trait StorageObjectUploader {
+pub trait ObjectUploader {
     /// Writes some bytes.
     async fn write(&mut self, buf: &[u8]);
 

@@ -14,7 +14,7 @@
 
 use std::{cmp::min, sync::Arc};
 
-use crate::{async_trait, Error, Result, StorageObject};
+use crate::{async_trait, Error, Object, Result};
 
 #[derive(Clone)]
 pub struct MemObject {
@@ -34,7 +34,7 @@ impl MemObject {
 }
 
 #[async_trait]
-impl StorageObject for MemObject {
+impl Object for MemObject {
     async fn size(&self) -> Result<usize> {
         Ok(self.data.len())
     }
