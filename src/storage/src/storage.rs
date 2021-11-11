@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::Bucket, error::Result, BoxStream};
+use super::{async_trait, bucket::Bucket, error::Result, ResultStream};
 
 /// An interface to manipulate buckets.
 #[async_trait]
@@ -21,7 +21,7 @@ pub trait Storage {
     async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
 
     /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> BoxStream<Result<String>>;
+    async fn list_buckets(&self) -> ResultStream<String>;
 
     /// Creates a bucket.
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;

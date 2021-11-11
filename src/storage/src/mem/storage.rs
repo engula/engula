@@ -18,7 +18,7 @@ use futures::stream;
 use tokio::sync::Mutex;
 
 use super::bucket::MemBucket;
-use crate::{async_trait, BoxStream, Bucket, Error, Result, Storage};
+use crate::{async_trait, Bucket, Error, Result, ResultStream, Storage};
 
 pub struct MemStorage {
     buckets: Mutex<HashMap<String, MemBucket>>,
@@ -42,7 +42,7 @@ impl Storage for MemStorage {
         }
     }
 
-    async fn list_buckets(&self) -> BoxStream<Result<String>> {
+    async fn list_buckets(&self) -> ResultStream<String> {
         let buckets = self.buckets.lock().await;
         let bucket_names = buckets
             .keys()

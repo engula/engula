@@ -12,20 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod mem_journal;
-mod mem_stream;
+mod event_stream;
+mod journal;
 
-pub use self::{mem_journal::MemJournal, mem_stream::MemStream};
+pub use self::journal::MemJournal;
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+
     use super::*;
     use crate::*;
 
     #[tokio::test]
-    async fn mem_journal() -> Result<()> {
-        let journal = MemJournal::default();
-        let _ = journal.create_stream("a").await?;
+    async fn test() -> Result<()> {
+        let j = MemJournal::default();
+        let stream = j.create_stream("a").await?;
+        let mut events = stream.read_events(0).await;
+        while let Some(Ok(event)) = events.next().await {
+            println!("{:?}", event);
+        }
         Ok(())
     }
 }

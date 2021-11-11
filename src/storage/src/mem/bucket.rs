@@ -18,7 +18,7 @@ use futures::stream;
 use tokio::sync::Mutex;
 
 use super::object::MemObject;
-use crate::{async_trait, BoxStream, Bucket, Error, Object, ObjectUploader, Result};
+use crate::{async_trait, Bucket, Error, Object, ObjectUploader, Result, ResultStream};
 
 type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
 
@@ -45,7 +45,7 @@ impl Bucket for MemBucket {
         }
     }
 
-    async fn list_objects(&self) -> BoxStream<Result<String>> {
+    async fn list_objects(&self) -> ResultStream<String> {
         let objects = self.objects.lock().await;
         let object_names = objects
             .keys()

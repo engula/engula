@@ -12,25 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, Stream};
+use super::{async_trait, error::Result, ResultStream};
 
-pub type SequenceNumber = u64;
+// TODO: make it generic
+pub type Timestamp = u64;
 
 #[derive(Clone, Debug, Default)]
-pub struct JournalRecord {
-    pub sn: SequenceNumber,
+pub struct Event {
+    pub ts: Timestamp,
     pub data: Vec<u8>,
 }
 
-/// An interface to manipulate records of a journal stream.
+/// An interface to manipulate events in a stream.
 #[async_trait]
-pub trait JournalStream {
-    /// Reads records since a sequence number (inclusive).
-    async fn read_records(&self, sn: SequenceNumber) -> Stream<Result<JournalRecord>>;
+pub trait EventStream {
+    /// Reads events since a timestamp (inclusive).
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event>;
 
-    /// Appends a record with a sequence number.
-    async fn append_record(&self, sn: SequenceNumber, data: Vec<u8>) -> Result<()>;
+    /// Appends an event with a timestamp.
+    async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()>;
 
-    /// Releases records up to a sequence number (exclusive).
-    async fn release_records(&self, sn: SequenceNumber) -> Result<()>;
+    /// Releases events up to a timestamp (exclusive).
+    async fn release_events(&self, ts: Timestamp) -> Result<()>;
 }

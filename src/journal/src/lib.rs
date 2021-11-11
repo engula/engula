@@ -14,7 +14,19 @@
 
 #![feature(map_try_insert)]
 
-mod api;
-mod mem;
+mod error;
+mod event_stream;
+mod journal;
 
-pub use self::{api::*, mem::*};
+pub mod mem;
+
+pub use async_trait::async_trait;
+
+// TODO: use std::stream::Stream instead
+pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
+
+pub use self::{
+    error::{Error, Result},
+    event_stream::{Event, EventStream, Timestamp},
+    journal::Journal,
+};
