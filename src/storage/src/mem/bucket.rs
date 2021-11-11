@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use futures::{future, stream};
+use futures::stream;
 use tokio::sync::Mutex;
 
 use super::object::MemObject;
@@ -45,10 +45,14 @@ impl Bucket for MemBucket {
         }
     }
 
-    async fn list_objects(&self) -> BoxStream<Result<Vec<String>>> {
+    async fn list_objects(&self) -> BoxStream<Result<String>> {
         let objects = self.objects.lock().await;
-        let object_names = objects.keys().cloned().collect::<Vec<String>>();
-        Box::new(stream::once(future::ok(object_names)))
+        let object_names = objects
+            .keys()
+            .cloned()
+            .map(Ok)
+            .collect::<Vec<Result<String>>>();
+        Box::new(stream::iter(object_names))
     }
 
     async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader> {

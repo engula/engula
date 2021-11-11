@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use futures::{future, stream};
+use futures::stream;
 use tokio::sync::Mutex;
 
 use super::bucket::MemBucket;
@@ -42,10 +42,14 @@ impl Storage for MemStorage {
         }
     }
 
-    async fn list_buckets(&self) -> BoxStream<Result<Vec<String>>> {
+    async fn list_buckets(&self) -> BoxStream<Result<String>> {
         let buckets = self.buckets.lock().await;
-        let bucket_names = buckets.keys().cloned().collect::<Vec<String>>();
-        Box::new(stream::once(future::ok(bucket_names)))
+        let bucket_names = buckets
+            .keys()
+            .cloned()
+            .map(Ok)
+            .collect::<Vec<Result<String>>>();
+        Box::new(stream::iter(bucket_names))
     }
 
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {

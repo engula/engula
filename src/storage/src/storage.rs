@@ -21,7 +21,7 @@ pub trait Storage {
     async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
 
     /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> BoxStream<Result<Vec<String>>>;
+    async fn list_buckets(&self) -> BoxStream<Result<String>>;
 
     /// Creates a bucket.
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
