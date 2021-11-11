@@ -49,7 +49,7 @@ Users can choose an appropriate implementation for their applications.
 
 ## Discussions
 
-Casual discussions about the design and implementation should be proceeded in [this discussion][storage-discussion].
-Formal discussions about the design of a specific implementation should be submitted as an RFC.
+Casual discussions about the design and implementation should proceed in [this discussion][storage-discussion].
+Formal discussions about the design of a specific implementation should proceed with an RFC.
 
 [storage-discussion]: https://github.com/engula/engula/discussions/79

@@ -2,17 +2,17 @@
 
 This document describes the top-level design of Journal.
 
-Journal provides an abstraction to store data streams.
+Journal provides an abstraction to store event streams.
 Journal can be used as a standalone component or integrated with Engula.
 
 ## Semantics
 
 Journal divides data into streams.
-A stream stores a sequence of records.
+A stream stores a sequence of events.
 Each stream has a unique identifier called the stream name.
-Each record within a stream is associated with a unique sequence number.
-Users should assign an increasing sequence number to records when appending to a stream.
-However, sequence numbers within a stream are not required to be continuous, which allows users to dispatch records to multiple streams.
+Each event within a stream is associated with a unique timestamp.
+Users should assign an increasing timestamp to events when appending to a stream.
+However, timestamps within a stream are not required to be continuous, which allows users to dispatch events to multiple streams.
 
 Journal provides the following interfaces to manipulate streams:
 
@@ -20,18 +20,18 @@ Journal provides the following interfaces to manipulate streams:
 - Create a stream with a unique name
 - Delete a stream
 
-Journal provides the following interfaces to manipulate records of a stream:
+Journal provides the following interfaces to manipulate events in a stream:
 
-- Read records since a sequence number
-- Append records with a sequence number
-- Release records up to a sequence number
+- Read events since a timestamp
+- Append events with a timestamp
+- Release events up to a timestamp
 
 It is also possible to support stream subscriptions. We leave the exploration of this feature to future work.
 
-Released records can be garbage collected or archived.
-Whether released records are readable depends on the implementation.
-For example, if records are archived, it should allow users to recover data from archives.
-Nevertheless, implementations should guarantee to return continuous records. That is, the returned records must be a sub-sequence of a stream.
+Released events can be garbage collected or archived.
+Whether released events are readable depends on the implementation.
+For example, if events are archived, it should allow users to recover from archives.
+Nevertheless, implementations should guarantee to return continuous events. That is, the returned events must be a sub-sequence of a stream.
 
 ## Guidelines
 
@@ -49,7 +49,7 @@ Users can choose an appropriate implementation for their applications.
 
 ## Discussions
 
-Casual discussions about the design and implementation should be proceeded in [this discussion][journal-discussion].
-Formal discussions about the design of a specific implementation should be proceeded with an RFC.
+Casual discussions about the design and implementation should proceed in [this discussion][journal-discussion].
+Formal discussions about the design of a specific implementation should proceed with an RFC.
 
 [journal-discussion]: https://github.com/engula/engula/discussions/70
