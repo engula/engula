@@ -12,22 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::Display;
+
 use super::{async_trait, error::Result, ResultStream};
 
-// TODO: make it generic
-pub type Timestamp = u64;
-
 #[derive(Clone, Debug, Default)]
-pub struct Event {
+pub struct Event<Timestamp: Ord + Display + Send + Clone + Copy> {
     pub ts: Timestamp,
     pub data: Vec<u8>,
 }
 
 /// An interface to manipulate events in a stream.
 #[async_trait]
-pub trait Stream {
+pub trait Stream<Timestamp: Ord + Display + Send + Clone + Copy> {
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event>;
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event<Timestamp>>;
 
     /// Appends an event with a timestamp.
     async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()>;

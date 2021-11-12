@@ -28,5 +28,5 @@ pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + U
 pub use self::{
     error::{Error, Result},
     journal::Journal,
-    stream::{Event, Stream, Timestamp},
+    stream::{Event, Stream},
 };

@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, fmt::Display, sync::Arc};
 
 use futures::stream;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
+use crate::{async_trait, Error, Event, Result, ResultStream, Stream};
 
 #[derive(Clone)]
-pub struct MemStream {
-    events: Arc<Mutex<VecDeque<Event>>>,
+pub struct MemStream<Timestamp: Ord + Display + Send + Clone + Copy> {
+    events: Arc<Mutex<VecDeque<Event<Timestamp>>>>,
 }
 
-impl Default for MemStream {
-    fn default() -> MemStream {
+impl<Timestamp: Ord + Display + Send + Clone + Copy> Default for MemStream<Timestamp> {
+    fn default() -> MemStream<Timestamp> {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -33,22 +33,24 @@ impl Default for MemStream {
 }
 
 #[async_trait]
-impl Stream for MemStream {
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event> {
+impl<Timestamp: Ord + Display + Send + Clone + Copy + 'static> Stream<Timestamp>
+    for MemStream<Timestamp>
+{
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event<Timestamp>> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         let iter = events
             .range(index..)
             .cloned()
             .map(Ok)
-            .collect::<Vec<Result<Event>>>();
+            .collect::<Vec<Result<Event<Timestamp>>>>();
         Box::new(stream::iter(iter))
     }
 
     async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()> {
         let event = Event { ts, data };
         let mut events = self.events.lock().await;
-        let last_ts = events.back().map(|x| x.ts).unwrap_or(0);
+        let last_ts = events.back().map(|x| x.ts).unwrap();
         if ts <= last_ts {
             return Err(Error::InvalidArgument(format!(
                 "timestamp {} <= last timestamp {}",
