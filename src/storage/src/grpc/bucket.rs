@@ -45,11 +45,7 @@ impl Bucket for RemoteBucket {
         };
         match self.client.list_objects(input).await {
             Ok(output) => {
-                let object_names = output
-                    .objects
-                    .into_iter()
-                    .map(Ok)
-                    .collect::<Vec<Result<String>>>();
+                let object_names = output.objects.into_iter().map(Ok);
                 Box::new(stream::iter(object_names))
             }
             Err(err) => Box::new(stream::once(future::err(err.into()))),

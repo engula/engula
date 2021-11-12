@@ -43,11 +43,7 @@ impl Storage for RemoteStorage {
         let input = ListBucketsRequest {};
         match self.client.list_buckets(input).await {
             Ok(output) => {
-                let bucket_names = output
-                    .buckets
-                    .into_iter()
-                    .map(Ok)
-                    .collect::<Vec<Result<String>>>();
+                let bucket_names = output.buckets.into_iter().map(Ok);
                 Box::new(stream::iter(bucket_names))
             }
             Err(err) => Box::new(stream::once(future::err(err.into()))),
@@ -58,7 +54,7 @@ impl Storage for RemoteStorage {
         let input = CreateBucketRequest {
             bucket: name.to_owned(),
         };
-        let _ = self.client.create_bucket(input).await?;
+        self.client.create_bucket(input).await?;
         self.bucket(name).await
     }
 
@@ -66,7 +62,7 @@ impl Storage for RemoteStorage {
         let input = DeleteBucketRequest {
             bucket: name.to_owned(),
         };
-        let _ = self.client.delete_bucket(input).await?;
+        self.client.delete_bucket(input).await?;
         Ok(())
     }
 }
