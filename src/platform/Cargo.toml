@@ -1,0 +1,28 @@
+[package]
+edition = "2021"
+name = "platform"
+version = "0.1.0"
+
+[features]
+
+default = ["aws-s3"]
+
+full = ["aws-s3"]
+
+aws-s3 = [
+  "storage",
+  "aws-types",
+  "aws-sdk-s3",
+]
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1.1"
+futures = "0.3"
+thiserror = "1.0"
+tokio = {version = "1.13", features = ["full"]}
+
+storage = {path = "../storage", optional = true}
+
+aws-sdk-s3 = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3", optional = true}
+aws-types = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types", optional = true}
