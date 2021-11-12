@@ -44,6 +44,7 @@ jobs:
       with:
         profile: minimal
         toolchain: ${{ matrix.rust }}
+        components: rustfmt
         override: true
 
     - name: Cargo build
@@ -97,6 +98,7 @@ jobs:
       with:
           profile: minimal
           toolchain: nightly
+          components: rustfmt
           override: true
 
     - name: Cargo build
