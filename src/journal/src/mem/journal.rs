@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use futures::stream;
 use tokio::sync::Mutex;
 
 use super::stream::MemStream;
-use crate::{async_trait, Error, Journal, Result, ResultStream, Stream};
+use crate::{async_trait, Error, Journal, Result, ResultStream, Stream, Timestamp};
 
-pub struct MemJournal<Timestamp: Ord + Display + Send + Clone + Copy> {
-    streams: Mutex<HashMap<String, MemStream<Timestamp>>>,
+pub struct MemJournal<TS: Timestamp> {
+    streams: Mutex<HashMap<String, MemStream<TS>>>,
 }
 
-impl<Timestamp: Ord + Display + Send + Clone + Copy> Default for MemJournal<Timestamp> {
+impl<TS: Timestamp> Default for MemJournal<TS> {
     fn default() -> Self {
         MemJournal {
             streams: Mutex::new(HashMap::new()),
@@ -33,10 +33,8 @@ impl<Timestamp: Ord + Display + Send + Clone + Copy> Default for MemJournal<Time
 }
 
 #[async_trait]
-impl<Timestamp: Ord + Display + Send + Clone + Copy + 'static> Journal<Timestamp>
-    for MemJournal<Timestamp>
-{
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<Timestamp>>> {
+impl<TS: Timestamp + 'static> Journal<TS> for MemJournal<TS> {
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
             Some(stream) => Ok(Box::new(stream.clone())),
@@ -54,7 +52,7 @@ impl<Timestamp: Ord + Display + Send + Clone + Copy + 'static> Journal<Timestamp
         Box::new(stream::iter(stream_names))
     }
 
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<Timestamp>>> {
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>> {
         let stream = MemStream::default();
         let mut streams = self.streams.lock().await;
         match streams.try_insert(name.to_owned(), stream) {

@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::VecDeque, fmt::Display, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use futures::stream;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, Result, ResultStream, Stream};
+use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct MemStream<Timestamp: Ord + Display + Send + Clone + Copy> {
-    events: Arc<Mutex<VecDeque<Event<Timestamp>>>>,
+pub struct MemStream<TS: Timestamp> {
+    events: Arc<Mutex<VecDeque<Event<TS>>>>,
 }
 
-impl<Timestamp: Ord + Display + Send + Clone + Copy> Default for MemStream<Timestamp> {
-    fn default() -> MemStream<Timestamp> {
+impl<TS: Timestamp> Default for MemStream<TS> {
+    fn default() -> MemStream<TS> {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -33,24 +33,22 @@ impl<Timestamp: Ord + Display + Send + Clone + Copy> Default for MemStream<Times
 }
 
 #[async_trait]
-impl<Timestamp: Ord + Display + Send + Clone + Copy + 'static> Stream<Timestamp>
-    for MemStream<Timestamp>
-{
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event<Timestamp>> {
+impl<TS: Timestamp + 'static> Stream<TS> for MemStream<TS> {
+    async fn read_events(&self, ts: TS) -> ResultStream<Event<TS>> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         let iter = events
             .range(index..)
             .cloned()
             .map(Ok)
-            .collect::<Vec<Result<Event<Timestamp>>>>();
+            .collect::<Vec<Result<Event<TS>>>>();
         Box::new(stream::iter(iter))
     }
 
-    async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()> {
+    async fn append_event(&self, ts: TS, data: Vec<u8>) -> Result<()> {
         let event = Event { ts, data };
         let mut events = self.events.lock().await;
-        let last_ts = events.back().map(|x| x.ts).unwrap();
+        let last_ts = events.back().map(|x| x.ts).unwrap_or_default();
         if ts <= last_ts {
             return Err(Error::InvalidArgument(format!(
                 "timestamp {} <= last timestamp {}",
@@ -61,7 +59,7 @@ impl<Timestamp: Ord + Display + Send + Clone + Copy + 'static> Stream<Timestamp>
         Ok(())
     }
 
-    async fn release_events(&self, ts: Timestamp) -> Result<()> {
+    async fn release_events(&self, ts: TS) -> Result<()> {
         let mut events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         events.drain(..index);

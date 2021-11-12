@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Display;
-
-use super::{async_trait, error::Result, stream::Stream, ResultStream};
+use super::{async_trait, Result, ResultStream, Stream, Timestamp};
 
 /// An interface to manipulate event streams.
 #[async_trait]
-pub trait Journal<Timestamp: Ord + Display + Send + Clone + Copy> {
+pub trait Journal<TS: Timestamp> {
     /// Returns a handle to the event stream.
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<Timestamp>>>;
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>>;
 
     /// Returns a stream of event stream names.
     async fn list_streams(&self) -> ResultStream<String>;
 
     /// Creates an event stream.
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<Timestamp>>>;
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>>;
 
     /// Deletes an event stream.
     async fn delete_stream(&self, name: &str) -> Result<()>;
