@@ -25,7 +25,7 @@ pub struct Event {
 
 /// An interface to manipulate events in a stream.
 #[async_trait]
-pub trait EventStream {
+pub trait Stream {
     /// Reads events since a timestamp (inclusive).
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Event>;
 

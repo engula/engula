@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, event_stream::EventStream, ResultStream};
+use super::{async_trait, error::Result, stream::Stream, ResultStream};
 
 /// An interface to manipulate event streams.
 #[async_trait]
 pub trait Journal {
     /// Returns a handle to the event stream.
-    async fn stream(&self, name: &str) -> Result<Box<dyn EventStream>>;
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
     /// Returns a stream of event stream names.
     async fn list_streams(&self) -> ResultStream<String>;
 
     /// Creates an event stream.
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn EventStream>>;
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
     /// Deletes an event stream.
     async fn delete_stream(&self, name: &str) -> Result<()>;

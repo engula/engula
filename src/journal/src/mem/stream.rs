@@ -17,23 +17,23 @@ use std::{collections::VecDeque, sync::Arc};
 use futures::stream;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, EventStream, Result, ResultStream, Timestamp};
+use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct MemEventStream {
+pub struct MemStream {
     events: Arc<Mutex<VecDeque<Event>>>,
 }
 
-impl Default for MemEventStream {
-    fn default() -> MemEventStream {
-        MemEventStream {
+impl Default for MemStream {
+    fn default() -> MemStream {
+        MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 }
 
 #[async_trait]
-impl EventStream for MemEventStream {
+impl Stream for MemStream {
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Event> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);

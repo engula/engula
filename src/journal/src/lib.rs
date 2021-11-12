@@ -15,8 +15,8 @@
 #![feature(map_try_insert)]
 
 mod error;
-mod event_stream;
 mod journal;
+mod stream;
 
 pub mod mem;
 
@@ -27,6 +27,6 @@ pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + U
 
 pub use self::{
     error::{Error, Result},
-    event_stream::{Event, EventStream, Timestamp},
     journal::Journal,
+    stream::{Event, Stream, Timestamp},
 };
