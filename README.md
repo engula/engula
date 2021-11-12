@@ -1,4 +1,4 @@
-# [Engula](https://engula.com)
+# [Engula](https://engula.io)
 
 [![Discord][discord-badge]][discord-url]
 
