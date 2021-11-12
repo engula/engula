@@ -2,7 +2,7 @@
 
 This document describes the design of microunit.
 
-Microunit is a lightweight unit orchestration framework for Engula.
+Microunit is a lightweight unit orchestration framework for resource management.
 
 ## Architecture
 
