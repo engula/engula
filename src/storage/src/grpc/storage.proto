@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package engula.storage.grpc.v1;
+
+service Storage {
+    // APIs to manipulate buckets.
+
+    rpc ListBuckets(ListBucketsRequest) returns (ListBucketsResponse) {}
+
+    rpc CreateBucket(CreateBucketRequest) returns (CreateBucketResponse) {}
+
+    rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse) {}
+
+    // APIs to manipulate a bucket.
+
+    rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse) {}
+
+    rpc UploadObject(UploadObjectRequest) returns (UploadObjectResponse) {}
+
+    rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
+
+    // APIs to manipulate an object.
+
+    rpc ShowObject(ShowObjectRequest) returns (ShowObjectResponse) {}
+
+    rpc ReadObject(ReadObjectRequest) returns (ReadObjectResponse) {}
+}
+
+message ListBucketsRequest {}
+
+message ListBucketsResponse {
+    repeated string buckets = 1;
+}
+
+message CreateBucketRequest {
+    string bucket = 1;
+}
+
+message CreateBucketResponse {}
+
+message DeleteBucketRequest {
+    string bucket = 1;
+}
+
+message DeleteBucketResponse {}
+
+message ListObjectsRequest {
+    string bucket = 1;
+}
+
+message ListObjectsResponse {
+    repeated string objects = 1;
+}
+
+message UploadObjectRequest {
+    string bucket = 1;
+    string object = 2;
+    bytes content = 3;
+}
+
+message UploadObjectResponse {}
+
+message DeleteObjectRequest {
+    string bucket = 1;
+    string object = 2;
+}
+
+message DeleteObjectResponse {}
+
+message ShowObjectRequest {
+    string bucket = 1;
+    string object = 2;
+}
+
+message ShowObjectResponse {
+    int64 size = 1;
+}
+
+message ReadObjectRequest {
+    string bucket = 1;
+    string object = 2;
+    int64 offset = 3;
+    int64 length = 4;
+}
+
+message ReadObjectResponse {
+    bytes content = 1;
+}

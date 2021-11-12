@@ -12,24 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
+use thiserror::Error;
 
-mod bucket;
-mod error;
-mod object;
-mod storage;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    GrpcStatus(#[from] tonic::Status),
+    #[error(transparent)]
+    GrpcTransportError(#[from] tonic::transport::Error),
+}
 
-pub mod grpc;
-pub mod mem;
+impl From<Error> for crate::error::Error {
+    fn from(err: Error) -> Self {
+        crate::error::Error::Unknown(err.into())
+    }
+}
 
-pub use async_trait::async_trait;
-
-// TODO: use std::stream::Stream instead
-pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
-
-pub use self::{
-    bucket::{Bucket, ObjectUploader},
-    error::{Error, Result},
-    object::Object,
-    storage::Storage,
-};
+pub type Result<T> = std::result::Result<T, Error>;

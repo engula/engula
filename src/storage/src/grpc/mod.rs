@@ -12,24 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
-
 mod bucket;
+mod client;
 mod error;
 mod object;
+mod proto;
 mod storage;
 
-pub mod grpc;
-pub mod mem;
-
-pub use async_trait::async_trait;
-
-// TODO: use std::stream::Stream instead
-pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
-
-pub use self::{
-    bucket::{Bucket, ObjectUploader},
-    error::{Error, Result},
-    object::Object,
-    storage::Storage,
-};
+pub use self::storage::RemoteStorage;
