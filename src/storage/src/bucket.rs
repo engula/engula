@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, object::Object, BoxStream};
+use super::{async_trait, error::Result, object::Object, ResultStream};
 
 /// An interface to manipulate objects in a bucket.
 #[async_trait]
@@ -21,7 +21,7 @@ pub trait Bucket {
     async fn object(&self, name: &str) -> Result<Box<dyn Object>>;
 
     /// Returns a stream of object names.
-    async fn list_objects(&self) -> BoxStream<Result<String>>;
+    async fn list_objects(&self) -> ResultStream<String>;
 
     /// Uploads an object.
     async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader>;

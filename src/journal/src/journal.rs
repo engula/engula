@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::Bucket, error::Result, ResultStream};
+use super::{async_trait, error::Result, stream::Stream, ResultStream};
 
-/// An interface to manipulate buckets.
+/// An interface to manipulate event streams.
 #[async_trait]
-pub trait Storage {
-    /// Returns a handle to the bucket.
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+pub trait Journal {
+    /// Returns a handle to the event stream.
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
-    /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> ResultStream<String>;
+    /// Returns a stream of event stream names.
+    async fn list_streams(&self) -> ResultStream<String>;
 
-    /// Creates a bucket.
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+    /// Creates an event stream.
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
-    /// Deletes a bucket.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
+    /// Deletes an event stream.
+    async fn delete_stream(&self, name: &str) -> Result<()>;
 }

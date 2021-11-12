@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::Bucket, error::Result, ResultStream};
+#![feature(map_try_insert)]
 
-/// An interface to manipulate buckets.
-#[async_trait]
-pub trait Storage {
-    /// Returns a handle to the bucket.
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+mod error;
+mod journal;
+mod stream;
 
-    /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> ResultStream<String>;
+pub mod mem;
 
-    /// Creates a bucket.
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+pub use async_trait::async_trait;
 
-    /// Deletes a bucket.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
-}
+// TODO: use std::stream::Stream instead
+pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
+
+pub use self::{
+    error::{Error, Result},
+    journal::Journal,
+    stream::{Event, Stream, Timestamp},
+};

@@ -12,20 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::Bucket, error::Result, ResultStream};
+mod journal;
+mod stream;
 
-/// An interface to manipulate buckets.
-#[async_trait]
-pub trait Storage {
-    /// Returns a handle to the bucket.
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+pub use self::journal::MemJournal;
 
-    /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> ResultStream<String>;
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
 
-    /// Creates a bucket.
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+    use super::*;
+    use crate::*;
 
-    /// Deletes a bucket.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
+    #[tokio::test]
+    async fn test() -> Result<()> {
+        let j = MemJournal::default();
+        let stream = j.create_stream("a").await?;
+        let mut events = stream.read_events(0).await;
+        while let Some(Ok(event)) = events.next().await {
+            println!("{:?}", event);
+        }
+        Ok(())
+    }
 }

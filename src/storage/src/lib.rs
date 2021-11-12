@@ -24,7 +24,7 @@ pub mod mem;
 pub use async_trait::async_trait;
 
 // TODO: use std::stream::Stream instead
-pub type BoxStream<T> = Box<dyn futures::stream::Stream<Item = T> + Unpin>;
+pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
 
 pub use self::{
     bucket::{Bucket, ObjectUploader},
