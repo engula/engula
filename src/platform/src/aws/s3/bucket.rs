@@ -59,10 +59,9 @@ impl Bucket for S3Bucket {
                 let objects = output
                     .contents
                     .unwrap_or(vec![])
-                    .iter()
+                    .into_iter()
                     .filter_map(|content| content.key.to_owned())
-                    .map(Ok)
-                    .collect::<Vec<Result<String>>>();
+                    .map(Ok);
                 Box::new(stream::iter(objects))
             }
             Err(e) => Box::new(stream::once(future::err(Error::AwsSDK(format!(

@@ -25,8 +25,8 @@ mod tests {
 
     use super::*;
 
-    const ACCESS_KEY: &str = "<>";
-    const SECRET_KEY: &str = "<>";
+    const ACCESS_KEY: &str = "";
+    const SECRET_KEY: &str = "";
 
     #[tokio::test]
     #[ignore]
@@ -91,6 +91,14 @@ mod tests {
         let rs = reader.read_at(&mut buf[..], 0).await.unwrap();
         assert_eq!(rs, 2);
         assert_eq!(&buf[..], b"12");
+
+        let obj_names = bucket
+            .list_objects()
+            .await
+            .collect::<Vec<Result<String>>>()
+            .await;
+        assert_eq!(obj_names.len(), 1);
+        assert_eq!(obj_names[0].as_ref().unwrap(), key);
 
         storage
             .delete_bucket(&bucket_name.to_owned())

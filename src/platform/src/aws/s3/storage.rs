@@ -19,7 +19,10 @@ use aws_sdk_s3::{
     },
     Client, Config, Credentials, Region,
 };
-use futures::{future, stream};
+use futures::{
+    future,
+    stream::{self},
+};
 use storage::{async_trait, Bucket, Error, Result, ResultStream, Storage};
 
 use super::bucket::S3Bucket;
@@ -117,14 +120,13 @@ impl Storage for S3Storage {
         let result = self.client.list_buckets().send().await;
         match result {
             Ok(output) => {
-                let bucket_names = output
+                let buckets = output
                     .buckets
                     .unwrap_or(vec![])
-                    .iter()
+                    .into_iter()
                     .filter_map(|bucket| bucket.name.to_owned())
-                    .map(Ok)
-                    .collect::<Vec<Result<String>>>();
-                Box::new(stream::iter(bucket_names))
+                    .map(Ok);
+                Box::new(stream::iter(buckets))
             }
             Err(e) => Box::new(stream::once(future::err(Error::AwsSDK(format!(
                 "list bucket fail: {}",
