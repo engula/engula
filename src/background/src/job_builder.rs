@@ -17,7 +17,7 @@ use crate::error::Result;
 /// A job specification
 pub struct JobSpec {}
 
-/// A job builder spanws a specific kind of jobs.
+/// A job builder spawns a specific kind of jobs.
 pub trait JobBuilder {
     fn kind(&self) -> &str;
 
