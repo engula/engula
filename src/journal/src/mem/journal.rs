@@ -33,7 +33,7 @@ impl<TS: Timestamp> Default for MemJournal<TS> {
 }
 
 #[async_trait]
-impl<TS: Timestamp + 'static> Journal<TS> for MemJournal<TS> {
+impl<TS: Timestamp> Journal<TS> for MemJournal<TS> {
     async fn stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>> {
         let streams = self.streams.lock().await;
         match streams.get(name) {

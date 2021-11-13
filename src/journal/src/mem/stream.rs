@@ -33,7 +33,7 @@ impl<TS: Timestamp> Default for MemStream<TS> {
 }
 
 #[async_trait]
-impl<TS: Timestamp + 'static> Stream<TS> for MemStream<TS> {
+impl<TS: Timestamp> Stream<TS> for MemStream<TS> {
     async fn read_events(&self, ts: TS) -> ResultStream<Event<TS>> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);

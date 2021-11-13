@@ -16,9 +16,9 @@ use std::fmt::Display;
 
 use super::{async_trait, Result, ResultStream};
 
-pub trait Timestamp: Ord + Display + Send + Copy + Default {}
+pub trait Timestamp: Ord + Display + Send + Copy + Default + 'static {}
 
-impl<T> Timestamp for T where T: Ord + Display + Send + Copy + Default {}
+impl<T> Timestamp for T where T: Ord + Display + Send + Copy + Default + 'static {}
 
 #[derive(Clone, Debug, Default)]
 pub struct Event<TS: Timestamp> {
