@@ -78,7 +78,7 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: --tests -- -D warnings
+        args: --workspace --tests --all-features -- -D warnings
 
     - name: Check format
       uses: actions-rs/cargo@v1

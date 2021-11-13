@@ -36,7 +36,7 @@ Before submitting the pull request, please make sure all tests pass locally:
 ```bash
 cargo build
 cargo test --workspace
-cargo clippy --tests -- -D warnings
+cargo clippy --workspace --tests --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
