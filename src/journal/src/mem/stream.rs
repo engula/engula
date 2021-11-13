@@ -48,12 +48,13 @@ impl<Ts: Timestamp> Stream<Ts> for MemStream<Ts> {
     async fn append_event(&self, ts: Ts, data: Vec<u8>) -> Result<()> {
         let event = Event { ts, data };
         let mut events = self.events.lock().await;
-        let last_ts = events.back().map(|x| x.ts).unwrap_or_default();
-        if ts <= last_ts {
-            return Err(Error::InvalidArgument(format!(
-                "timestamp {:?} <= last timestamp {:?}",
-                ts, last_ts
-            )));
+        if let Some(last_ts) = events.back().map(|x| x.ts) {
+            if ts <= last_ts {
+                return Err(Error::InvalidArgument(format!(
+                    "timestamp {:?} <= last timestamp {:?}",
+                    ts, last_ts
+                )));
+            }
         }
         events.push_back(event);
         Ok(())

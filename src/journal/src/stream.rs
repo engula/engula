@@ -16,9 +16,9 @@ use std::fmt::Debug;
 
 use super::{async_trait, error::Result, ResultStream};
 
-pub trait Timestamp: Ord + Debug + Send + Copy + Default + 'static {}
+pub trait Timestamp: Ord + Debug + Send + Copy + 'static {}
 
-impl<T> Timestamp for T where T: Ord + Debug + Send + Copy + Default + 'static {}
+impl<T> Timestamp for T where T: Ord + Debug + Send + Copy + 'static {}
 
 #[derive(Clone, Debug, Default)]
 pub struct Event<Ts: Timestamp> {
