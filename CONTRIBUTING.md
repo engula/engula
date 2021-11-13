@@ -17,7 +17,7 @@ You're able to get started with Engula with three steps:
 
 1. Setup the environment with [rustup](https://rustup.rs/).
 2. Build Engula via `cargo build`.
-3. Run all tests via `cargo test`.
+3. Run all tests via `cargo test --workspace`.
 
 ## Issue reports
 
@@ -35,8 +35,8 @@ Before submitting the pull request, please make sure all tests pass locally:
 
 ```bash
 cargo build
-cargo test
-cargo clippy -- -D warnings
+cargo test --workspace
+cargo clippy --tests -- -D warnings
 cargo fmt --all -- --check
 ```
 
