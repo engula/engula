@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Display;
+use std::fmt::Debug;
 
 use super::{async_trait, Result, ResultStream};
 
-pub trait Timestamp: Ord + Display + Send + Copy + Default + 'static {}
+pub trait Timestamp: Ord + Debug + Send + Copy + Default + 'static {}
 
-impl<T> Timestamp for T where T: Ord + Display + Send + Copy + Default + 'static {}
+impl<T> Timestamp for T where T: Ord + Debug + Send + Copy + Default + 'static {}
 
 #[derive(Clone, Debug, Default)]
 pub struct Event<TS: Timestamp> {

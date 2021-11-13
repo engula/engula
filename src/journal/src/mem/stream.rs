@@ -51,7 +51,7 @@ impl<TS: Timestamp> Stream<TS> for MemStream<TS> {
         let last_ts = events.back().map(|x| x.ts).unwrap_or_default();
         if ts <= last_ts {
             return Err(Error::InvalidArgument(format!(
-                "timestamp {} <= last timestamp {}",
+                "timestamp {:?} <= last timestamp {:?}",
                 ts, last_ts
             )));
         }
