@@ -18,13 +18,13 @@ use futures::stream;
 use tokio::sync::Mutex;
 
 use super::stream::MemStream;
-use crate::{async_trait, Error, Journal, Result, ResultStream, Stream};
+use crate::{async_trait, Error, Journal, Result, ResultStream, Stream, Timestamp};
 
-pub struct MemJournal {
-    streams: Mutex<HashMap<String, MemStream>>,
+pub struct MemJournal<T: Timestamp> {
+    streams: Mutex<HashMap<String, MemStream<T>>>,
 }
 
-impl Default for MemJournal {
+impl<T: Timestamp> Default for MemJournal<T> {
     fn default() -> Self {
         MemJournal {
             streams: Mutex::new(HashMap::new()),
@@ -33,8 +33,8 @@ impl Default for MemJournal {
 }
 
 #[async_trait]
-impl Journal for MemJournal {
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream>> {
+impl<T: Timestamp> Journal<T> for MemJournal<T> {
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<T>>> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
             Some(stream) => Ok(Box::new(stream.clone())),
@@ -52,7 +52,7 @@ impl Journal for MemJournal {
         Box::new(stream::iter(stream_names))
     }
 
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream>> {
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<T>>> {
         let stream = MemStream::default();
         let mut streams = self.streams.lock().await;
         match streams.try_insert(name.to_owned(), stream) {

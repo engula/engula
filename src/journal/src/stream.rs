@@ -12,26 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::Debug;
+
 use super::{async_trait, error::Result, ResultStream};
 
-// TODO: make it generic
-pub type Timestamp = u64;
+pub trait Timestamp: Ord + Debug + Send + Copy + 'static {}
+
+impl<T> Timestamp for T where T: Ord + Debug + Send + Copy + 'static {}
 
 #[derive(Clone, Debug, Default)]
-pub struct Event {
-    pub ts: Timestamp,
+pub struct Event<T: Timestamp> {
+    pub ts: T,
     pub data: Vec<u8>,
 }
 
 /// An interface to manipulate events in a stream.
 #[async_trait]
-pub trait Stream {
+pub trait Stream<T: Timestamp> {
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event>;
+    async fn read_events(&self, ts: T) -> ResultStream<Event<T>>;
 
     /// Appends an event with a timestamp.
-    async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()>;
+    async fn append_event(&self, ts: T, data: Vec<u8>) -> Result<()>;
 
     /// Releases events up to a timestamp (exclusive).
-    async fn release_events(&self, ts: Timestamp) -> Result<()>;
+    async fn release_events(&self, ts: T) -> Result<()>;
 }

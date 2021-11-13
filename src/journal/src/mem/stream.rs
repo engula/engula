@@ -20,12 +20,12 @@ use tokio::sync::Mutex;
 use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct MemStream {
-    events: Arc<Mutex<VecDeque<Event>>>,
+pub struct MemStream<T: Timestamp> {
+    events: Arc<Mutex<VecDeque<Event<T>>>>,
 }
 
-impl Default for MemStream {
-    fn default() -> MemStream {
+impl<T: Timestamp> Default for MemStream<T> {
+    fn default() -> MemStream<T> {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -33,33 +33,34 @@ impl Default for MemStream {
 }
 
 #[async_trait]
-impl Stream for MemStream {
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Event> {
+impl<T: Timestamp> Stream<T> for MemStream<T> {
+    async fn read_events(&self, ts: T) -> ResultStream<Event<T>> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         let iter = events
             .range(index..)
             .cloned()
             .map(Ok)
-            .collect::<Vec<Result<Event>>>();
+            .collect::<Vec<Result<Event<T>>>>();
         Box::new(stream::iter(iter))
     }
 
-    async fn append_event(&self, ts: Timestamp, data: Vec<u8>) -> Result<()> {
+    async fn append_event(&self, ts: T, data: Vec<u8>) -> Result<()> {
         let event = Event { ts, data };
         let mut events = self.events.lock().await;
-        let last_ts = events.back().map(|x| x.ts).unwrap_or(0);
-        if ts <= last_ts {
-            return Err(Error::InvalidArgument(format!(
-                "timestamp {} <= last timestamp {}",
-                ts, last_ts
-            )));
+        if let Some(last_ts) = events.back().map(|x| x.ts) {
+            if ts <= last_ts {
+                return Err(Error::InvalidArgument(format!(
+                    "timestamp {:?} <= last timestamp {:?}",
+                    ts, last_ts
+                )));
+            }
         }
         events.push_back(event);
         Ok(())
     }
 
-    async fn release_events(&self, ts: Timestamp) -> Result<()> {
+    async fn release_events(&self, ts: T) -> Result<()> {
         let mut events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         events.drain(..index);
