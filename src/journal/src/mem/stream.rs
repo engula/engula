@@ -20,12 +20,12 @@ use tokio::sync::Mutex;
 use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct MemStream<TS: Timestamp> {
-    events: Arc<Mutex<VecDeque<Event<TS>>>>,
+pub struct MemStream<Ts: Timestamp> {
+    events: Arc<Mutex<VecDeque<Event<Ts>>>>,
 }
 
-impl<TS: Timestamp> Default for MemStream<TS> {
-    fn default() -> MemStream<TS> {
+impl<Ts: Timestamp> Default for MemStream<Ts> {
+    fn default() -> MemStream<Ts> {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -33,19 +33,19 @@ impl<TS: Timestamp> Default for MemStream<TS> {
 }
 
 #[async_trait]
-impl<TS: Timestamp> Stream<TS> for MemStream<TS> {
-    async fn read_events(&self, ts: TS) -> ResultStream<Event<TS>> {
+impl<Ts: Timestamp> Stream<Ts> for MemStream<Ts> {
+    async fn read_events(&self, ts: Ts) -> ResultStream<Event<Ts>> {
         let events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         let iter = events
             .range(index..)
             .cloned()
             .map(Ok)
-            .collect::<Vec<Result<Event<TS>>>>();
+            .collect::<Vec<Result<Event<Ts>>>>();
         Box::new(stream::iter(iter))
     }
 
-    async fn append_event(&self, ts: TS, data: Vec<u8>) -> Result<()> {
+    async fn append_event(&self, ts: Ts, data: Vec<u8>) -> Result<()> {
         let event = Event { ts, data };
         let mut events = self.events.lock().await;
         let last_ts = events.back().map(|x| x.ts).unwrap_or_default();
@@ -59,7 +59,7 @@ impl<TS: Timestamp> Stream<TS> for MemStream<TS> {
         Ok(())
     }
 
-    async fn release_events(&self, ts: TS) -> Result<()> {
+    async fn release_events(&self, ts: Ts) -> Result<()> {
         let mut events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         events.drain(..index);

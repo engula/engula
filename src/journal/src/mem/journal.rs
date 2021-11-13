@@ -20,11 +20,11 @@ use tokio::sync::Mutex;
 use super::stream::MemStream;
 use crate::{async_trait, Error, Journal, Result, ResultStream, Stream, Timestamp};
 
-pub struct MemJournal<TS: Timestamp> {
-    streams: Mutex<HashMap<String, MemStream<TS>>>,
+pub struct MemJournal<Ts: Timestamp> {
+    streams: Mutex<HashMap<String, MemStream<Ts>>>,
 }
 
-impl<TS: Timestamp> Default for MemJournal<TS> {
+impl<Ts: Timestamp> Default for MemJournal<Ts> {
     fn default() -> Self {
         MemJournal {
             streams: Mutex::new(HashMap::new()),
@@ -33,8 +33,8 @@ impl<TS: Timestamp> Default for MemJournal<TS> {
 }
 
 #[async_trait]
-impl<TS: Timestamp> Journal<TS> for MemJournal<TS> {
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>> {
+impl<Ts: Timestamp> Journal<Ts> for MemJournal<Ts> {
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<Ts>>> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
             Some(stream) => Ok(Box::new(stream.clone())),
@@ -52,7 +52,7 @@ impl<TS: Timestamp> Journal<TS> for MemJournal<TS> {
         Box::new(stream::iter(stream_names))
     }
 
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<TS>>> {
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<Ts>>> {
         let stream = MemStream::default();
         let mut streams = self.streams.lock().await;
         match streams.try_insert(name.to_owned(), stream) {
