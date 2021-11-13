@@ -14,7 +14,7 @@
 
 use std::fmt::Debug;
 
-use super::{async_trait, Result, ResultStream};
+use super::{async_trait, error::Result, ResultStream};
 
 pub trait Timestamp: Ord + Debug + Send + Copy + Default + 'static {}
 

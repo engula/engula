@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, Result, ResultStream, Stream, Timestamp};
+use super::{
+    async_trait,
+    error::Result,
+    stream::{Stream, Timestamp},
+    ResultStream,
+};
 
 /// An interface to manipulate event streams.
 #[async_trait]
