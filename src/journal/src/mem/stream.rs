@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::VecDeque,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-use futures::stream;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, Result, ResultStream, Stream, Timestamp};
+use super::error::{Error, Result};
+use crate::{async_trait, Event, Stream, Timestamp};
 
 #[derive(Clone)]
 pub struct MemStream<T: Timestamp> {
@@ -25,7 +30,7 @@ pub struct MemStream<T: Timestamp> {
 }
 
 impl<T: Timestamp> Default for MemStream<T> {
-    fn default() -> MemStream<T> {
+    fn default() -> Self {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -33,26 +38,24 @@ impl<T: Timestamp> Default for MemStream<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> Stream<T> for MemStream<T> {
-    async fn read_events(&self, ts: T) -> ResultStream<Event<T>> {
+impl<T: Timestamp> Stream for MemStream<T> {
+    type Error = Error;
+    type EventStream = EventStream<Self::Timestamp>;
+    type Timestamp = T;
+
+    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream {
         let events = self.events.lock().await;
-        let index = events.partition_point(|x| x.ts < ts);
-        let iter = events
-            .range(index..)
-            .cloned()
-            .map(Ok)
-            .collect::<Vec<Result<Event<T>>>>();
-        Box::new(stream::iter(iter))
+        let offset = events.partition_point(|x| x.ts < ts);
+        EventStream::new(events.range(offset..).cloned().collect())
     }
 
-    async fn append_event(&self, ts: T, data: Vec<u8>) -> Result<()> {
-        let event = Event { ts, data };
+    async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<()> {
         let mut events = self.events.lock().await;
         if let Some(last_ts) = events.back().map(|x| x.ts) {
-            if ts <= last_ts {
+            if event.ts <= last_ts {
                 return Err(Error::InvalidArgument(format!(
                     "timestamp {:?} <= last timestamp {:?}",
-                    ts, last_ts
+                    event.ts, last_ts
                 )));
             }
         }
@@ -60,10 +63,39 @@ impl<T: Timestamp> Stream<T> for MemStream<T> {
         Ok(())
     }
 
-    async fn release_events(&self, ts: T) -> Result<()> {
+    async fn release_events(&self, ts: Self::Timestamp) -> Result<()> {
         let mut events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         events.drain(..index);
         Ok(())
+    }
+}
+
+pub struct EventStream<T> {
+    events: Vec<Event<T>>,
+    offset: usize,
+}
+
+impl<T> EventStream<T> {
+    fn new(events: Vec<Event<T>>) -> Self {
+        EventStream { events, offset: 0 }
+    }
+}
+
+impl<T: Timestamp> futures::Stream for EventStream<T> {
+    type Item = Result<Event<T>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.offset == self.events.len() {
+            Poll::Ready(None)
+        } else {
+            self.as_mut().get_mut().offset += 1;
+            Poll::Ready(Some(Ok(self.events[self.offset - 1].clone())))
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.events.len() - self.offset;
+        (size, Some(size))
     }
 }

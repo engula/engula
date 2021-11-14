@@ -12,10 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod error;
 mod journal;
 mod stream;
 
-pub use self::journal::MemJournal;
+pub use self::{
+    error::{Error, Result},
+    journal::MemJournal,
+    stream::MemStream,
+};
 
 #[cfg(test)]
 mod tests {
@@ -26,11 +31,11 @@ mod tests {
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        let j = MemJournal::default();
+        let j: MemJournal<u64> = MemJournal::default();
         let stream = j.create_stream("a").await?;
         let mut events = stream.read_events(0).await;
         while let Some(Ok(event)) = events.next().await {
-            println!("{:?}", event);
+            println!("{:?}", event.ts);
         }
         Ok(())
     }

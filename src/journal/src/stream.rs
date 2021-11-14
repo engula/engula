@@ -14,27 +14,32 @@
 
 use std::fmt::Debug;
 
-use super::{async_trait, error::Result, ResultStream};
+use super::async_trait;
 
-pub trait Timestamp: Ord + Debug + Send + Copy + 'static {}
+/// A generic timestamp to order events.
+pub trait Timestamp: Ord + Send + Copy + Debug + Unpin {}
 
-impl<T> Timestamp for T where T: Ord + Debug + Send + Copy + 'static {}
+impl<T: Ord + Send + Copy + Debug + Unpin> Timestamp for T {}
 
-#[derive(Clone, Debug, Default)]
-pub struct Event<T: Timestamp> {
+#[derive(Clone)]
+pub struct Event<T> {
     pub ts: T,
     pub data: Vec<u8>,
 }
 
-/// An interface to manipulate events in a stream.
+/// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream<T: Timestamp> {
-    /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: T) -> ResultStream<Event<T>>;
+pub trait Stream {
+    type Error;
+    type Timestamp: Timestamp;
+    type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>>;
 
-    /// Appends an event with a timestamp.
-    async fn append_event(&self, ts: T, data: Vec<u8>) -> Result<()>;
+    /// Reads events since a timestamp (inclusive).
+    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream;
+
+    /// Appends an event.
+    async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<(), Self::Error>;
 
     /// Releases events up to a timestamp (exclusive).
-    async fn release_events(&self, ts: T) -> Result<()>;
+    async fn release_events(&self, ts: Self::Timestamp) -> Result<(), Self::Error>;
 }

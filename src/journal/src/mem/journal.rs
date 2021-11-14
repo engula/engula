@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 
-use futures::stream;
 use tokio::sync::Mutex;
 
-use super::stream::MemStream;
-use crate::{async_trait, Error, Journal, Result, ResultStream, Stream, Timestamp};
+use super::{
+    error::{Error, Result},
+    stream::MemStream,
+};
+use crate::{async_trait, Journal, Timestamp};
 
 pub struct MemJournal<T: Timestamp> {
     streams: Mutex<HashMap<String, MemStream<T>>>,
@@ -33,31 +35,24 @@ impl<T: Timestamp> Default for MemJournal<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> Journal<T> for MemJournal<T> {
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<T>>> {
+impl<T: Timestamp> Journal<MemStream<T>> for MemJournal<T> {
+    async fn stream(&self, name: &str) -> Result<MemStream<T>> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
-            Some(stream) => Ok(Box::new(stream.clone())),
+            Some(stream) => Ok(stream.clone()),
             None => Err(Error::NotFound(format!("stream '{}'", name))),
         }
     }
 
-    async fn list_streams(&self) -> ResultStream<String> {
-        let streams = self.streams.lock().await;
-        let stream_names = streams
-            .keys()
-            .cloned()
-            .map(Ok)
-            .collect::<Vec<Result<String>>>();
-        Box::new(stream::iter(stream_names))
-    }
-
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<T>>> {
+    async fn create_stream(&self, name: &str) -> Result<MemStream<T>> {
         let stream = MemStream::default();
         let mut streams = self.streams.lock().await;
-        match streams.try_insert(name.to_owned(), stream) {
-            Ok(v) => Ok(Box::new(v.clone())),
-            Err(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
+        match streams.entry(name.to_owned()) {
+            hash_map::Entry::Vacant(ent) => {
+                ent.insert(stream.clone());
+                Ok(stream)
+            }
+            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
         }
     }
 
