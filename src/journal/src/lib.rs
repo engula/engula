@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(map_try_insert)]
-
-mod error;
 mod journal;
 mod stream;
 
@@ -22,11 +19,7 @@ pub mod mem;
 
 pub use async_trait::async_trait;
 
-// TODO: use std::stream::Stream instead
-pub type ResultStream<T> = Box<dyn futures::stream::Stream<Item = Result<T>> + Unpin>;
-
 pub use self::{
-    error::{Error, Result},
     journal::Journal,
     stream::{Event, Stream, Timestamp},
 };
