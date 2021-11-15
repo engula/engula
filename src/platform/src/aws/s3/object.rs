@@ -14,18 +14,18 @@
 
 use aws_sdk_s3::Client;
 use bytes::Buf;
-use storage::{async_trait, Error, Object, Result};
+use storage::{async_trait, Object};
 
-use super::error::to_storage_err;
+use super::error::{to_storage_err, Error, Result};
 
-pub(crate) struct S3Object {
+pub struct S3Object {
     client: Client,
     bucket_name: String,
     key: String,
 }
 
 impl S3Object {
-    pub(crate) fn new(client: Client, bucket_name: String, key: String) -> Self {
+    pub fn new(client: Client, bucket_name: String, key: String) -> Self {
         Self {
             client,
             bucket_name,
@@ -36,16 +36,7 @@ impl S3Object {
 
 #[async_trait]
 impl Object for S3Object {
-    async fn size(&self) -> Result<usize> {
-        self.client
-            .head_object()
-            .bucket(self.bucket_name.to_owned())
-            .key(self.key.to_owned())
-            .send()
-            .await
-            .map(|output| output.content_length as usize)
-            .map_err(to_storage_err)
-    }
+    type Error = Error;
 
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         let size = buf.len();
@@ -65,7 +56,7 @@ impl Object for S3Object {
                     bytes.copy_to_slice(buf);
                     Ok(buf.len())
                 }
-                Err(e) => Err(Error::Unknown(e.into())),
+                Err(_e) => Err(Error::ReadObjectBodyError),
             },
             Err(e) => Err(to_storage_err(e)),
         }

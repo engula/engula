@@ -19,13 +19,13 @@ use aws_sdk_s3::{
     },
     Client, Config, Credentials, Region,
 };
-use futures::{
-    future,
-    stream::{self},
-};
-use storage::{async_trait, Bucket, Result, ResultStream, Storage};
+use storage::{async_trait, Storage};
 
-use super::{bucket::S3Bucket, error::to_storage_err};
+use super::{
+    bucket::S3Bucket,
+    error::{to_storage_err, Result},
+    object::S3Object,
+};
 
 pub struct S3Storage {
     client: Client,
@@ -92,31 +92,15 @@ impl S3Storage {
 }
 
 #[async_trait]
-impl Storage for S3Storage {
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
+impl Storage<S3Object, S3Bucket> for S3Storage {
+    async fn bucket(&self, name: &str) -> Result<S3Bucket> {
         self.ensure_bucket_exists(name).await?;
-        Ok(Box::new(S3Bucket::new(self.client.clone(), name)))
+        Ok(S3Bucket::new(self.client.clone(), name))
     }
 
-    async fn list_buckets(&self) -> ResultStream<String> {
-        let result = self.client.list_buckets().send().await;
-        match result {
-            Ok(output) => {
-                let buckets = output
-                    .buckets
-                    .unwrap_or(vec![])
-                    .into_iter()
-                    .filter_map(|bucket| bucket.name.to_owned())
-                    .map(Ok);
-                Box::new(stream::iter(buckets))
-            }
-            Err(e) => Box::new(stream::once(future::err(to_storage_err(e)))),
-        }
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
+    async fn create_bucket(&self, name: &str) -> Result<S3Bucket> {
         self.create_new_bucket(name).await?;
-        Ok(Box::new(S3Bucket::new(self.client.clone(), name)))
+        Ok(S3Bucket::new(self.client.clone(), name))
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {

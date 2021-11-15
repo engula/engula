@@ -23,6 +23,10 @@ macro_rules! s3_to_engula_err {
                 #[error(transparent)]
                 $x(#[from] SdkError<s3_error::$x>),
             )*
+            #[error("wait running upload task error")]
+            WaitUploadTaskDoneError,
+            #[error("read object body error")]
+            ReadObjectBodyError,
             }
     };
 }
@@ -43,13 +47,9 @@ s3_to_engula_err!(
     GetObjectError
 );
 
-impl From<Error> for storage::Error {
-    fn from(err: Error) -> Self {
-        storage::Error::Unknown(err.into())
-    }
+pub fn to_storage_err<T: Into<Error>>(e: T) -> Error {
+    let e: Error = e.into();
+    e
 }
 
-pub fn to_storage_err<T: Into<Error>>(e: T) -> storage::Error {
-    let e: Error = e.into();
-    e.into()
-}
+pub type Result<T> = std::result::Result<T, Error>;

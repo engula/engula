@@ -22,7 +22,6 @@ pub use self::storage::S3Storage;
 #[cfg(test)]
 mod tests {
     use ::storage::*;
-    use futures::stream::StreamExt;
 
     use super::*;
 
@@ -36,32 +35,11 @@ mod tests {
 
         let storage = S3Storage::new(TEST_REGION, ACCESS_KEY, SECRET_KEY);
 
-        let buckets = storage
-            .list_buckets()
-            .await
-            .collect::<Vec<Result<String>>>()
-            .await;
-        assert_eq!(buckets.len(), 0);
-
         let bucket = "testd-bucket-mng";
 
         storage.create_bucket(bucket).await.unwrap();
 
-        let buckets = storage
-            .list_buckets()
-            .await
-            .collect::<Vec<Result<String>>>()
-            .await;
-        assert_eq!(buckets.len(), 1);
-
         storage.delete_bucket(bucket).await.unwrap();
-
-        let buckets = storage
-            .list_buckets()
-            .await
-            .collect::<Vec<Result<String>>>()
-            .await;
-        assert_eq!(buckets.len(), 0);
     }
 
     #[tokio::test]
@@ -82,7 +60,7 @@ mod tests {
 
         let mut writer = bucket.upload_object(key).await.unwrap();
 
-        writer.write("123".as_bytes()).await;
+        writer.write("123".as_bytes()).await.unwrap();
 
         writer.finish().await.unwrap();
 
@@ -92,14 +70,6 @@ mod tests {
         let rs = reader.read_at(&mut buf[..], 0).await.unwrap();
         assert_eq!(rs, 2);
         assert_eq!(&buf[..], b"12");
-
-        let obj_names = bucket
-            .list_objects()
-            .await
-            .collect::<Vec<Result<String>>>()
-            .await;
-        assert_eq!(obj_names.len(), 1);
-        assert_eq!(obj_names[0].as_ref().unwrap(), key);
 
         storage
             .delete_bucket(&bucket_name.to_owned())

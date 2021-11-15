@@ -17,19 +17,21 @@ use aws_sdk_s3::{
     ByteStream, Client,
 };
 use bytes::Bytes;
-use futures::{future, stream};
-use storage::{async_trait, Bucket, Error, Object, ObjectUploader, Result, ResultStream};
+use storage::{async_trait, Bucket, ObjectUploader};
 use tokio::task::JoinHandle;
 
-use super::{error::to_storage_err, object::S3Object};
+use super::{
+    error::{to_storage_err, Error, Result},
+    object::S3Object,
+};
 
-pub(crate) struct S3Bucket {
+pub struct S3Bucket {
     client: Client,
     bucket_name: String,
 }
 
 impl S3Bucket {
-    pub(crate) fn new(client: Client, bucket_name: impl Into<String>) -> Self {
+    pub fn new(client: Client, bucket_name: impl Into<String>) -> Self {
         Self {
             client,
             bucket_name: bucket_name.into(),
@@ -38,37 +40,18 @@ impl S3Bucket {
 }
 
 #[async_trait]
-impl Bucket for S3Bucket {
-    async fn object(&self, name: &str) -> Result<Box<dyn Object>> {
-        Ok(Box::new(S3Object::new(
+impl Bucket<S3Object> for S3Bucket {
+    type ObjectUploader = S3UploadObject;
+
+    async fn object(&self, name: &str) -> Result<S3Object> {
+        Ok(S3Object::new(
             self.client.clone(),
             self.bucket_name.to_owned(),
             name.to_string(),
-        )))
+        ))
     }
 
-    async fn list_objects(&self) -> ResultStream<String> {
-        let result = self
-            .client
-            .list_objects()
-            .bucket(self.bucket_name.to_owned())
-            .send()
-            .await;
-        match result {
-            Ok(output) => {
-                let objects = output
-                    .contents
-                    .unwrap_or(vec![])
-                    .into_iter()
-                    .filter_map(|content| content.key.to_owned())
-                    .map(Ok);
-                Box::new(stream::iter(objects))
-            }
-            Err(e) => Box::new(stream::once(future::err(to_storage_err(e)))),
-        }
-    }
-
-    async fn upload_object(&self, name: &str) -> Result<Box<dyn ObjectUploader>> {
+    async fn upload_object(&self, name: &str) -> Result<S3UploadObject> {
         let output = self
             .client
             .create_multipart_upload()
@@ -79,12 +62,12 @@ impl Bucket for S3Bucket {
             .map_err(to_storage_err)?;
 
         let upload_id = output.upload_id.unwrap();
-        Ok(Box::new(S3UploadObject::new(
+        Ok(S3UploadObject::new(
             self.client.clone(),
             self.bucket_name.to_owned(),
             name.to_string(),
             upload_id,
-        )))
+        ))
     }
 
     async fn delete_object(&self, name: &str) -> Result<()> {
@@ -99,7 +82,7 @@ impl Bucket for S3Bucket {
     }
 }
 
-pub(crate) struct S3UploadObject {
+pub struct S3UploadObject {
     client: Client,
     bucket_name: String,
     key: String,
@@ -108,7 +91,7 @@ pub(crate) struct S3UploadObject {
 }
 
 impl S3UploadObject {
-    pub(crate) fn new(client: Client, bucket_name: String, key: String, upload_id: String) -> Self {
+    pub fn new(client: Client, bucket_name: String, key: String, upload_id: String) -> Self {
         Self {
             client,
             bucket_name,
@@ -155,7 +138,7 @@ impl S3UploadObject {
                     Ok(part) => parts.push(part),
                     Err(e) => return Err(e),
                 },
-                Err(e) => return Err(Error::Unknown(e.into())),
+                Err(_e) => return Err(Error::WaitUploadTaskDoneError),
             }
         }
         Ok(parts)
@@ -166,11 +149,13 @@ const UPLOAD_PART_SIZE: usize = 8 * 1024 * 1024;
 
 #[async_trait]
 impl ObjectUploader for S3UploadObject {
-    async fn write(&mut self, buf: &[u8]) {
+    type Error = Error;
+
+    async fn write(&mut self, buf: &[u8]) -> Result<()> {
         let data = Bytes::copy_from_slice(buf);
         if data.len() < UPLOAD_PART_SIZE * 2 {
             self.upload_part(data);
-            return;
+            return Ok(());
         }
 
         let mut offset = 0;
@@ -184,6 +169,7 @@ impl ObjectUploader for S3UploadObject {
             offset = end;
         }
         self.upload_part(data);
+        Ok(())
     }
 
     async fn finish(mut self) -> Result<usize> {
