@@ -23,9 +23,9 @@ use futures::{
     future,
     stream::{self},
 };
-use storage::{async_trait, Bucket, Error, Result, ResultStream, Storage};
+use storage::{async_trait, Bucket, Result, ResultStream, Storage};
 
-use super::bucket::S3Bucket;
+use super::{bucket::S3Bucket, error::to_storage_err};
 
 pub struct S3Storage {
     client: Client,
@@ -56,13 +56,7 @@ impl S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "check bucket exists '{}' fail: {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })
+            .map_err(to_storage_err)
     }
 
     async fn create_new_bucket(&self, name: &str) -> Result<()> {
@@ -77,13 +71,7 @@ impl S3Storage {
             .create_bucket_configuration(config)
             .send()
             .await
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "create bucket '{}' fail: {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })?;
+            .map_err(to_storage_err)?;
 
         self.client
             .put_public_access_block()
@@ -99,13 +87,7 @@ impl S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "create bucket '{}' fail: {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })
+            .map_err(to_storage_err)
     }
 }
 
@@ -128,10 +110,7 @@ impl Storage for S3Storage {
                     .map(Ok);
                 Box::new(stream::iter(buckets))
             }
-            Err(e) => Box::new(stream::once(future::err(Error::AwsSDK(format!(
-                "list bucket fail: {}",
-                e.to_string()
-            ))))),
+            Err(e) => Box::new(stream::once(future::err(to_storage_err(e)))),
         }
     }
 
@@ -147,13 +126,7 @@ impl Storage for S3Storage {
             .bucket(name.to_owned())
             .send()
             .await
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "create bucket '{}' fail: {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })?;
+            .map_err(to_storage_err)?;
         if let Some(contents) = list.contents {
             let wait_del = contents
                 .iter()
@@ -172,13 +145,7 @@ impl Storage for S3Storage {
                     )
                     .send()
                     .await
-                    .map_err(|e| {
-                        Error::AwsSDK(format!(
-                            "create bucket '{}' fail: {}",
-                            name.to_owned(),
-                            e.to_string()
-                        ))
-                    })?;
+                    .map_err(to_storage_err)?;
             }
         }
 
@@ -188,12 +155,6 @@ impl Storage for S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "delete bucket '{}' fail: {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })
+            .map_err(to_storage_err)
     }
 }

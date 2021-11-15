@@ -16,6 +16,8 @@ use aws_sdk_s3::Client;
 use bytes::Buf;
 use storage::{async_trait, Error, Object, Result};
 
+use super::error::to_storage_err;
+
 pub(crate) struct S3Object {
     client: Client,
     bucket_name: String,
@@ -42,13 +44,7 @@ impl Object for S3Object {
             .send()
             .await
             .map(|output| output.content_length as usize)
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "get object size for '{}' fail, {}",
-                    self.key.to_owned(),
-                    e.to_string(),
-                ))
-            })
+            .map_err(to_storage_err)
     }
 
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
@@ -69,15 +65,9 @@ impl Object for S3Object {
                     bytes.copy_to_slice(buf);
                     Ok(buf.len())
                 }
-                Err(e) => Err(Error::AwsSDK(format!(
-                    "read object fail, {}",
-                    e.to_string()
-                ))),
+                Err(e) => Err(Error::Unknown(e.into())),
             },
-            Err(e) => Err(Error::AwsSDK(format!(
-                "read object fail, {}",
-                e.to_string()
-            ))),
+            Err(e) => Err(to_storage_err(e)),
         }
     }
 }

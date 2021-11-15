@@ -21,7 +21,7 @@ use futures::{future, stream};
 use storage::{async_trait, Bucket, Error, Object, ObjectUploader, Result, ResultStream};
 use tokio::task::JoinHandle;
 
-use super::object::S3Object;
+use super::{error::to_storage_err, object::S3Object};
 
 pub(crate) struct S3Bucket {
     client: Client,
@@ -64,10 +64,7 @@ impl Bucket for S3Bucket {
                     .map(Ok);
                 Box::new(stream::iter(objects))
             }
-            Err(e) => Box::new(stream::once(future::err(Error::AwsSDK(format!(
-                "list object fail: {}",
-                e.to_string()
-            ))))),
+            Err(e) => Box::new(stream::once(future::err(to_storage_err(e)))),
         }
     }
 
@@ -79,14 +76,7 @@ impl Bucket for S3Bucket {
             .key(name.to_string())
             .send()
             .await
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "create upload object fail, bucket: '{}', key: '{}', {}",
-                    self.bucket_name.to_owned(),
-                    name.to_string(),
-                    e.to_string()
-                ))
-            })?;
+            .map_err(to_storage_err)?;
 
         let upload_id = output.upload_id.unwrap();
         Ok(Box::new(S3UploadObject::new(
@@ -105,13 +95,7 @@ impl Bucket for S3Bucket {
             .send()
             .await
             .map(|_| ())
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "delete object '{}' fail, {}",
-                    name.to_owned(),
-                    e.to_string()
-                ))
-            })
+            .map_err(to_storage_err)
     }
 }
 
@@ -120,7 +104,7 @@ pub(crate) struct S3UploadObject {
     bucket_name: String,
     key: String,
     upload_id: String,
-    part_handles: Vec<JoinHandle<Result<CompletedPart>>>,
+    part_handles: Box<Vec<JoinHandle<Result<CompletedPart>>>>,
 }
 
 impl S3UploadObject {
@@ -130,7 +114,7 @@ impl S3UploadObject {
             bucket_name,
             key,
             upload_id,
-            part_handles: vec![],
+            part_handles: Box::new(vec![]),
         }
     }
 
@@ -157,13 +141,13 @@ impl S3UploadObject {
                         .part_number(part_number)
                         .build()
                 })
-                .map_err(|e| Error::AwsSDK(format!("write upload part fail, {}", e.to_string())));
+                .map_err(to_storage_err);
             r
         });
         self.part_handles.push(part_handle);
     }
 
-    async fn collect_parts(&mut self) -> Result<Vec<CompletedPart>> {
+    async fn collect_parts(mut self) -> Result<Vec<CompletedPart>> {
         let mut parts = Vec::new();
         for handle in self.part_handles.split_off(0) {
             match handle.await {
@@ -171,12 +155,7 @@ impl S3UploadObject {
                     Ok(part) => parts.push(part),
                     Err(e) => return Err(e),
                 },
-                Err(e) => {
-                    return Err(Error::AwsSDK(format!(
-                        "wait uploading parts finish fail, {}",
-                        e.to_string()
-                    )))
-                }
+                Err(e) => return Err(Error::Unknown(e.into())),
             }
         }
         Ok(parts)
@@ -207,35 +186,34 @@ impl ObjectUploader for S3UploadObject {
         self.upload_part(data);
     }
 
-    async fn finish(&mut self) -> Result<usize> {
+    async fn finish(mut self) -> Result<usize> {
+        let bucket_name = self.bucket_name.to_owned();
+        let key = self.key.to_owned();
+        let client = self.client.clone();
+        let upload_id = self.upload_id.to_owned();
         let parts = self.collect_parts().await?;
         let upload = CompletedMultipartUpload::builder()
             .set_parts(Some(parts))
             .build();
-        self.client
+        client
+            .clone()
             .complete_multipart_upload()
-            .bucket(self.bucket_name.to_owned())
-            .key(self.key.to_owned())
-            .upload_id(self.upload_id.to_owned())
+            .bucket(bucket_name.to_owned())
+            .key(key.to_owned())
+            .upload_id(upload_id.to_owned())
             .multipart_upload(upload)
             .send()
             .await
             .map(|_| ())
-            .map_err(|e| Error::AwsSDK(format!("complete upload fail, {}", e.to_string())))?;
+            .map_err(to_storage_err)?;
 
-        self.client
+        client
             .head_object()
-            .bucket(self.bucket_name.to_owned())
-            .key(self.key.to_owned())
+            .bucket(bucket_name)
+            .key(key)
             .send()
             .await
             .map(|output| output.content_length as usize)
-            .map_err(|e| {
-                Error::AwsSDK(format!(
-                    "get object size for '{}' fail, {}",
-                    self.key.to_owned(),
-                    e.to_string(),
-                ))
-            })
+            .map_err(to_storage_err)
     }
 }

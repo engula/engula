@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod bucket;
+mod error;
 mod object;
 mod storage;
 
