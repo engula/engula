@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use aws_sdk_s3::Client;
-use bytes::Buf;
 use storage::{async_trait, Object};
 
 use super::error::{to_storage_err, Error, Result};
@@ -41,24 +40,17 @@ impl Object for S3Object {
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         let size = buf.len();
         let range = format!("bytes={}-{}", offset, offset + size - 1);
-        let result = self
+        let output = self
             .client
             .get_object()
             .bucket(self.bucket_name.to_owned())
             .key(self.key.to_owned())
             .range(range)
             .send()
-            .await;
+            .await
+            .map_err(to_storage_err)?;
 
-        match result {
-            Ok(output) => match output.body.collect().await {
-                Ok(mut bytes) => {
-                    bytes.copy_to_slice(buf);
-                    Ok(buf.len())
-                }
-                Err(_e) => Err(Error::ReadObjectBodyError),
-            },
-            Err(e) => Err(to_storage_err(e)),
-        }
+        output.body.collect().await.map_err(to_storage_err)?;
+        Ok(buf.len())
     }
 }

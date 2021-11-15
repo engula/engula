@@ -74,6 +74,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
+name = "aws"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-sdk-s3",
+ "aws-types",
+ "bytes",
+ "futures",
+ "smithy-http",
+ "storage",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "aws-auth"
 version = "0.1.0"
 source = "git+https://github.com/awslabs/aws-sdk-rust?tag=v0.0.17-alpha#74cd8a14231e1a005a2f554b072fc9782def5519"
@@ -942,20 +957,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "aws-sdk-s3",
- "aws-types",
- "bytes",
- "futures",
- "storage",
- "thiserror",
- "tokio",
-]
 
 [[package]]
 name = "ppv-lite86"

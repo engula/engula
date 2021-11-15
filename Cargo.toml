@@ -11,7 +11,7 @@ members = [
     "src/manifest",
     "src/background",
     "src/microunit",
-    "src/platform",
+    "src/platform/aws",
 ]
 
 [dependencies]

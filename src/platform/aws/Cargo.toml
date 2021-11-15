@@ -1,0 +1,15 @@
+[package]
+name = "aws"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1.1"
+futures = "0.3"
+thiserror = "1.0"
+tokio = {version = "1.13", features = ["full"]}
+storage = {path = "../../storage"}
+aws-sdk-s3 = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3"}
+aws-types = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types"}
+smithy-http = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "smithy-http"}

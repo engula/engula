@@ -87,7 +87,7 @@ pub struct S3UploadObject {
     bucket_name: String,
     key: String,
     upload_id: String,
-    part_handles: Box<Vec<JoinHandle<Result<CompletedPart>>>>,
+    part_handles: Vec<JoinHandle<Result<CompletedPart>>>,
 }
 
 impl S3UploadObject {
@@ -97,7 +97,7 @@ impl S3UploadObject {
             bucket_name,
             key,
             upload_id,
-            part_handles: Box::new(vec![]),
+            part_handles: vec![],
         }
     }
 
@@ -133,13 +133,8 @@ impl S3UploadObject {
     async fn collect_parts(mut self) -> Result<Vec<CompletedPart>> {
         let mut parts = Vec::new();
         for handle in self.part_handles.split_off(0) {
-            match handle.await {
-                Ok(rpart) => match rpart {
-                    Ok(part) => parts.push(part),
-                    Err(e) => return Err(e),
-                },
-                Err(_e) => return Err(Error::WaitUploadTaskDoneError),
-            }
+            let part = handle.await.map_err(to_storage_err)??;
+            parts.push(part);
         }
         Ok(parts)
     }

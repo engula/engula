@@ -115,9 +115,9 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             let wait_del = contents
                 .iter()
                 .filter_map(|c| c.key.to_owned())
-                .filter_map(|k| Some(ObjectIdentifier::builder().key(k).build()))
+                .map(|k| ObjectIdentifier::builder().key(k).build())
                 .collect::<Vec<ObjectIdentifier>>();
-            if wait_del.len() > 0 {
+            if !wait_del.is_empty() {
                 self.client
                     .delete_objects()
                     .bucket(name.to_owned())
