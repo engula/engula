@@ -14,7 +14,8 @@
 
 use std::{cmp::min, sync::Arc};
 
-use crate::{async_trait, Error, Object, Result};
+use super::error::{Error, Result};
+use crate::{async_trait, Object};
 
 #[derive(Clone)]
 pub struct MemObject {
@@ -27,17 +28,11 @@ impl MemObject {
             data: Arc::new(data),
         }
     }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
 }
 
 #[async_trait]
 impl Object for MemObject {
-    async fn size(&self) -> Result<usize> {
-        Ok(self.data.len())
-    }
+    type Error = Error;
 
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         if let Some(length) = self.data.len().checked_sub(offset) {

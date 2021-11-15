@@ -13,15 +13,19 @@
 // limitations under the License.
 
 mod bucket;
+mod error;
 mod object;
 mod storage;
 
-pub use self::storage::MemStorage;
+pub use self::{
+    bucket::MemBucket,
+    error::{Error, Result},
+    object::MemObject,
+    storage::MemStorage,
+};
 
 #[cfg(test)]
 mod tests {
-    use futures::StreamExt;
-
     use super::*;
     use crate::*;
 
@@ -29,10 +33,18 @@ mod tests {
     async fn test() -> Result<()> {
         let s = MemStorage::default();
         let bucket = s.create_bucket("a").await?;
-        let mut stream = bucket.list_objects().await;
-        while let Some(Ok(names)) = stream.next().await {
-            println!("buckets: {:?}", names);
-        }
+
+        let data = vec![0, 1, 2];
+        let mut up = bucket.upload_object("b").await?;
+        up.write(&data).await?;
+        up.finish().await?;
+        let object = bucket.object("b").await?;
+
+        let mut buf = [0u8; 3];
+        let pos = 1;
+        let len = object.read_at(&mut buf, pos).await?;
+        assert_eq!(len, data.len() - pos);
+        assert_eq!(buf[..len], data[pos..]);
         Ok(())
     }
 }

@@ -19,13 +19,7 @@ pub enum Error {
     #[error(transparent)]
     GrpcStatus(#[from] tonic::Status),
     #[error(transparent)]
-    GrpcTransportError(#[from] tonic::transport::Error),
-}
-
-impl From<Error> for crate::error::Error {
-    fn from(err: Error) -> Self {
-        crate::error::Error::Unknown(err.into())
-    }
+    GrpcTransport(#[from] tonic::transport::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

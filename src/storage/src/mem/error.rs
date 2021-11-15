@@ -22,8 +22,6 @@ pub enum Error {
     AlreadyExists(String),
     #[error("invalid argument: `{0}`")]
     InvalidArgument(String),
-    #[error(transparent)]
-    Unknown(#[from] Box<dyn std::error::Error>),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use futures::{future, stream};
-
 use super::{
     client::Client,
+    error::{Error, Result},
     object::RemoteObject,
-    proto::{DeleteObjectRequest, ListObjectsRequest, UploadObjectRequest},
+    proto::{DeleteObjectRequest, UploadObjectRequest},
 };
-use crate::{async_trait, Bucket, Object, ObjectUploader, Result, ResultStream};
+use crate::{async_trait, Bucket, ObjectUploader};
 
 pub struct RemoteBucket {
     client: Client,
@@ -33,29 +32,20 @@ impl RemoteBucket {
 }
 
 #[async_trait]
-impl Bucket for RemoteBucket {
-    async fn object(&self, name: &str) -> Result<Box<dyn Object>> {
+impl Bucket<RemoteObject> for RemoteBucket {
+    type ObjectUploader = RemoteObjectUploader;
+
+    async fn object(&self, name: &str) -> Result<RemoteObject> {
         let object = RemoteObject::new(self.client.clone(), self.bucket.clone(), name.to_owned());
-        Ok(Box::new(object))
+        Ok(object)
     }
 
-    async fn list_objects(&self) -> ResultStream<String> {
-        let input = ListObjectsRequest {
-            bucket: self.bucket.clone(),
-        };
-        match self.client.list_objects(input).await {
-            Ok(output) => {
-                let object_names = output.objects.into_iter().map(Ok);
-                Box::new(stream::iter(object_names))
-            }
-            Err(err) => Box::new(stream::once(future::err(err.into()))),
-        }
-    }
-
-    async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader> {
-        let uploader =
-            RemoteObjectUploader::new(self.client.clone(), self.bucket.clone(), name.to_owned());
-        Box::new(uploader)
+    async fn upload_object(&self, name: &str) -> Result<Self::ObjectUploader> {
+        Ok(RemoteObjectUploader::new(
+            self.client.clone(),
+            self.bucket.clone(),
+            name.to_owned(),
+        ))
     }
 
     async fn delete_object(&self, name: &str) -> Result<()> {
@@ -68,7 +58,7 @@ impl Bucket for RemoteBucket {
     }
 }
 
-struct RemoteObjectUploader {
+pub struct RemoteObjectUploader {
     client: Client,
     bucket: String,
     object: String,
@@ -88,8 +78,11 @@ impl RemoteObjectUploader {
 
 #[async_trait]
 impl ObjectUploader for RemoteObjectUploader {
-    async fn write(&mut self, buf: &[u8]) {
+    type Error = Error;
+
+    async fn write(&mut self, buf: &[u8]) -> Result<()> {
         self.content.extend_from_slice(buf);
+        Ok(())
     }
 
     async fn finish(self) -> Result<usize> {

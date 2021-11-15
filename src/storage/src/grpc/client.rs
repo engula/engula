@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tonic::{transport::Channel, Request};
+use tonic::transport::Channel;
 
 use super::{error::Result, proto::*};
 
@@ -27,27 +27,20 @@ macro_rules! method {
     ($name:ident, $input:ty, $output:ty) => {
         pub async fn $name(&self, input: $input) -> Result<$output> {
             let mut client = self.client.clone();
-            let request = Request::new(input);
-            let response = client.$name(request).await?;
+            let response = client.$name(input).await?;
             Ok(response.into_inner())
         }
     };
 }
 
 impl Client {
-    method!(list_buckets, ListBucketsRequest, ListBucketsResponse);
-
     method!(create_bucket, CreateBucketRequest, CreateBucketResponse);
 
     method!(delete_bucket, DeleteBucketRequest, DeleteBucketResponse);
 
-    method!(list_objects, ListObjectsRequest, ListObjectsResponse);
-
     method!(upload_object, UploadObjectRequest, UploadObjectResponse);
 
     method!(delete_object, DeleteObjectRequest, DeleteObjectResponse);
-
-    method!(show_object, ShowObjectRequest, ShowObjectResponse);
 
     method!(read_object, ReadObjectRequest, ReadObjectResponse);
 

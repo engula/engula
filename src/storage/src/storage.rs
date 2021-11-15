@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::Bucket, error::Result, ResultStream};
+use super::{async_trait, bucket::Bucket, object::Object};
 
-/// An interface to manipulate buckets.
+/// An interface to manipulate a storage.
 #[async_trait]
-pub trait Storage {
-    /// Returns a handle to the bucket.
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
-
-    /// Returns a stream of bucket names.
-    async fn list_buckets(&self) -> ResultStream<String>;
+pub trait Storage<O: Object, B: Bucket<O>> {
+    /// Returns a bucket.
+    async fn bucket(&self, name: &str) -> Result<B, O::Error>;
 
     /// Creates a bucket.
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
+    async fn create_bucket(&self, name: &str) -> Result<B, O::Error>;
 
     /// Deletes a bucket.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
+    async fn delete_bucket(&self, name: &str) -> Result<(), O::Error>;
 }

@@ -12,30 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, error::Result, object::Object, ResultStream};
+use super::{async_trait, object::Object};
 
-/// An interface to manipulate objects in a bucket.
+/// An interface to manipulate a bucket.
 #[async_trait]
-pub trait Bucket {
-    /// Returns a handle to the object.
-    async fn object(&self, name: &str) -> Result<Box<dyn Object>>;
+pub trait Bucket<O: Object> {
+    type ObjectUploader: ObjectUploader<Error = O::Error>;
 
-    /// Returns a stream of object names.
-    async fn list_objects(&self) -> ResultStream<String>;
+    /// Returns an object.
+    async fn object(&self, name: &str) -> Result<O, O::Error>;
 
     /// Uploads an object.
-    async fn upload_object(&self, name: &str) -> Box<dyn ObjectUploader>;
+    async fn upload_object(&self, name: &str) -> Result<Self::ObjectUploader, O::Error>;
 
     /// Deletes an object.
-    async fn delete_object(&self, name: &str) -> Result<()>;
+    async fn delete_object(&self, name: &str) -> Result<(), O::Error>;
 }
 
 /// An interface to upload an object.
 #[async_trait]
 pub trait ObjectUploader {
+    type Error;
+
     /// Writes some bytes.
-    async fn write(&mut self, buf: &[u8]);
+    async fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
 
     /// Finishes this upload.
-    async fn finish(self) -> Result<usize>;
+    async fn finish(self) -> Result<usize, Self::Error>;
 }
