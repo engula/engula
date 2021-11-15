@@ -19,4 +19,9 @@ mod object;
 mod proto;
 mod storage;
 
-pub use self::storage::RemoteStorage;
+pub use self::{
+    bucket::{RemoteBucket, RemoteObjectUploader},
+    error::{Error, Result},
+    object::RemoteObject,
+    storage::RemoteStorage,
+};

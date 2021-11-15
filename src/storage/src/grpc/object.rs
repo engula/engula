@@ -14,9 +14,10 @@
 
 use super::{
     client::Client,
-    proto::{ReadObjectRequest, ShowObjectRequest},
+    error::{Error, Result},
+    proto::ReadObjectRequest,
 };
-use crate::{async_trait, Object, Result};
+use crate::{async_trait, Object};
 
 pub struct RemoteObject {
     client: Client,
@@ -36,14 +37,7 @@ impl RemoteObject {
 
 #[async_trait]
 impl Object for RemoteObject {
-    async fn size(&self) -> Result<usize> {
-        let input = ShowObjectRequest {
-            bucket: self.bucket.clone(),
-            object: self.object.clone(),
-        };
-        let output = self.client.show_object(input).await?;
-        Ok(output.size as usize)
-    }
+    type Error = Error;
 
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         let input = ReadObjectRequest {

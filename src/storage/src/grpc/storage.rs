@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use futures::{future, stream};
-
 use super::{
     bucket::RemoteBucket,
     client::Client,
-    proto::{CreateBucketRequest, DeleteBucketRequest, ListBucketsRequest},
+    error::Result,
+    object::RemoteObject,
+    proto::{CreateBucketRequest, DeleteBucketRequest},
 };
-use crate::{async_trait, Bucket, Result, ResultStream, Storage};
+use crate::{async_trait, Storage};
 
 pub struct RemoteStorage {
     client: Client,
@@ -33,24 +33,12 @@ impl RemoteStorage {
 }
 
 #[async_trait]
-impl Storage for RemoteStorage {
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
-        let bucket = RemoteBucket::new(self.client.clone(), name.to_owned());
-        Ok(Box::new(bucket))
+impl Storage<RemoteObject, RemoteBucket> for RemoteStorage {
+    async fn bucket(&self, name: &str) -> Result<RemoteBucket> {
+        Ok(RemoteBucket::new(self.client.clone(), name.to_owned()))
     }
 
-    async fn list_buckets(&self) -> ResultStream<String> {
-        let input = ListBucketsRequest {};
-        match self.client.list_buckets(input).await {
-            Ok(output) => {
-                let bucket_names = output.buckets.into_iter().map(Ok);
-                Box::new(stream::iter(bucket_names))
-            }
-            Err(err) => Box::new(stream::once(future::err(err.into()))),
-        }
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
+    async fn create_bucket(&self, name: &str) -> Result<RemoteBucket> {
         let input = CreateBucketRequest {
             bucket: name.to_owned(),
         };

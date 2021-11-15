@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 
-use futures::stream;
 use tokio::sync::Mutex;
 
-use super::bucket::MemBucket;
-use crate::{async_trait, Bucket, Error, Result, ResultStream, Storage};
+use super::{
+    bucket::MemBucket,
+    error::{Error, Result},
+    object::MemObject,
+};
+use crate::{async_trait, Storage};
 
 pub struct MemStorage {
     buckets: Mutex<HashMap<String, MemBucket>>,
@@ -33,31 +36,24 @@ impl Default for MemStorage {
 }
 
 #[async_trait]
-impl Storage for MemStorage {
-    async fn bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
+impl Storage<MemObject, MemBucket> for MemStorage {
+    async fn bucket(&self, name: &str) -> Result<MemBucket> {
         let buckets = self.buckets.lock().await;
         match buckets.get(name) {
-            Some(bucket) => Ok(Box::new(bucket.clone())),
+            Some(bucket) => Ok(bucket.clone()),
             None => Err(Error::NotFound(format!("bucket '{}'", name))),
         }
     }
 
-    async fn list_buckets(&self) -> ResultStream<String> {
-        let buckets = self.buckets.lock().await;
-        let bucket_names = buckets
-            .keys()
-            .cloned()
-            .map(Ok)
-            .collect::<Vec<Result<String>>>();
-        Box::new(stream::iter(bucket_names))
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>> {
-        let bucket = MemBucket::new();
+    async fn create_bucket(&self, name: &str) -> Result<MemBucket> {
+        let bucket = MemBucket::default();
         let mut buckets = self.buckets.lock().await;
-        match buckets.try_insert(name.to_owned(), bucket.clone()) {
-            Ok(_) => Ok(Box::new(bucket)),
-            Err(_) => Err(Error::AlreadyExists(format!("bucket '{}'", name))),
+        match buckets.entry(name.to_owned()) {
+            hash_map::Entry::Vacant(ent) => {
+                ent.insert(bucket.clone());
+                Ok(bucket)
+            }
+            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("bucket '{}'", name))),
         }
     }
 
