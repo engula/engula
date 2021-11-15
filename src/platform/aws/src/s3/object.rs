@@ -15,7 +15,7 @@
 use aws_sdk_s3::Client;
 use storage::{async_trait, Object};
 
-use super::error::{to_storage_err, Error, Result};
+use super::error::{Error, Result};
 
 pub struct S3Object {
     client: Client,
@@ -48,9 +48,9 @@ impl Object for S3Object {
             .range(range)
             .send()
             .await
-            .map_err(to_storage_err)?;
+            .map_err(Error::from)?;
 
-        output.body.collect().await.map_err(to_storage_err)?;
+        output.body.collect().await.map_err(Error::from)?;
         Ok(buf.len())
     }
 }

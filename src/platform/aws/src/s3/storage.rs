@@ -23,7 +23,7 @@ use storage::{async_trait, Storage};
 
 use super::{
     bucket::S3Bucket,
-    error::{to_storage_err, Result},
+    error::{Error, Result},
     object::S3Object,
 };
 
@@ -56,7 +56,7 @@ impl S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(to_storage_err)
+            .map_err(Error::from)
     }
 
     async fn create_new_bucket(&self, name: &str) -> Result<()> {
@@ -71,7 +71,7 @@ impl S3Storage {
             .create_bucket_configuration(config)
             .send()
             .await
-            .map_err(to_storage_err)?;
+            .map_err(Error::from)?;
 
         self.client
             .put_public_access_block()
@@ -87,7 +87,7 @@ impl S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(to_storage_err)
+            .map_err(Error::from)
     }
 }
 
@@ -110,7 +110,7 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .bucket(name.to_owned())
             .send()
             .await
-            .map_err(to_storage_err)?;
+            .map_err(Error::from)?;
         if let Some(contents) = list.contents {
             let wait_del = contents
                 .iter()
@@ -129,7 +129,7 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
                     )
                     .send()
                     .await
-                    .map_err(to_storage_err)?;
+                    .map_err(Error::from)?;
             }
         }
 
@@ -139,6 +139,6 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .send()
             .await
             .map(|_| ())
-            .map_err(to_storage_err)
+            .map_err(Error::from)
     }
 }

@@ -21,7 +21,7 @@ use storage::{async_trait, Bucket, ObjectUploader};
 use tokio::task::JoinHandle;
 
 use super::{
-    error::{to_storage_err, Error, Result},
+    error::{Error, Result},
     object::S3Object,
 };
 
@@ -59,7 +59,7 @@ impl Bucket<S3Object> for S3Bucket {
             .key(name.to_string())
             .send()
             .await
-            .map_err(to_storage_err)?;
+            .map_err(Error::from)?;
 
         let upload_id = output.upload_id.unwrap();
         Ok(S3UploadObject::new(
@@ -78,7 +78,7 @@ impl Bucket<S3Object> for S3Bucket {
             .send()
             .await
             .map(|_| ())
-            .map_err(to_storage_err)
+            .map_err(Error::from)
     }
 }
 
@@ -124,7 +124,7 @@ impl S3UploadObject {
                         .part_number(part_number)
                         .build()
                 })
-                .map_err(to_storage_err);
+                .map_err(Error::from);
             r
         });
         self.part_handles.push(part_handle);
@@ -133,7 +133,7 @@ impl S3UploadObject {
     async fn collect_parts(mut self) -> Result<Vec<CompletedPart>> {
         let mut parts = Vec::new();
         for handle in self.part_handles.split_off(0) {
-            let part = handle.await.map_err(to_storage_err)??;
+            let part = handle.await.map_err(Error::from)??;
             parts.push(part);
         }
         Ok(parts)
@@ -186,7 +186,7 @@ impl ObjectUploader for S3UploadObject {
             .send()
             .await
             .map(|_| ())
-            .map_err(to_storage_err)?;
+            .map_err(Error::from)?;
 
         client
             .head_object()
@@ -195,6 +195,6 @@ impl ObjectUploader for S3UploadObject {
             .send()
             .await
             .map(|output| output.content_length as usize)
-            .map_err(to_storage_err)
+            .map_err(Error::from)
     }
 }

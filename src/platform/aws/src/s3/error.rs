@@ -47,9 +47,4 @@ pub enum Error {
     ReadObjectBody(#[from] smithy_http::byte_stream::Error),
 }
 
-pub fn to_storage_err<T: Into<Error>>(e: T) -> Error {
-    let e: Error = e.into();
-    e
-}
-
 pub type Result<T> = std::result::Result<T, Error>;
