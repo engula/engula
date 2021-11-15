@@ -71,12 +71,12 @@ impl<T: Timestamp> Stream for MemStream<T> {
     }
 }
 
-pub struct EventStream<T> {
+pub struct EventStream<T: Timestamp> {
     events: Vec<Event<T>>,
     offset: usize,
 }
 
-impl<T> EventStream<T> {
+impl<T: Timestamp> EventStream<T> {
     fn new(events: Vec<Event<T>>) -> Self {
         EventStream { events, offset: 0 }
     }

@@ -21,8 +21,8 @@ pub trait Timestamp: Ord + Send + Copy + Debug + Unpin {}
 
 impl<T: Ord + Send + Copy + Debug + Unpin> Timestamp for T {}
 
-#[derive(Clone)]
-pub struct Event<T> {
+#[derive(Clone, Debug)]
+pub struct Event<T: Timestamp> {
     pub ts: T,
     pub data: Vec<u8>,
 }
