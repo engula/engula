@@ -80,7 +80,7 @@ impl S3Storage {
         Self { client, region }
     }
 
-    async fn ensure_bucket_exists(&self, name: &str) -> Result<()> {
+    async fn check_bucket_exists(&self, name: &str) -> Result<()> {
         self.client
             .head_bucket()
             .bucket(name.to_owned())
@@ -122,7 +122,7 @@ impl S3Storage {
 #[async_trait]
 impl Storage<S3Object, S3Bucket> for S3Storage {
     async fn bucket(&self, name: &str) -> Result<S3Bucket> {
-        self.ensure_bucket_exists(name).await?;
+        self.check_bucket_exists(name).await?;
         Ok(S3Bucket::new(self.client.clone(), name))
     }
 

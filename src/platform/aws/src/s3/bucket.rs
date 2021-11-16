@@ -100,18 +100,18 @@ impl S3UploadObject {
     }
 
     fn upload_part(&mut self, data: Bytes) {
-        let f_cli = self.client.clone();
-        let f_bucket = self.bucket_name.to_owned();
-        let f_test_key = self.key.to_owned();
-        let f_upload_id = self.upload_id.to_owned();
+        let cli = self.client.clone();
+        let bucket = self.bucket_name.to_owned();
+        let key = self.key.to_owned();
+        let upload_id = self.upload_id.to_owned();
         let part_number = (self.part_handles.len() + 1) as i32;
 
         let part_handle = tokio::task::spawn(async move {
-            let output = f_cli
+            let output = cli
                 .upload_part()
-                .bucket(f_bucket)
-                .key(f_test_key)
-                .upload_id(f_upload_id)
+                .bucket(bucket)
+                .key(key)
+                .upload_id(upload_id)
                 .part_number(part_number)
                 .body(ByteStream::from(data))
                 .send()
