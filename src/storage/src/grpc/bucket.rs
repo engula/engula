@@ -85,7 +85,7 @@ impl ObjectUploader for RemoteObjectUploader {
         Ok(())
     }
 
-    async fn finish(mut self) -> Result<usize> {
+    async fn finish(self) -> Result<usize> {
         let len = self.content.len();
         let input = UploadObjectRequest {
             bucket: self.bucket,
