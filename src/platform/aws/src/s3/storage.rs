@@ -27,11 +27,7 @@ use smithy_client::{erase::DynConnector, test_connection::TestConnection};
 use smithy_http::body::SdkBody;
 use storage::{async_trait, Storage};
 
-use super::{
-    bucket::S3Bucket,
-    error::{Error, Result},
-    object::S3Object,
-};
+use super::{bucket::S3Bucket, error::Result, object::S3Object};
 
 pub struct S3Storage {
     client: Client,
@@ -89,9 +85,8 @@ impl S3Storage {
             .head_bucket()
             .bucket(name.to_owned())
             .send()
-            .await
-            .map(|_| ())
-            .map_err(Error::from)
+            .await?;
+        Ok(())
     }
 
     async fn create_new_bucket(&self, name: &str) -> Result<()> {
@@ -105,8 +100,7 @@ impl S3Storage {
             .bucket(name.to_owned())
             .create_bucket_configuration(config)
             .send()
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
         self.client
             .put_public_access_block()
@@ -120,9 +114,8 @@ impl S3Storage {
                     .build(),
             )
             .send()
-            .await
-            .map(|_| ())
-            .map_err(Error::from)
+            .await?;
+        Ok(())
     }
 }
 
@@ -147,8 +140,7 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
                 .bucket(name.to_owned())
                 .set_continuation_token(token.clone())
                 .send()
-                .await
-                .map_err(Error::from)?;
+                .await?;
             if let Some(contents) = list.contents {
                 let wait_del = contents
                     .iter()
@@ -166,8 +158,7 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
                                 .build(),
                         )
                         .send()
-                        .await
-                        .map_err(Error::from)?;
+                        .await?;
                 }
             }
             if !list.is_truncated {
@@ -180,8 +171,7 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .delete_bucket()
             .bucket(name.to_owned())
             .send()
-            .await
-            .map(|_| ())
-            .map_err(Error::from)
+            .await?;
+        Ok(())
     }
 }

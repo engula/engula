@@ -47,10 +47,9 @@ impl Object for S3Object {
             .key(self.key.to_owned())
             .range(range)
             .send()
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
-        output.body.collect().await.map_err(Error::from)?;
+        output.body.collect().await?;
         Ok(buf.len())
     }
 }

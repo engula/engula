@@ -58,8 +58,7 @@ impl Bucket<S3Object> for S3Bucket {
             .bucket(self.bucket_name.to_owned())
             .key(name.to_string())
             .send()
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
         let upload_id = output.upload_id.unwrap();
         Ok(S3UploadObject::new(
@@ -76,9 +75,8 @@ impl Bucket<S3Object> for S3Bucket {
             .bucket(self.bucket_name.to_owned())
             .key(name.to_owned())
             .send()
-            .await
-            .map(|_| ())
-            .map_err(Error::from)
+            .await?;
+        Ok(())
     }
 }
 
@@ -109,7 +107,7 @@ impl S3UploadObject {
         let part_number = (self.part_handles.len() + 1) as i32;
 
         let part_handle = tokio::task::spawn(async move {
-            let r: Result<CompletedPart> = f_cli
+            let output = f_cli
                 .upload_part()
                 .bucket(f_bucket)
                 .key(f_test_key)
@@ -117,15 +115,11 @@ impl S3UploadObject {
                 .part_number(part_number)
                 .body(ByteStream::from(data))
                 .send()
-                .await
-                .map(|output| {
-                    CompletedPart::builder()
-                        .e_tag(output.e_tag.unwrap())
-                        .part_number(part_number)
-                        .build()
-                })
-                .map_err(Error::from);
-            r
+                .await?;
+            Ok(CompletedPart::builder()
+                .e_tag(output.e_tag.unwrap())
+                .part_number(part_number)
+                .build())
         });
         self.part_handles.push(part_handle);
     }
@@ -133,7 +127,7 @@ impl S3UploadObject {
     async fn collect_parts(mut self) -> Result<Vec<CompletedPart>> {
         let mut parts = Vec::new();
         for handle in self.part_handles.split_off(0) {
-            let part = handle.await.map_err(Error::from)??;
+            let part = handle.await??;
             parts.push(part);
         }
         Ok(parts)
@@ -184,17 +178,15 @@ impl ObjectUploader for S3UploadObject {
             .upload_id(upload_id.to_owned())
             .multipart_upload(upload)
             .send()
-            .await
-            .map(|_| ())
-            .map_err(Error::from)?;
+            .await?;
 
-        client
+        let output = client
             .head_object()
             .bucket(bucket_name)
             .key(key)
             .send()
-            .await
-            .map(|output| output.content_length as usize)
-            .map_err(Error::from)
+            .await?;
+
+        Ok(output.content_length as usize)
     }
 }
