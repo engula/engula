@@ -19,6 +19,12 @@ use aws_sdk_s3::{
     },
     Client, Config, Credentials, Region,
 };
+#[cfg(feature = "test-util")]
+use http::{Request, Response};
+#[cfg(feature = "test-util")]
+use smithy_client::{erase::DynConnector, test_connection::TestConnection};
+#[cfg(feature = "test-util")]
+use smithy_http::body::SdkBody;
 use storage::{async_trait, Storage};
 
 use super::{
@@ -46,6 +52,35 @@ impl S3Storage {
                 .credentials_provider(credentials)
                 .build(),
         );
+        Self { client, region }
+    }
+
+    #[doc(hidden)]
+    #[cfg(feature = "test-util")]
+    pub fn mock(
+        region: impl Into<String>,
+        access_key: impl Into<String>,
+        secret_key: impl Into<String>,
+        events: Vec<(SdkBody, SdkBody)>,
+    ) -> Self {
+        let region: String = region.into();
+        let credentials = Credentials::from_keys(access_key, secret_key, None);
+        let conf = Config::builder()
+            .region(Some(Region::new(region.to_owned())))
+            .credentials_provider(credentials)
+            .build();
+        let event: Vec<(Request<SdkBody>, Response<SdkBody>)> = events
+            .into_iter()
+            .map(|(req, resp)| {
+                (
+                    http::Request::builder().body(req).unwrap(),
+                    http::Response::builder().status(200).body(resp).unwrap(),
+                )
+            })
+            .collect();
+        let conn = TestConnection::new(event);
+        let conn = DynConnector::new(conn);
+        let client = Client::from_conf_conn(conf, conn);
         Self { client, region }
     }
 
@@ -104,33 +139,41 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
-        let list = self
-            .client
-            .list_objects()
-            .bucket(name.to_owned())
-            .send()
-            .await
-            .map_err(Error::from)?;
-        if let Some(contents) = list.contents {
-            let wait_del = contents
-                .iter()
-                .filter_map(|c| c.key.to_owned())
-                .map(|k| ObjectIdentifier::builder().key(k).build())
-                .collect::<Vec<ObjectIdentifier>>();
-            if !wait_del.is_empty() {
-                self.client
-                    .delete_objects()
-                    .bucket(name.to_owned())
-                    .delete(
-                        Delete::builder()
-                            .quiet(true)
-                            .set_objects(Some(wait_del))
-                            .build(),
-                    )
-                    .send()
-                    .await
-                    .map_err(Error::from)?;
+        let mut token = None;
+        loop {
+            let list = self
+                .client
+                .list_objects_v2()
+                .bucket(name.to_owned())
+                .set_continuation_token(token.clone())
+                .send()
+                .await
+                .map_err(Error::from)?;
+            if let Some(contents) = list.contents {
+                let wait_del = contents
+                    .iter()
+                    .filter_map(|c| c.key.to_owned())
+                    .map(|k| ObjectIdentifier::builder().key(k).build())
+                    .collect::<Vec<ObjectIdentifier>>();
+                if !wait_del.is_empty() {
+                    self.client
+                        .delete_objects()
+                        .bucket(name.to_owned())
+                        .delete(
+                            Delete::builder()
+                                .quiet(true)
+                                .set_objects(Some(wait_del))
+                                .build(),
+                        )
+                        .send()
+                        .await
+                        .map_err(Error::from)?;
+                }
             }
+            if !list.is_truncated {
+                break;
+            }
+            token = list.next_continuation_token;
         }
 
         self.client

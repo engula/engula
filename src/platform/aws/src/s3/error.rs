@@ -28,6 +28,8 @@ pub enum Error {
     #[error(transparent)]
     ListObjects(#[from] SdkError<s3_error::ListObjectsError>),
     #[error(transparent)]
+    ListObjectsV2(#[from] SdkError<s3_error::ListObjectsV2Error>),
+    #[error(transparent)]
     DeleteBucket(#[from] SdkError<s3_error::DeleteBucketError>),
     #[error(transparent)]
     DeleteObject(#[from] SdkError<s3_error::DeleteObjectError>),
