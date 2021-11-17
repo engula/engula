@@ -14,7 +14,15 @@
 
 name: Check Code
 
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
 
 jobs:
   test:
@@ -36,6 +44,7 @@ jobs:
       with:
         profile: minimal
         toolchain: ${{ matrix.rust }}
+        components: rustfmt
         override: true
 
     - name: Cargo build
@@ -47,6 +56,7 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
+        args: --workspace
 
   check:
     name: Check style
@@ -68,7 +78,7 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: -- -D warnings
+        args: --workspace --tests --all-features -- -D warnings
 
     - name: Check format
       uses: actions-rs/cargo@v1
@@ -89,6 +99,7 @@ jobs:
       with:
           profile: minimal
           toolchain: nightly
+          components: rustfmt
           override: true
 
     - name: Cargo build

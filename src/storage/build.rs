@@ -12,15 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-
-use crate::{bucket_handle::BucketHandle, error::StorageResult};
-
-#[async_trait]
-pub trait ObjectStorage {
-    fn bucket(&self, name: &str) -> Box<dyn BucketHandle>;
-
-    async fn create_bucket(&self, name: &str) -> StorageResult<()>;
-
-    async fn delete_bucket(&self, name: &str) -> StorageResult<()>;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::compile_protos("src/grpc/storage.proto")?;
+    Ok(())
 }

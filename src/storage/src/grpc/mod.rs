@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod Cache;
+mod bucket;
+mod client;
 mod error;
-mod lru_cache;
+mod object;
+mod proto;
+mod storage;
 
 pub use self::{
+    bucket::{RemoteBucket, RemoteObjectUploader},
     error::{Error, Result},
-    lru_cache::LruCache,
-    Cache::Cache,
+    object::RemoteObject,
+    storage::RemoteStorage,
 };

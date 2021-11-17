@@ -23,6 +23,8 @@ use std::{
 
 use linked_hash_map::LinkedHashMap;
 
+use crate::Cache::Cache;
+
 pub struct LruCache<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     map: LinkedHashMap<K, V, S>,
     max_size: usize,
@@ -236,6 +238,39 @@ impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
 impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V> {
     fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+impl<K: Eq + Hash, V, S: BuildHasher> Cache for LruCache<K, V> {
+    type Key = K;
+    type Value = V;
+
+    fn insert(&mut self, key: Self::Key, value: Self::Value) -> Option<Self::Value> {
+        let old_value = self.map.insert(k, value);
+        if self.len() > self.size() {
+            self.map.pop_front();
+        }
+        old_value
+    }
+
+    fn get<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Self::Value>
+    where
+        Self::Key: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        self.map.get_refresh(key)
+    }
+
+    fn remove<Q: ?Sized>(&mut self, key: &Q) -> (Option<Self::Value>)
+    where
+        Self::Key: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        self.map.remove(key)
+    }
+
+    fn clear(&mut self) {
+        self.map.clear()
     }
 }
 

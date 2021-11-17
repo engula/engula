@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_handle;
-mod error;
-mod object_handle;
-mod object_storage;
+mod bucket;
+mod object;
+mod storage;
+
+pub mod grpc;
+pub mod mem;
+
+pub use async_trait::async_trait;
 
 pub use self::{
-    bucket_handle::BucketHandle,
-    error::{StorageError, StorageResult},
-    object_handle::ObjectHandle,
-    object_storage::ObjectStorage,
+    bucket::{Bucket, ObjectUploader},
+    object::Object,
+    storage::Storage,
 };

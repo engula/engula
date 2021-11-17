@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod Cache;
-mod error;
-mod lru_cache;
+use thiserror::Error;
 
-pub use self::{
-    error::{Error, Result},
-    lru_cache::LruCache,
-    Cache::Cache,
-};
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    GrpcStatus(#[from] tonic::Status),
+    #[error(transparent)]
+    GrpcTransport(#[from] tonic::transport::Error),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

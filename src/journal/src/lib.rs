@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod Cache;
-mod error;
-mod lru_cache;
+mod journal;
+mod stream;
+
+pub mod mem;
+
+pub use async_trait::async_trait;
 
 pub use self::{
-    error::{Error, Result},
-    lru_cache::LruCache,
-    Cache::Cache,
+    journal::Journal,
+    stream::{Event, Stream, Timestamp},
 };

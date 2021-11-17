@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod Cache;
-mod error;
-mod lru_cache;
+use thiserror::Error;
 
-pub use self::{
-    error::{Error, Result},
-    lru_cache::LruCache,
-    Cache::Cache,
-};
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("`{0}` is not found")]
+    NotFound(String),
+    #[error("`{0}` already exists")]
+    AlreadyExists(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

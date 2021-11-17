@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct StorageError {}
+use super::{async_trait, bucket::Bucket, object::Object};
 
-pub type StorageResult<T> = Result<T, StorageError>;
+/// An interface to manipulate a storage.
+#[async_trait]
+pub trait Storage<O: Object, B: Bucket<O>> {
+    /// Returns a bucket.
+    async fn bucket(&self, name: &str) -> Result<B, O::Error>;
+
+    /// Creates a bucket.
+    async fn create_bucket(&self, name: &str) -> Result<B, O::Error>;
+
+    /// Deletes a bucket.
+    async fn delete_bucket(&self, name: &str) -> Result<(), O::Error>;
+}
