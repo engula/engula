@@ -19,7 +19,7 @@ checksum = "ee10e43ae4a853c0a3591d4e2ada1719e553be18199d9da9d4a83f5927c2f5c7"
 
 [[package]]
 name = "api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "datatypes",
 ]
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "background"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
 ]
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "datatypes"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "either"
@@ -176,7 +176,7 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "engula"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "journal",
@@ -461,7 +461,7 @@ checksum = "b71991ff56294aa922b450139ee08b3bfc70982c6b2c7562771375cf73542dd4"
 
 [[package]]
 name = "journal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "manifest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
 ]
@@ -526,7 +526,7 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "microunit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -953,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures",
