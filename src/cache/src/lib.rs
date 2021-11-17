@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod Cache;
+mod cache;
 mod error;
 
 pub use self::{
     error::{Error, Result},
-    Cache::Cache,
+    cache::Cache,
 };
