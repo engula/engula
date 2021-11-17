@@ -80,7 +80,6 @@ dependencies = [
  "aws-sdk-s3",
  "aws-types",
  "bytes",
- "futures",
  "smithy-http",
  "storage",
  "thiserror",
@@ -1434,7 +1433,6 @@ name = "storage"
 version = "0.2.0"
 dependencies = [
  "async-trait",
- "futures",
  "prost",
  "thiserror",
  "tokio",
