@@ -13,10 +13,7 @@
 // limitations under the License.
 
 use aws_sdk_s3::{
-    model::{
-        BucketLocationConstraint, CreateBucketConfiguration,
-        PublicAccessBlockConfiguration,
-    },
+    model::{BucketLocationConstraint, CreateBucketConfiguration, PublicAccessBlockConfiguration},
     Client, Config, Credentials, Region,
 };
 use storage::{async_trait, Storage};
