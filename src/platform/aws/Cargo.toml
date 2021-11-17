@@ -8,7 +8,6 @@ default = []
 test-util = ["http", "smithy-client"]
 
 [dependencies]
-async-trait = "0.1"
 bytes = "1.1"
 futures = "0.3"
 thiserror = "1.0"

@@ -141,21 +141,15 @@ impl ObjectUploader for S3UploadObject {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
-        let data = Bytes::copy_from_slice(buf);
+        let mut data = Bytes::copy_from_slice(buf);
         if data.len() < UPLOAD_PART_SIZE * 2 {
             self.upload_part(data);
             return Ok(());
         }
 
-        let mut offset = 0;
-        while offset < data.len() {
-            let end = if data.len() - offset < UPLOAD_PART_SIZE * 2 {
-                data.len()
-            } else {
-                offset + UPLOAD_PART_SIZE
-            };
-            self.upload_part(data.slice(offset..end));
-            offset = end;
+        while data.len() > UPLOAD_PART_SIZE * 2 {
+            let batch = data.split_to(UPLOAD_PART_SIZE * 2);
+            self.upload_part(batch);
         }
         self.upload_part(data);
         Ok(())

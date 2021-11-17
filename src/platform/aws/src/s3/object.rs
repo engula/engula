@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use aws_sdk_s3::Client;
+use bytes::Buf;
 use storage::{async_trait, Object};
 
 use super::error::{Error, Result};
@@ -49,7 +50,8 @@ impl Object for S3Object {
             .send()
             .await?;
 
-        output.body.collect().await?;
+        let mut bytes = output.body.collect().await?;
+        bytes.copy_to_slice(buf);
         Ok(buf.len())
     }
 }
