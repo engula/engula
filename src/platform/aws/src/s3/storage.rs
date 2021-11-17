@@ -19,12 +19,6 @@ use aws_sdk_s3::{
     },
     Client, Config, Credentials, Region,
 };
-#[cfg(feature = "test-util")]
-use http::{Request, Response};
-#[cfg(feature = "test-util")]
-use smithy_client::{erase::DynConnector, test_connection::TestConnection};
-#[cfg(feature = "test-util")]
-use smithy_http::body::SdkBody;
 use storage::{async_trait, Storage};
 
 use super::{bucket::S3Bucket, error::Result, object::S3Object};
