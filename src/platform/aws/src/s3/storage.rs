@@ -40,56 +40,36 @@ impl S3Storage {
         access_key: impl Into<String>,
         secret_key: impl Into<String>,
     ) -> Self {
-        let region: String = region.into();
         let credentials = Credentials::from_keys(access_key, secret_key, None);
+        let region = region.into();
         let client = Client::from_conf(
             Config::builder()
                 .region(Some(Region::new(region.to_owned())))
                 .credentials_provider(credentials)
                 .build(),
         );
-        Self { client, region }
+        Self::from_client(client, region)
     }
 
-    #[doc(hidden)]
-    #[cfg(feature = "test-util")]
-    pub fn mock(
-        region: impl Into<String>,
-        access_key: impl Into<String>,
-        secret_key: impl Into<String>,
-        events: Vec<(SdkBody, SdkBody)>,
-    ) -> Self {
-        let region: String = region.into();
-        let credentials = Credentials::from_keys(access_key, secret_key, None);
-        let conf = Config::builder()
-            .region(Some(Region::new(region.to_owned())))
-            .credentials_provider(credentials)
-            .build();
-        let event: Vec<(Request<SdkBody>, Response<SdkBody>)> = events
-            .into_iter()
-            .map(|(req, resp)| {
-                (
-                    http::Request::builder().body(req).unwrap(),
-                    http::Response::builder().status(200).body(resp).unwrap(),
-                )
-            })
-            .collect();
-        let conn = TestConnection::new(event);
-        let conn = DynConnector::new(conn);
-        let client = Client::from_conf_conn(conf, conn);
+    pub fn from_client(client: Client, region: impl Into<String>) -> Self {
+        let region = region.into();
         Self { client, region }
     }
+}
 
-    async fn check_bucket_exists(&self, name: &str) -> Result<()> {
+#[async_trait]
+impl Storage<S3Object, S3Bucket> for S3Storage {
+    async fn bucket(&self, name: &str) -> Result<S3Bucket> {
         self.client
             .head_bucket()
             .bucket(name.to_owned())
             .send()
             .await?;
-        Ok(())
+
+        Ok(S3Bucket::new(self.client.clone(), name))
     }
 
-    async fn create_new_bucket(&self, name: &str) -> Result<()> {
+    async fn create_bucket(&self, name: &str) -> Result<S3Bucket> {
         let region: &str = &self.region;
         let location = BucketLocationConstraint::from(region);
         let config = CreateBucketConfiguration::builder()
@@ -115,19 +95,7 @@ impl S3Storage {
             )
             .send()
             .await?;
-        Ok(())
-    }
-}
 
-#[async_trait]
-impl Storage<S3Object, S3Bucket> for S3Storage {
-    async fn bucket(&self, name: &str) -> Result<S3Bucket> {
-        self.check_bucket_exists(name).await?;
-        Ok(S3Bucket::new(self.client.clone(), name))
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<S3Bucket> {
-        self.create_new_bucket(name).await?;
         Ok(S3Bucket::new(self.client.clone(), name))
     }
 
