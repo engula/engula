@@ -75,7 +75,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "aws"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aws-sdk-s3",
  "aws-types",
