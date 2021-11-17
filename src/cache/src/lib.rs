@@ -14,10 +14,8 @@
 
 mod Cache;
 mod error;
-mod lru_cache;
 
 pub use self::{
     error::{Error, Result},
-    lru_cache::LruCache,
     Cache::Cache,
 };
