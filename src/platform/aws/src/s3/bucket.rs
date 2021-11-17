@@ -147,8 +147,8 @@ impl ObjectUploader for S3UploadObject {
             return Ok(());
         }
 
-        while data.len() > UPLOAD_PART_SIZE * 2 {
-            let batch = data.split_to(UPLOAD_PART_SIZE * 2);
+        while data.len() >= UPLOAD_PART_SIZE * 2 {
+            let batch = data.split_to(UPLOAD_PART_SIZE);
             self.upload_part(batch);
         }
         self.upload_part(data);
