@@ -14,7 +14,7 @@
 
 use aws_sdk_s3::{
     model::{
-        BucketLocationConstraint, CreateBucketConfiguration, Delete, ObjectIdentifier,
+        BucketLocationConstraint, CreateBucketConfiguration,
         PublicAccessBlockConfiguration,
     },
     Client, Config, Credentials, Region,
@@ -94,41 +94,6 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
-        let mut token = None;
-        loop {
-            let list = self
-                .client
-                .list_objects_v2()
-                .bucket(name.to_owned())
-                .set_continuation_token(token.clone())
-                .send()
-                .await?;
-            if let Some(contents) = list.contents {
-                let wait_del = contents
-                    .iter()
-                    .filter_map(|c| c.key.to_owned())
-                    .map(|k| ObjectIdentifier::builder().key(k).build())
-                    .collect::<Vec<ObjectIdentifier>>();
-                if !wait_del.is_empty() {
-                    self.client
-                        .delete_objects()
-                        .bucket(name.to_owned())
-                        .delete(
-                            Delete::builder()
-                                .quiet(true)
-                                .set_objects(Some(wait_del))
-                                .build(),
-                        )
-                        .send()
-                        .await?;
-                }
-            }
-            if !list.is_truncated {
-                break;
-            }
-            token = list.next_continuation_token;
-        }
-
         self.client
             .delete_bucket()
             .bucket(name.to_owned())
