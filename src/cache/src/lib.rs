@@ -16,6 +16,6 @@ mod cache;
 mod error;
 
 pub use self::{
-    error::{Error, Result},
     cache::Cache,
+    error::{Error, Result},
 };
