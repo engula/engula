@@ -35,7 +35,7 @@ Nevertheless, implementations should guarantee to return continuous events. That
 
 ## Guidelines
 
-![Architecture](images/journal-architecture.drawio.svg)
+![Abstraction](images/journal-abstraction.drawio.svg)
 
 Journal can be implemented in the following forms:
 
