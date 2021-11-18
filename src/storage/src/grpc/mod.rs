@@ -17,11 +17,48 @@ mod client;
 mod error;
 mod object;
 mod proto;
+mod server;
 mod storage;
 
 pub use self::{
     bucket::{RemoteBucket, RemoteObjectUploader},
+    client::Client,
     error::{Error, Result},
     object::RemoteObject,
+    server::Server,
     storage::RemoteStorage,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let addr = "127.0.0.1:12345";
+        tokio::task::spawn(async move {
+            let addr = addr.parse().unwrap();
+            let server = Server::new(mem::MemStorage::default());
+            tonic::transport::Server::builder()
+                .add_service(server.into_service())
+                .serve(addr)
+                .await
+                .unwrap();
+        });
+
+        let url = format!("http://{}", addr);
+        let storage = RemoteStorage::connect(&url).await?;
+        let bucket = storage.create_bucket("bucket").await?;
+        let mut up = bucket.upload_object("object").await?;
+        let buf = vec![0, 1, 2];
+        up.write(&buf).await?;
+        let len = up.finish().await?;
+        assert_eq!(len, buf.len());
+        let object = bucket.object("object").await?;
+        let mut got = vec![0; buf.len()];
+        object.read_at(&mut got, 0).await?;
+        assert_eq!(got, buf);
+        Ok(())
+    }
+}
