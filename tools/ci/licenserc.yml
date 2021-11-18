@@ -25,3 +25,4 @@ header:
     - 'LICENSE'
     - 'rust-toolchain.toml'
     - 'rustfmt.toml'
+    - '.cargo/audit.toml'
