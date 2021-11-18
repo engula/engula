@@ -31,23 +31,26 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+
     use super::*;
     use crate::*;
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let addr = "127.0.0.1:12345";
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let addr = addr.parse().unwrap();
             let server = Server::new(mem::MemStorage::default());
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
-                .serve(addr)
+                .serve_with_incoming(TcpListenerStream::new(listener))
                 .await
                 .unwrap();
         });
 
-        let url = format!("http://{}", addr);
+        let url = format!("http://{}", local_addr);
         let storage = RemoteStorage::connect(&url).await?;
         let bucket = storage.create_bucket("bucket").await?;
         let mut up = bucket.upload_object("object").await?;
