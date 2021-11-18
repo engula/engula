@@ -14,6 +14,7 @@
 
 mod cache;
 mod error;
+mod lru_cache;
 
 pub use self::{
     cache::Cache,

@@ -283,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cache"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "linked-hash-map",
+ "tokio",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -728,6 +737,12 @@ name = "libc"
 version = "0.2.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbe5e23404da5b4f555ef85ebed98fb4083e55a00c317800bc2a50ede9f3d219"
+
+[[package]]
+name = "linked-hash-map"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 
 [[package]]
 name = "lock_api"

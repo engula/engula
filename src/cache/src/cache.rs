@@ -14,21 +14,31 @@
 
 use std::{borrow::Borrow, hash::Hash};
 
+use async_trait::async_trait;
+
+#[async_trait]
 pub trait Cache {
-    type Key: Hash + Eq;
-    type Value;
+    type Key: Hash + Eq + Sync + Send;
+    type Value: Send;
 
-    fn insert(&mut self, key: Self::Key, value: Self::Value) -> Option<Self::Value>;
+    /// Insert an item in the cache.
+    ///
+    /// The first return value indicates whether an insertion has taken place
+    /// (because the cache can refuse to insert an item). The second return
+    /// value is the optional eviction victim, returned only if this call to
+    /// insert caused an eviction.
 
-    fn get<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Self::Value>
+    async fn insert(&self, key: Self::Key, value: Self::Value) -> Option<Self::Value>;
+
+    async fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Self::Value>
     where
         Self::Key: Borrow<Q>,
-        Q: Hash + Eq;
+        Q: Hash + Eq + Sync + Send;
 
-    fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Value>
+    async fn remove<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
     where
         Self::Key: Borrow<Q>,
-        Q: Hash + Eq;
+        Q: Hash + Eq + Sync + Send;
 
-    fn clear(&mut self);
+    async fn clear(&self);
 }
