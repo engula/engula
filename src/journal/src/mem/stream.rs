@@ -76,8 +76,6 @@ pub struct EventStream<T: Timestamp> {
     offset: usize,
 }
 
-impl<T: Timestamp> Unpin for EventStream<T> {}
-
 impl<T: Timestamp> EventStream<T> {
     fn new(events: Vec<Event<T>>) -> Self {
         EventStream { events, offset: 0 }

@@ -87,8 +87,6 @@ pub struct EventStream<T: Timestamp> {
     _t: PhantomData<T>,
 }
 
-impl<T: Timestamp> Unpin for EventStream<T> {}
-
 impl<T: Timestamp> EventStream<T> {
     fn new(events: Streaming<ReadEventResponse>) -> Self {
         EventStream {
