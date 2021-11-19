@@ -66,7 +66,7 @@ mod tests {
         {
             let mut events = stream.read_events(0).await?;
             let got = events.next().await;
-            assert_eq!(got.is_none(), true);
+            assert!(got.is_none());
         }
         let _ = journal.delete_stream("s").await?;
         Ok(())

@@ -30,7 +30,7 @@ pub struct Event<T: Timestamp> {
 /// An interface to manipulate a stream.
 #[async_trait]
 pub trait Stream {
-    type Error: std::error::Error;
+    type Error;
     type Timestamp: Timestamp;
     type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>> + Unpin;
 
