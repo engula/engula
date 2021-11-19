@@ -12,33 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use clap::{crate_version, Parser};
-use engula::node;
+use reqwest::Client;
 
-#[derive(Parser)]
-#[clap(version = crate_version!())]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
+use super::{error::Result, node::NodeDesc};
+
+pub struct NodeClient {
+    url: String,
+    client: Client,
 }
 
-impl Command {
-    async fn run(&self) -> Result<()> {
-        match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run().await,
+impl NodeClient {
+    pub fn new(url: &str) -> NodeClient {
+        NodeClient {
+            url: format!("{}/v1", url),
+            client: Client::new(),
         }
     }
-}
 
-#[derive(Parser)]
-enum SubCommand {
-    Node(node::Command),
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cmd: Command = Command::parse();
-    cmd.run().await?;
-    Ok(())
+    pub async fn status(&self) -> Result<NodeDesc> {
+        let url = format!("{}/status", self.url);
+        let desc = self.client.get(url).send().await?.json().await?;
+        Ok(desc)
+    }
 }

@@ -14,6 +14,7 @@
 
 mod error;
 mod node;
+mod node_client;
 mod node_server;
 mod unit;
 
@@ -22,6 +23,7 @@ pub use async_trait::async_trait;
 pub use self::{
     error::{Error, Result},
     node::{Node, NodeBuilder},
+    node_client::NodeClient,
     node_server::NodeServer,
     unit::{Unit, UnitBuilder, UnitDesc, UnitSpec},
 };

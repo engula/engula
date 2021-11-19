@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(Debug)]
-pub enum Error {
-    InvalidArgument,
-}
+use thiserror::Error;
 
-impl ToString for Error {
-    fn to_string(&self) -> String {
-        format!("{:?}", self)
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Hyper(#[from] hyper::Error),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error("invalid argument")]
+    InvalidArgument,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use anyhow::Result;
 use clap::{crate_version, Parser};
-use microunit::{NodeBuilder, NodeServer};
+use microunit::{NodeBuilder, NodeClient, NodeServer};
+use serde_json::to_string_pretty;
 
 use crate::hello_unit::HelloUnitBuilder;
 
@@ -25,16 +27,19 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(&self) {
+    pub async fn run(&self) -> Result<()> {
         match &self.subcmd {
-            SubCommand::Start(cmd) => cmd.run().await,
+            SubCommand::Start(cmd) => cmd.run().await?,
+            SubCommand::Status(cmd) => cmd.run().await?,
         }
+        Ok(())
     }
 }
 
 #[derive(Parser)]
 enum SubCommand {
     Start(StartCommand),
+    Status(StatusCommand),
 }
 
 #[derive(Parser)]
@@ -43,11 +48,26 @@ struct StartCommand {
 }
 
 impl StartCommand {
-    async fn run(&self) {
+    async fn run(&self) -> Result<()> {
         let addr = self.addr.parse().unwrap();
         let node = NodeBuilder::default()
             .unit(HelloUnitBuilder::default())
             .build();
-        NodeServer::bind(addr).serve(node).await;
+        NodeServer::new(node).bind(addr).await?;
+        Ok(())
+    }
+}
+
+#[derive(Parser)]
+struct StatusCommand {
+    url: String,
+}
+
+impl StatusCommand {
+    async fn run(&self) -> Result<()> {
+        let client = NodeClient::new(&self.url);
+        let status = client.status().await?;
+        println!("{}", to_string_pretty(&status)?);
+        Ok(())
     }
 }
