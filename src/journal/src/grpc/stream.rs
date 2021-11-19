@@ -68,7 +68,7 @@ impl<T: Timestamp> Stream for RemoteStream<T> {
             ts: serialize_ts(&event.ts)?,
             data: event.data,
         };
-        let _ = self.client.append_event(input).await?;
+        self.client.append_event(input).await?;
         Ok(())
     }
 
@@ -77,7 +77,7 @@ impl<T: Timestamp> Stream for RemoteStream<T> {
             stream: self.stream.clone(),
             ts: serialize_ts(&ts)?,
         };
-        let _ = self.client.release_events(input).await?;
+        self.client.release_events(input).await?;
         Ok(())
     }
 }

@@ -47,7 +47,7 @@ impl<T: Timestamp> Journal<RemoteStream<T>> for RemoteJournal<T> {
         let input = CreateStreamRequest {
             stream: name.to_owned(),
         };
-        let _ = self.client.create_stream(input).await?;
+        self.client.create_stream(input).await?;
         self.stream(name).await
     }
 
@@ -55,7 +55,7 @@ impl<T: Timestamp> Journal<RemoteStream<T>> for RemoteJournal<T> {
         let input = DeleteStreamRequest {
             stream: name.to_owned(),
         };
-        let _ = self.client.delete_stream(input).await?;
+        self.client.delete_stream(input).await?;
         Ok(())
     }
 }
