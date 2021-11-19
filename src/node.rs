@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-use engula_microunit::{NodeBuilder, NodeServer};
+use microunit::{NodeBuilder, NodeServer};
 
 use crate::hello_unit::HelloUnitBuilder;
 

@@ -386,9 +386,7 @@ name = "engula"
 version = "0.2.0"
 dependencies = [
  "clap",
- "journal",
  "microunit",
- "storage",
  "tokio",
 ]
 
