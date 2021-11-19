@@ -94,7 +94,7 @@ where
         let stream = self.journal.stream(&input.stream).await?;
         stream
             .append_event(Event {
-                ts: deserialize_ts(input.ts.as_slice())?,
+                ts: deserialize_ts(&input.ts)?,
                 data: input.data,
             })
             .await?;
@@ -107,9 +107,7 @@ where
     ) -> Result<Response<ReleaseEventsResponse>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        stream
-            .release_events(deserialize_ts(input.ts.as_slice())?)
-            .await?;
+        stream.release_events(deserialize_ts(&input.ts)?).await?;
         Ok(Response::new(ReleaseEventsResponse {}))
     }
 
@@ -119,9 +117,7 @@ where
     ) -> Result<Response<Self::ReadEventStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let events = stream
-            .read_events(deserialize_ts(input.ts.as_slice())?)
-            .await?;
+        let events = stream.read_events(deserialize_ts(&input.ts)?).await?;
         Ok(Response::new(EventStream::new(events)))
     }
 }

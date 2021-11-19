@@ -102,7 +102,7 @@ impl<T: Timestamp> futures::Stream for EventStream<T> {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.events).poll_next(cx) {
             Poll::Ready(Some(Ok(resp))) => Poll::Ready(Some(Ok(Event {
-                ts: deserialize_ts(resp.ts.as_slice())?,
+                ts: deserialize_ts(&resp.ts)?,
                 data: resp.data,
             }))),
             Poll::Pending => Poll::Pending,
