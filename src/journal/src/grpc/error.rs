@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod journal;
-mod stream;
+use thiserror::Error;
 
-pub mod grpc;
-pub mod mem;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    GrpcStatus(#[from] tonic::Status),
+    #[error(transparent)]
+    GrpcTransport(#[from] tonic::transport::Error),
+}
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+pub type Result<T> = std::result::Result<T, Error>;

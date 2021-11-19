@@ -33,16 +33,14 @@ mod tests {
     async fn test() -> Result<()> {
         let j: MemJournal<u64> = MemJournal::default();
         let stream = j.create_stream("a").await?;
-        stream
-            .append_event(Event {
-                ts: 0,
-                data: vec![1, 2, 3],
-            })
-            .await?;
-        let mut events = stream.read_events(0).await;
-        while let Some(Ok(event)) = events.next().await {
-            println!("{:?}", event);
-        }
+        let event = Event {
+            ts: 0,
+            data: vec![1, 2, 3],
+        };
+        stream.append_event(event.clone()).await?;
+        let mut events = stream.read_events(0).await?;
+        let got = events.next().await.unwrap()?;
+        assert_eq!(got, event);
         Ok(())
     }
 }

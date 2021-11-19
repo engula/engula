@@ -12,15 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod journal;
-mod stream;
-
-pub mod grpc;
-pub mod mem;
-
-pub use async_trait::async_trait;
-
-pub use self::{
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+tonic::include_proto!("engula.journal.grpc.v1");

@@ -1,0 +1,70 @@
+// Copyright 2021 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package engula.journal.grpc.v1;
+
+service Journal {
+    // APIs to manipulate a journal.
+
+    rpc CreateStream(CreateStreamRequest) returns (CreateStreamResponse) {}
+
+    rpc DeleteStream(DeleteStreamRequest) returns (DeleteStreamResponse) {}
+
+    // APIs to manipulate a stream.
+
+    rpc AppendEvent(AppendEventRequest) returns (AppendEventResponse) {}
+
+    rpc ReleaseEvents(ReleaseEventsRequest) returns (ReleaseEventsResponse) {}
+
+    rpc ReadEvent(ReadEventRequest) returns (stream ReadEventResponse) {}
+}
+
+message CreateStreamRequest {
+    string stream = 1;
+}
+
+message CreateStreamResponse {}
+
+message DeleteStreamRequest {
+    string stream = 1;
+}
+
+message DeleteStreamResponse {}
+
+message AppendEventRequest {
+    string stream = 1;
+    uint64 ts = 2;
+    bytes data = 3;
+}
+
+message AppendEventResponse {}
+
+message ReleaseEventsRequest {
+    string stream = 1;
+    uint64 ts = 2;
+}
+
+message ReleaseEventsResponse {}
+
+message ReadEventRequest {
+    string stream = 1;
+    uint64 ts = 2;
+}
+
+message ReadEventResponse {
+    uint64 ts = 1;
+    bytes data = 2;
+}

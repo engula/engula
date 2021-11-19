@@ -21,7 +21,7 @@ pub trait Timestamp: Ord + Send + Copy + Debug + Unpin {}
 
 impl<T: Ord + Send + Copy + Debug + Unpin> Timestamp for T {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Event<T: Timestamp> {
     pub ts: T,
     pub data: Vec<u8>,
@@ -30,12 +30,12 @@ pub struct Event<T: Timestamp> {
 /// An interface to manipulate a stream.
 #[async_trait]
 pub trait Stream {
-    type Error;
+    type Error: std::error::Error;
     type Timestamp: Timestamp;
-    type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>>;
+    type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>> + Unpin;
 
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream;
+    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream, Self::Error>;
 
     /// Appends an event.
     async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<(), Self::Error>;

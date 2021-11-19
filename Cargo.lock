@@ -704,8 +704,13 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures",
+ "prost",
+ "serde",
  "thiserror",
  "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
