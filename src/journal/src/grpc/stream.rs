@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -22,32 +23,40 @@ use tonic::Streaming;
 use super::{
     client::Client,
     error::{Error, Result},
-    proto::{AppendEventRequest, ReadEventRequest, ReadEventResponse, ReleaseEventsRequest},
+    proto::{
+        deserialize_ts, serialize_ts, AppendEventRequest, ReadEventRequest, ReadEventResponse,
+        ReleaseEventsRequest,
+    },
 };
-use crate::{async_trait, Event, Stream};
+use crate::{async_trait, Event, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct RemoteStream {
+pub struct RemoteStream<T: Timestamp> {
     client: Client,
     stream: String,
+    _t: PhantomData<T>,
 }
 
-impl RemoteStream {
-    pub fn new(client: Client, stream: String) -> RemoteStream {
-        RemoteStream { client, stream }
+impl<T: Timestamp> RemoteStream<T> {
+    pub fn new(client: Client, stream: String) -> RemoteStream<T> {
+        RemoteStream {
+            client,
+            stream,
+            _t: PhantomData,
+        }
     }
 }
 
 #[async_trait]
-impl Stream for RemoteStream {
+impl<T: Timestamp> Stream for RemoteStream<T> {
     type Error = Error;
-    type EventStream = EventStream;
-    type Timestamp = u64;
+    type EventStream = EventStream<T>;
+    type Timestamp = T;
 
     async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream> {
         let input = ReadEventRequest {
             stream: self.stream.clone(),
-            ts,
+            ts: serialize_ts(&ts)?,
         };
         let output = self.client.read_event(input).await?;
         Ok(EventStream::new(output))
@@ -56,7 +65,7 @@ impl Stream for RemoteStream {
     async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<()> {
         let input = AppendEventRequest {
             stream: self.stream.clone(),
-            ts: event.ts,
+            ts: serialize_ts(&event.ts)?,
             data: event.data,
         };
         let _ = self.client.append_event(input).await?;
@@ -66,32 +75,36 @@ impl Stream for RemoteStream {
     async fn release_events(&self, ts: Self::Timestamp) -> Result<()> {
         let input = ReleaseEventsRequest {
             stream: self.stream.clone(),
-            ts,
+            ts: serialize_ts(&ts)?,
         };
         let _ = self.client.release_events(input).await?;
         Ok(())
     }
 }
 
-pub struct EventStream {
+pub struct EventStream<T: Timestamp> {
     events: Streaming<ReadEventResponse>,
+    _t: PhantomData<T>,
 }
 
-impl Unpin for EventStream {}
+impl<T: Timestamp> Unpin for EventStream<T> {}
 
-impl EventStream {
+impl<T: Timestamp> EventStream<T> {
     fn new(events: Streaming<ReadEventResponse>) -> Self {
-        EventStream { events }
+        EventStream {
+            events,
+            _t: PhantomData,
+        }
     }
 }
 
-impl futures::Stream for EventStream {
-    type Item = Result<Event<u64>>;
+impl<T: Timestamp> futures::Stream for EventStream<T> {
+    type Item = Result<Event<T>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.events).poll_next(cx) {
             Poll::Ready(Some(Ok(resp))) => Poll::Ready(Some(Ok(Event {
-                ts: resp.ts,
+                ts: deserialize_ts(resp.ts.as_slice())?,
                 data: resp.data,
             }))),
             Poll::Pending => Poll::Pending,

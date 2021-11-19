@@ -21,20 +21,23 @@ use std::{
 use tonic::{Request, Response, Status};
 
 use super::proto::*;
-use crate::{Event, Journal, Stream};
+use crate::{Event, Journal, Stream, Timestamp};
 
-pub struct Server<S, J>
+pub struct Server<S, J, T>
 where
     S: Stream,
     J: Journal<S>,
+    T: Timestamp,
 {
     journal: J,
     _stream: PhantomData<S>,
+    _t: PhantomData<T>,
 }
 
-impl<S, J> Server<S, J>
+impl<S, J, T> Server<S, J, T>
 where
-    S: Stream<Timestamp = u64> + Send + Sync + 'static,
+    T: Timestamp + 'static,
+    S: Stream<Timestamp = T> + Send + Sync + 'static,
     S::Error: Send + Sync + 'static,
     S::EventStream: Send + Sync + 'static,
     J: Journal<S> + Send + Sync + 'static,
@@ -44,18 +47,20 @@ where
         Server {
             journal,
             _stream: PhantomData,
+            _t: PhantomData,
         }
     }
 
-    pub fn into_service(self) -> journal_server::JournalServer<Server<S, J>> {
+    pub fn into_service(self) -> journal_server::JournalServer<Server<S, J, T>> {
         journal_server::JournalServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<S, J> journal_server::Journal for Server<S, J>
+impl<S, J, T> journal_server::Journal for Server<S, J, T>
 where
-    S: Stream<Timestamp = u64> + Send + Sync + 'static,
+    T: Timestamp + 'static,
+    S: Stream<Timestamp = T> + Send + Sync + 'static,
     S::Error: Send + Sync + 'static,
     S::EventStream: Send + Sync + 'static,
     J: Journal<S> + Send + Sync + 'static,
@@ -89,7 +94,7 @@ where
         let stream = self.journal.stream(&input.stream).await?;
         stream
             .append_event(Event {
-                ts: input.ts,
+                ts: deserialize_ts(input.ts.as_slice())?,
                 data: input.data,
             })
             .await?;
@@ -102,7 +107,9 @@ where
     ) -> Result<Response<ReleaseEventsResponse>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        stream.release_events(input.ts).await?;
+        stream
+            .release_events(deserialize_ts(input.ts.as_slice())?)
+            .await?;
         Ok(Response::new(ReleaseEventsResponse {}))
     }
 
@@ -112,7 +119,9 @@ where
     ) -> Result<Response<Self::ReadEventStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let events = stream.read_events(input.ts).await?;
+        let events = stream
+            .read_events(deserialize_ts(input.ts.as_slice())?)
+            .await?;
         Ok(Response::new(EventStream::new(events)))
     }
 }
@@ -135,7 +144,7 @@ where
 
 impl<S> futures::Stream for EventStream<S>
 where
-    S: Stream<Timestamp = u64>,
+    S: Stream,
     Status: From<S::Error>,
 {
     type Item = Result<ReadEventResponse, Status>;
@@ -143,7 +152,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.events).poll_next(cx) {
             Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(ReadEventResponse {
-                ts: event.ts,
+                ts: serialize_ts(&event.ts)?,
                 data: event.data,
             }))),
             Poll::Pending => Poll::Pending,

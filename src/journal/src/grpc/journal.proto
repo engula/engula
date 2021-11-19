@@ -46,7 +46,7 @@ message DeleteStreamResponse {}
 
 message AppendEventRequest {
     string stream = 1;
-    uint64 ts = 2;
+    bytes ts = 2;
     bytes data = 3;
 }
 
@@ -54,17 +54,17 @@ message AppendEventResponse {}
 
 message ReleaseEventsRequest {
     string stream = 1;
-    uint64 ts = 2;
+    bytes ts = 2;
 }
 
 message ReleaseEventsResponse {}
 
 message ReadEventRequest {
     string stream = 1;
-    uint64 ts = 2;
+    bytes ts = 2;
 }
 
 message ReadEventResponse {
-    uint64 ts = 1;
+    bytes ts = 1;
     bytes data = 2;
 }

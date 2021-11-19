@@ -14,12 +14,17 @@
 
 use std::fmt::Debug;
 
+use serde::{de::DeserializeOwned, Serialize};
+
 use super::async_trait;
 
 /// A generic timestamp to order events.
-pub trait Timestamp: Ord + Send + Copy + Debug + Unpin {}
+pub trait Timestamp:
+    Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned
+{
+}
 
-impl<T: Ord + Send + Copy + Debug + Unpin> Timestamp for T {}
+impl<T: Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned> Timestamp for T {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Event<T: Timestamp> {
