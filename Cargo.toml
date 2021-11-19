@@ -3,6 +3,10 @@ name = "engula"
 version = "0.2.0"
 edition = "2021"
 
+[[bin]]
+name = "engula"
+path = "bin/engula.rs"
+
 [workspace]
 members = [
     "src/api",
@@ -15,8 +19,7 @@ members = [
 ]
 
 [dependencies]
-engula-storage = { package = "storage", path = "src/storage" }
-engula-journal = { package = "journal", path = "src/journal" }
-engula-microunit = { package = "microunit", path = "src/microunit" }
+microunit = { path = "src/microunit" }
+
 clap = "3.0.0-beta.5"
 tokio = { version = "1", features = ["full"] }
