@@ -117,7 +117,7 @@ where
     ) -> Result<Response<Self::ReadEventStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let events = stream.read_events(deserialize_ts(&input.ts)?).await?;
+        let events = stream.read_events(deserialize_ts(&input.ts)?).await;
         Ok(Response::new(EventStream::new(events)))
     }
 }

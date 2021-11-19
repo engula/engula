@@ -43,10 +43,10 @@ impl<T: Timestamp> Stream for MemStream<T> {
     type EventStream = EventStream<Self::Timestamp>;
     type Timestamp = T;
 
-    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream> {
+    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream {
         let events = self.events.lock().await;
         let offset = events.partition_point(|x| x.ts < ts);
-        Ok(EventStream::new(events.range(offset..).cloned().collect()))
+        EventStream::new(events.range(offset..).cloned().collect())
     }
 
     async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<()> {

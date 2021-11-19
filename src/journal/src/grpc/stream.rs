@@ -18,6 +18,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use futures::{future, stream};
+use pin_project::pin_project;
 use tonic::Streaming;
 
 use super::{
@@ -45,21 +47,28 @@ impl<T: Timestamp> RemoteStream<T> {
             _t: PhantomData,
         }
     }
-}
 
-#[async_trait]
-impl<T: Timestamp> Stream for RemoteStream<T> {
-    type Error = Error;
-    type EventStream = EventStream<T>;
-    type Timestamp = T;
-
-    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream> {
+    async fn read_events_inner(&self, ts: T) -> Result<EventStream<T>> {
         let input = ReadEventRequest {
             stream: self.stream.clone(),
             ts: serialize_ts(&ts)?,
         };
         let output = self.client.read_event(input).await?;
         Ok(EventStream::new(output))
+    }
+}
+
+#[async_trait]
+impl<T: Timestamp> Stream for RemoteStream<T> {
+    type Error = Error;
+    type EventStream = EitherStream<T>;
+    type Timestamp = T;
+
+    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream {
+        match self.read_events_inner(ts).await {
+            Ok(events) => EitherStream::Ok(events),
+            Err(e) => EitherStream::Err(stream::once(future::err(e))),
+        }
     }
 
     async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<()> {
@@ -79,6 +88,25 @@ impl<T: Timestamp> Stream for RemoteStream<T> {
         };
         self.client.release_events(input).await?;
         Ok(())
+    }
+}
+
+type ErrorStream<T> = stream::Once<future::Ready<Result<Event<T>>>>;
+
+#[pin_project(project = EitherStreamP)]
+pub enum EitherStream<T: Timestamp> {
+    Ok(#[pin] EventStream<T>),
+    Err(#[pin] ErrorStream<T>),
+}
+
+impl<T: Timestamp> futures::Stream for EitherStream<T> {
+    type Item = Result<Event<T>>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.project() {
+            EitherStreamP::Ok(stream) => stream.poll_next(cx),
+            EitherStreamP::Err(stream) => stream.poll_next(cx),
+        }
     }
 }
 

@@ -15,8 +15,6 @@
 use thiserror::Error;
 use tonic::{Code, Status};
 
-use super::error::Error::GrpcStatus;
-
 #[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
@@ -27,7 +25,7 @@ pub enum Error {
 
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
-        GrpcStatus(Status::new(Code::InvalidArgument, err.to_string()))
+        Error::GrpcStatus(Status::new(Code::InvalidArgument, err.to_string()))
     }
 }
 

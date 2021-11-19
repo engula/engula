@@ -702,6 +702,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures",
+ "pin-project",
  "prost",
  "serde",
  "serde_json",

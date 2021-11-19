@@ -40,7 +40,7 @@ pub trait Stream {
     type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>> + Unpin;
 
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream, Self::Error>;
+    async fn read_events(&self, ts: Self::Timestamp) -> Self::EventStream;
 
     /// Appends an event.
     async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<(), Self::Error>;
