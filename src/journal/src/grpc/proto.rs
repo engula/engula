@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod journal;
-mod stream;
+tonic::include_proto!("engula.journal.grpc.v1");
 
-pub mod grpc;
-pub mod mem;
+use super::error::Error;
+use crate::Timestamp;
 
-pub use async_trait::async_trait;
+pub fn serialize_ts<T: Timestamp>(ts: &T) -> Result<Vec<u8>, Error> {
+    serde_json::to_vec(ts).map_err(Error::from)
+}
 
-pub use self::{
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+pub fn deserialize_ts<T: Timestamp>(v: &[u8]) -> Result<T, Error> {
+    serde_json::from_slice(v).map_err(Error::from)
+}

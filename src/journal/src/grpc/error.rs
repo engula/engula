@@ -13,25 +13,30 @@
 // limitations under the License.
 
 use thiserror::Error;
+use tonic::{Code, Status};
+
+use super::error::Error::GrpcStatus;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("`{0}` is not found")]
-    NotFound(String),
-    #[error("`{0}` already exists")]
-    AlreadyExists(String),
-    #[error("invalid argument: `{0}`")]
-    InvalidArgument(String),
+    #[error(transparent)]
+    GrpcStatus(#[from] Status),
+    #[error(transparent)]
+    GrpcTransport(#[from] tonic::transport::Error),
 }
 
-impl From<Error> for tonic::Status {
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        GrpcStatus(Status::new(Code::InvalidArgument, err.to_string()))
+    }
+}
+
+impl From<Error> for Status {
     fn from(err: Error) -> Self {
-        let (code, message) = match err {
-            Error::NotFound(s) => (tonic::Code::NotFound, s),
-            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
-            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
-        };
-        tonic::Status::new(code, message)
+        match err {
+            Error::GrpcStatus(s) => s,
+            Error::GrpcTransport(e) => Status::new(Code::Internal, e.to_string()),
+        }
     }
 }
 
