@@ -17,22 +17,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 
-/// A unit description that describes the current state of a unit.
-#[derive(Serialize, Deserialize, Default)]
-pub struct UnitDesc {
-    pub id: String,
-}
-
 /// A unit specification that specifies the desired state of a unit.
 #[derive(Serialize, Deserialize, Default)]
 pub struct UnitSpec {
     pub kind: String,
 }
 
+/// A unit description that describes the current state of a unit.
+#[derive(Serialize, Deserialize, Default)]
+pub struct UnitDesc {
+    pub id: String,
+}
+
 /// A unit handle.
 #[async_trait]
 pub trait Unit: Send + Sync {
-    async fn desc(&self) -> UnitDesc;
+    async fn status(&self) -> UnitDesc;
 }
 
 /// A unit builder spawns a specific kind of units.

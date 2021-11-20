@@ -15,6 +15,7 @@
 mod error;
 mod node;
 mod node_client;
+mod node_router;
 mod node_server;
 mod unit;
 

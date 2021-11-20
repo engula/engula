@@ -20,7 +20,7 @@ pub struct HelloUnit {
 
 #[async_trait]
 impl Unit for HelloUnit {
-    async fn desc(&self) -> UnitDesc {
+    async fn status(&self) -> UnitDesc {
         UnitDesc {
             id: self.id.clone(),
         }

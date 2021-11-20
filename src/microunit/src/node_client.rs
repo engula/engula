@@ -14,7 +14,7 @@
 
 use reqwest::Client;
 
-use super::{error::Result, node::NodeDesc};
+use crate::{error::Result, node::NodeDesc};
 
 pub struct NodeClient {
     url: String,

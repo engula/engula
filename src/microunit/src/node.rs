@@ -45,7 +45,7 @@ impl Node {
         let inner = self.inner.lock().await;
         let mut descs = Vec::new();
         for unit in inner.units.values() {
-            descs.push(unit.desc().await);
+            descs.push(unit.status().await);
         }
         descs
     }
@@ -55,7 +55,7 @@ impl Node {
         if let Some(builder) = inner.unit_builders.get(&spec.kind) {
             let id = Uuid::new_v4().to_string();
             let unit = builder.spawn(id.clone(), spec).await?;
-            let desc = unit.desc().await;
+            let desc = unit.status().await;
             assert!(inner.units.insert(id, unit).is_none());
             Ok(desc)
         } else {
