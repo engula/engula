@@ -37,8 +37,8 @@ async fn integration_test_bucket_management() {
 
     let storage = S3Storage::new(TEST_REGION, config);
 
-    let bucket = "tests-bucket-mng";
-    let object = "tests-object-0";
+    let bucket = "bucket-mng";
+    let object = "object-0";
 
     storage.create_bucket(bucket).await.unwrap();
     let b = storage.bucket(bucket).await.unwrap();
@@ -70,8 +70,8 @@ async fn integration_test_multipart_put() {
 
     let storage = S3Storage::new(TEST_REGION, config);
 
-    let bucket = "tests-multipart-put";
-    let object = "test-object-0";
+    let bucket = "multipart-put";
+    let object = "object-0";
 
     storage.create_bucket(bucket).await.unwrap();
     let b = storage.bucket(bucket).await.unwrap();
