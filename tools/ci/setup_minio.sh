@@ -12,21 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Audit License
+export MINIO_REGION_NAME=us-east-2
+export MINIO_ROOT_USER=engulatest
+export MINIO_ROOT_PASSWORD=engulatest
 
-on: [push, pull_request]
+DATADIR=$(mktemp -d)
+CONFIG_UNAME=$(uname)
+case "${CONFIG_UNAME}" in
+  Linux)
+    curl -O https://dl.min.io/server/minio/release/linux-amd64/minio
+    ;;
+  Darwin)
+    curl -O https://dl.min.io/server/minio/release/darwin-amd64/minio
+    ;;
+esac
 
-# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
-concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
-
-jobs:
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: apache/skywalking-eyes@main
-        with:
-          config: tools/ci/licenserc.yml
+chmod +x minio
+./minio server "$DATADIR" &
+curl \
+    --retry 5 \
+    --retry-delay 1 \
+    --retry-connrefused \
+    http://127.0.0.1:9000/minio/health/live

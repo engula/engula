@@ -24,6 +24,11 @@ on:
       - 'docs/'
       - '*.md'
 
+# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run tests
@@ -51,6 +56,9 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: build
+
+    - name: Setup MinIO
+      run: ./tools/ci/setup_minio.sh
 
     - name: Cargo test
       uses: actions-rs/cargo@v1
