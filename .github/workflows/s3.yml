@@ -49,11 +49,26 @@ jobs:
       with:
         command: build
 
-    - name: Setup MinIO
-      run: ./tools/ci/setup_minio.sh
+    - name: Setup minio
+      run: |
+        docker run --detach \
+          -p 9000:9000 \
+          -p 9001:9001 \
+          -v "$(mktemp -d)":/data \
+          -e "MINIO_ROOT_USER=engulatest" \
+          -e "MINIO_ROOT_PASSWORD=engulatest" \
+          -e "MINIO_REGION_NAME=us-east-2" \
+          quay.io/minio/minio server /data --console-address ":9001"
+
+    - name: Liveness probe
+      timeout-minutes: 1
+      run: |
+        until curl http://127.0.0.1:9000/minio/health/live; do
+            sleep 1
+        done
 
     - name: Cargo test
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --manifest-path src/platform/aws/Cargo.toml -- --ignored
+        args: --manifest-path src/platform/aws/Cargo.toml integration_test_ -- --ignored
