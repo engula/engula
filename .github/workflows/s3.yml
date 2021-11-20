@@ -28,15 +28,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  minio:
     name: Run tests
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        rust: [nightly]
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
@@ -46,7 +40,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: ${{ matrix.rust }}
+        toolchain: nightly
         components: rustfmt
         override: true
 
