@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use aws_sdk_s3::{
-    model::{BucketLocationConstraint, CreateBucketConfiguration},
+    model::{BucketCannedAcl, BucketLocationConstraint, CreateBucketConfiguration},
     Client, Config,
 };
 use storage::{async_trait, Storage};
@@ -54,24 +54,11 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .build();
         self.client
             .create_bucket()
+            .acl(BucketCannedAcl::Private)
             .bucket(name.to_owned())
             .create_bucket_configuration(config)
             .send()
             .await?;
-
-        // self.client
-        //     .put_public_access_block()
-        //     .bucket(name.to_owned())
-        //     .public_access_block_configuration(
-        //         PublicAccessBlockConfiguration::builder()
-        //             .restrict_public_buckets(true)
-        //             .block_public_policy(true)
-        //             .ignore_public_acls(true)
-        //             .block_public_acls(true)
-        //             .build(),
-        //     )
-        //     .send()
-        //     .await?;
 
         Ok(S3Bucket::new(self.client.clone(), name))
     }
