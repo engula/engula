@@ -24,7 +24,6 @@ on:
   schedule:
     - cron: '25 4 * * *'
 
-# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true

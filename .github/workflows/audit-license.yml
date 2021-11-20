@@ -16,7 +16,6 @@ name: Audit License
 
 on: [push, pull_request]
 
-# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true

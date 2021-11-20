@@ -16,13 +16,12 @@ name: S3 Integration Tests
 
 on:
   push:
-    path:
+    paths:
       - 'platform/aws/'
   pull_request:
-    paths-ignore:
+    paths:
       - 'platform/aws/'
 
-# See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
