@@ -54,3 +54,35 @@ async fn test_bucket_management() {
     b.delete_object(object).await.unwrap();
     storage.delete_bucket(bucket).await.unwrap();
 }
+
+#[tokio::test]
+async fn test_multipart_put() {
+    let region = Some(Region::new(TEST_REGION));
+    let credentials = Credentials::from_keys(ACCESS_KEY, SECRET_KEY, None);
+    let endpoint = Endpoint::immutable(Uri::from_static("http://127.0.0.1:9000"));
+    let config = Config::builder()
+        .region(region)
+        .credentials_provider(credentials)
+        .endpoint_resolver(endpoint)
+        .build();
+
+    let storage = S3Storage::new(TEST_REGION, config);
+
+    let bucket = "tests-multipart-put";
+    let object = "test-object-0";
+
+    storage.create_bucket(bucket).await.unwrap();
+    let b = storage.bucket(bucket).await.unwrap();
+    let mut up = b.upload_object(object).await.unwrap();
+    up.write("123".as_bytes()).await.unwrap();
+    up.finish().await.unwrap();
+
+    let reader = b.object(object).await.unwrap();
+    let mut buf: [u8; 2] = [0; 2];
+    let rs = reader.read_at(&mut buf[..], 0).await.unwrap();
+    assert_eq!(rs, 2);
+    assert_eq!(&buf[..], b"12");
+
+    b.delete_object(object).await.unwrap();
+    storage.delete_bucket(bucket).await.unwrap();
+}
