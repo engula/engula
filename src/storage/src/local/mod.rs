@@ -17,7 +17,7 @@ mod error;
 mod object;
 mod storage;
 
-pub use storage::LocalStorage;
+pub use self::storage::LocalStorage;
 
 #[cfg(test)]
 mod tests {
