@@ -16,8 +16,8 @@ mod bucket;
 mod object;
 mod storage;
 
-pub mod fs;
 pub mod grpc;
+pub mod local;
 pub mod mem;
 
 pub use async_trait::async_trait;

@@ -17,7 +17,7 @@ mod error;
 mod object;
 mod storage;
 
-pub use storage::FsStorage;
+pub use storage::LocalStorage;
 
 #[cfg(test)]
 mod tests {
@@ -51,7 +51,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket";
         let g = TestEnvGuard::setup("test_bucket_manage");
 
-        let s = FsStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
         s.bucket(BUCKET_NAME).await?;
@@ -65,7 +65,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_object";
         let g = TestEnvGuard::setup("test_object_manage");
 
-        let s = FsStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_path()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
@@ -85,7 +85,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket_dup";
         let g = TestEnvGuard::setup("test_bucket_duplicate");
 
-        let s = FsStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
@@ -100,17 +100,14 @@ mod tests {
     async fn test_clear_non_empty_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
-        let s = FsStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_path()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
         let mut u = b.upload_object("obj-1").await?;
         u.write(b"abcd").await?;
         u.finish().await?;
         let r = s.delete_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
-        assert_eq!(
-            "Directory not empty (os error 66)",
-            r.err().unwrap().to_string()
-        );
+        assert!(r.err().unwrap().to_string().contains("Directory not empty"));
         Ok(())
     }
 
@@ -118,7 +115,7 @@ mod tests {
     async fn test_put_duplicate_obj() -> Result<()> {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
-        let s = FsStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_path()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;

@@ -18,15 +18,15 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use super::{
     error::{Error, Result},
-    object::FsObject,
+    object::LocalObject,
 };
 use crate::{async_trait, Bucket, ObjectUploader};
 
-pub struct FsBucket {
+pub struct LocalBucket {
     path: PathBuf,
 }
 
-impl FsBucket {
+impl LocalBucket {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().into(),
@@ -41,20 +41,20 @@ impl FsBucket {
 }
 
 #[async_trait]
-impl Bucket<FsObject> for FsBucket {
-    type ObjectUploader = FsObjectUploader;
+impl Bucket<LocalObject> for LocalBucket {
+    type ObjectUploader = LocalObjectUploader;
 
-    async fn object(&self, name: &str) -> Result<FsObject> {
+    async fn object(&self, name: &str) -> Result<LocalObject> {
         let path = self.object_path(name.to_owned());
         if fs::metadata(path.as_path()).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
         }
-        Ok(FsObject::new(path))
+        Ok(LocalObject::new(path))
     }
 
-    async fn upload_object(&self, name: &str) -> Result<FsObjectUploader> {
+    async fn upload_object(&self, name: &str) -> Result<LocalObjectUploader> {
         let path = self.object_path(name.to_owned());
-        Ok(FsObjectUploader::new(path))
+        Ok(LocalObjectUploader::new(path))
     }
 
     async fn delete_object(&self, name: &str) -> Result<()> {
@@ -64,12 +64,12 @@ impl Bucket<FsObject> for FsBucket {
     }
 }
 
-pub struct FsObjectUploader {
+pub struct LocalObjectUploader {
     path: PathBuf,
     buf: Vec<u8>,
 }
 
-impl FsObjectUploader {
+impl LocalObjectUploader {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().into(),
@@ -79,7 +79,7 @@ impl FsObjectUploader {
 }
 
 #[async_trait]
-impl ObjectUploader for FsObjectUploader {
+impl ObjectUploader for LocalObjectUploader {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {

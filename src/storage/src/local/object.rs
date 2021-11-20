@@ -25,11 +25,11 @@ use tokio::{
 use super::error::{Error, Result};
 use crate::{async_trait, Object};
 
-pub struct FsObject {
+pub struct LocalObject {
     path: PathBuf,
 }
 
-impl FsObject {
+impl LocalObject {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().into(),
@@ -38,7 +38,7 @@ impl FsObject {
 }
 
 #[async_trait]
-impl Object for FsObject {
+impl Object for LocalObject {
     type Error = Error;
 
     async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {
