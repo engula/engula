@@ -16,6 +16,10 @@ name: Audit License
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   audit:
     name: Audit

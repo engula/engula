@@ -24,6 +24,10 @@ on:
       - 'docs/'
       - '*.md'
 
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run tests
