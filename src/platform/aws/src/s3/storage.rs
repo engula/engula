@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use aws_sdk_s3::{
-    model::{BucketLocationConstraint, CreateBucketConfiguration, PublicAccessBlockConfiguration},
-    Client, Config, Credentials, Region,
+    model::{BucketLocationConstraint, CreateBucketConfiguration},
+    Client, Config,
 };
 use storage::{async_trait, Storage};
 
@@ -26,25 +26,11 @@ pub struct S3Storage {
 }
 
 impl S3Storage {
-    pub fn new(
-        region: impl Into<String>,
-        access_key: impl Into<String>,
-        secret_key: impl Into<String>,
-    ) -> Self {
-        let credentials = Credentials::from_keys(access_key, secret_key, None);
-        let region = region.into();
-        let client = Client::from_conf(
-            Config::builder()
-                .region(Some(Region::new(region.to_owned())))
-                .credentials_provider(credentials)
-                .build(),
-        );
-        Self::from_client(client, region)
-    }
-
-    pub fn from_client(client: Client, region: impl Into<String>) -> Self {
-        let region = region.into();
-        Self { client, region }
+    pub fn new(region: impl Into<String>, config: Config) -> Self {
+        Self {
+            client: Client::from_conf(config),
+            region: region.into(),
+        }
     }
 }
 
@@ -73,19 +59,19 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .send()
             .await?;
 
-        self.client
-            .put_public_access_block()
-            .bucket(name.to_owned())
-            .public_access_block_configuration(
-                PublicAccessBlockConfiguration::builder()
-                    .restrict_public_buckets(true)
-                    .block_public_policy(true)
-                    .ignore_public_acls(true)
-                    .block_public_acls(true)
-                    .build(),
-            )
-            .send()
-            .await?;
+        // self.client
+        //     .put_public_access_block()
+        //     .bucket(name.to_owned())
+        //     .public_access_block_configuration(
+        //         PublicAccessBlockConfiguration::builder()
+        //             .restrict_public_buckets(true)
+        //             .block_public_policy(true)
+        //             .ignore_public_acls(true)
+        //             .block_public_acls(true)
+        //             .build(),
+        //     )
+        //     .send()
+        //     .await?;
 
         Ok(S3Bucket::new(self.client.clone(), name))
     }

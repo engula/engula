@@ -18,3 +18,50 @@ mod object;
 mod storage;
 
 pub use self::storage::S3Storage;
+
+#[cfg(test)]
+mod tests {
+    use ::storage::*;
+    use aws_sdk_s3::Config;
+    use aws_types::{region::Region, Credentials};
+    use http::Uri;
+    use smithy_http::endpoint::Endpoint;
+
+    use super::*;
+
+    const ACCESS_KEY: &str = "engulatest";
+    const SECRET_KEY: &str = "engulatest";
+    const TEST_REGION: &str = "us-east-2";
+
+    #[tokio::test]
+    async fn test_bucket_management() {
+        let region = Some(Region::new(TEST_REGION));
+        let credentials = Credentials::from_keys(ACCESS_KEY, SECRET_KEY, None);
+        let endpoint = Endpoint::immutable(Uri::from_static("http://127.0.0.1:9000"));
+        let config = Config::builder()
+            .region(region)
+            .credentials_provider(credentials)
+            .endpoint_resolver(endpoint)
+            .build();
+
+        let storage = S3Storage::new(TEST_REGION, config);
+
+        let bucket = "tests-bucket-mng";
+        let object = "tests-object-0";
+
+        storage.create_bucket(bucket).await.unwrap();
+        let b = storage.bucket(bucket).await.unwrap();
+        let mut up = b.upload_object(object).await.unwrap();
+        let buf = vec![0, 1, 2];
+        up.write(&buf).await.unwrap();
+        let len = up.finish().await.unwrap();
+        assert_eq!(len, buf.len());
+        let o = b.object(object).await.unwrap();
+        let mut got = vec![0; buf.len()];
+        o.read_at(&mut got, 0).await.unwrap();
+        assert_eq!(got, buf);
+
+        b.delete_object(object).await.unwrap();
+        storage.delete_bucket(bucket).await.unwrap();
+    }
+}

@@ -6,8 +6,11 @@ edition = "2021"
 [dependencies]
 bytes = "1.1"
 thiserror = "1.0"
+futures = "0.3"
+http = "0.2"
 tokio = {version = "1.13", features = ["full"]}
 storage = {path = "../../storage"}
+aws-endpoint = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-endpoint"}
 aws-sdk-s3 = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-sdk-s3"}
 aws-types = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "aws-types"}
 smithy-http = {git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.0.17-alpha", package = "smithy-http"}
