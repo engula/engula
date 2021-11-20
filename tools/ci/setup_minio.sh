@@ -17,20 +17,12 @@ export MINIO_ROOT_USER=engulatest
 export MINIO_ROOT_PASSWORD=engulatest
 
 DATADIR=$(mktemp -d)
-CONFIG_UNAME=$(uname)
-case "${CONFIG_UNAME}" in
-  Linux)
-    curl -O https://dl.min.io/server/minio/release/linux-amd64/minio
-    ;;
-  Darwin)
-    curl -O https://dl.min.io/server/minio/release/darwin-amd64/minio
-    ;;
-esac
-
-chmod +x minio
-./minio server "$DATADIR" &
-curl \
-    --retry 5 \
-    --retry-delay 1 \
-    --retry-connrefused \
-    http://127.0.0.1:9000/minio/health/live
+docker run \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  --name minio1 \
+  -v "$DATADIR":/data \
+  -e "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
+  -e "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
+  -e "MINIO_REGION_NAME=$MINIO_REGION_NAME" \
+  quay.io/minio/minio server /data --console-address ":9001"
