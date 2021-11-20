@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-export MINIO_REGION_NAME=us-east-2
-export MINIO_ROOT_USER=engulatest
-export MINIO_ROOT_PASSWORD=engulatest
-
+MINIO_REGION_NAME=us-east-2
+MINIO_ROOT_USER=engulatest
+MINIO_ROOT_PASSWORD=engulatest
 DATADIR=$(mktemp -d)
+
 docker run --detach \
   -p 9000:9000 \
   -p 9001:9001 \
