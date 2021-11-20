@@ -12,17 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Check Code
+name: S3 Integration Tests
 
 on:
   push:
-    paths-ignore:
-      - 'docs/'
-      - '*.md'
+    path:
+      - 'platform/aws/'
   pull_request:
     paths-ignore:
-      - 'docs/'
-      - '*.md'
+      - 'platform/aws/'
 
 # See: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#concurrency.
 concurrency:
@@ -57,60 +55,11 @@ jobs:
       with:
         command: build
 
+    - name: Setup MinIO
+      run: ./tools/ci/setup_minio.sh
+
     - name: Cargo test
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --workspace
-
-  check:
-    name: Check style
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        components: clippy, rustfmt
-        override: true
-
-    - name: Check clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --workspace --tests --all-features -- -D warnings
-
-    - name: Check format
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all -- --check
-
-  tidy:
-    name: Check tidy
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-          profile: minimal
-          toolchain: nightly
-          components: rustfmt
-          override: true
-
-    - name: Cargo build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-
-    - name: Verify tidy
-      run: git diff --exit-code
+        args: --manifest-path src/platform/aws/Cargo.toml -- --ignored

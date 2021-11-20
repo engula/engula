@@ -24,6 +24,7 @@ const SECRET_KEY: &str = "engulatest";
 const TEST_REGION: &str = "us-east-2";
 
 #[tokio::test]
+#[ignore]
 async fn test_bucket_management() {
     let region = Some(Region::new(TEST_REGION));
     let credentials = Credentials::from_keys(ACCESS_KEY, SECRET_KEY, None);
@@ -56,6 +57,7 @@ async fn test_bucket_management() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_multipart_put() {
     let region = Some(Region::new(TEST_REGION));
     let credentials = Credentials::from_keys(ACCESS_KEY, SECRET_KEY, None);

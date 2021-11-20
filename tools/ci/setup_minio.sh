@@ -17,10 +17,9 @@ export MINIO_ROOT_USER=engulatest
 export MINIO_ROOT_PASSWORD=engulatest
 
 DATADIR=$(mktemp -d)
-docker run \
+docker run --detach \
   -p 9000:9000 \
   -p 9001:9001 \
-  --name minio1 \
   -v "$DATADIR":/data \
   -e "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
   -e "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
