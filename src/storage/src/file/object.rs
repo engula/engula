@@ -22,18 +22,18 @@ use tokio::{
 use super::error::{Error, Result};
 use crate::{async_trait, Object};
 
-pub struct LocalObject {
+pub struct FileObject {
     path: PathBuf,
 }
 
-impl<'a> LocalObject {
+impl<'a> FileObject {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
 }
 
 #[async_trait]
-impl Object for LocalObject {
+impl Object for FileObject {
     type Error = Error;
 
     async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {

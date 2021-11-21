@@ -19,7 +19,7 @@ mod storage;
 
 pub use std::borrow::Cow;
 
-pub use self::storage::LocalStorage;
+pub use self::storage::FileStorage;
 
 #[cfg(test)]
 mod tests {
@@ -53,7 +53,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket";
         let g = TestEnvGuard::setup("test_bucket_manage");
 
-        let s = LocalStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(g.path.as_ref()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
         s.bucket(BUCKET_NAME).await?;
@@ -67,7 +67,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_object";
         let g = TestEnvGuard::setup("test_object_manage");
 
-        let s = LocalStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
@@ -87,7 +87,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket_dup";
         let g = TestEnvGuard::setup("test_bucket_duplicate");
 
-        let s = LocalStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(g.path.as_ref()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
@@ -102,7 +102,7 @@ mod tests {
     async fn test_clear_non_empty_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
-        let s = LocalStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
         let mut u = b.upload_object("obj-1").await?;
         u.write(b"abcd").await?;
@@ -117,7 +117,7 @@ mod tests {
     async fn test_put_duplicate_obj() -> Result<()> {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
-        let s = LocalStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;

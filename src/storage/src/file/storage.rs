@@ -17,18 +17,18 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use super::{
-    bucket::LocalBucket,
+    bucket::FileBucket,
     error::{Error, Result},
-    object::LocalObject,
+    object::FileObject,
 };
 use crate::{async_trait, Storage};
 
-pub struct LocalStorage {
+pub struct FileStorage {
     root: PathBuf,
 }
 
-impl<'a> LocalStorage {
-    pub async fn new(root: impl Into<PathBuf>) -> Result<LocalStorage> {
+impl<'a> FileStorage {
+    pub async fn new(root: impl Into<PathBuf>) -> Result<FileStorage> {
         let path = root.into();
         fs::DirBuilder::new().recursive(true).create(&path).await?;
         Ok(Self { root: path })
@@ -40,18 +40,18 @@ impl<'a> LocalStorage {
 }
 
 #[async_trait]
-impl Storage<LocalObject, LocalBucket> for LocalStorage {
-    async fn bucket(&self, name: &str) -> Result<LocalBucket> {
+impl Storage<FileObject, FileBucket> for FileStorage {
+    async fn bucket(&self, name: &str) -> Result<FileBucket> {
         let path = self.bucket_path(name);
 
         if fs::metadata(&path).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
         }
 
-        Ok(LocalBucket::new(path))
+        Ok(FileBucket::new(path))
     }
 
-    async fn create_bucket(&self, name: &str) -> Result<LocalBucket> {
+    async fn create_bucket(&self, name: &str) -> Result<FileBucket> {
         let path = self.bucket_path(name);
 
         if fs::metadata(&path).await.is_ok() {
@@ -60,7 +60,7 @@ impl Storage<LocalObject, LocalBucket> for LocalStorage {
 
         fs::create_dir_all(&path).await?;
 
-        Ok(LocalBucket::new(path))
+        Ok(FileBucket::new(path))
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {

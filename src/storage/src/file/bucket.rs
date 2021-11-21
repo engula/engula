@@ -18,15 +18,15 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use super::{
     error::{Error, Result},
-    object::LocalObject,
+    object::FileObject,
 };
 use crate::{async_trait, Bucket, ObjectUploader};
 
-pub struct LocalBucket {
+pub struct FileBucket {
     path: PathBuf,
 }
 
-impl LocalBucket {
+impl FileBucket {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
@@ -37,20 +37,20 @@ impl LocalBucket {
 }
 
 #[async_trait]
-impl Bucket<LocalObject> for LocalBucket {
-    type ObjectUploader = LocalObjectUploader;
+impl Bucket<FileObject> for FileBucket {
+    type ObjectUploader = FileObjectUploader;
 
-    async fn object(&self, name: &str) -> Result<LocalObject> {
+    async fn object(&self, name: &str) -> Result<FileObject> {
         let path = self.object_path(name);
         if fs::metadata(&path).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
         }
-        Ok(LocalObject::new(path))
+        Ok(FileObject::new(path))
     }
 
-    async fn upload_object(&self, name: &str) -> Result<LocalObjectUploader> {
+    async fn upload_object(&self, name: &str) -> Result<FileObjectUploader> {
         let path = self.object_path(name);
-        Ok(LocalObjectUploader::new(path))
+        Ok(FileObjectUploader::new(path))
     }
 
     async fn delete_object(&self, name: &str) -> Result<()> {
@@ -60,12 +60,12 @@ impl Bucket<LocalObject> for LocalBucket {
     }
 }
 
-pub struct LocalObjectUploader {
+pub struct FileObjectUploader {
     path: PathBuf,
     buf: Vec<u8>,
 }
 
-impl<'a> LocalObjectUploader {
+impl<'a> FileObjectUploader {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -75,7 +75,7 @@ impl<'a> LocalObjectUploader {
 }
 
 #[async_trait]
-impl<'a> ObjectUploader for LocalObjectUploader {
+impl<'a> ObjectUploader for FileObjectUploader {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
