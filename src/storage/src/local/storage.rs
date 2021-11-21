@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{Path, PathBuf};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
 
 use tokio::fs;
 
@@ -23,32 +26,28 @@ use super::{
 };
 use crate::{async_trait, Storage};
 
-pub struct LocalStorage {
-    root: PathBuf,
+pub struct LocalStorage<'a> {
+    root: Cow<'a, Path>,
 }
 
-impl LocalStorage {
-    pub async fn from(root: impl AsRef<Path>) -> Result<Self> {
-        let path = root.as_ref();
+impl<'a> LocalStorage<'a> {
+    pub async fn from(root: impl Into<Cow<'a, Path>>) -> Result<LocalStorage<'a>> {
+        let path = root.into();
         fs::DirBuilder::new()
             .recursive(true)
-            .create(path.to_owned())
+            .create(path.as_ref())
             .await?;
-        Ok(Self {
-            root: path.to_owned(),
-        })
+        Ok(Self { root: path })
     }
 
-    fn bucket_path(&self, name: impl Into<String>) -> PathBuf {
-        let mut path = self.root.to_owned();
-        path.push(name.into());
-        path
+    fn bucket_path(&self, name: impl AsRef<Path>) -> PathBuf {
+        self.root.as_ref().join(name)
     }
 }
 
 #[async_trait]
-impl Storage<LocalObject, LocalBucket> for LocalStorage {
-    async fn bucket(&self, name: &str) -> Result<LocalBucket> {
+impl<'a> Storage<LocalObject<'a>, LocalBucket<'a>> for LocalStorage<'a> {
+    async fn bucket(&self, name: &str) -> Result<LocalBucket<'a>> {
         let path = self.bucket_path(name);
 
         if fs::metadata(path.as_path()).await.is_err() {
@@ -58,7 +57,7 @@ impl Storage<LocalObject, LocalBucket> for LocalStorage {
         Ok(LocalBucket::new(path))
     }
 
-    async fn create_bucket(&self, name: &str) -> Result<LocalBucket> {
+    async fn create_bucket(&self, name: &str) -> Result<LocalBucket<'a>> {
         let path = self.bucket_path(name);
 
         if fs::metadata(path.as_path()).await.is_ok() {

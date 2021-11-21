@@ -17,32 +17,34 @@ mod error;
 mod object;
 mod storage;
 
+pub use std::borrow::Cow;
+
 pub use self::storage::LocalStorage;
 
 #[cfg(test)]
 mod tests {
-    use std::{env, path::PathBuf, process};
+    use std::{env, path::Path, process};
 
     use super::{error::Result, *};
     use crate::*;
 
-    struct TestEnvGuard {
-        path: PathBuf,
+    struct TestEnvGuard<'a> {
+        path: Cow<'a, Path>,
     }
 
-    impl TestEnvGuard {
+    impl<'a> TestEnvGuard<'a> {
         fn setup(case: &str) -> Self {
             let mut path = env::temp_dir();
             path.push("englua-storage-fs-test");
             path.push(process::id().to_string());
             path.push(case);
-            Self { path }
+            Self { path: path.into() }
         }
     }
 
-    impl Drop for TestEnvGuard {
+    impl<'a> Drop for TestEnvGuard<'a> {
         fn drop(&mut self) {
-            std::fs::remove_dir_all(self.path.as_path()).unwrap();
+            std::fs::remove_dir_all(self.path.as_ref()).unwrap();
         }
     }
 
@@ -51,7 +53,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket";
         let g = TestEnvGuard::setup("test_bucket_manage");
 
-        let s = LocalStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_ref()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
         s.bucket(BUCKET_NAME).await?;
@@ -65,7 +67,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_object";
         let g = TestEnvGuard::setup("test_object_manage");
 
-        let s = LocalStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
@@ -85,7 +87,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket_dup";
         let g = TestEnvGuard::setup("test_bucket_duplicate");
 
-        let s = LocalStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_ref()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
@@ -100,7 +102,7 @@ mod tests {
     async fn test_clear_non_empty_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
-        let s = LocalStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
         let mut u = b.upload_object("obj-1").await?;
         u.write(b"abcd").await?;
@@ -115,7 +117,7 @@ mod tests {
     async fn test_put_duplicate_obj() -> Result<()> {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
-        let s = LocalStorage::from(g.path.as_path()).await?;
+        let s = LocalStorage::from(g.path.as_ref()).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
