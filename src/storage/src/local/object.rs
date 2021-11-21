@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Cow, io::SeekFrom, path::Path};
+use std::{io::SeekFrom, path::PathBuf};
 
 use tokio::{
     fs,
@@ -22,18 +22,18 @@ use tokio::{
 use super::error::{Error, Result};
 use crate::{async_trait, Object};
 
-pub struct LocalObject<'a> {
-    path: Cow<'a, Path>,
+pub struct LocalObject {
+    path: PathBuf,
 }
 
-impl<'a> LocalObject<'a> {
-    pub fn new(path: impl Into<Cow<'a, Path>>) -> Self {
+impl<'a> LocalObject {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
 }
 
 #[async_trait]
-impl<'a> Object for LocalObject<'a> {
+impl Object for LocalObject {
     type Error = Error;
 
     async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {

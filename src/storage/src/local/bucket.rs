@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -25,12 +22,12 @@ use super::{
 };
 use crate::{async_trait, Bucket, ObjectUploader};
 
-pub struct LocalBucket<'a> {
-    path: Cow<'a, Path>,
+pub struct LocalBucket {
+    path: PathBuf,
 }
 
-impl<'a> LocalBucket<'a> {
-    pub fn new(path: impl Into<Cow<'a, Path>>) -> Self {
+impl LocalBucket {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
 
@@ -40,10 +37,10 @@ impl<'a> LocalBucket<'a> {
 }
 
 #[async_trait]
-impl<'a> Bucket<LocalObject<'a>> for LocalBucket<'a> {
-    type ObjectUploader = LocalObjectUploader<'a>;
+impl Bucket<LocalObject> for LocalBucket {
+    type ObjectUploader = LocalObjectUploader;
 
-    async fn object(&self, name: &str) -> Result<LocalObject<'a>> {
+    async fn object(&self, name: &str) -> Result<LocalObject> {
         let path = self.object_path(name);
         if fs::metadata(&path).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
@@ -51,7 +48,7 @@ impl<'a> Bucket<LocalObject<'a>> for LocalBucket<'a> {
         Ok(LocalObject::new(path))
     }
 
-    async fn upload_object(&self, name: &str) -> Result<LocalObjectUploader<'a>> {
+    async fn upload_object(&self, name: &str) -> Result<LocalObjectUploader> {
         let path = self.object_path(name);
         Ok(LocalObjectUploader::new(path))
     }
@@ -63,13 +60,13 @@ impl<'a> Bucket<LocalObject<'a>> for LocalBucket<'a> {
     }
 }
 
-pub struct LocalObjectUploader<'a> {
-    path: Cow<'a, Path>,
+pub struct LocalObjectUploader {
+    path: PathBuf,
     buf: Vec<u8>,
 }
 
-impl<'a> LocalObjectUploader<'a> {
-    pub fn new(path: impl Into<Cow<'a, Path>>) -> Self {
+impl<'a> LocalObjectUploader {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             buf: vec![],
@@ -78,7 +75,7 @@ impl<'a> LocalObjectUploader<'a> {
 }
 
 #[async_trait]
-impl<'a> ObjectUploader for LocalObjectUploader<'a> {
+impl<'a> ObjectUploader for LocalObjectUploader {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
