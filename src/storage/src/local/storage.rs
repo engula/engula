@@ -33,15 +33,12 @@ pub struct LocalStorage<'a> {
 impl<'a> LocalStorage<'a> {
     pub async fn from(root: impl Into<Cow<'a, Path>>) -> Result<LocalStorage<'a>> {
         let path = root.into();
-        fs::DirBuilder::new()
-            .recursive(true)
-            .create(path.as_ref())
-            .await?;
+        fs::DirBuilder::new().recursive(true).create(&path).await?;
         Ok(Self { root: path })
     }
 
     fn bucket_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.root.as_ref().join(name)
+        self.root.join(name)
     }
 }
 
@@ -50,7 +47,7 @@ impl<'a> Storage<LocalObject<'a>, LocalBucket<'a>> for LocalStorage<'a> {
     async fn bucket(&self, name: &str) -> Result<LocalBucket<'a>> {
         let path = self.bucket_path(name);
 
-        if fs::metadata(path.as_path()).await.is_err() {
+        if fs::metadata(&path).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
         }
 
@@ -60,11 +57,11 @@ impl<'a> Storage<LocalObject<'a>, LocalBucket<'a>> for LocalStorage<'a> {
     async fn create_bucket(&self, name: &str) -> Result<LocalBucket<'a>> {
         let path = self.bucket_path(name);
 
-        if fs::metadata(path.as_path()).await.is_ok() {
+        if fs::metadata(&path).await.is_ok() {
             return Err(Error::AlreadyExists(name.to_owned()));
         }
 
-        fs::create_dir_all(path.as_path()).await?;
+        fs::create_dir_all(&path).await?;
 
         Ok(LocalBucket::new(path))
     }
@@ -72,7 +69,7 @@ impl<'a> Storage<LocalObject<'a>, LocalBucket<'a>> for LocalStorage<'a> {
     async fn delete_bucket(&self, name: &str) -> Result<()> {
         let path = self.bucket_path(name);
 
-        fs::remove_dir(path.as_path()).await?;
+        fs::remove_dir(path).await?;
 
         Ok(())
     }

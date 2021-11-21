@@ -44,7 +44,7 @@ mod tests {
 
     impl<'a> Drop for TestEnvGuard<'a> {
         fn drop(&mut self) {
-            std::fs::remove_dir_all(self.path.as_ref()).unwrap();
+            std::fs::remove_dir_all(&self.path).unwrap();
         }
     }
 

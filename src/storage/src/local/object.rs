@@ -37,10 +37,7 @@ impl<'a> Object for LocalObject<'a> {
     type Error = Error;
 
     async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {
-        let mut f: fs::File = fs::OpenOptions::new()
-            .read(true)
-            .open(self.path.as_ref())
-            .await?;
+        let mut f: fs::File = fs::OpenOptions::new().read(true).open(&self.path).await?;
 
         f.seek(SeekFrom::Start(offset as u64)).await?;
 

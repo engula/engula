@@ -35,7 +35,7 @@ impl<'a> LocalBucket<'a> {
     }
 
     fn object_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.path.as_ref().join(name)
+        self.path.join(name)
     }
 }
 
@@ -45,7 +45,7 @@ impl<'a> Bucket<LocalObject<'a>> for LocalBucket<'a> {
 
     async fn object(&self, name: &str) -> Result<LocalObject<'a>> {
         let path = self.object_path(name);
-        if fs::metadata(path.as_path()).await.is_err() {
+        if fs::metadata(&path).await.is_err() {
             return Err(Error::NotFound(name.to_owned()));
         }
         Ok(LocalObject::new(path))
@@ -58,7 +58,7 @@ impl<'a> Bucket<LocalObject<'a>> for LocalBucket<'a> {
 
     async fn delete_object(&self, name: &str) -> Result<()> {
         let path = self.object_path(name);
-        fs::remove_file(path.as_path()).await?;
+        fs::remove_file(path).await?;
         Ok(())
     }
 }
@@ -91,11 +91,10 @@ impl<'a> ObjectUploader for LocalObjectUploader<'a> {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(self.path.as_ref())
+            .open(&self.path)
             .await?;
 
-        let v: &[u8] = &self.buf;
-        f.write_all(v).await?;
+        f.write_all(&self.buf).await?;
         f.sync_all().await?;
 
         Ok(1)
