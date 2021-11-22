@@ -14,13 +14,9 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{
-    extract::Extension, http::StatusCode, response::IntoResponse, routing::get, AddExtensionLayer,
-    Json, Router, Server,
-};
-use serde_json::json;
+use axum::{Router, Server};
 
-use crate::{node::Node, unit::UnitSpec};
+use crate::Node;
 
 /// An HTTP server that serves a node.
 pub struct NodeServer {
@@ -33,9 +29,7 @@ impl NodeServer {
     }
 
     pub async fn serve(&self, node: Node) {
-        let router = Router::new()
-            .route("/units", get(list_units).post(create_unit))
-            .layer(AddExtensionLayer::new(Arc::new(node)));
+        let router = Router::new().nest("/v1", v1::route(Arc::new(node)));
         Server::bind(&self.addr)
             .serve(router.into_make_service())
             .await
@@ -43,27 +37,29 @@ impl NodeServer {
     }
 }
 
-async fn list_units(Extension(node): Extension<Arc<Node>>) -> impl IntoResponse {
-    let descs = node.list_units().await;
-    (StatusCode::OK, Json(descs))
-}
+mod v1 {
+    use std::sync::Arc;
 
-async fn create_unit(
-    Json(spec): Json<UnitSpec>,
-    Extension(node): Extension<Arc<Node>>,
-) -> impl IntoResponse {
-    match node.create_unit(spec).await {
-        Ok(desc) => {
-            let resp = json!({
-                "desc": desc,
-            });
-            (StatusCode::CREATED, Json(resp))
-        }
-        Err(err) => {
-            let resp = json!({
-                "error": err.to_string(),
-            });
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(resp))
-        }
+    use axum::{extract::Extension, routing::get, AddExtensionLayer, Json, Router};
+
+    use crate::{Node, Result, UnitDesc, UnitDescList, UnitSpec};
+
+    pub fn route(node: Arc<Node>) -> Router {
+        Router::new()
+            .route("/units", get(list_units).post(create_unit))
+            .layer(AddExtensionLayer::new(node))
+    }
+
+    async fn list_units(Extension(node): Extension<Arc<Node>>) -> Result<Json<UnitDescList>> {
+        let descs = node.list_units().await;
+        Ok(descs.into())
+    }
+
+    async fn create_unit(
+        Extension(node): Extension<Arc<Node>>,
+        Json(spec): Json<UnitSpec>,
+    ) -> Result<Json<UnitDesc>> {
+        let desc = node.create_unit(spec).await?;
+        Ok(desc.into())
     }
 }

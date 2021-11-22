@@ -793,6 +793,7 @@ dependencies = [
  "axum",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "uuid",
 ]

@@ -23,6 +23,8 @@ pub struct UnitDesc {
     pub id: String,
 }
 
+pub type UnitDescList = Vec<UnitDesc>;
+
 /// A unit specification that specifies the desired state of a unit.
 #[derive(Serialize, Deserialize, Default)]
 pub struct UnitSpec {

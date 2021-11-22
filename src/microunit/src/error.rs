@@ -12,14 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(Debug)]
+use std::convert::Infallible;
+
+use axum::{
+    body::{Bytes, Full},
+    http::{Response, StatusCode},
+    response::IntoResponse,
+    Json,
+};
+use serde_json::json;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub enum Error {
-    InvalidArgument,
+    #[error("{0}")]
+    InvalidArgument(String),
 }
 
-impl ToString for Error {
-    fn to_string(&self) -> String {
-        format!("{:?}", self)
+impl IntoResponse for Error {
+    type Body = Full<Bytes>;
+    type BodyError = Infallible;
+
+    fn into_response(self) -> Response<Self::Body> {
+        let (code, message) = match self {
+            Error::InvalidArgument(m) => (StatusCode::BAD_REQUEST, m),
+        };
+        let resp = Json(json!({
+            "error": {
+                "code": code.as_u16(),
+                "message": message,
+            }
+        }));
+        (code, resp).into_response()
     }
 }
 

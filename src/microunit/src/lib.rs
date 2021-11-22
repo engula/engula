@@ -23,5 +23,5 @@ pub use self::{
     error::{Error, Result},
     node::{Node, NodeBuilder},
     node_server::NodeServer,
-    unit::{Unit, UnitBuilder, UnitDesc, UnitSpec},
+    unit::{Unit, UnitBuilder, UnitDesc, UnitDescList, UnitSpec},
 };

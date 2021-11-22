@@ -69,7 +69,10 @@ impl Node {
             assert!(core.units.insert(id, unit).is_none());
             Ok(desc)
         } else {
-            Err(Error::InvalidArgument)
+            Err(Error::InvalidArgument(format!(
+                "invalid unit kind '{}'",
+                spec.kind
+            )))
         }
     }
 
