@@ -51,7 +51,7 @@ impl Storage<FileObject> for FileStorage {
         let path = self.bucket_path(name);
 
         if try_exists(&path).await? {
-            return Err(Error::AlreadyExists(name.to_owned()));
+            return Err(Error::AlreadyExists(format!("bucket '{}'", name)));
         }
 
         fs::create_dir_all(&path).await?;
@@ -69,9 +69,6 @@ impl Storage<FileObject> for FileStorage {
 
     async fn object(&self, bucket_name: &str, object_name: &str) -> Result<FileObject> {
         let path = self.object_path(bucket_name, object_name);
-        if !try_exists(&path).await? {
-            return Err(Error::NotFound(object_name.to_owned()));
-        }
         Ok(FileObject::new(path))
     }
 
@@ -86,8 +83,30 @@ impl Storage<FileObject> for FileStorage {
 
     async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
         let path = self.object_path(bucket_name, object_name);
-        fs::remove_file(path).await?;
+        check_io_result(fs::remove_file(&path).await, &path).await?;
         Ok(())
+    }
+}
+
+pub async fn check_io_result<T>(r: io::Result<T>, obj_path: impl AsRef<Path>) -> Result<T> {
+    match r {
+        Ok(t) => Ok(t),
+        Err(err) => {
+            if err.kind() == io::ErrorKind::NotFound {
+                let parent = obj_path.as_ref().parent().unwrap();
+                if !try_exists(parent).await? {
+                    return Err(Error::NotFound(format!(
+                        "bucket '{}'",
+                        parent.file_name().unwrap().to_str().unwrap(),
+                    )));
+                }
+                return Err(Error::NotFound(format!(
+                    "object '{}'",
+                    obj_path.as_ref().file_name().unwrap().to_str().unwrap(),
+                )));
+            }
+            Err(err.into())
+        }
     }
 }
 

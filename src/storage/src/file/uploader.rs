@@ -16,7 +16,10 @@ use std::path::PathBuf;
 
 use tokio::{fs, io::AsyncWriteExt};
 
-use super::error::{Error, Result};
+use super::{
+    error::{Error, Result},
+    storage::check_io_result,
+};
 use crate::{async_trait, ObjectUploader};
 
 pub struct FileObjectUploader {
@@ -43,12 +46,16 @@ impl ObjectUploader for FileObjectUploader {
     }
 
     async fn finish(self) -> Result<usize> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&self.path)
-            .await?;
+        let mut f = check_io_result(
+            fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&self.path)
+                .await,
+            &self.path,
+        )
+        .await?;
 
         f.write_all(&self.buf).await?;
         f.sync_all().await?;

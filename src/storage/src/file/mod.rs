@@ -90,7 +90,7 @@ mod tests {
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
         assert_eq!(
-            "`test_bucket_dup` already exists",
+            "`bucket 'test_bucket_dup'` already exists",
             r.err().unwrap().to_string()
         );
         Ok(())
@@ -135,6 +135,38 @@ mod tests {
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 2);
         assert_eq!(&v[..n], b"12");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_not_exist_bucket() -> Result<()> {
+        const BUCKET_NAME: &str = "test_not_exist_bucket";
+        let g = TestEnvGuard::setup("test_not_exist_bucket");
+        let s = FileStorage::new(&g.path).await?;
+
+        let r = s.delete_object(BUCKET_NAME, "obj-1").await;
+        assert!(r.is_err());
+        assert_eq!(
+            "`bucket 'test_not_exist_bucket'` is not found",
+            r.err().unwrap().to_string()
+        );
+
+        let o = s.object(BUCKET_NAME, "obj").await?;
+        let mut v = [0u8; 4];
+        let r = o.read_at(&mut v[..], 0).await;
+        assert_eq!(
+            "`bucket 'test_not_exist_bucket'` is not found",
+            r.err().unwrap().to_string()
+        );
+
+        let mut u = s.upload_object(BUCKET_NAME, "obj").await?;
+        u.write(b"112").await?;
+        let r = u.finish().await;
+        assert_eq!(
+            "`bucket 'test_not_exist_bucket'` is not found",
+            r.err().unwrap().to_string()
+        );
+
         Ok(())
     }
 }
