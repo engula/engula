@@ -14,8 +14,7 @@
 
 extern crate linked_hash_map;
 
-use std::{borrow::Borrow, hash::Hash};
-use std::option::Option;
+use std::{borrow::Borrow, hash::Hash, option::Option};
 
 use async_trait::async_trait;
 use linked_hash_map::LinkedHashMap;
