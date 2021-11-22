@@ -23,26 +23,26 @@ pub use self::storage::FileStorage;
 
 #[cfg(test)]
 mod tests {
-    use std::{env, path::Path, process};
+    use std::{env, path::PathBuf, process};
 
     use super::{error::Result, *};
     use crate::*;
 
-    struct TestEnvGuard<'a> {
-        path: Cow<'a, Path>,
+    struct TestEnvGuard {
+        path: PathBuf,
     }
 
-    impl<'a> TestEnvGuard<'a> {
+    impl TestEnvGuard {
         fn setup(case: &str) -> Self {
             let mut path = env::temp_dir();
             path.push("englua-storage-fs-test");
             path.push(process::id().to_string());
             path.push(case);
-            Self { path: path.into() }
+            Self { path }
         }
     }
 
-    impl<'a> Drop for TestEnvGuard<'a> {
+    impl Drop for TestEnvGuard {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.path).unwrap();
         }
@@ -53,7 +53,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket";
         let g = TestEnvGuard::setup("test_bucket_manage");
 
-        let s = FileStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(&g.path).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
         s.bucket(BUCKET_NAME).await?;
@@ -67,7 +67,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_object";
         let g = TestEnvGuard::setup("test_object_manage");
 
-        let s = FileStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(&g.path).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
@@ -87,7 +87,7 @@ mod tests {
         const BUCKET_NAME: &str = "test_bucket_dup";
         let g = TestEnvGuard::setup("test_bucket_duplicate");
 
-        let s = FileStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(&g.path).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
@@ -102,7 +102,7 @@ mod tests {
     async fn test_clear_non_empty_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
-        let s = FileStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(&g.path).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
         let mut u = b.upload_object("obj-1").await?;
         u.write(b"abcd").await?;
@@ -117,7 +117,7 @@ mod tests {
     async fn test_put_duplicate_obj() -> Result<()> {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
-        let s = FileStorage::new(g.path.as_ref()).await?;
+        let s = FileStorage::new(&g.path).await?;
         let b = s.create_bucket(BUCKET_NAME).await?;
 
         let mut u = b.upload_object("obj-1").await?;
@@ -131,12 +131,12 @@ mod tests {
         let mut v = [0u8; 4];
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 3);
-        assert_eq!(&v[..n], "123".as_bytes());
+        assert_eq!(&v[..n], b"123");
 
         let mut v = [0u8; 2];
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 2);
-        assert_eq!(&v[..n], "12".as_bytes());
+        assert_eq!(&v[..n], b"12");
         Ok(())
     }
 }
