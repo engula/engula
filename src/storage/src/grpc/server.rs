@@ -80,7 +80,10 @@ where
         request: Request<UploadObjectRequest>,
     ) -> Result<Response<UploadObjectResponse>, Status> {
         let input = request.into_inner();
-        let mut up = self.storage.upload_object(&input.bucket, &input.object).await?;
+        let mut up = self
+            .storage
+            .upload_object(&input.bucket, &input.object)
+            .await?;
         up.write(&input.content).await?;
         up.finish().await?;
         Ok(Response::new(UploadObjectResponse {}))
@@ -91,7 +94,9 @@ where
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let input = request.into_inner();
-        self.storage.delete_object(&input.bucket, &input.object).await?;
+        self.storage
+            .delete_object(&input.bucket, &input.object)
+            .await?;
         Ok(Response::new(DeleteObjectResponse {}))
     }
 
@@ -100,10 +105,7 @@ where
         request: Request<ReadObjectRequest>,
     ) -> Result<Response<ReadObjectResponse>, Status> {
         let input = request.into_inner();
-        let object = self
-            .storage
-            .object(&input.bucket, &input.object)
-            .await?;
+        let object = self.storage.object(&input.bucket, &input.object).await?;
         let mut buf = vec![0; input.length as usize];
         let len = object.read_at(&mut buf, input.offset as usize).await?;
         let output = ReadObjectResponse {

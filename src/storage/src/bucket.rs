@@ -12,22 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, object::Object};
-
-/// An interface to manipulate a bucket.
-#[async_trait]
-pub trait Bucket<O: Object> {
-    type ObjectUploader: ObjectUploader<Error = O::Error>;
-
-    /// Returns an object.
-    async fn object(&self, name: &str) -> Result<O, O::Error>;
-
-    /// Uploads an object.
-    async fn upload_object(&self, name: &str) -> Result<Self::ObjectUploader, O::Error>;
-
-    /// Deletes an object.
-    async fn delete_object(&self, name: &str) -> Result<(), O::Error>;
-}
+use super::async_trait;
 
 /// An interface to upload an object.
 #[async_trait]

@@ -22,8 +22,4 @@ pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub use self::{
-    bucket::{Bucket, ObjectUploader},
-    object::Object,
-    storage::Storage,
-};
+pub use self::{bucket::ObjectUploader, object::Object, storage::Storage};

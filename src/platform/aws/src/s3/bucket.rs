@@ -17,68 +17,10 @@ use aws_sdk_s3::{
     ByteStream, Client,
 };
 use bytes::Bytes;
-use storage::{async_trait, Bucket, ObjectUploader};
+use storage::{async_trait, ObjectUploader};
 use tokio::task::JoinHandle;
 
-use super::{
-    error::{Error, Result},
-    object::S3Object,
-};
-
-pub struct S3Bucket {
-    client: Client,
-    bucket_name: String,
-}
-
-impl S3Bucket {
-    pub fn new(client: Client, bucket_name: impl Into<String>) -> Self {
-        Self {
-            client,
-            bucket_name: bucket_name.into(),
-        }
-    }
-}
-
-#[async_trait]
-impl Bucket<S3Object> for S3Bucket {
-    type ObjectUploader = S3UploadObject;
-
-    async fn object(&self, name: &str) -> Result<S3Object> {
-        Ok(S3Object::new(
-            self.client.clone(),
-            self.bucket_name.to_owned(),
-            name.to_string(),
-        ))
-    }
-
-    async fn upload_object(&self, name: &str) -> Result<S3UploadObject> {
-        let output = self
-            .client
-            .create_multipart_upload()
-            .bucket(self.bucket_name.to_owned())
-            .key(name.to_string())
-            .send()
-            .await?;
-
-        let upload_id = output.upload_id.unwrap();
-        Ok(S3UploadObject::new(
-            self.client.clone(),
-            self.bucket_name.to_owned(),
-            name.to_string(),
-            upload_id,
-        ))
-    }
-
-    async fn delete_object(&self, name: &str) -> Result<()> {
-        self.client
-            .delete_object()
-            .bucket(self.bucket_name.to_owned())
-            .key(name.to_owned())
-            .send()
-            .await?;
-        Ok(())
-    }
-}
+use super::error::{Error, Result};
 
 pub struct S3UploadObject {
     client: Client,

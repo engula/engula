@@ -21,7 +21,7 @@ mod server;
 mod storage;
 
 pub use self::{
-    bucket::{RemoteBucket, RemoteObjectUploader},
+    bucket::RemoteObjectUploader,
     client::Client,
     error::{Error, Result},
     object::RemoteObject,

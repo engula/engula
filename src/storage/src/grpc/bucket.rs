@@ -15,48 +15,9 @@
 use super::{
     client::Client,
     error::{Error, Result},
-    object::RemoteObject,
-    proto::{DeleteObjectRequest, UploadObjectRequest},
+    proto::UploadObjectRequest,
 };
-use crate::{async_trait, Bucket, ObjectUploader};
-
-pub struct RemoteBucket {
-    client: Client,
-    bucket: String,
-}
-
-impl RemoteBucket {
-    pub fn new(client: Client, bucket: String) -> RemoteBucket {
-        RemoteBucket { client, bucket }
-    }
-}
-
-#[async_trait]
-impl Bucket<RemoteObject> for RemoteBucket {
-    type ObjectUploader = RemoteObjectUploader;
-
-    async fn object(&self, name: &str) -> Result<RemoteObject> {
-        let object = RemoteObject::new(self.client.clone(), self.bucket.clone(), name.to_owned());
-        Ok(object)
-    }
-
-    async fn upload_object(&self, name: &str) -> Result<Self::ObjectUploader> {
-        Ok(RemoteObjectUploader::new(
-            self.client.clone(),
-            self.bucket.clone(),
-            name.to_owned(),
-        ))
-    }
-
-    async fn delete_object(&self, name: &str) -> Result<()> {
-        let input = DeleteObjectRequest {
-            bucket: self.bucket.clone(),
-            object: name.to_owned(),
-        };
-        let _ = self.client.delete_object(input).await?;
-        Ok(())
-    }
-}
+use crate::{async_trait, ObjectUploader};
 
 pub struct RemoteObjectUploader {
     client: Client,
