@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod object;
 mod storage;
+mod uploader;
 
 pub mod file;
 pub mod grpc;
@@ -22,4 +22,4 @@ pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub use self::{bucket::ObjectUploader, object::Object, storage::Storage};
+pub use self::{object::Object, storage::Storage, uploader::ObjectUploader};

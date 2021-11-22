@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod error;
 mod object;
 mod storage;
+mod uploader;
 
 pub use std::borrow::Cow;
 

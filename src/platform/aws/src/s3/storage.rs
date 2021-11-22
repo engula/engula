@@ -18,7 +18,7 @@ use aws_sdk_s3::{
 };
 use storage::{async_trait, Storage};
 
-use super::{bucket::S3UploadObject, error::Result, object::S3Object};
+use super::{error::Result, object::S3Object, uploader::S3ObjectUploader};
 
 pub struct S3Storage {
     client: Client,
@@ -36,7 +36,7 @@ impl S3Storage {
 
 #[async_trait]
 impl Storage<S3Object> for S3Storage {
-    type ObjectUploader = S3UploadObject;
+    type ObjectUploader = S3ObjectUploader;
 
     async fn create_bucket(&self, name: &str) -> Result<()> {
         let region: &str = &self.region;
@@ -72,7 +72,11 @@ impl Storage<S3Object> for S3Storage {
         ))
     }
 
-    async fn upload_object(&self, bucket_name: &str, object_name: &str) -> Result<S3UploadObject> {
+    async fn upload_object(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<S3ObjectUploader> {
         let output = self
             .client
             .create_multipart_upload()
@@ -82,7 +86,7 @@ impl Storage<S3Object> for S3Storage {
             .await?;
 
         let upload_id = output.upload_id.unwrap();
-        Ok(S3UploadObject::new(
+        Ok(S3ObjectUploader::new(
             self.client.clone(),
             bucket_name.to_owned(),
             object_name.to_owned(),

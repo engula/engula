@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 
 use super::error::{Error, Result};
 
-pub struct S3UploadObject {
+pub struct S3ObjectUploader {
     client: Client,
     bucket_name: String,
     key: String,
@@ -30,7 +30,7 @@ pub struct S3UploadObject {
     part_handles: Vec<JoinHandle<Result<CompletedPart>>>,
 }
 
-impl S3UploadObject {
+impl S3ObjectUploader {
     pub fn new(client: Client, bucket_name: String, key: String, upload_id: String) -> Self {
         Self {
             client,
@@ -79,7 +79,7 @@ impl S3UploadObject {
 const UPLOAD_PART_SIZE: usize = 8 * 1024 * 1024;
 
 #[async_trait]
-impl ObjectUploader for S3UploadObject {
+impl ObjectUploader for S3ObjectUploader {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {

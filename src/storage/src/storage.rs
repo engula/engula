@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, bucket::ObjectUploader, object::Object};
+use super::{async_trait, object::Object, uploader::ObjectUploader};
 
 /// An interface to manipulate a storage.
 #[async_trait]

@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::{hash_map, HashMap},
-    sync::Arc,
-};
-
-use tokio::sync::Mutex;
+use std::collections::hash_map;
 
 use super::{
     error::{Error, Result},
     object::MemObject,
+    storage::Objects,
 };
 use crate::{async_trait, ObjectUploader};
-
-type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
 
 pub struct MemObjectUploader {
     name: String,

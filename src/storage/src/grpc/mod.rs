@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod client;
 mod error;
 mod object;
 mod proto;
 mod server;
 mod storage;
+mod uploader;
 
 pub use self::{
-    bucket::RemoteObjectUploader,
     client::Client,
     error::{Error, Result},
     object::RemoteObject,
     server::Server,
     storage::RemoteStorage,
+    uploader::RemoteObjectUploader,
 };
 
 #[cfg(test)]

@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 use tokio::{fs, io};
 
 use super::{
-    bucket::FileObjectUploader,
     error::{Error, Result},
     object::FileObject,
+    uploader::FileObjectUploader,
 };
 use crate::{async_trait, Storage};
 

@@ -20,9 +20,9 @@ use std::{
 use tokio::sync::Mutex;
 
 use super::{
-    bucket::MemObjectUploader,
     error::{Error, Result},
     object::MemObject,
+    uploader::MemObjectUploader,
 };
 use crate::{async_trait, Storage};
 
@@ -103,7 +103,7 @@ impl Storage<MemObject> for MemStorage {
     }
 }
 
-type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
+pub type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
 
 #[derive(Clone)]
 struct MemBucket {
