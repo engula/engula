@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tokio::fs;
+use tokio::{fs, io};
 
 use super::{
     bucket::FileBucket,
@@ -27,7 +27,7 @@ pub struct FileStorage {
     root: PathBuf,
 }
 
-impl<'a> FileStorage {
+impl FileStorage {
     pub async fn new(root: impl Into<PathBuf>) -> Result<FileStorage> {
         let path = root.into();
         fs::DirBuilder::new().recursive(true).create(&path).await?;
@@ -44,7 +44,7 @@ impl Storage<FileObject, FileBucket> for FileStorage {
     async fn bucket(&self, name: &str) -> Result<FileBucket> {
         let path = self.bucket_path(name);
 
-        if fs::metadata(&path).await.is_err() {
+        if !try_exists(&path).await? {
             return Err(Error::NotFound(name.to_owned()));
         }
 
@@ -54,7 +54,7 @@ impl Storage<FileObject, FileBucket> for FileStorage {
     async fn create_bucket(&self, name: &str) -> Result<FileBucket> {
         let path = self.bucket_path(name);
 
-        if fs::metadata(&path).await.is_ok() {
+        if try_exists(&path).await? {
             return Err(Error::AlreadyExists(name.to_owned()));
         }
 
@@ -69,5 +69,14 @@ impl Storage<FileObject, FileBucket> for FileStorage {
         fs::remove_dir(path).await?;
 
         Ok(())
+    }
+}
+
+// async version for `std:fs:try_exist`, remove me after https://github.com/tokio-rs/tokio/pull/3375 addressed.
+pub async fn try_exists(path: impl AsRef<Path>) -> io::Result<bool> {
+    match fs::metadata(path).await {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
     }
 }

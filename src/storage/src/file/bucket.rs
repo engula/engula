@@ -19,6 +19,7 @@ use tokio::{fs, io::AsyncWriteExt};
 use super::{
     error::{Error, Result},
     object::FileObject,
+    storage::try_exists,
 };
 use crate::{async_trait, Bucket, ObjectUploader};
 
@@ -42,7 +43,7 @@ impl Bucket<FileObject> for FileBucket {
 
     async fn object(&self, name: &str) -> Result<FileObject> {
         let path = self.object_path(name);
-        if fs::metadata(&path).await.is_err() {
+        if !try_exists(&path).await? {
             return Err(Error::NotFound(name.to_owned()));
         }
         Ok(FileObject::new(path))
@@ -65,7 +66,7 @@ pub struct FileObjectUploader {
     buf: Vec<u8>,
 }
 
-impl<'a> FileObjectUploader {
+impl FileObjectUploader {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -75,7 +76,7 @@ impl<'a> FileObjectUploader {
 }
 
 #[async_trait]
-impl<'a> ObjectUploader for FileObjectUploader {
+impl ObjectUploader for FileObjectUploader {
     type Error = Error;
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
@@ -94,6 +95,6 @@ impl<'a> ObjectUploader for FileObjectUploader {
         f.write_all(&self.buf).await?;
         f.sync_all().await?;
 
-        Ok(1)
+        Ok(self.buf.len())
     }
 }

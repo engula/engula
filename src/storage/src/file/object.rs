@@ -26,7 +26,7 @@ pub struct FileObject {
     path: PathBuf,
 }
 
-impl<'a> FileObject {
+impl FileObject {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
@@ -48,8 +48,7 @@ impl Object for FileObject {
                 break;
             }
             read_size += n;
-            let tmp = buf;
-            buf = &mut tmp[n..];
+            buf = &mut buf[n..];
         }
 
         Ok(read_size)
