@@ -35,7 +35,7 @@ mod tests {
     impl TestEnvGuard {
         fn setup(case: &str) -> Self {
             let mut path = env::temp_dir();
-            path.push("englua-storage-fs-test");
+            path.push("engula-storage-fs-test");
             path.push(process::id().to_string());
             path.push(case);
             Self { path }
