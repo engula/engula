@@ -19,7 +19,7 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait Cache {
     type Key: Hash + Eq + Sync + Send;
-    type Value: Send;
+    type Value: Send + Clone;
 
     /// Insert an item in the cache.
     ///
@@ -30,7 +30,7 @@ pub trait Cache {
 
     async fn insert(&self, key: Self::Key, value: Self::Value) -> Option<Self::Value>;
 
-    async fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Self::Value>
+    async fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
     where
         Self::Key: Borrow<Q>,
         Q: Hash + Eq + Sync + Send;
