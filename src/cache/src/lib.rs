@@ -13,10 +13,8 @@
 // limitations under the License.
 
 mod cache;
-mod error;
 mod lru_cache;
 
 pub use self::{
     cache::Cache,
-    error::{Error, Result},
 };
