@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_microunit::{async_trait, Result, Unit, UnitBuilder, UnitDesc, UnitSpec};
+use microunit::{async_trait, Result, Unit, UnitBuilder, UnitDesc, UnitSpec};
 
 pub struct HelloUnit {
     id: String,

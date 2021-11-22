@@ -12,25 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod client;
 mod error;
-mod object;
+mod journal;
 mod proto;
 mod server;
-mod storage;
+mod stream;
 
 pub use self::{
-    bucket::{RemoteBucket, RemoteObjectUploader},
     client::Client,
     error::{Error, Result},
-    object::RemoteObject,
+    journal::RemoteJournal,
     server::Server,
-    storage::RemoteStorage,
+    stream::{EventStream, RemoteStream},
 };
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
 
@@ -42,7 +41,8 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let server = Server::new(mem::MemStorage::default());
+            let j: mem::MemJournal<u64> = mem::MemJournal::default();
+            let server = Server::new(j);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
@@ -51,17 +51,25 @@ mod tests {
         });
 
         let url = format!("http://{}", local_addr);
-        let storage = RemoteStorage::connect(&url).await?;
-        let bucket = storage.create_bucket("bucket").await?;
-        let mut up = bucket.upload_object("object").await?;
-        let buf = vec![0, 1, 2];
-        up.write(&buf).await?;
-        let len = up.finish().await?;
-        assert_eq!(len, buf.len());
-        let object = bucket.object("object").await?;
-        let mut got = vec![0; buf.len()];
-        object.read_at(&mut got, 0).await?;
-        assert_eq!(got, buf);
+        let journal = RemoteJournal::connect(&url).await?;
+        let stream = journal.create_stream("s").await?;
+        let event = Event {
+            ts: 1,
+            data: vec![0, 1, 2],
+        };
+        stream.append_event(event.clone()).await?;
+        {
+            let mut events = stream.read_events(0).await?;
+            let got = events.next().await.unwrap()?;
+            assert_eq!(got, event);
+        }
+        stream.release_events(2).await?;
+        {
+            let mut events = stream.read_events(0).await?;
+            let got = events.next().await;
+            assert!(got.is_none());
+        }
+        let _ = journal.delete_stream("s").await?;
         Ok(())
     }
 }

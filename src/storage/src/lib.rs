@@ -16,6 +16,7 @@ mod bucket;
 mod object;
 mod storage;
 
+pub mod file;
 pub mod grpc;
 pub mod mem;
 

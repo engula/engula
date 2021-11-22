@@ -24,6 +24,10 @@ on:
       - 'docs/'
       - '*.md'
 
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run tests
@@ -61,7 +65,7 @@ jobs:
   check:
     name: Check style
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2

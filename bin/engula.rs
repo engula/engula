@@ -13,9 +13,7 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-
-mod hello_unit;
-mod node;
+use engula::node;
 
 #[derive(Parser)]
 #[clap(version = crate_version!())]

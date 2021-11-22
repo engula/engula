@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod journal;
-mod stream;
+use thiserror::Error;
+use tokio::io;
 
-pub mod grpc;
-pub mod mem;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    IO(#[from] io::Error),
+    #[error("`{0}` is not found")]
+    NotFound(String),
+    #[error("`{0}` already exists")]
+    AlreadyExists(String),
+    #[error("invalid argument: `{0}`")]
+    InvalidArgument(String),
+}
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+pub type Result<T> = std::result::Result<T, Error>;

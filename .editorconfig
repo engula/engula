@@ -12,17 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-header:
-  license:
-    spdx-id: Apache-2.0
-    copyright-owner: The Engula Authors
-  paths-ignore:
-    - 'docs'
-    - '**/*.md'
-    - '.gitignore'
-    - 'Cargo.lock'
-    - 'Cargo.toml'
-    - 'LICENSE'
-    - 'rust-toolchain.toml'
-    - 'rustfmt.toml'
-    - '.cargo/audit.toml'
+root = true
+
+[*]
+insert_final_newline = true
+trim_trailing_whitespace = true
+end_of_line = lf
