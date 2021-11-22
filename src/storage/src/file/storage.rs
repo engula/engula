@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use tokio::{fs, io};
 
 use super::{
-    bucket::FileBucket,
+    bucket::FileObjectUploader,
     error::{Error, Result},
     object::FileObject,
 };
@@ -37,21 +37,17 @@ impl FileStorage {
     fn bucket_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.root.join(name)
     }
+
+    fn object_path(&self, bucket_name: impl AsRef<Path>, object_name: impl AsRef<Path>) -> PathBuf {
+        self.root.join(bucket_name).join(object_name)
+    }
 }
 
 #[async_trait]
-impl Storage<FileObject, FileBucket> for FileStorage {
-    async fn bucket(&self, name: &str) -> Result<FileBucket> {
-        let path = self.bucket_path(name);
+impl Storage<FileObject> for FileStorage {
+    type ObjectUploader = FileObjectUploader;
 
-        if !try_exists(&path).await? {
-            return Err(Error::NotFound(name.to_owned()));
-        }
-
-        Ok(FileBucket::new(path))
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<FileBucket> {
+    async fn create_bucket(&self, name: &str) -> Result<()> {
         let path = self.bucket_path(name);
 
         if try_exists(&path).await? {
@@ -60,7 +56,7 @@ impl Storage<FileObject, FileBucket> for FileStorage {
 
         fs::create_dir_all(&path).await?;
 
-        Ok(FileBucket::new(path))
+        Ok(())
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
@@ -68,6 +64,29 @@ impl Storage<FileObject, FileBucket> for FileStorage {
 
         fs::remove_dir(path).await?;
 
+        Ok(())
+    }
+
+    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<FileObject> {
+        let path = self.object_path(bucket_name, object_name);
+        if !try_exists(&path).await? {
+            return Err(Error::NotFound(object_name.to_owned()));
+        }
+        Ok(FileObject::new(path))
+    }
+
+    async fn upload_object(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<FileObjectUploader> {
+        let path = self.object_path(bucket_name, object_name);
+        Ok(FileObjectUploader::new(path))
+    }
+
+    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
+        let path = self.object_path(bucket_name, object_name);
+        fs::remove_file(path).await?;
         Ok(())
     }
 }

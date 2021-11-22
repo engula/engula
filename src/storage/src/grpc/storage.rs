@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use super::{
-    bucket::RemoteBucket,
     client::Client,
     error::Result,
     object::RemoteObject,
-    proto::{CreateBucketRequest, DeleteBucketRequest},
+    proto::{CreateBucketRequest, DeleteBucketRequest, DeleteObjectRequest},
+    RemoteObjectUploader,
 };
 use crate::{async_trait, Storage};
 
@@ -33,17 +33,15 @@ impl RemoteStorage {
 }
 
 #[async_trait]
-impl Storage<RemoteObject, RemoteBucket> for RemoteStorage {
-    async fn bucket(&self, name: &str) -> Result<RemoteBucket> {
-        Ok(RemoteBucket::new(self.client.clone(), name.to_owned()))
-    }
+impl Storage<RemoteObject> for RemoteStorage {
+    type ObjectUploader = RemoteObjectUploader;
 
-    async fn create_bucket(&self, name: &str) -> Result<RemoteBucket> {
+    async fn create_bucket(&self, name: &str) -> Result<()> {
         let input = CreateBucketRequest {
             bucket: name.to_owned(),
         };
         self.client.create_bucket(input).await?;
-        self.bucket(name).await
+        Ok(())
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
@@ -51,6 +49,36 @@ impl Storage<RemoteObject, RemoteBucket> for RemoteStorage {
             bucket: name.to_owned(),
         };
         self.client.delete_bucket(input).await?;
+        Ok(())
+    }
+
+    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<RemoteObject> {
+        let object = RemoteObject::new(
+            self.client.clone(),
+            bucket_name.to_owned(),
+            object_name.to_owned(),
+        );
+        Ok(object)
+    }
+
+    async fn upload_object(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::ObjectUploader> {
+        Ok(RemoteObjectUploader::new(
+            self.client.clone(),
+            bucket_name.to_owned(),
+            object_name.to_owned(),
+        ))
+    }
+
+    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
+        let input = DeleteObjectRequest {
+            bucket: bucket_name.to_owned(),
+            object: object_name.to_owned(),
+        };
+        let _ = self.client.delete_object(input).await?;
         Ok(())
     }
 }

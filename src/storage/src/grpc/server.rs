@@ -17,49 +17,44 @@ use std::marker::PhantomData;
 use tonic::{Request, Response, Status};
 
 use super::proto::*;
-use crate::{Bucket, Object, ObjectUploader, Storage};
+use crate::{Object, ObjectUploader, Storage};
 
-pub struct Server<O, B, S>
+pub struct Server<O, S>
 where
     O: Object,
-    B: Bucket<O>,
-    S: Storage<O, B>,
+    S: Storage<O>,
 {
     storage: S,
     _object: PhantomData<O>,
-    _bucket: PhantomData<B>,
 }
 
-impl<O, B, S> Server<O, B, S>
+impl<O, S> Server<O, S>
 where
     O: Object + Send + Sync + 'static,
     O::Error: Send + Sync + 'static,
-    B: Bucket<O> + Send + Sync + 'static,
-    B::ObjectUploader: Send + Sync + 'static,
-    S: Storage<O, B> + Send + Sync + 'static,
+    S: Storage<O> + Send + Sync + 'static,
+    S::ObjectUploader: Send + Sync + 'static,
     Status: From<O::Error>,
 {
     pub fn new(storage: S) -> Self {
         Server {
             storage,
             _object: PhantomData,
-            _bucket: PhantomData,
         }
     }
 
-    pub fn into_service(self) -> storage_server::StorageServer<Server<O, B, S>> {
+    pub fn into_service(self) -> storage_server::StorageServer<Server<O, S>> {
         storage_server::StorageServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<O, B, S> storage_server::Storage for Server<O, B, S>
+impl<O, S> storage_server::Storage for Server<O, S>
 where
     O: Object + Send + Sync + 'static,
     O::Error: Send + Sync + 'static,
-    B: Bucket<O> + Send + Sync + 'static,
-    B::ObjectUploader: Send + Sync + 'static,
-    S: Storage<O, B> + Send + Sync + 'static,
+    S: Storage<O> + Send + Sync + 'static,
+    S::ObjectUploader: Send + Sync + 'static,
     Status: From<O::Error>,
 {
     async fn create_bucket(
@@ -85,8 +80,7 @@ where
         request: Request<UploadObjectRequest>,
     ) -> Result<Response<UploadObjectResponse>, Status> {
         let input = request.into_inner();
-        let bucket = self.storage.bucket(&input.bucket).await?;
-        let mut up = bucket.upload_object(&input.object).await?;
+        let mut up = self.storage.upload_object(&input.bucket, &input.object).await?;
         up.write(&input.content).await?;
         up.finish().await?;
         Ok(Response::new(UploadObjectResponse {}))
@@ -97,8 +91,7 @@ where
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let input = request.into_inner();
-        let bucket = self.storage.bucket(&input.bucket).await?;
-        bucket.delete_object(&input.object).await?;
+        self.storage.delete_object(&input.bucket, &input.object).await?;
         Ok(Response::new(DeleteObjectResponse {}))
     }
 
@@ -109,9 +102,7 @@ where
         let input = request.into_inner();
         let object = self
             .storage
-            .bucket(&input.bucket)
-            .await?
-            .object(&input.object)
+            .object(&input.bucket, &input.object)
             .await?;
         let mut buf = vec![0; input.length as usize];
         let len = object.read_at(&mut buf, input.offset as usize).await?;

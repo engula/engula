@@ -23,50 +23,9 @@ use super::{
     error::{Error, Result},
     object::MemObject,
 };
-use crate::{async_trait, Bucket, ObjectUploader};
+use crate::{async_trait, ObjectUploader};
 
 type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
-
-#[derive(Clone)]
-pub struct MemBucket {
-    objects: Objects,
-}
-
-impl Default for MemBucket {
-    fn default() -> Self {
-        MemBucket {
-            objects: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-#[async_trait]
-impl Bucket<MemObject> for MemBucket {
-    type ObjectUploader = MemObjectUploader;
-
-    async fn object(&self, name: &str) -> Result<MemObject> {
-        let objects = self.objects.lock().await;
-        match objects.get(name) {
-            Some(object) => Ok(object.clone()),
-            None => Err(Error::NotFound(format!("object '{}'", name))),
-        }
-    }
-
-    async fn upload_object(&self, name: &str) -> Result<Self::ObjectUploader> {
-        Ok(MemObjectUploader::new(
-            name.to_owned(),
-            self.objects.clone(),
-        ))
-    }
-
-    async fn delete_object(&self, name: &str) -> Result<()> {
-        let mut objects = self.objects.lock().await;
-        match objects.remove(name) {
-            Some(_) => Ok(()),
-            None => Err(Error::NotFound(format!("object '{}'", name))),
-        }
-    }
-}
 
 pub struct MemObjectUploader {
     name: String,
@@ -75,7 +34,7 @@ pub struct MemObjectUploader {
 }
 
 impl MemObjectUploader {
-    fn new(name: String, objects: Objects) -> MemObjectUploader {
+    pub fn new(name: String, objects: Objects) -> MemObjectUploader {
         MemObjectUploader {
             name,
             data: Vec::new(),

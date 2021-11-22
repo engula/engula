@@ -66,7 +66,7 @@ pub struct RemoteObjectUploader {
 }
 
 impl RemoteObjectUploader {
-    fn new(client: Client, bucket: String, object: String) -> RemoteObjectUploader {
+    pub fn new(client: Client, bucket: String, object: String) -> RemoteObjectUploader {
         RemoteObjectUploader {
             client,
             bucket,

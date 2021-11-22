@@ -18,7 +18,6 @@ mod object;
 mod storage;
 
 pub use self::{
-    bucket::MemBucket,
     error::{Error, Result},
     object::MemObject,
     storage::MemStorage,
@@ -32,13 +31,13 @@ mod tests {
     #[tokio::test]
     async fn test() -> Result<()> {
         let s = MemStorage::default();
-        let bucket = s.create_bucket("a").await?;
+        s.create_bucket("a").await?;
 
         let data = vec![0, 1, 2];
-        let mut up = bucket.upload_object("b").await?;
+        let mut up = s.upload_object("a", "b").await?;
         up.write(&data).await?;
         up.finish().await?;
-        let object = bucket.object("b").await?;
+        let object = s.object("a", "b").await?;
 
         let mut buf = [0u8; 3];
         let pos = 1;

@@ -56,9 +56,7 @@ mod tests {
         let s = FileStorage::new(&g.path).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
-        s.bucket(BUCKET_NAME).await?;
         s.delete_bucket(BUCKET_NAME).await?;
-        assert!(s.bucket(BUCKET_NAME).await.is_err());
         Ok(())
     }
 
@@ -68,14 +66,14 @@ mod tests {
         let g = TestEnvGuard::setup("test_object_manage");
 
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
+        s.create_bucket(BUCKET_NAME).await?;
 
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcd").await?;
         u.write(b"123").await?;
         u.finish().await?;
 
-        let obj = b.object("obj-1").await?;
+        let obj = s.object(BUCKET_NAME, "obj-1").await?;
         let mut v = [0u8; 5];
         obj.read_at(&mut v[..], 2).await?;
         assert_eq!(&v[..], "cd123".as_bytes());
@@ -103,8 +101,8 @@ mod tests {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
-        let mut u = b.upload_object("obj-1").await?;
+        s.create_bucket(BUCKET_NAME).await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcd").await?;
         u.finish().await?;
         let r = s.delete_bucket(BUCKET_NAME).await;
@@ -118,16 +116,16 @@ mod tests {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
+        s.create_bucket(BUCKET_NAME).await?;
 
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcdefg").await?;
         u.finish().await?;
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"123").await?;
         u.finish().await?;
 
-        let obj = b.object("obj-1").await?;
+        let obj = s.object(BUCKET_NAME, "obj-1").await?;
         let mut v = [0u8; 4];
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 3);
