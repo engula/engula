@@ -15,6 +15,7 @@
 extern crate linked_hash_map;
 
 use std::{borrow::Borrow, hash::Hash};
+use std::option::Option;
 
 use async_trait::async_trait;
 use linked_hash_map::LinkedHashMap;
@@ -32,13 +33,14 @@ impl<K: Hash + Eq + Sync + Send, V: Send + Clone> Cache for LruCache<K, V> {
     type Key = K;
     type Value = V;
 
-    async fn insert(&self, key: Self::Key, value: Self::Value) -> Option<Self::Value> {
+    async fn insert(&self, key: Self::Key, value: Self::Value) -> (bool, Option<Self::Value>) {
         let mut map = self.queue.lock().await;
-        let old_value = map.insert(key, value);
+        map.insert(key, value);
         if map.len() > self.max_size {
-            map.pop_front();
+            let (_, v) = map.pop_front().unwrap();
+            return (true, Some(v));
         }
-        old_value
+        return (true, None);
     }
 
     async fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
@@ -69,7 +71,7 @@ impl<K: Eq + Hash + Sync + Send, V: Send + Clone> LruCache<K, V> {
     #[allow(dead_code)]
     pub fn new(size: usize) -> Self {
         LruCache {
-            queue: Mutex::from(LinkedHashMap::new()),
+            queue: Mutex::new(LinkedHashMap::new()),
             max_size: size,
         }
     }

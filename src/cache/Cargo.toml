@@ -5,6 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
+async-trait = "0.1"
 linked-hash-map = "0.5.4"
 tokio = { version = "1.13", features = ["full"] }
-async-trait = "0.1"

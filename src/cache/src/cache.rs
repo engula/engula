@@ -27,18 +27,20 @@ pub trait Cache {
     /// (because the cache can refuse to insert an item). The second return
     /// value is the optional eviction victim, returned only if this call to
     /// insert caused an eviction.
+    async fn insert(&self, key: Self::Key, value: Self::Value) -> (bool, Option<Self::Value>);
 
-    async fn insert(&self, key: Self::Key, value: Self::Value) -> Option<Self::Value>;
-
+    // Get the value of this item
     async fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
     where
         Self::Key: Borrow<Q>,
         Q: Hash + Eq + Sync + Send;
 
+    // Remove an item in the cache
     async fn remove<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
     where
         Self::Key: Borrow<Q>,
         Q: Hash + Eq + Sync + Send;
 
+    // Clear the cache
     async fn clear(&self);
 }
