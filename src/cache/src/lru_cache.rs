@@ -46,7 +46,7 @@ impl<K: Hash + Eq + Sync + Send, V: Send + Clone> Cache for LruCache<K, V> {
         Self::Key: Borrow<Q>,
         Q: Hash + Eq + Sync + Send,
     {
-        let mut map = self.queue.lock().await;
+        let map = self.queue.lock().await;
         map.get(key).cloned()
     }
 
@@ -66,6 +66,7 @@ impl<K: Hash + Eq + Sync + Send, V: Send + Clone> Cache for LruCache<K, V> {
 }
 
 impl<K: Eq + Hash + Sync + Send, V: Send + Clone> LruCache<K, V> {
+    #[allow(dead_code)]
     pub fn new(size: usize) -> Self {
         LruCache {
             queue: Mutex::from(LinkedHashMap::new()),
