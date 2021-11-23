@@ -16,20 +16,24 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{Router, Server};
 
-use crate::Node;
+use crate::node::Node;
 
 /// An HTTP server that serves a node.
 pub struct NodeServer {
+    node: Arc<Node>,
     addr: SocketAddr,
 }
 
 impl NodeServer {
     pub fn bind(addr: SocketAddr) -> NodeServer {
-        NodeServer { addr }
+        NodeServer {
+            node: Arc::new(Node::default()),
+            addr,
+        }
     }
 
-    pub async fn serve(&self, node: Node) {
-        let router = Router::new().nest("/v1", v1::route(Arc::new(node)));
+    pub async fn serve(&self) {
+        let router = Router::new().nest("/v1", v1::route(self.node.clone()));
         Server::bind(&self.addr)
             .serve(router.into_make_service())
             .await
@@ -42,7 +46,11 @@ mod v1 {
 
     use axum::{extract::Extension, routing::get, AddExtensionLayer, Json, Router};
 
-    use crate::{Node, Result, UnitDesc, UnitDescList, UnitSpec};
+    use crate::{
+        error::Result,
+        node::Node,
+        proto::{UnitDesc, UnitDescList, UnitSpec},
+    };
 
     pub fn route(node: Arc<Node>) -> Router {
         Router::new()

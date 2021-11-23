@@ -27,6 +27,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
+    #[error(transparent)]
+    Unknown(#[from] Box<dyn std::error::Error + Send>),
 }
 
 impl IntoResponse for Error {
@@ -36,6 +38,7 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response<Self::Body> {
         let (code, message) = match self {
             Error::InvalidArgument(m) => (StatusCode::BAD_REQUEST, m),
+            Error::Unknown(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
         };
         let resp = Json(json!({
             "error": {

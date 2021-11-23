@@ -12,32 +12,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use microunit::{async_trait, Result, Unit, UnitBuilder, UnitDesc, UnitSpec};
+use async_trait::async_trait;
 
-pub struct HelloUnit {
-    id: String,
+use crate::{
+    proto::{UnitDesc, UnitSpec},
+    unit::{Unit, UnitBuilder, UnitResult},
+};
+
+pub struct ControlUnit {
+    desc: UnitDesc,
+}
+
+impl ControlUnit {
+    fn new(id: String, spec: UnitSpec) -> Self {
+        let desc = UnitDesc {
+            id,
+            kind: spec.kind,
+        };
+        Self { desc }
+    }
 }
 
 #[async_trait]
-impl Unit for HelloUnit {
+impl Unit for ControlUnit {
     async fn desc(&self) -> UnitDesc {
-        UnitDesc {
-            id: self.id.clone(),
-        }
+        self.desc.clone()
+    }
+
+    async fn start(&self) -> UnitResult<()> {
+        Ok(())
     }
 }
 
 #[derive(Default)]
-pub struct HelloUnitBuilder {}
+pub struct ControlUnitBuilder {}
 
 #[async_trait]
-impl UnitBuilder for HelloUnitBuilder {
+impl UnitBuilder for ControlUnitBuilder {
     fn kind(&self) -> &str {
-        "hello"
+        "ControlUnit"
     }
 
-    async fn spawn(&self, id: String, _spec: UnitSpec) -> Result<Box<dyn Unit>> {
-        let unit = HelloUnit { id };
+    async fn spawn(&self, id: String, spec: UnitSpec) -> UnitResult<Box<dyn Unit>> {
+        let unit = ControlUnit::new(id, spec);
         Ok(Box::new(unit))
     }
 }

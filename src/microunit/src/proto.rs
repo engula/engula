@@ -12,11 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod control_unit;
-mod error;
-mod node;
-mod node_server;
-mod proto;
-mod unit;
+use std::cmp::PartialEq;
 
-pub use self::node_server::NodeServer;
+use serde::{Deserialize, Serialize};
+
+/// Describes the specification of a unit.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct UnitSpec {
+    pub kind: String,
+}
+
+/// Describes the current state of a unit.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct UnitDesc {
+    pub id: String,
+    pub kind: String,
+}
+
+pub type UnitDescList = Vec<UnitDesc>;

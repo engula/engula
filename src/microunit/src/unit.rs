@@ -13,34 +13,24 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::proto::{UnitDesc, UnitSpec};
 
-/// A unit description that describes the current state of a unit.
-#[derive(Serialize, Deserialize, Default)]
-pub struct UnitDesc {
-    pub id: String,
-}
-
-pub type UnitDescList = Vec<UnitDesc>;
-
-/// A unit specification that specifies the desired state of a unit.
-#[derive(Serialize, Deserialize, Default)]
-pub struct UnitSpec {
-    pub kind: String,
-}
+pub type UnitError = Box<dyn std::error::Error + Send>;
+pub type UnitResult<T> = Result<T, UnitError>;
 
 /// A unit handle.
 #[async_trait]
 pub trait Unit: Send + Sync {
     async fn desc(&self) -> UnitDesc;
+
+    async fn start(&self) -> UnitResult<()>;
 }
 
-/// A unit builder spawns a specific kind of units.
+/// A unit builder that spawns a specific kind of units.
 #[async_trait]
 pub trait UnitBuilder: Send + Sync {
     fn kind(&self) -> &str;
 
-    async fn spawn(&self, id: String, spec: UnitSpec) -> Result<Box<dyn Unit>>;
+    async fn spawn(&self, id: String, spec: UnitSpec) -> UnitResult<Box<dyn Unit>>;
 }

@@ -12,62 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
+    control_unit::ControlUnitBuilder,
     error::{Error, Result},
-    unit::{Unit, UnitBuilder, UnitDesc, UnitSpec},
+    proto::{UnitDesc, UnitDescList, UnitSpec},
+    unit::{Unit, UnitBuilder},
 };
 
-#[derive(Default)]
-pub struct NodeBuilder {
-    unit_builders: HashMap<String, Box<dyn UnitBuilder>>,
+/// A node manages a set of units.
+pub struct Node {
+    inner: Mutex<Inner>,
 }
 
-impl NodeBuilder {
-    pub fn unit(mut self, builder: impl UnitBuilder + 'static) -> NodeBuilder {
-        let kind = builder.kind().to_owned();
-        assert!(self.unit_builders.insert(kind, Box::new(builder)).is_none());
-        self
-    }
-
-    pub fn build(self) -> Node {
-        let core = Core {
-            units: HashMap::new(),
-            unit_builders: self.unit_builders,
-        };
-        Node {
-            core: Mutex::new(core),
+impl Default for Node {
+    fn default() -> Self {
+        let mut inner = Inner::default();
+        let control_unit = ControlUnitBuilder::default();
+        inner
+            .unit_builders
+            .insert(control_unit.kind().to_owned(), Box::new(control_unit));
+        Self {
+            inner: Mutex::new(inner),
         }
     }
 }
 
-/// A node manages a set of units.
-pub struct Node {
-    core: Mutex<Core>,
+#[derive(Default)]
+struct Inner {
+    units: HashMap<String, Arc<dyn Unit>>,
+    unit_builders: HashMap<String, Box<dyn UnitBuilder>>,
 }
 
 impl Node {
-    pub async fn list_units(&self) -> Vec<UnitDesc> {
-        let core = self.core.lock().await;
+    pub async fn list_units(&self) -> UnitDescList {
+        let inner = self.inner.lock().await;
         let mut descs = Vec::new();
-        for unit in core.units.values() {
+        for unit in inner.units.values() {
             descs.push(unit.desc().await);
         }
         descs
     }
 
     pub async fn create_unit(&self, spec: UnitSpec) -> Result<UnitDesc> {
-        let mut core = self.core.lock().await;
-        if let Some(builder) = core.unit_builders.get(&spec.kind) {
+        let mut inner = self.inner.lock().await;
+        if let Some(builder) = inner.unit_builders.get(&spec.kind) {
             let id = Uuid::new_v4().to_string();
             let unit = builder.spawn(id.clone(), spec).await?;
-            let desc = unit.desc().await;
-            assert!(core.units.insert(id, unit).is_none());
-            Ok(desc)
+            let unit: Arc<dyn Unit> = Arc::from(unit);
+            {
+                let unit = unit.clone();
+                tokio::spawn(async move { unit.start().await });
+            }
+            assert!(inner.units.insert(id, unit.clone()).is_none());
+            Ok(unit.desc().await)
         } else {
             Err(Error::InvalidArgument(format!(
                 "invalid unit kind '{}'",
@@ -75,13 +77,4 @@ impl Node {
             )))
         }
     }
-
-    pub async fn delete_unit(&self, _uid: &str) -> Result<()> {
-        Ok(())
-    }
-}
-
-struct Core {
-    units: HashMap<String, Box<dyn Unit>>,
-    unit_builders: HashMap<String, Box<dyn UnitBuilder>>,
 }
