@@ -18,8 +18,9 @@ mod control_unit;
 mod error;
 mod node;
 mod node_api;
+mod node_client;
 mod node_server;
 mod proto;
 mod unit;
 
-pub use self::node_server::NodeServer;
+pub use self::{node_client::NodeClient, node_server::NodeServer};

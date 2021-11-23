@@ -33,8 +33,8 @@ async fn desc(Extension(node): Extension<Arc<Node>>) -> Result<Json<NodeDesc>> {
 }
 
 async fn list_units(Extension(node): Extension<Arc<Node>>) -> Result<Json<UnitDescList>> {
-    let descs = node.list_units().await?;
-    Ok(descs.into())
+    let list = node.list_units().await?;
+    Ok(list.into())
 }
 
 async fn create_unit(

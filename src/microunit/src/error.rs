@@ -28,6 +28,10 @@ pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
     #[error(transparent)]
+    Url(#[from] url::ParseError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error(transparent)]
     Unknown(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -38,15 +42,17 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response<Self::Body> {
         let (code, message) = match self {
             Error::InvalidArgument(m) => (StatusCode::BAD_REQUEST, m),
+            Error::Url(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::Reqwest(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             Error::Unknown(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
         };
-        let resp = Json(json!({
+        let json = Json(json!({
             "error": {
                 "code": code.as_u16(),
                 "message": message,
             }
         }));
-        (code, resp).into_response()
+        (code, json).into_response()
     }
 }
 

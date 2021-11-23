@@ -12,37 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::net::SocketAddr;
 
-use tokio::sync::Mutex;
+use reqwest::{Client, Url};
 
 use crate::{error::Result, proto::*};
 
-pub struct Control {
-    inner: Mutex<Inner>,
+pub struct ControlClient {
+    url: Url,
+    client: Client,
 }
 
-impl Default for Control {
-    fn default() -> Self {
-        let inner = Inner::default();
-        Self {
-            inner: Mutex::new(inner),
-        }
-    }
-}
-
-#[derive(Default)]
-struct Inner {
-    nodes: HashMap<String, NodeDesc>,
-}
-
-impl Control {
-    pub async fn desc(&self) -> ControlDesc {
-        ControlDesc::default()
+impl ControlClient {
+    pub fn from_addr(addr: &SocketAddr) -> Result<Self> {
+        let url = Url::parse(&format!("http://{}/v1/", addr))?;
+        let client = Client::new();
+        Ok(Self { url, client })
     }
 
     pub async fn list_nodes(&self) -> Result<NodeDescList> {
-        let inner = self.inner.lock().await;
-        Ok(inner.nodes.values().cloned().collect())
+        let url = self.url.join("nodes")?;
+        let list = self.client.get(url).send().await?.json().await?;
+        Ok(list)
     }
 }

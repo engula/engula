@@ -34,6 +34,6 @@ async fn desc(Extension(ctrl): Extension<Arc<Control>>) -> Result<Json<ControlDe
 }
 
 async fn list_nodes(Extension(ctrl): Extension<Arc<Control>>) -> Result<Json<NodeDescList>> {
-    let descs = ctrl.list_nodes().await?;
-    Ok(descs.into())
+    let list = ctrl.list_nodes().await?;
+    Ok(list.into())
 }
