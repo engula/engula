@@ -25,7 +25,10 @@ pub use self::storage::FileStorage;
 mod tests {
     use std::{env, path::PathBuf, process};
 
-    use super::{error::Result, *};
+    use super::{
+        error::{Error, Result},
+        *,
+    };
     use crate::*;
 
     struct TestEnvGuard {
@@ -89,10 +92,7 @@ mod tests {
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
-        assert_eq!(
-            "`bucket 'test_bucket_dup'` already exists",
-            r.err().unwrap().to_string()
-        );
+        assert!(matches!(r, Err(Error::AlreadyExists(_))));
         Ok(())
     }
 
@@ -146,26 +146,17 @@ mod tests {
 
         let r = s.delete_object(BUCKET_NAME, "obj-1").await;
         assert!(r.is_err());
-        assert_eq!(
-            "`bucket 'test_not_exist_bucket'` is not found",
-            r.err().unwrap().to_string()
-        );
+        assert!(matches!(r, Err(Error::NotFound(_))));
 
         let o = s.object(BUCKET_NAME, "obj").await?;
         let mut v = [0u8; 4];
         let r = o.read_at(&mut v[..], 0).await;
-        assert_eq!(
-            "`bucket 'test_not_exist_bucket'` is not found",
-            r.err().unwrap().to_string()
-        );
+        assert!(matches!(r, Err(Error::NotFound(_))));
 
         let mut u = s.upload_object(BUCKET_NAME, "obj").await?;
         u.write(b"112").await?;
         let r = u.finish().await;
-        assert_eq!(
-            "`bucket 'test_not_exist_bucket'` is not found",
-            r.err().unwrap().to_string()
-        );
+        assert!(matches!(r, Err(Error::NotFound(_))));
 
         Ok(())
     }
