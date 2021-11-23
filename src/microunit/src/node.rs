@@ -49,13 +49,13 @@ struct Inner {
 }
 
 impl Node {
-    pub async fn list_units(&self) -> UnitDescList {
+    pub async fn list_units(&self) -> Result<UnitDescList> {
         let inner = self.inner.lock().await;
         let mut descs = Vec::new();
         for unit in inner.units.values() {
             descs.push(unit.desc().await);
         }
-        descs
+        Ok(descs)
     }
 
     pub async fn create_unit(&self, spec: UnitSpec) -> Result<UnitDesc> {

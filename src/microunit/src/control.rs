@@ -12,31 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{net::SocketAddr, sync::Arc};
+use std::collections::HashMap;
 
-use axum::Server;
+use tokio::sync::Mutex;
 
-use crate::{node::Node, node_api};
+use crate::{
+    error::Result,
+    proto::{NodeDesc, NodeDescList},
+};
 
-/// An HTTP server that serves a node.
-pub struct NodeServer {
-    node: Arc<Node>,
-    addr: SocketAddr,
+pub struct Control {
+    inner: Mutex<Inner>,
 }
 
-impl NodeServer {
-    pub fn bind(addr: SocketAddr) -> NodeServer {
-        NodeServer {
-            node: Arc::new(Node::default()),
-            addr,
+impl Default for Control {
+    fn default() -> Self {
+        let inner = Inner::default();
+        Self {
+            inner: Mutex::new(inner),
         }
     }
+}
 
-    pub async fn serve(&self) {
-        let router = node_api::route(self.node.clone());
-        Server::bind(&self.addr)
-            .serve(router.into_make_service())
-            .await
-            .unwrap();
+#[derive(Default)]
+struct Inner {
+    nodes: HashMap<String, NodeDesc>,
+}
+
+impl Control {
+    pub async fn list_nodes(&self) -> Result<NodeDescList> {
+        let inner = self.inner.lock().await;
+        let descs = inner.nodes.values().cloned().collect();
+        Ok(descs)
     }
 }

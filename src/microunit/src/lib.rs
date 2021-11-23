@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod control;
+mod control_api;
 mod control_unit;
 mod error;
 mod node;
+mod node_api;
 mod node_server;
 mod proto;
 mod unit;

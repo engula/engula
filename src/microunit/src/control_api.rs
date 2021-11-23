@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
+use std::sync::Arc;
 
-use crate::proto::{UnitDesc, UnitSpec};
+use axum::{extract::Extension, routing::get, AddExtensionLayer, Json, Router};
 
-pub type UnitError = Box<dyn std::error::Error + Send + Sync>;
-pub type UnitResult<T> = Result<T, UnitError>;
+use crate::{control::Control, error::Result, proto::NodeDescList};
 
-/// A unit handle.
-#[async_trait]
-pub trait Unit: Send + Sync {
-    async fn desc(&self) -> UnitDesc;
-
-    async fn start(&self) -> UnitResult<()>;
+pub fn route(ctrl: Arc<Control>) -> Router {
+    let universe = Router::new().route("/nodes", get(list_nodes));
+    let v1 = Router::new().nest("/universe", universe);
+    Router::new()
+        .nest("/v1", v1)
+        .layer(AddExtensionLayer::new(ctrl))
 }
 
-/// A unit builder that spawns a specific kind of units.
-#[async_trait]
-pub trait UnitBuilder: Send + Sync {
-    fn kind(&self) -> &str;
-
-    async fn spawn(&self, id: String, spec: UnitSpec) -> UnitResult<Box<dyn Unit>>;
+async fn list_nodes(Extension(ctrl): Extension<Arc<Control>>) -> Result<Json<NodeDescList>> {
+    let descs = ctrl.list_nodes().await?;
+    Ok(descs.into())
 }

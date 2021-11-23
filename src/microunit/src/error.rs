@@ -28,7 +28,7 @@ pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
     #[error(transparent)]
-    Unknown(#[from] Box<dyn std::error::Error + Send>),
+    Unknown(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl IntoResponse for Error {

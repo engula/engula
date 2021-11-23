@@ -12,34 +12,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use axum::Server;
+use tokio::sync::Mutex;
 
 use crate::{
+    control::Control,
+    control_api,
     proto::{UnitDesc, UnitSpec},
     unit::{Unit, UnitBuilder, UnitResult},
 };
 
 pub struct ControlUnit {
-    desc: UnitDesc,
+    desc: Mutex<UnitDesc>,
 }
 
 impl ControlUnit {
-    fn new(id: String, spec: UnitSpec) -> Self {
+    async fn new(id: String, spec: UnitSpec) -> UnitResult<Self> {
         let desc = UnitDesc {
             id,
             kind: spec.kind,
+            addr: None,
         };
-        Self { desc }
+        Ok(Self {
+            desc: Mutex::new(desc),
+        })
     }
 }
 
 #[async_trait]
 impl Unit for ControlUnit {
     async fn desc(&self) -> UnitDesc {
-        self.desc.clone()
+        self.desc.lock().await.clone()
     }
 
     async fn start(&self) -> UnitResult<()> {
+        let addr = ([0, 0, 0, 0], 0).into();
+        let ctrl = Arc::new(Control::default());
+        let router = control_api::route(ctrl);
+        let server = Server::bind(&addr).serve(router.into_make_service());
+        let local_addr = server.local_addr();
+        {
+            let mut desc = self.desc.lock().await;
+            desc.addr = Some(local_addr.to_string());
+        }
+        if let Err(err) = server.await {
+            return Err(Box::new(err));
+        }
         Ok(())
     }
 }
@@ -54,7 +75,7 @@ impl UnitBuilder for ControlUnitBuilder {
     }
 
     async fn spawn(&self, id: String, spec: UnitSpec) -> UnitResult<Box<dyn Unit>> {
-        let unit = ControlUnit::new(id, spec);
+        let unit = ControlUnit::new(id, spec).await?;
         Ok(Box::new(unit))
     }
 }

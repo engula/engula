@@ -27,6 +27,13 @@ pub struct UnitSpec {
 pub struct UnitDesc {
     pub id: String,
     pub kind: String,
+    pub addr: Option<String>,
 }
 
 pub type UnitDescList = Vec<UnitDesc>;
+
+/// Describes the current state of a node.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct NodeDesc {}
+
+pub type NodeDescList = Vec<NodeDesc>;
