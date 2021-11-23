@@ -16,10 +16,7 @@ use std::collections::HashMap;
 
 use tokio::sync::Mutex;
 
-use crate::{
-    error::Result,
-    proto::{NodeDesc, NodeDescList},
-};
+use crate::{error::Result, proto::*};
 
 pub struct Control {
     inner: Mutex<Inner>,
@@ -40,6 +37,10 @@ struct Inner {
 }
 
 impl Control {
+    pub async fn desc(&self) -> ControlDesc {
+        ControlDesc::default()
+    }
+
     pub async fn list_nodes(&self) -> Result<NodeDescList> {
         let inner = self.inner.lock().await;
         let descs = inner.nodes.values().cloned().collect();

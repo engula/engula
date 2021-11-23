@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     control_unit::ControlUnitBuilder,
     error::{Error, Result},
-    proto::{UnitDesc, UnitDescList, UnitSpec},
+    proto::*,
     unit::{Unit, UnitBuilder},
 };
 
@@ -49,6 +49,10 @@ struct Inner {
 }
 
 impl Node {
+    pub async fn desc(&self) -> NodeDesc {
+        NodeDesc::default()
+    }
+
     pub async fn list_units(&self) -> Result<UnitDescList> {
         let inner = self.inner.lock().await;
         let mut descs = Vec::new();

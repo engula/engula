@@ -16,17 +16,20 @@ use std::sync::Arc;
 
 use axum::{extract::Extension, routing::get, AddExtensionLayer, Json, Router};
 
-use crate::{
-    error::Result,
-    node::Node,
-    proto::{UnitDesc, UnitDescList, UnitSpec},
-};
+use crate::{error::Result, node::Node, proto::*};
 
 pub fn route(node: Arc<Node>) -> Router {
-    let v1 = Router::new().route("/units", get(list_units).post(create_unit));
+    let v1 = Router::new()
+        .route("/", get(desc))
+        .route("/units", get(list_units).post(create_unit));
     Router::new()
         .nest("/v1", v1)
         .layer(AddExtensionLayer::new(node))
+}
+
+async fn desc(Extension(node): Extension<Arc<Node>>) -> Result<Json<NodeDesc>> {
+    let desc = node.desc().await;
+    Ok(desc.into())
 }
 
 async fn list_units(Extension(node): Extension<Arc<Node>>) -> Result<Json<UnitDescList>> {

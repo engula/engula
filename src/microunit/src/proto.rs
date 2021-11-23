@@ -16,6 +16,12 @@ use std::cmp::PartialEq;
 
 use serde::{Deserialize, Serialize};
 
+/// Describes the current state of a node.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct NodeDesc {}
+
+pub type NodeDescList = Vec<NodeDesc>;
+
 /// Describes the specification of a unit.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct UnitSpec {
@@ -32,8 +38,6 @@ pub struct UnitDesc {
 
 pub type UnitDescList = Vec<UnitDesc>;
 
-/// Describes the current state of a node.
+/// Describes the current state of a control unit.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
-pub struct NodeDesc {}
-
-pub type NodeDescList = Vec<NodeDesc>;
+pub struct ControlDesc {}
