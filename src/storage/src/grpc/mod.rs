@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod client;
 mod error;
 mod object;
 mod proto;
 mod server;
 mod storage;
+mod uploader;
 
 pub use self::{
-    bucket::{RemoteBucket, RemoteObjectUploader},
     client::Client,
     error::{Error, Result},
     object::RemoteObject,
     server::Server,
     storage::RemoteStorage,
+    uploader::RemoteObjectUploader,
 };
 
 #[cfg(test)]
@@ -52,13 +52,13 @@ mod tests {
 
         let url = format!("http://{}", local_addr);
         let storage = RemoteStorage::connect(&url).await?;
-        let bucket = storage.create_bucket("bucket").await?;
-        let mut up = bucket.upload_object("object").await?;
+        storage.create_bucket("bucket").await?;
+        let mut up = storage.upload_object("bucket", "object").await?;
         let buf = vec![0, 1, 2];
         up.write(&buf).await?;
         let len = up.finish().await?;
         assert_eq!(len, buf.len());
-        let object = bucket.object("object").await?;
+        let object = storage.object("bucket", "object").await?;
         let mut got = vec![0; buf.len()];
         object.read_at(&mut got, 0).await?;
         assert_eq!(got, buf);

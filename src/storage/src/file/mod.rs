@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod error;
 mod object;
 mod storage;
+mod uploader;
 
 pub use std::borrow::Cow;
 
@@ -25,7 +25,10 @@ pub use self::storage::FileStorage;
 mod tests {
     use std::{env, path::PathBuf, process};
 
-    use super::{error::Result, *};
+    use super::{
+        error::{Error, Result},
+        *,
+    };
     use crate::*;
 
     struct TestEnvGuard {
@@ -35,7 +38,7 @@ mod tests {
     impl TestEnvGuard {
         fn setup(case: &str) -> Self {
             let mut path = env::temp_dir();
-            path.push("englua-storage-fs-test");
+            path.push("engula-storage-fs-test");
             path.push(process::id().to_string());
             path.push(case);
             Self { path }
@@ -56,9 +59,7 @@ mod tests {
         let s = FileStorage::new(&g.path).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
-        s.bucket(BUCKET_NAME).await?;
         s.delete_bucket(BUCKET_NAME).await?;
-        assert!(s.bucket(BUCKET_NAME).await.is_err());
         Ok(())
     }
 
@@ -68,14 +69,14 @@ mod tests {
         let g = TestEnvGuard::setup("test_object_manage");
 
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
+        s.create_bucket(BUCKET_NAME).await?;
 
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcd").await?;
         u.write(b"123").await?;
         u.finish().await?;
 
-        let obj = b.object("obj-1").await?;
+        let obj = s.object(BUCKET_NAME, "obj-1").await?;
         let mut v = [0u8; 5];
         obj.read_at(&mut v[..], 2).await?;
         assert_eq!(&v[..], "cd123".as_bytes());
@@ -91,10 +92,7 @@ mod tests {
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
-        assert_eq!(
-            "`test_bucket_dup` already exists",
-            r.err().unwrap().to_string()
-        );
+        assert!(matches!(r, Err(Error::AlreadyExists(_))));
         Ok(())
     }
 
@@ -103,8 +101,8 @@ mod tests {
         const BUCKET_NAME: &str = "test_non_empty_delete";
         let g = TestEnvGuard::setup("test_non_empty_delete");
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
-        let mut u = b.upload_object("obj-1").await?;
+        s.create_bucket(BUCKET_NAME).await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcd").await?;
         u.finish().await?;
         let r = s.delete_bucket(BUCKET_NAME).await;
@@ -118,16 +116,16 @@ mod tests {
         const BUCKET_NAME: &str = "test_put_dup_obj";
         let g = TestEnvGuard::setup("test_put_dup_obj");
         let s = FileStorage::new(&g.path).await?;
-        let b = s.create_bucket(BUCKET_NAME).await?;
+        s.create_bucket(BUCKET_NAME).await?;
 
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"abcdefg").await?;
         u.finish().await?;
-        let mut u = b.upload_object("obj-1").await?;
+        let mut u = s.upload_object(BUCKET_NAME, "obj-1").await?;
         u.write(b"123").await?;
         u.finish().await?;
 
-        let obj = b.object("obj-1").await?;
+        let obj = s.object(BUCKET_NAME, "obj-1").await?;
         let mut v = [0u8; 4];
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 3);
@@ -137,6 +135,29 @@ mod tests {
         let n = obj.read_at(&mut v[..], 0).await?;
         assert_eq!(n, 2);
         assert_eq!(&v[..n], b"12");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_not_exist_bucket() -> Result<()> {
+        const BUCKET_NAME: &str = "test_not_exist_bucket";
+        let g = TestEnvGuard::setup("test_not_exist_bucket");
+        let s = FileStorage::new(&g.path).await?;
+
+        let r = s.delete_object(BUCKET_NAME, "obj-1").await;
+        assert!(r.is_err());
+        assert!(matches!(r, Err(Error::NotFound(_))));
+
+        let o = s.object(BUCKET_NAME, "obj").await?;
+        let mut v = [0u8; 4];
+        let r = o.read_at(&mut v[..], 0).await;
+        assert!(matches!(r, Err(Error::NotFound(_))));
+
+        let mut u = s.upload_object(BUCKET_NAME, "obj").await?;
+        u.write(b"112").await?;
+        let r = u.finish().await;
+        assert!(matches!(r, Err(Error::NotFound(_))));
+
         Ok(())
     }
 }

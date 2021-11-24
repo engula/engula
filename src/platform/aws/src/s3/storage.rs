@@ -18,7 +18,7 @@ use aws_sdk_s3::{
 };
 use storage::{async_trait, Storage};
 
-use super::{bucket::S3Bucket, error::Result, object::S3Object};
+use super::{error::Result, object::S3Object, uploader::S3ObjectUploader};
 
 pub struct S3Storage {
     client: Client,
@@ -35,18 +35,10 @@ impl S3Storage {
 }
 
 #[async_trait]
-impl Storage<S3Object, S3Bucket> for S3Storage {
-    async fn bucket(&self, name: &str) -> Result<S3Bucket> {
-        self.client
-            .head_bucket()
-            .bucket(name.to_owned())
-            .send()
-            .await?;
+impl Storage<S3Object> for S3Storage {
+    type ObjectUploader = S3ObjectUploader;
 
-        Ok(S3Bucket::new(self.client.clone(), name))
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<S3Bucket> {
+    async fn create_bucket(&self, name: &str) -> Result<()> {
         let region: &str = &self.region;
         let location = BucketLocationConstraint::from(region);
         let config = CreateBucketConfiguration::builder()
@@ -60,13 +52,53 @@ impl Storage<S3Object, S3Bucket> for S3Storage {
             .send()
             .await?;
 
-        Ok(S3Bucket::new(self.client.clone(), name))
+        Ok(())
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
         self.client
             .delete_bucket()
             .bucket(name.to_owned())
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<S3Object> {
+        Ok(S3Object::new(
+            self.client.clone(),
+            bucket_name.to_owned(),
+            object_name.to_owned(),
+        ))
+    }
+
+    async fn upload_object(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<S3ObjectUploader> {
+        let output = self
+            .client
+            .create_multipart_upload()
+            .bucket(bucket_name)
+            .key(object_name)
+            .send()
+            .await?;
+
+        let upload_id = output.upload_id.unwrap();
+        Ok(S3ObjectUploader::new(
+            self.client.clone(),
+            bucket_name.to_owned(),
+            object_name.to_owned(),
+            upload_id,
+        ))
+    }
+
+    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
+        self.client
+            .delete_object()
+            .bucket(bucket_name)
+            .key(object_name)
             .send()
             .await?;
         Ok(())

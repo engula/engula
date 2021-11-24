@@ -41,18 +41,17 @@ async fn integration_test_bucket_management() {
     let object = "object-0";
 
     storage.create_bucket(bucket).await.unwrap();
-    let b = storage.bucket(bucket).await.unwrap();
-    let mut up = b.upload_object(object).await.unwrap();
+    let mut up = storage.upload_object(bucket, object).await.unwrap();
     let buf = vec![0, 1, 2];
     up.write(&buf).await.unwrap();
     let len = up.finish().await.unwrap();
     assert_eq!(len, buf.len());
-    let o = b.object(object).await.unwrap();
+    let o = storage.object(bucket, object).await.unwrap();
     let mut got = vec![0; buf.len()];
     o.read_at(&mut got, 0).await.unwrap();
     assert_eq!(got, buf);
 
-    b.delete_object(object).await.unwrap();
+    storage.delete_object(bucket, object).await.unwrap();
     storage.delete_bucket(bucket).await.unwrap();
 }
 
@@ -74,17 +73,16 @@ async fn integration_test_multipart_put() {
     let object = "object-0";
 
     storage.create_bucket(bucket).await.unwrap();
-    let b = storage.bucket(bucket).await.unwrap();
-    let mut up = b.upload_object(object).await.unwrap();
+    let mut up = storage.upload_object(bucket, object).await.unwrap();
     up.write("123".as_bytes()).await.unwrap();
     up.finish().await.unwrap();
 
-    let reader = b.object(object).await.unwrap();
+    let reader = storage.object(bucket, object).await.unwrap();
     let mut buf: [u8; 2] = [0; 2];
     let rs = reader.read_at(&mut buf[..], 0).await.unwrap();
     assert_eq!(rs, 2);
     assert_eq!(&buf[..], b"12");
 
-    b.delete_object(object).await.unwrap();
+    storage.delete_object(bucket, object).await.unwrap();
     storage.delete_bucket(bucket).await.unwrap();
 }

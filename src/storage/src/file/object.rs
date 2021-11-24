@@ -19,7 +19,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 
-use super::error::{Error, Result};
+use super::{
+    error::{Error, Result},
+    storage::check_io_result,
+};
 use crate::{async_trait, Object};
 
 pub struct FileObject {
@@ -37,7 +40,11 @@ impl Object for FileObject {
     type Error = Error;
 
     async fn read_at(&self, mut buf: &mut [u8], offset: usize) -> Result<usize> {
-        let mut f: fs::File = fs::OpenOptions::new().read(true).open(&self.path).await?;
+        let mut f: fs::File = check_io_result(
+            fs::OpenOptions::new().read(true).open(&self.path).await,
+            &self.path,
+        )
+        .await?;
 
         f.seek(SeekFrom::Start(offset as u64)).await?;
 
