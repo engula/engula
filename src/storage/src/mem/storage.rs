@@ -26,24 +26,18 @@ use super::{
 };
 use crate::{async_trait, Storage};
 
-pub struct MemStorage {
-    buckets: Mutex<HashMap<String, MemBucket>>,
-}
+type Objects = HashMap<String, MemObject>;
 
-impl MemStorage {
-    async fn bucket(&self, name: &str) -> Result<MemBucket> {
-        let buckets = self.buckets.lock().await;
-        match buckets.get(name) {
-            Some(bucket) => Ok(bucket.clone()),
-            None => Err(Error::NotFound(format!("bucket '{}'", name))),
-        }
-    }
+pub type Buckets = Arc<Mutex<HashMap<String, Objects>>>;
+
+pub struct MemStorage {
+    buckets: Buckets,
 }
 
 impl Default for MemStorage {
     fn default() -> Self {
         MemStorage {
-            buckets: Mutex::new(HashMap::new()),
+            buckets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -53,7 +47,7 @@ impl Storage<MemObject> for MemStorage {
     type ObjectUploader = MemObjectUploader;
 
     async fn create_bucket(&self, name: &str) -> Result<()> {
-        let bucket = MemBucket::default();
+        let bucket = HashMap::new();
         let mut buckets = self.buckets.lock().await;
         match buckets.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
@@ -73,8 +67,11 @@ impl Storage<MemObject> for MemStorage {
     }
 
     async fn object(&self, bucket_name: &str, object_name: &str) -> Result<MemObject> {
-        let bucket = self.bucket(bucket_name).await?;
-        let objects = bucket.objects.lock().await;
+        let buckets = self.buckets.lock().await;
+        let objects = match buckets.get(bucket_name) {
+            Some(objects) => Ok(objects),
+            None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
+        }?;
         match objects.get(object_name) {
             Some(object) => Ok(object.clone()),
             None => Err(Error::NotFound(format!("object '{}'", object_name))),
@@ -86,34 +83,22 @@ impl Storage<MemObject> for MemStorage {
         bucket_name: &str,
         object_name: &str,
     ) -> Result<Self::ObjectUploader> {
-        let bucket = self.bucket(bucket_name).await?;
         Ok(MemObjectUploader::new(
+            bucket_name.to_owned(),
             object_name.to_owned(),
-            bucket.objects,
+            self.buckets.clone(),
         ))
     }
 
     async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
-        let bucket = self.bucket(bucket_name).await?;
-        let mut objects = bucket.objects.lock().await;
+        let mut buckets = self.buckets.lock().await;
+        let objects = match buckets.get_mut(bucket_name) {
+            Some(objects) => Ok(objects),
+            None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
+        }?;
         match objects.remove(object_name) {
             Some(_) => Ok(()),
             None => Err(Error::NotFound(format!("object '{}'", object_name))),
-        }
-    }
-}
-
-pub type Objects = Arc<Mutex<HashMap<String, MemObject>>>;
-
-#[derive(Clone)]
-struct MemBucket {
-    objects: Objects,
-}
-
-impl Default for MemBucket {
-    fn default() -> Self {
-        MemBucket {
-            objects: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

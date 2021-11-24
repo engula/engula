@@ -17,22 +17,28 @@ use std::collections::hash_map;
 use super::{
     error::{Error, Result},
     object::MemObject,
-    storage::Objects,
+    storage::Buckets,
 };
 use crate::{async_trait, ObjectUploader};
 
 pub struct MemObjectUploader {
-    name: String,
+    bucket_name: String,
+    object_name: String,
     data: Vec<u8>,
-    objects: Objects,
+    buckets: Buckets,
 }
 
 impl MemObjectUploader {
-    pub fn new(name: String, objects: Objects) -> MemObjectUploader {
+    pub fn new(
+        bucket_name: impl Into<String>,
+        object_name: impl Into<String>,
+        buckets: Buckets,
+    ) -> MemObjectUploader {
         MemObjectUploader {
-            name,
+            bucket_name: bucket_name.into(),
+            object_name: object_name.into(),
             data: Vec::new(),
-            objects,
+            buckets,
         }
     }
 }
@@ -49,15 +55,22 @@ impl ObjectUploader for MemObjectUploader {
     async fn finish(self) -> Result<usize> {
         let len = self.data.len();
         let object = MemObject::new(self.data);
-        let mut objects = self.objects.lock().await;
-        match objects.entry(self.name.clone()) {
+
+        let mut buckets = self.buckets.lock().await;
+        let objects = match buckets.get_mut(&self.bucket_name) {
+            Some(objects) => Ok(objects),
+            None => Err(Error::NotFound(format!("bucket '{}'", &self.bucket_name))),
+        }?;
+
+        match objects.entry(self.object_name.clone()) {
             hash_map::Entry::Vacant(ent) => {
                 ent.insert(object.clone());
                 Ok(len)
             }
-            hash_map::Entry::Occupied(_) => {
-                Err(Error::AlreadyExists(format!("object '{}'", self.name)))
-            }
+            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!(
+                "object '{}'",
+                self.object_name
+            ))),
         }
     }
 }
