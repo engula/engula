@@ -12,32 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use microunit::{async_trait, Result, Unit, UnitBuilder, UnitDesc, UnitSpec};
+use std::net::SocketAddr;
 
-pub struct HelloUnit {
-    id: String,
+use reqwest::{Client, Url};
+
+use crate::{error::Result, proto::*};
+
+pub struct ControlClient {
+    url: Url,
+    client: Client,
 }
 
-#[async_trait]
-impl Unit for HelloUnit {
-    async fn desc(&self) -> UnitDesc {
-        UnitDesc {
-            id: self.id.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct HelloUnitBuilder {}
-
-#[async_trait]
-impl UnitBuilder for HelloUnitBuilder {
-    fn kind(&self) -> &str {
-        "hello"
+impl ControlClient {
+    pub fn from_addr(addr: &SocketAddr) -> Result<Self> {
+        let url = Url::parse(&format!("http://{}/v1/", addr))?;
+        let client = Client::new();
+        Ok(Self { url, client })
     }
 
-    async fn spawn(&self, id: String, _spec: UnitSpec) -> Result<Box<dyn Unit>> {
-        let unit = HelloUnit { id };
-        Ok(Box::new(unit))
+    pub async fn list_nodes(&self) -> Result<NodeDescList> {
+        let url = self.url.join("nodes")?;
+        let list = self.client.get(url).send().await?.json().await?;
+        Ok(list)
     }
 }
