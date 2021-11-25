@@ -30,10 +30,10 @@ Engula unbundles the storage engine into the following modules:
 - *Compute* runs stateless data API services. For example, KV, SQL, or GraphQL.
 - *Journal* is an abstraction to store real-time data streams. For example, transaction logs.
 - *Storage* is an abstraction to store immutable data objects. For example, SSTables or Parquet tables.
-- *Warehouse* is an abstraction based on Storage to provide versioned metadata and atomic metadata operations.
+- *Manifest* is an abstraction on top of Storage to provide versioned metadata and atomic metadata operations.
 - *Background* is an abstraction to run background jobs on-demand. For example, compactions or garbage collections.
 
-These modules have varied resource requirements, which allows Engula to take full advantage of different resources. Engula intends to shift most foreground computation to Compute, background computation to Background, and then make the cost of stateful modules (Journal, Storage, and Warehouse) as low as possible.
+These modules have varied resource requirements, which allows Engula to take full advantage of different resources. Engula intends to shift most foreground computation to Compute, background computation to Background, and then make the cost of stateful modules (Journal, Storage, and Manifest) as low as possible.
 
 Engula modules also expose extensible APIs that allow different implementations. Engula provides some built-in implementations for common use cases. For example, Storage offers a local implementation based on the local file system and a remote implementation based on gRPC services. For a specific application, users can choose the appropriate implementations or build their own ones. Uses can also use an individual module outside of Engula.
 
@@ -94,7 +94,7 @@ Storage provides the following interfaces to manipulate objects in a bucket:
 
 It is also possible to support object-level expression evaluation for some object formats (e.g., JSON, Parquet), which is important to analytical workloads. We leave the exploration of this feature to future work.
 
-Storage is a low-level abstraction to manipulate individual objects. It doesn't support atomic operations across multiple objects. See [Warehouse](#warehouse) for a higher-level abstraction with more powerful semantics.
+Storage is a low-level abstraction to manipulate individual objects. It doesn't support atomic operations across multiple objects. See [Manifest](#manifest) for more advanced semantics.
 
 ## Implementation
 
@@ -110,18 +110,18 @@ It is a good idea to combine different implementations into a more powerful one.
 
 Storage doesn't assume how data should be persisted. It is up to the implementer to decide what guarantees it provides.
 
-# Warehouse
+# Manifest
 
-Warehouse is an object storage abstraction based on [Storage](#storage). Warehouse enhances Storage with versioned metadata and atomic metadata operations to meet the following requirements:
+Manifest enhances Storage with versioned metadata and atomic metadata operations to meet the following requirements:
 
-- Foreground services need to make sure that the required data remains valid during processing
-- Background jobs need to add or delete multiple objects atomically to guarantee data correctness
+- Foreground services that need to make sure that the required data remains valid during processing
+- Background jobs that need to add or delete multiple objects atomically to guarantee data correctness
 
-![Warehouse Architecture](images/warehouse-architecture.drawio.svg)
+![Manifest Architecture](images/manifest-architecture.drawio.svg)
 
-Warehouse stores object data in Storage and stores object metadata in Manifest. To add objects to Warehouse, a client uploads objects to Storage first and then commits the uploaded objects to Warehouse. To delete objects from Warehouse, a client commits the to be deleted objects to Warehouse and then relies on Warehouse to purge those objects. It is possible that a client fails to upload some objects or fails to commit the uploaded objects. In this case, the corresponding objects become obsolete. So Warehouse implements garbage collection to guarantee that deleted and obsoleted objects are purged sooner or later.
+Manifest manages object data in Storage and persists object metadata in Metadata. To add objects to Manifest, a client uploads objects to Storage first and then commits the uploaded objects to Manifest. To delete objects from Manifest, a client commits the to be deleted objects to Manifest and then relies on Manifest to purge those objects. It is possible that a client fails to upload some objects or fails to commit the uploaded objects. In this case, the corresponding objects become obsolete. So Manifest implements garbage collection to guarantee that deleted and obsoleted objects will be purged sooner or later.
 
-Warehouse employs a multi-version mechanism to manage metadata. It maintains multiple versions of metadata. Each version represents a snapshot of metadata at a specific time. Each metadata transaction (add or delete objects) creates a version update that transforms the last version into a new one. When a client connects to Warehouse, it gets the last version from Warehouse as its base version and subscribes to future version updates. When a version update arrives, the client applies it to its base version to catch up with Warehouse. The client maintains a list of live versions for ongoing queries and releases a version once it is no longer used. Warehouse guarantees that objects in all client versions remain valid until the corresponding versions are released.
+Manifest employs a multi-version mechanism to manage metadata. It maintains multiple versions of metadata. Each version represents a snapshot of metadata at a specific time. Each metadata transaction (add or delete objects) creates a version update that transforms the last version into a new one. When a client connects to Manifest, it gets the last version from Manifest as its base version and subscribes to future version updates. When a version update arrives, the client applies it to its base version to catch up with Manifest. The client maintains a list of live versions for ongoing queries and releases a version once it is no longer used. Manifest guarantees that objects in all client versions remain valid until the corresponding versions are released.
 
 # Discussions
 
