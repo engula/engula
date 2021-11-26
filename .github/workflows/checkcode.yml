@@ -78,6 +78,12 @@ jobs:
         components: clippy, rustfmt
         override: true
 
+    - name: Install cargo-udeps
+      uses: actions-rs/cargo@v1
+      with:
+        command: install
+        args: cargo-udeps --locked
+
     - name: Check clippy
       uses: actions-rs/cargo@v1
       with:
@@ -89,6 +95,12 @@ jobs:
       with:
         command: fmt
         args: --all -- --check
+
+    - name: Check udeps
+      uses: actions-rs/cargo@v1
+      with:
+          command: udeps
+          args: --workspace
 
   tidy:
     name: Check tidy
