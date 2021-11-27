@@ -12,19 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod journal;
-mod stream;
-
-// pub mod grpc;
-pub mod mem;
-
-pub use async_trait::async_trait;
-
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
-
-pub use self::{
-    error::{Error, Result},
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+#[derive(Clone, Debug)]
+pub enum UpdateAction {
+    AddObject(String),
+    DeleteObject(String),
+}

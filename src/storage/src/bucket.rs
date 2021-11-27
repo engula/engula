@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::async_trait;
+use tokio::io::{AsyncRead, AsyncWrite};
 
-/// An interface to manipulate an object.
+use crate::{async_trait, Result};
+
+/// An interface to manipulate a bucket.
 #[async_trait]
-pub trait Object {
-    type Error;
+pub trait Bucket: Send + Sync {
+    type SequentialReader: AsyncRead;
+    type SequentialWriter: AsyncWrite;
 
-    /// Reads a range from the object at a specific offset.
-    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize, Self::Error>;
+    async fn delete_object(&self, name: &str) -> Result<()>;
+
+    async fn new_sequential_reader(&self, name: &str) -> Result<Self::SequentialReader>;
+
+    async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter>;
 }

@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod journal;
-mod stream;
+use crate::UpdateAction;
 
-// pub mod grpc;
-pub mod mem;
+pub type Sequence = u64;
 
-pub use async_trait::async_trait;
+#[derive(Clone, Debug, Default)]
+pub struct Version {
+    pub sequence: Sequence,
+    pub objects: Vec<String>,
+}
 
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
-
-pub use self::{
-    error::{Error, Result},
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
-};
+#[derive(Clone, Debug, Default)]
+pub struct VersionUpdate {
+    pub sequence: Sequence,
+    pub actions: Vec<UpdateAction>,
+}

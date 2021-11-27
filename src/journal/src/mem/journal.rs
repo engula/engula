@@ -16,27 +16,26 @@ use std::collections::{hash_map, HashMap};
 
 use tokio::sync::Mutex;
 
-use super::{
-    error::{Error, Result},
-    stream::MemStream,
-};
-use crate::{async_trait, Journal, Timestamp};
+use super::stream::Stream;
+use crate::{async_trait, Error, Result};
 
-pub struct MemJournal<T: Timestamp> {
-    streams: Mutex<HashMap<String, MemStream<T>>>,
+pub struct Journal {
+    streams: Mutex<HashMap<String, Stream>>,
 }
 
-impl<T: Timestamp> Default for MemJournal<T> {
+impl Default for Journal {
     fn default() -> Self {
-        MemJournal {
+        Self {
             streams: Mutex::new(HashMap::new()),
         }
     }
 }
 
 #[async_trait]
-impl<T: Timestamp> Journal<MemStream<T>> for MemJournal<T> {
-    async fn stream(&self, name: &str) -> Result<MemStream<T>> {
+impl crate::Journal for Journal {
+    type Stream = Stream;
+
+    async fn stream(&self, name: &str) -> Result<Self::Stream> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
             Some(stream) => Ok(stream.clone()),
@@ -44,15 +43,17 @@ impl<T: Timestamp> Journal<MemStream<T>> for MemJournal<T> {
         }
     }
 
-    async fn create_stream(&self, name: &str) -> Result<MemStream<T>> {
-        let stream = MemStream::default();
+    async fn create_stream(&self, name: &str) -> Result<Self::Stream> {
+        let stream = Stream::default();
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
                 ent.insert(stream.clone());
                 Ok(stream)
             }
-            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
+            hash_map::Entry::Occupied(ent) => {
+                Err(Error::AlreadyExists(format!("stream '{}'", ent.key())))
+            }
         }
     }
 

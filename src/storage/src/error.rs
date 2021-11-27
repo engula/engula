@@ -12,26 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Error as IoError, ErrorKind};
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("`{0}` is not found")]
+    #[error("{0} is not found")]
     NotFound(String),
-    #[error("`{0}` already exists")]
+    #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid argument: `{0}`")]
+    #[error("{0}")]
     InvalidArgument(String),
+    #[error(transparent)]
+    Io(IoError),
 }
 
-impl From<Error> for tonic::Status {
-    fn from(err: Error) -> Self {
-        let (code, message) = match err {
-            Error::NotFound(s) => (tonic::Code::NotFound, s),
-            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
-            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
-        };
-        tonic::Status::new(code, message)
+impl From<IoError> for Error {
+    fn from(err: IoError) -> Self {
+        match err.kind() {
+            ErrorKind::NotFound => Self::NotFound(err.to_string()),
+            ErrorKind::AlreadyExists => Self::AlreadyExists(err.to_string()),
+            ErrorKind::InvalidInput => Self::InvalidArgument(err.to_string()),
+            _ => Self::Io(err),
+        }
     }
 }
 

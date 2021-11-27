@@ -10,12 +10,12 @@ path = "bin/engula.rs"
 [workspace]
 members = [
     "src/engine/hash",
+    "src/kernel",
     "src/journal",
     "src/storage",
     "src/manifest",
     "src/background",
     "src/microunit",
-    "src/platform/aws",
 ]
 
 [dependencies]

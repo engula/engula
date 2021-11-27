@@ -13,10 +13,10 @@
 // limitations under the License.
 
 mod error;
-mod journal;
-mod stream;
+mod kernel;
+mod update;
+mod version;
 
-// pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
@@ -25,6 +25,7 @@ pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
 
 pub use self::{
     error::{Error, Result},
-    journal::Journal,
-    stream::{Event, Stream, Timestamp},
+    kernel::{Kernel, KernelUpdate},
+    update::UpdateAction,
+    version::{Sequence, Version, VersionUpdate},
 };
