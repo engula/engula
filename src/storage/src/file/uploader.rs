@@ -12,54 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tokio::{fs, io::AsyncWriteExt};
 
 use super::{
     error::{Error, Result},
-    object::FileObject,
-    storage::try_exists,
+    storage::check_io_result,
 };
-use crate::{async_trait, Bucket, ObjectUploader};
-
-pub struct FileBucket {
-    path: PathBuf,
-}
-
-impl FileBucket {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-
-    fn object_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.path.join(name)
-    }
-}
-
-#[async_trait]
-impl Bucket<FileObject> for FileBucket {
-    type ObjectUploader = FileObjectUploader;
-
-    async fn object(&self, name: &str) -> Result<FileObject> {
-        let path = self.object_path(name);
-        if !try_exists(&path).await? {
-            return Err(Error::NotFound(name.to_owned()));
-        }
-        Ok(FileObject::new(path))
-    }
-
-    async fn upload_object(&self, name: &str) -> Result<FileObjectUploader> {
-        let path = self.object_path(name);
-        Ok(FileObjectUploader::new(path))
-    }
-
-    async fn delete_object(&self, name: &str) -> Result<()> {
-        let path = self.object_path(name);
-        fs::remove_file(path).await?;
-        Ok(())
-    }
-}
+use crate::{async_trait, ObjectUploader};
 
 pub struct FileObjectUploader {
     path: PathBuf,
@@ -85,12 +46,16 @@ impl ObjectUploader for FileObjectUploader {
     }
 
     async fn finish(self) -> Result<usize> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&self.path)
-            .await?;
+        let mut f = check_io_result(
+            fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&self.path)
+                .await,
+            &self.path,
+        )
+        .await?;
 
         f.write_all(&self.buf).await?;
         f.sync_all().await?;

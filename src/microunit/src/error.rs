@@ -12,14 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(Debug)]
+use std::convert::Infallible;
+
+use axum::{
+    body::{Bytes, Full},
+    http::{Response, StatusCode},
+    response::IntoResponse,
+    Json,
+};
+use serde_json::json;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub enum Error {
-    InvalidArgument,
+    #[error("{0}")]
+    InvalidArgument(String),
+    #[error(transparent)]
+    Url(#[from] url::ParseError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error(transparent)]
+    Unknown(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl ToString for Error {
-    fn to_string(&self) -> String {
-        format!("{:?}", self)
+impl IntoResponse for Error {
+    type Body = Full<Bytes>;
+    type BodyError = Infallible;
+
+    fn into_response(self) -> Response<Self::Body> {
+        let (code, message) = match self {
+            Error::InvalidArgument(m) => (StatusCode::BAD_REQUEST, m),
+            Error::Url(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::Reqwest(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Error::Unknown(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+        };
+        let json = Json(json!({
+            "error": {
+                "code": code.as_u16(),
+                "message": message,
+            }
+        }));
+        (code, json).into_response()
     }
 }
 

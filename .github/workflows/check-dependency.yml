@@ -12,37 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Audit Security
+name: Check Dependency
 
 on:
   push:
     paths:
-      - '**/Cargo.lock'
+      - '**/Cargo.toml'
   pull_request:
     paths:
-      - '**/Cargo.lock'
-  schedule:
-    - cron: '25 4 * * *'
+      - '**/Cargo.toml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
-  audit-security:
-    name: Audit Security
+  udpes:
+    name: Cargo udeps
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'skip audit')"
-    steps:
-      - uses: actions/checkout@v2
 
-      - name: Install cargo-audit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+          override: true
+
+      - name: Install cargo-udeps
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-audit
+          args: cargo-udeps --locked
 
-      - name: Audit dependencies
+      - name: Check udeps
         uses: actions-rs/cargo@v1
         with:
-          command: audit
+          command: udeps
+          args: --workspace

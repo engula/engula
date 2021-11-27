@@ -13,9 +13,7 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-use microunit::{NodeBuilder, NodeServer};
-
-use crate::hello_unit::HelloUnitBuilder;
+use microunit::NodeServer;
 
 #[derive(Parser)]
 #[clap(version = crate_version!())]
@@ -45,9 +43,6 @@ struct StartCommand {
 impl StartCommand {
     async fn run(&self) {
         let addr = self.addr.parse().unwrap();
-        let node = NodeBuilder::default()
-            .unit(HelloUnitBuilder::default())
-            .build();
-        NodeServer::bind(addr).serve(node).await;
+        NodeServer::bind(addr).serve().await;
     }
 }
