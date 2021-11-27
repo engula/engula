@@ -402,6 +402,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "engula-kernel"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "journal",
+ "storage",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
