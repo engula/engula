@@ -13,17 +13,6 @@
 // limitations under the License.
 
 mod engine;
-mod engine_update;
-mod error;
 mod kernel;
-mod local;
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    engine::Engine,
-    engine_update::{EngineAction, EngineUpdate},
-    error::{Error, Result},
-    kernel::Kernel,
-    local::{LocalEngine, LocalKernel},
-};
+pub use self::{engine::LocalEngine, kernel::LocalKernel};

@@ -12,18 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
-mod engine_update;
-mod error;
-mod kernel;
-mod local;
+use thiserror::Error;
 
-pub use async_trait::async_trait;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0} is not found")]
+    NotFound(String),
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+    #[error(transparent)]
+    Unknown(Box<dyn std::error::Error>),
+}
 
-pub use self::{
-    engine::Engine,
-    engine_update::{EngineAction, EngineUpdate},
-    error::{Error, Result},
-    kernel::Kernel,
-    local::{LocalEngine, LocalKernel},
-};
+pub type Result<T> = std::result::Result<T, Error>;

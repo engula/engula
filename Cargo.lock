@@ -409,6 +409,8 @@ dependencies = [
  "futures",
  "journal",
  "storage",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

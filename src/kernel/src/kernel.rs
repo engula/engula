@@ -12,50 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Version, VersionUpdate};
-
-use async_trait::async_trait;
-use engula_journal::Stream;
-use engula_storage::Object;
+use crate::{async_trait, Engine, Result};
 
 #[async_trait]
 pub trait Kernel {
-    type Error: std::error::Error;
-    type Stream: Stream;
-    type Object: Object;
-    type VersionUpdateStream: futures::Stream<Item = Result<VersionUpdate, Self::Error>>;
+    async fn engine(&self, name: impl Into<String>) -> Result<Box<dyn Engine>>;
 
-    fn stream(&self, name: &str) -> Result<Self::Stream, Self::Error>;
-
-    fn object(&self, bucket_name: &str, object_name: &str) -> Result<Self::Object, Self::Error>;
-
-    fn install(&self, edit: KernelEdit) -> Result<(), Self::Error>;
-
-    /// Returns the current version.
-    ///
-    /// TODO: for a large data set, a version can be large too (Gigabytes). Consider breaking a version into multiple parts in that case.
-    async fn current_version(&self) -> Result<Version, Self::Error>;
-
-    /// Returns a stream of version updates.
-    async fn version_updates(&self) -> Result<Self::VersionUpdateStream, Self::Error>;
-}
-
-pub struct KernelEdit {}
-
-impl KernelEdit {
-    pub fn create_stream(&mut self, name: String) -> &mut Self {
-        self
-    }
-
-    pub fn create_bucket(&mut self, name: String) -> &mut Self {
-        self
-    }
-
-    pub fn insert_object(&mut self, bucket: String, object: String) -> &mut Self {
-        self
-    }
-
-    pub fn delete_object(&mut self, bucket: String, object: String) -> &mut Self {
-        self
-    }
+    async fn create_engine(&self, name: impl Into<String>) -> Result<Box<dyn Engine>>;
 }

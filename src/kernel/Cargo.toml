@@ -8,4 +8,6 @@ engula-journal = { package = "journal", path = "../journal" }
 engula-storage = { package = "storage", path = "../storage" }
 
 async-trait = "0.1"
+thiserror = "1.0"
 futures = "0.3"
+tokio = { version = "1.14", features = ["full"] }
