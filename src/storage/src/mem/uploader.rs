@@ -14,63 +14,55 @@
 
 use std::collections::hash_map;
 
-use super::{
-    error::{Error, Result},
-    object::MemObject,
-    storage::Buckets,
-};
-use crate::{async_trait, ObjectUploader};
+use super::{object::MemObject, storage::Buckets};
+use crate::{async_trait, Error, ObjectUploader, Result};
 
 pub struct MemObjectUploader {
+    buckets: Buckets,
     bucket_name: String,
     object_name: String,
-    data: Vec<u8>,
-    buckets: Buckets,
+    object_data: Vec<u8>,
 }
 
 impl MemObjectUploader {
     pub fn new(
+        buckets: Buckets,
         bucket_name: impl Into<String>,
         object_name: impl Into<String>,
-        buckets: Buckets,
     ) -> MemObjectUploader {
         MemObjectUploader {
+            buckets,
             bucket_name: bucket_name.into(),
             object_name: object_name.into(),
-            data: Vec::new(),
-            buckets,
+            object_data: Vec::new(),
         }
     }
 }
 
 #[async_trait]
 impl ObjectUploader for MemObjectUploader {
-    type Error = Error;
-
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
-        self.data.extend_from_slice(buf);
+        self.object_data.extend_from_slice(buf);
         Ok(())
     }
 
-    async fn finish(self) -> Result<usize> {
-        let len = self.data.len();
-        let object = MemObject::new(self.data);
+    async fn finish(self: Box<Self>) -> Result<usize> {
+        let len = self.object_data.len();
+        let object = MemObject::new(self.object_data);
 
         let mut buckets = self.buckets.lock().await;
         let objects = match buckets.get_mut(&self.bucket_name) {
             Some(objects) => Ok(objects),
-            None => Err(Error::NotFound(format!("bucket '{}'", &self.bucket_name))),
+            None => Err(Error::NotFound(format!("bucket '{}'", self.bucket_name))),
         }?;
-
-        match objects.entry(self.object_name.clone()) {
+        match objects.entry(self.object_name) {
             hash_map::Entry::Vacant(ent) => {
                 ent.insert(object.clone());
                 Ok(len)
             }
-            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!(
-                "object '{}'",
-                self.object_name
-            ))),
+            hash_map::Entry::Occupied(ent) => {
+                Err(Error::AlreadyExists(format!("object '{}'", ent.key())))
+            }
         }
     }
 }

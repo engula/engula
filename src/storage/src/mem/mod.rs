@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
 mod object;
 mod storage;
 mod uploader;
 
-pub use self::{
-    error::{Error, Result},
-    object::MemObject,
-    storage::MemStorage,
-};
+pub use self::storage::MemStorage;
 
 #[cfg(test)]
 mod tests {
