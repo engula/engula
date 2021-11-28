@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::async_trait;
+use crate::{async_trait, Result};
 
 /// An interface to manipulate an object.
 #[async_trait]
 pub trait Object {
-    type Error;
-
-    /// Reads a range from the object at a specific offset.
-    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize, Self::Error>;
+    /// Reads a range from a given offset.
+    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
 }

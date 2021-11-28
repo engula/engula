@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::async_trait;
+use crate::{async_trait, Result};
 
 /// An interface to upload an object.
 #[async_trait]
 pub trait ObjectUploader {
-    type Error;
-
     /// Writes some bytes.
-    async fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
+    async fn write(&mut self, buf: &[u8]) -> Result<()>;
 
     /// Finishes this upload.
-    async fn finish(self) -> Result<usize, Self::Error>;
+    async fn finish(self: Box<Self>) -> Result<usize>;
 }

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 engula-journal = { path = "../journal" }
-engula-storage = { package = "storage", path = "../storage" }
+engula-storage = { path = "../storage" }
 
 thiserror = "1.0"
 async-trait = "0.1"
