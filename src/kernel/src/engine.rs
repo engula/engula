@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_journal::Stream;
+use engula_journal::{Stream, Timestamp};
 use engula_storage::{Object, ObjectUploader};
 
 use crate::{async_trait, EngineUpdate, Result};
 
 #[async_trait]
-pub trait Engine {
-    async fn stream(&self, stream_name: impl Into<String>) -> Result<Box<dyn Stream>>;
+pub trait Engine<T: Timestamp> {
+    async fn stream(&self, stream_name: &str) -> Result<Box<dyn Stream<T>>>;
 
-    async fn object(
-        &self,
-        bucket_name: impl Into<String>,
-        object_name: impl Into<String>,
-    ) -> Result<Box<dyn Object>>;
+    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<Box<dyn Object>>;
 
     async fn upload_object(
         &self,
-        bucket_name: impl Into<String>,
-        object_name: impl Into<String>,
+        bucket_name: &str,
+        object_name: &str,
     ) -> Result<Box<dyn ObjectUploader>>;
 
     async fn install_update(&self, update: EngineUpdate) -> Result<()>;

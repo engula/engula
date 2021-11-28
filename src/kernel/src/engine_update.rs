@@ -24,23 +24,19 @@ pub struct EngineUpdate {
 }
 
 impl EngineUpdate {
-    pub fn add_stream(&mut self, stream_name: impl Into<String>) -> &mut Self {
-        let action = EngineAction::AddStream(stream_name.into());
+    pub fn add_stream(&mut self, stream_name: String) -> &mut Self {
+        let action = EngineAction::AddStream(stream_name);
         self.actions.push(action);
         self
     }
 
-    pub fn add_bucket(&mut self, bucket_name: impl Into<String>) -> &mut Self {
-        let action = EngineAction::AddBucket(bucket_name.into());
+    pub fn add_bucket(&mut self, bucket_name: String) -> &mut Self {
+        let action = EngineAction::AddBucket(bucket_name);
         self.actions.push(action);
         self
     }
 
-    pub fn add_object(
-        &mut self,
-        bucket_name: impl Into<String>,
-        object_name: impl Into<String>,
-    ) -> &mut Self {
+    pub fn add_object(&mut self, bucket_name: String, object_name: String) -> &mut Self {
         let action = EngineAction::AddObject(bucket_name, object_name);
         self.actions.push(action);
         self

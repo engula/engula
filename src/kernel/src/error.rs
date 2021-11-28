@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_journal::Error as JournalError;
+use engula_storage::Error as StorageError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -20,8 +22,34 @@ pub enum Error {
     NotFound(String),
     #[error("{0} already exists")]
     AlreadyExists(String),
+    #[error("{0}")]
+    InvalidArgument(String),
+    #[error(transparent)]
+    Journal(JournalError),
+    #[error(transparent)]
+    Storage(StorageError),
     #[error(transparent)]
     Unknown(Box<dyn std::error::Error>),
+}
+
+impl From<JournalError> for Error {
+    fn from(err: JournalError) -> Self {
+        match err {
+            JournalError::NotFound(s) => Self::NotFound(s),
+            JournalError::AlreadyExists(s) => Self::AlreadyExists(s),
+            JournalError::InvalidArgument(s) => Self::InvalidArgument(s),
+        }
+    }
+}
+
+impl From<StorageError> for Error {
+    fn from(err: StorageError) -> Self {
+        match err {
+            StorageError::NotFound(s) => Self::NotFound(s),
+            StorageError::AlreadyExists(s) => Self::AlreadyExists(s),
+            StorageError::InvalidArgument(s) => Self::InvalidArgument(s),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

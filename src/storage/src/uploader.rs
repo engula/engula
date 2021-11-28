@@ -16,7 +16,7 @@ use crate::{async_trait, Result};
 
 /// An interface to upload an object.
 #[async_trait]
-pub trait ObjectUploader {
+pub trait ObjectUploader: Send + Sync {
     /// Writes some bytes.
     async fn write(&mut self, buf: &[u8]) -> Result<()>;
 

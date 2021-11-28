@@ -16,7 +16,7 @@ use crate::{async_trait, Result, Stream, Timestamp};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal<T: Timestamp> {
+pub trait Journal<T: Timestamp>: Send + Sync {
     /// Returns a stream.
     async fn stream(&self, name: &str) -> Result<Box<dyn Stream<T>>>;
 

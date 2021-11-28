@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_journal::Timestamp;
+
 use crate::{async_trait, Engine, Result};
 
 #[async_trait]
-pub trait Kernel {
-    async fn engine(&self, name: impl Into<String>) -> Result<Box<dyn Engine>>;
+pub trait Kernel<T: Timestamp> {
+    async fn engine(&self, name: &str) -> Result<Box<dyn Engine<T>>>;
 
-    async fn create_engine(&self, name: impl Into<String>) -> Result<Box<dyn Engine>>;
+    async fn create_engine(&self, name: &str) -> Result<Box<dyn Engine<T>>>;
 }

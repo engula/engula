@@ -37,7 +37,7 @@ pub struct Event<T: Timestamp> {
 
 /// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream<T: Timestamp> {
+pub trait Stream<T: Timestamp>: Send + Sync {
     /// Reads events since a timestamp (inclusive).
     async fn read_events(&self, ts: T) -> ResultStream<Vec<Event<T>>>;
 

@@ -14,33 +14,37 @@
 
 use std::collections::{hash_map, HashMap};
 
+use engula_journal::{MemJournal, Timestamp};
+use engula_storage::MemStorage;
 use tokio::sync::Mutex;
 
 use super::LocalEngine;
 use crate::{async_trait, Engine, Error, Kernel, Result};
 
-pub struct LocalKernel {
-    inner: Mutex<Inner>,
+pub struct LocalKernel<T: Timestamp> {
+    inner: Mutex<Inner<T>>,
 }
 
-struct Inner {
-    engines: HashMap<String, LocalEngine>,
+struct Inner<T: Timestamp> {
+    engines: HashMap<String, LocalEngine<T>>,
 }
 
 #[async_trait]
-impl Kernel for LocalKernel {
-    async fn engine(&self, name: &str) -> Result<Box<dyn Engine>> {
+impl<T: Timestamp> Kernel<T> for LocalKernel<T> {
+    async fn engine(&self, name: &str) -> Result<Box<dyn Engine<T>>> {
         let inner = self.inner.lock().await;
-        match inner.get(name) {
+        match inner.engines.get(name) {
             Some(engine) => Ok(Box::new(engine.clone())),
             None => Err(Error::NotFound(format!("engine '{}'", name))),
         }
     }
 
-    async fn create_engine(&self, name: impl Into<String>) -> Result<Box<dyn Engine>> {
-        let engine = LocalEngine::default();
+    async fn create_engine(&self, name: &str) -> Result<Box<dyn Engine<T>>> {
+        let journal = MemJournal::default();
+        let storage = MemStorage::default();
+        let engine = LocalEngine::new(Box::new(journal), Box::new(storage));
         let mut inner = self.inner.lock().await;
-        match inner.entry(name.into()) {
+        match inner.engines.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
                 ent.insert(engine.clone());
                 Ok(Box::new(engine))

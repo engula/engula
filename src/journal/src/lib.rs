@@ -17,9 +17,9 @@ mod journal;
 mod stream;
 
 // pub mod grpc;
-pub mod mem;
-
+mod mem;
 pub use async_trait::async_trait;
+pub use mem::MemJournal;
 
 pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
 
