@@ -16,23 +16,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("`{0}` is not found")]
+    #[error("{0} is not found")]
     NotFound(String),
-    #[error("`{0}` already exists")]
+    #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid argument: `{0}`")]
+    #[error("{0}")]
     InvalidArgument(String),
-}
-
-impl From<Error> for tonic::Status {
-    fn from(err: Error) -> Self {
-        let (code, message) = match err {
-            Error::NotFound(s) => (tonic::Code::NotFound, s),
-            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
-            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
-        };
-        tonic::Status::new(code, message)
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
 mod journal;
 mod stream;
 
-pub use self::{
-    error::{Error, Result},
-    journal::MemJournal,
-    stream::MemStream,
-};
+pub use self::journal::MemJournal;
 
 #[cfg(test)]
 mod tests {
@@ -38,9 +33,9 @@ mod tests {
             data: vec![1, 2, 3],
         };
         stream.append_event(event.clone()).await?;
-        let mut events = stream.read_events(0).await?;
+        let mut events = stream.read_events(0).await;
         let got = events.next().await.unwrap()?;
-        assert_eq!(got, event);
+        assert_eq!(got, vec![event]);
         Ok(())
     }
 }

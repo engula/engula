@@ -4,10 +4,10 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-engula-journal = { package = "journal", path = "../journal" }
+engula-journal = { path = "../journal" }
 engula-storage = { package = "storage", path = "../storage" }
 
-async-trait = "0.1"
 thiserror = "1.0"
+async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "1.14", features = ["full"] }
