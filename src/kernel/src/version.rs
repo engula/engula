@@ -12,22 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
-mod error;
-mod kernel;
-mod local;
-mod update;
-mod version;
+use std::collections::HashMap;
 
-pub use async_trait::async_trait;
+use crate::UpdateAction;
 
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
+pub type Sequence = u64;
 
-pub use self::{
-    engine::{Engine, EngineUpdate},
-    error::{Error, Result},
-    kernel::Kernel,
-    local::{LocalEngine, LocalKernel},
-    update::UpdateAction,
-    version::{Sequence, Version, VersionUpdate},
-};
+#[derive(Clone, Debug, Default)]
+pub struct Version {
+    pub sequence: Sequence,
+    pub streams: Vec<String>,
+    pub buckets: HashMap<String, Vec<String>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct VersionUpdate {
+    pub sequence: Sequence,
+    pub actions: Vec<UpdateAction>,
+}

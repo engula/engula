@@ -32,6 +32,12 @@ pub enum Error {
     Unknown(Box<dyn std::error::Error>),
 }
 
+impl Error {
+    pub fn unknown(err: impl std::error::Error + 'static) -> Error {
+        Error::Unknown(Box::new(err))
+    }
+}
+
 impl From<JournalError> for Error {
     fn from(err: JournalError) -> Self {
         match err {

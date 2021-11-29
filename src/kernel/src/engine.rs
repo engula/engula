@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_journal::Stream;
 use engula_storage::{Object, ObjectUploader};
 
-use crate::{async_trait, EngineUpdate, Result};
+use crate::{async_trait, Result, ResultStream, Sequence, UpdateAction, Version, VersionUpdate};
 
 #[async_trait]
 pub trait Engine {
@@ -30,4 +32,38 @@ pub trait Engine {
     ) -> Result<Box<dyn ObjectUploader>>;
 
     async fn install_update(&self, update: EngineUpdate) -> Result<()>;
+
+    async fn current_version(&self) -> Result<Arc<Version>>;
+
+    async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
+}
+
+pub struct EngineUpdate {
+    pub(crate) actions: Vec<UpdateAction>,
+}
+
+impl EngineUpdate {
+    pub fn add_stream(&mut self, stream_name: String) -> &mut Self {
+        let action = UpdateAction::AddStream(stream_name);
+        self.actions.push(action);
+        self
+    }
+
+    pub fn add_bucket(&mut self, bucket_name: String) -> &mut Self {
+        let action = UpdateAction::AddBucket(bucket_name);
+        self.actions.push(action);
+        self
+    }
+
+    pub fn add_object(&mut self, bucket_name: String, object_name: String) -> &mut Self {
+        let action = UpdateAction::AddObject(bucket_name, object_name);
+        self.actions.push(action);
+        self
+    }
+
+    pub fn delete_object(&mut self, bucket_name: String, object_name: String) -> &mut Self {
+        let action = UpdateAction::DeleteObject(bucket_name, object_name);
+        self.actions.push(action);
+        self
+    }
 }
