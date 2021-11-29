@@ -14,36 +14,33 @@
 
 use std::fmt::Debug;
 
-use serde::{de::DeserializeOwned, Serialize};
-
 use crate::{async_trait, Result, ResultStream};
 
 /// A generic timestamp to order events.
-pub trait Timestamp:
-    Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned + 'static
-{
-}
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub struct Timestamp(u64);
 
-impl<T: Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned + 'static> Timestamp
-    for T
-{
+impl From<u64> for Timestamp {
+    fn from(v: u64) -> Timestamp {
+        Timestamp(v)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Event<T: Timestamp> {
-    pub ts: T,
+pub struct Event {
+    pub ts: Timestamp,
     pub data: Vec<u8>,
 }
 
 /// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream<T: Timestamp>: Send + Sync {
+pub trait Stream: Send + Sync {
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: T) -> ResultStream<Vec<Event<T>>>;
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>>;
 
     /// Appends an event.
-    async fn append_event(&self, event: Event<T>) -> Result<()>;
+    async fn append_event(&self, event: Event) -> Result<()>;
 
     /// Releases events up to a timestamp (exclusive).
-    async fn release_events(&self, ts: T) -> Result<()>;
+    async fn release_events(&self, ts: Timestamp) -> Result<()>;
 }
