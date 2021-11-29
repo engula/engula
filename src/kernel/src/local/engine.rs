@@ -14,19 +14,19 @@
 
 use std::sync::Arc;
 
-use engula_journal::{Journal, Stream, Timestamp};
+use engula_journal::{Journal, Stream};
 use engula_storage::{Object, ObjectUploader, Storage};
 
 use crate::{async_trait, Engine, EngineAction, EngineUpdate, Result};
 
 #[derive(Clone)]
-pub struct LocalEngine<T: Timestamp> {
-    journal: Arc<dyn Journal<T>>,
+pub struct LocalEngine {
+    journal: Arc<dyn Journal>,
     storage: Arc<dyn Storage>,
 }
 
-impl<T: Timestamp> LocalEngine<T> {
-    pub fn new(journal: Box<dyn Journal<T>>, storage: Box<dyn Storage>) -> LocalEngine<T> {
+impl LocalEngine {
+    pub fn new(journal: Box<dyn Journal>, storage: Box<dyn Storage>) -> LocalEngine {
         LocalEngine {
             journal: Arc::from(journal),
             storage: Arc::from(storage),
@@ -35,8 +35,8 @@ impl<T: Timestamp> LocalEngine<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> Engine<T> for LocalEngine<T> {
-    async fn stream(&self, stream_name: &str) -> Result<Box<dyn Stream<T>>> {
+impl Engine for LocalEngine {
+    async fn stream(&self, stream_name: &str) -> Result<Box<dyn Stream>> {
         let stream = self.journal.stream(stream_name).await?;
         Ok(stream)
     }
@@ -63,7 +63,7 @@ impl<T: Timestamp> Engine<T> for LocalEngine<T> {
     }
 }
 
-impl<T: Timestamp> LocalEngine<T> {
+impl LocalEngine {
     async fn take_action(&self, action: EngineAction) -> Result<()> {
         match action {
             EngineAction::AddStream(name) => self.create_stream(&name).await,

@@ -14,24 +14,24 @@
 
 use std::collections::{hash_map, HashMap};
 
-use engula_journal::{MemJournal, Timestamp};
+use engula_journal::MemJournal;
 use engula_storage::MemStorage;
 use tokio::sync::Mutex;
 
 use super::LocalEngine;
 use crate::{async_trait, Engine, Error, Kernel, Result};
 
-pub struct LocalKernel<T: Timestamp> {
-    inner: Mutex<Inner<T>>,
+pub struct LocalKernel {
+    inner: Mutex<Inner>,
 }
 
-struct Inner<T: Timestamp> {
-    engines: HashMap<String, LocalEngine<T>>,
+struct Inner {
+    engines: HashMap<String, LocalEngine>,
 }
 
 #[async_trait]
-impl<T: Timestamp> Kernel<T> for LocalKernel<T> {
-    async fn engine(&self, name: &str) -> Result<Box<dyn Engine<T>>> {
+impl Kernel for LocalKernel {
+    async fn engine(&self, name: &str) -> Result<Box<dyn Engine>> {
         let inner = self.inner.lock().await;
         match inner.engines.get(name) {
             Some(engine) => Ok(Box::new(engine.clone())),
@@ -39,7 +39,7 @@ impl<T: Timestamp> Kernel<T> for LocalKernel<T> {
         }
     }
 
-    async fn create_engine(&self, name: &str) -> Result<Box<dyn Engine<T>>> {
+    async fn create_engine(&self, name: &str) -> Result<Box<dyn Engine>> {
         let journal = MemJournal::default();
         let storage = MemStorage::default();
         let engine = LocalEngine::new(Box::new(journal), Box::new(storage));
