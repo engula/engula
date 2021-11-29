@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Result, Stream, Timestamp};
+use crate::{async_trait, Result, Stream};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal<T: Timestamp> {
+pub trait Journal: Send + Sync {
     /// Returns a stream.
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream<T>>>;
+    async fn stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
     /// Creates a stream.
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream<T>>>;
+    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream>>;
 
     /// Deletes a stream.
     async fn delete_stream(&self, name: &str) -> Result<()>;
