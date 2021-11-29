@@ -41,7 +41,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let j: mem::MemJournal<u64> = mem::MemJournal::default();
+            let j = mem::MemJournal::default();
             let server = Server::new(j);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
@@ -54,18 +54,18 @@ mod tests {
         let journal = RemoteJournal::connect(&url).await?;
         let stream = journal.create_stream("s").await?;
         let event = Event {
-            ts: 1,
+            ts: Timestamp::from(1),
             data: vec![0, 1, 2],
         };
         stream.append_event(event.clone()).await?;
         {
-            let mut events = stream.read_events(0).await?;
+            let mut events = stream.read_events(Timestamp::from(0)).await?;
             let got = events.next().await.unwrap()?;
             assert_eq!(got, event);
         }
-        stream.release_events(2).await?;
+        stream.release_events(Timestamp::from(2)).await?;
         {
-            let mut events = stream.read_events(0).await?;
+            let mut events = stream.read_events(Timestamp::from(0)).await?;
             let got = events.next().await;
             assert!(got.is_none());
         }

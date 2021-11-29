@@ -25,11 +25,11 @@ use super::error::{Error, Result};
 use crate::{async_trait, Event, Stream, Timestamp};
 
 #[derive(Clone)]
-pub struct MemStream<T: Timestamp> {
-    events: Arc<Mutex<VecDeque<Event<T>>>>,
+pub struct MemStream {
+    events: Arc<Mutex<VecDeque<Event>>>,
 }
 
-impl<T: Timestamp> Default for MemStream<T> {
+impl Default for MemStream {
     fn default() -> Self {
         MemStream {
             events: Arc::new(Mutex::new(VecDeque::new())),
@@ -38,18 +38,17 @@ impl<T: Timestamp> Default for MemStream<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> Stream for MemStream<T> {
+impl Stream for MemStream {
     type Error = Error;
-    type EventStream = EventStream<Self::Timestamp>;
-    type Timestamp = T;
+    type EventStream = EventStream;
 
-    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream> {
+    async fn read_events(&self, ts: Timestamp) -> Result<Self::EventStream> {
         let events = self.events.lock().await;
         let offset = events.partition_point(|x| x.ts < ts);
         Ok(EventStream::new(events.range(offset..).cloned().collect()))
     }
 
-    async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<()> {
+    async fn append_event(&self, event: Event) -> Result<()> {
         let mut events = self.events.lock().await;
         if let Some(last_ts) = events.back().map(|x| x.ts) {
             if event.ts <= last_ts {
@@ -63,7 +62,7 @@ impl<T: Timestamp> Stream for MemStream<T> {
         Ok(())
     }
 
-    async fn release_events(&self, ts: Self::Timestamp) -> Result<()> {
+    async fn release_events(&self, ts: Timestamp) -> Result<()> {
         let mut events = self.events.lock().await;
         let index = events.partition_point(|x| x.ts < ts);
         events.drain(..index);
@@ -71,19 +70,19 @@ impl<T: Timestamp> Stream for MemStream<T> {
     }
 }
 
-pub struct EventStream<T: Timestamp> {
-    events: Vec<Event<T>>,
+pub struct EventStream {
+    events: Vec<Event>,
     offset: usize,
 }
 
-impl<T: Timestamp> EventStream<T> {
-    fn new(events: Vec<Event<T>>) -> Self {
+impl EventStream {
+    fn new(events: Vec<Event>) -> Self {
         EventStream { events, offset: 0 }
     }
 }
 
-impl<T: Timestamp> futures::Stream for EventStream<T> {
-    type Item = Result<Event<T>>;
+impl futures::Stream for EventStream {
+    type Item = Result<Event>;
 
     fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.offset == self.events.len() {

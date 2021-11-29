@@ -12,38 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
-
 use super::{
     client::Client,
     error::Result,
     proto::{CreateStreamRequest, DeleteStreamRequest},
     stream::RemoteStream,
 };
-use crate::{async_trait, Journal, Timestamp};
+use crate::{async_trait, Journal};
 
-pub struct RemoteJournal<T: Timestamp> {
+pub struct RemoteJournal {
     client: Client,
-    _t: PhantomData<T>,
 }
 
-impl<T: Timestamp> RemoteJournal<T> {
-    pub async fn connect(addr: &str) -> Result<RemoteJournal<T>> {
+impl RemoteJournal {
+    pub async fn connect(addr: &str) -> Result<RemoteJournal> {
         let client = Client::connect(addr).await?;
-        Ok(RemoteJournal {
-            client,
-            _t: PhantomData,
-        })
+        Ok(RemoteJournal { client })
     }
 }
 
 #[async_trait]
-impl<T: Timestamp> Journal<RemoteStream<T>> for RemoteJournal<T> {
-    async fn stream(&self, name: &str) -> Result<RemoteStream<T>> {
+impl Journal<RemoteStream> for RemoteJournal {
+    async fn stream(&self, name: &str) -> Result<RemoteStream> {
         Ok(RemoteStream::new(self.client.clone(), name.to_owned()))
     }
 
-    async fn create_stream(&self, name: &str) -> Result<RemoteStream<T>> {
+    async fn create_stream(&self, name: &str) -> Result<RemoteStream> {
         let input = CreateStreamRequest {
             stream: name.to_owned(),
         };

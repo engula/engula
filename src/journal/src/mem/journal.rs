@@ -20,13 +20,13 @@ use super::{
     error::{Error, Result},
     stream::MemStream,
 };
-use crate::{async_trait, Journal, Timestamp};
+use crate::{async_trait, Journal};
 
-pub struct MemJournal<T: Timestamp> {
-    streams: Mutex<HashMap<String, MemStream<T>>>,
+pub struct MemJournal {
+    streams: Mutex<HashMap<String, MemStream>>,
 }
 
-impl<T: Timestamp> Default for MemJournal<T> {
+impl Default for MemJournal {
     fn default() -> Self {
         MemJournal {
             streams: Mutex::new(HashMap::new()),
@@ -35,8 +35,8 @@ impl<T: Timestamp> Default for MemJournal<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> Journal<MemStream<T>> for MemJournal<T> {
-    async fn stream(&self, name: &str) -> Result<MemStream<T>> {
+impl Journal<MemStream> for MemJournal {
+    async fn stream(&self, name: &str) -> Result<MemStream> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
             Some(stream) => Ok(stream.clone()),
@@ -44,7 +44,7 @@ impl<T: Timestamp> Journal<MemStream<T>> for MemJournal<T> {
         }
     }
 
-    async fn create_stream(&self, name: &str) -> Result<MemStream<T>> {
+    async fn create_stream(&self, name: &str) -> Result<MemStream> {
         let stream = MemStream::default();
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {

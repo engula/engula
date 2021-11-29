@@ -21,23 +21,20 @@ use std::{
 use tonic::{Request, Response, Status};
 
 use super::proto::*;
-use crate::{Event, Journal, Stream, Timestamp};
+use crate::{Event, Journal, Stream};
 
-pub struct Server<S, J, T>
+pub struct Server<S, J>
 where
     S: Stream,
     J: Journal<S>,
-    T: Timestamp,
 {
     journal: J,
     _stream: PhantomData<S>,
-    _t: PhantomData<T>,
 }
 
-impl<S, J, T> Server<S, J, T>
+impl<S, J> Server<S, J>
 where
-    T: Timestamp + 'static,
-    S: Stream<Timestamp = T> + Send + Sync + 'static,
+    S: Stream + Send + Sync + 'static,
     S::Error: Send + Sync + 'static,
     S::EventStream: Send + Sync + 'static,
     J: Journal<S> + Send + Sync + 'static,
@@ -47,20 +44,18 @@ where
         Server {
             journal,
             _stream: PhantomData,
-            _t: PhantomData,
         }
     }
 
-    pub fn into_service(self) -> journal_server::JournalServer<Server<S, J, T>> {
+    pub fn into_service(self) -> journal_server::JournalServer<Server<S, J>> {
         journal_server::JournalServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<S, J, T> journal_server::Journal for Server<S, J, T>
+impl<S, J> journal_server::Journal for Server<S, J>
 where
-    T: Timestamp + 'static,
-    S: Stream<Timestamp = T> + Send + Sync + 'static,
+    S: Stream + Send + Sync + 'static,
     S::Error: Send + Sync + 'static,
     S::EventStream: Send + Sync + 'static,
     J: Journal<S> + Send + Sync + 'static,

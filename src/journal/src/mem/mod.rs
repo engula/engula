@@ -31,14 +31,14 @@ mod tests {
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        let j: MemJournal<u64> = MemJournal::default();
+        let j = MemJournal::default();
         let stream = j.create_stream("a").await?;
         let event = Event {
-            ts: 0,
+            ts: Timestamp::from(0),
             data: vec![1, 2, 3],
         };
         stream.append_event(event.clone()).await?;
-        let mut events = stream.read_events(0).await?;
+        let mut events = stream.read_events(Timestamp::from(0)).await?;
         let got = events.next().await.unwrap()?;
         assert_eq!(got, event);
         Ok(())

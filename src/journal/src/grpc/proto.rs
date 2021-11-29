@@ -17,10 +17,10 @@ tonic::include_proto!("engula.journal.grpc.v1");
 use super::error::Error;
 use crate::Timestamp;
 
-pub fn serialize_ts<T: Timestamp>(ts: &T) -> Result<Vec<u8>, Error> {
+pub fn serialize_ts(ts: &Timestamp) -> Result<Vec<u8>, Error> {
     serde_json::to_vec(ts).map_err(Error::from)
 }
 
-pub fn deserialize_ts<T: Timestamp>(v: &[u8]) -> Result<T, Error> {
+pub fn deserialize_ts(v: &[u8]) -> Result<Timestamp, Error> {
     serde_json::from_slice(v).map_err(Error::from)
 }
