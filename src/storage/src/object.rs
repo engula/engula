@@ -16,7 +16,7 @@ use crate::{async_trait, Result};
 
 /// An interface to manipulate an object.
 #[async_trait]
-pub trait Object {
+pub trait Object: Send + Sync {
     /// Reads a range from a given offset.
     async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize>;
 }

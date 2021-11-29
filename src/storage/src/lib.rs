@@ -19,12 +19,13 @@ mod uploader;
 
 // pub mod file;
 // pub mod grpc;
-pub mod mem;
+mod mem;
 
 pub use async_trait::async_trait;
 
 pub use self::{
     error::{Error, Result},
+    mem::MemStorage,
     object::Object,
     storage::Storage,
     uploader::ObjectUploader,

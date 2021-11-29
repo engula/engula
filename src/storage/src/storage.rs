@@ -16,7 +16,7 @@ use crate::{async_trait, Object, ObjectUploader, Result};
 
 /// An interface to manipulate a storage.
 #[async_trait]
-pub trait Storage {
+pub trait Storage: Send + Sync {
     /// Creates a bucket.
     async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
 
