@@ -4,7 +4,11 @@ version = "0.2.0"
 edition = "2021"
 publish = false
 
+[features]
+Heapsize = ["heap_size"]
+
 [dependencies]
 async-trait = "0.1"
 linked-hash-map = "0.5.4"
 tokio = { version = "1.13", features = ["full"] }
+heap_size = { package = "heapsize", version = "0.4.2", optional = true}

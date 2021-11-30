@@ -289,6 +289,7 @@ name = "cache"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "heapsize",
  "linked-hash-map",
  "tokio",
 ]
@@ -585,6 +586,15 @@ name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
+
+[[package]]
+name = "heapsize"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1679e6ea370dee694f91f1dc469bf94cf8f52051d147aec3e1f9497c6fc22461"
+dependencies = [
+ "winapi",
+]
 
 [[package]]
 name = "heck"

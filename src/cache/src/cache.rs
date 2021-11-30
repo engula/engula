@@ -11,36 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-use std::{borrow::Borrow, hash::Hash};
+pub mod lru_cache;
+use std::{
+    borrow::Borrow,
+    hash::{BuildHasher, Hash},
+};
 
 use async_trait::async_trait;
 
+use crate::Measure_trait;
+
 #[async_trait]
-pub trait Cache {
-    type Key: Hash + Eq + Sync + Send;
-    type Value: Send + Clone;
-
-    /// Insert an item in the cache.
-    ///
-    /// The first return value indicates whether an insertion has taken place
-    /// (because the cache can refuse to insert an item). The second return
-    /// value is the optional eviction victim, returned only if this call to
-    /// insert caused an eviction.
-    async fn insert(&self, key: Self::Key, value: Self::Value) -> (bool, Option<Self::Value>);
-
-    // Get the value of this item
-    async fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
+pub trait Cache<K, V, S, M>
+where
+    K: Hash + Eq + Sync + Send,
+    V: Send + Clone,
+    M: Measure_trait<K, V>,
+    S: BuildHasher,
+{
+    /// Creates an empty cache that can hold at most `size` as measured by
+    /// `measure_trait` with the given hash builder.
+    fn with_meter_and_hasher(size: usize, m: M, s: S) -> Self;
+    // Inserts an item into the cache. If the key already existed, the old value is
+    // returned.
+    async fn insert(&self, k: K, v: V) -> Option<V>;
+    //  Returns a reference to the value corresponding to the given key in the cache
+    async fn get<Q: ?Sized>(&self, key: &Q) -> Option<V>
     where
-        Self::Key: Borrow<Q>,
+        K: Borrow<Q>,
         Q: Hash + Eq + Sync + Send;
 
     // Remove an item in the cache
-    async fn remove<Q: ?Sized>(&self, key: &Q) -> Option<Self::Value>
+    async fn remove<Q: ?Sized>(&self, key: &Q) -> Option<V>
     where
-        Self::Key: Borrow<Q>,
+        K: Borrow<Q>,
         Q: Hash + Eq + Sync + Send;
 
     // Clear the cache
     async fn clear(&self);
+    fn size(&self) -> usize;
 }

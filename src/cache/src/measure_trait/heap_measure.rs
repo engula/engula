@@ -12,16 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "heapsize")]
-extern crate heap_size;
+use std::borrow::Borrow;
 
-pub mod cache;
-pub mod measure_trait;
+use heap_size::HeapSizeOf;
 
-pub use cache::{lru_cache::LruCache, Cache};
-#[cfg(feature = "heapsize")]
-pub use measure_trait::heap_measure::HeapSize;
-pub use measure_trait::{
-    count_measure::{Count, Countable},
-    Measure_trait,
-};
+use super::Measure_trait;
+
+// Size limit based on the heap size of each cache item.
+//
+// Requires cache entries that implement [`HeapSizeOf`][1].
+
+pub struct HeapSize;
+
+impl<K, V: HeapSizeOf> Measure_trait<K, V> for HeapSize {
+    type Measure = usize;
+
+    fn measure<Q: ?Sized>(&self, _: &Q, value: &V) -> Self::Measure
+    where
+        K: Borrow<Q>,
+    {
+        value.heap_size_of_children() + ::std::mem::size_of::<V>()
+    }
+}

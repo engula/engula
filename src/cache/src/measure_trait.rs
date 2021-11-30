@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "heapsize")]
-extern crate heap_size;
+pub mod count_measure;
+pub mod heap_measure;
 
-pub mod cache;
-pub mod measure_trait;
+use std::borrow::Borrow;
 
-pub use cache::{lru_cache::LruCache, Cache};
-#[cfg(feature = "heapsize")]
-pub use measure_trait::heap_measure::HeapSize;
-pub use measure_trait::{
-    count_measure::{Count, Countable},
-    Measure_trait,
-};
+pub trait Measure_trait<K, V> {
+    // A trait for measuring the size of a cache.
+
+    type Measure: Default + Copy;
+
+    // return the size of `key` and `value`.
+    fn measure<Q: ?Sized>(&self, key: &Q, value: &V) -> Self::Measure
+    where
+        K: Borrow<Q>;
+}
