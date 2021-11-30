@@ -17,11 +17,13 @@ use crate::{async_trait, Result, Stream};
 /// An interface to manipulate a journal.
 #[async_trait]
 pub trait Journal: Send + Sync {
+    type Stream: Stream;
+
     /// Returns a stream.
-    async fn stream(&self, name: &str) -> Result<Box<dyn Stream>>;
+    async fn stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Creates a stream.
-    async fn create_stream(&self, name: &str) -> Result<Box<dyn Stream>>;
+    async fn create_stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Deletes a stream.
     async fn delete_stream(&self, name: &str) -> Result<()>;

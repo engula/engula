@@ -14,8 +14,6 @@
 
 #[derive(Clone, Debug)]
 pub enum UpdateAction {
-    AddStream(String),
-    AddBucket(String),
-    AddObject(String, String),
-    DeleteObject(String, String),
+    AddObject(String),
+    DeleteObject(String),
 }

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
-
 use crate::UpdateAction;
 
 pub type Sequence = u64;
@@ -21,8 +19,7 @@ pub type Sequence = u64;
 #[derive(Clone, Debug, Default)]
 pub struct Version {
     pub sequence: Sequence,
-    pub streams: Vec<String>,
-    pub buckets: HashMap<String, Vec<String>>,
+    pub objects: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]

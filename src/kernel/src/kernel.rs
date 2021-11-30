@@ -12,11 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Engine, Result};
+use std::sync::Arc;
+
+use engula_journal::Stream;
+use engula_storage::Bucket;
+
+use crate::{async_trait, Result, ResultStream, Sequence, UpdateAction, Version, VersionUpdate};
 
 #[async_trait]
 pub trait Kernel {
-    async fn engine(&self, name: &str) -> Result<Box<dyn Engine>>;
+    type Stream: Stream;
+    type Bucket: Bucket;
 
-    async fn create_engine(&self, name: &str) -> Result<Box<dyn Engine>>;
+    async fn stream(&self) -> Result<Self::Stream>;
+
+    async fn bucket(&self) -> Result<Self::Bucket>;
+
+    async fn install_update(&self, update: KernelUpdate) -> Result<()>;
+
+    async fn current_version(&self) -> Result<Arc<Version>>;
+
+    async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
+}
+
+pub struct KernelUpdate {
+    pub(crate) actions: Vec<UpdateAction>,
+}
+
+impl KernelUpdate {
+    pub fn add_object(&mut self, object_name: String) -> &mut Self {
+        let action = UpdateAction::AddObject(object_name);
+        self.actions.push(action);
+        self
+    }
+
+    pub fn delete_object(&mut self, object_name: String) -> &mut Self {
+        let action = UpdateAction::DeleteObject(object_name);
+        self.actions.push(action);
+        self
+    }
 }

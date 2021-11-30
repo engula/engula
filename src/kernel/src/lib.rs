@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
 mod error;
 mod kernel;
-mod local;
 mod update;
 mod version;
+
+pub mod mem;
 
 pub use async_trait::async_trait;
 
 pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
 
 pub use self::{
-    engine::{Engine, EngineUpdate},
     error::{Error, Result},
-    kernel::Kernel,
-    local::{LocalEngine, LocalKernel},
+    kernel::{Kernel, KernelUpdate},
     update::UpdateAction,
     version::{Sequence, Version, VersionUpdate},
 };

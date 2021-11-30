@@ -12,41 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::{hash_map, HashMap},
-    sync::Arc,
-};
+use std::collections::{hash_map, HashMap};
 
 use tokio::sync::Mutex;
 
-use super::{object::MemObject, uploader::MemObjectUploader};
-use crate::{async_trait, Error, Object, ObjectUploader, Result, Storage};
+use super::bucket::Bucket;
+use crate::{async_trait, Error, Result};
 
-type Objects = HashMap<String, MemObject>;
-
-pub type Buckets = Arc<Mutex<HashMap<String, Objects>>>;
-
-pub struct MemStorage {
-    buckets: Buckets,
+pub struct Storage {
+    buckets: Mutex<HashMap<String, Bucket>>,
 }
 
-impl Default for MemStorage {
+impl Default for Storage {
     fn default() -> Self {
-        MemStorage {
-            buckets: Arc::new(Mutex::new(HashMap::new())),
+        Self {
+            buckets: Mutex::new(HashMap::new()),
         }
     }
 }
 
 #[async_trait]
-impl Storage for MemStorage {
-    async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
-        let bucket = HashMap::new();
+impl crate::Storage for Storage {
+    type Bucket = Bucket;
+
+    async fn bucket(&self, name: &str) -> Result<Self::Bucket> {
+        let buckets = self.buckets.lock().await;
+        match buckets.get(name) {
+            Some(bucket) => Ok(bucket.clone()),
+            None => Err(Error::NotFound(format!("bucket '{}'", name))),
+        }
+    }
+
+    async fn create_bucket(&self, name: &str) -> Result<Self::Bucket> {
+        let bucket = Bucket::default();
         let mut buckets = self.buckets.lock().await;
-        match buckets.entry(bucket_name.to_owned()) {
+        match buckets.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
-                ent.insert(bucket);
-                Ok(())
+                ent.insert(bucket.clone());
+                Ok(bucket)
             }
             hash_map::Entry::Occupied(ent) => {
                 Err(Error::AlreadyExists(format!("bucket '{}'", ent.key())))
@@ -54,48 +57,11 @@ impl Storage for MemStorage {
         }
     }
 
-    async fn delete_bucket(&self, bucket_name: &str) -> Result<()> {
+    async fn delete_bucket(&self, name: &str) -> Result<()> {
         let mut buckets = self.buckets.lock().await;
-        match buckets.remove(bucket_name) {
+        match buckets.remove(name) {
             Some(_) => Ok(()),
-            None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
-        }
-    }
-
-    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<Box<dyn Object>> {
-        let buckets = self.buckets.lock().await;
-        let objects = match buckets.get(bucket_name) {
-            Some(objects) => Ok(objects),
-            None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
-        }?;
-        match objects.get(object_name) {
-            Some(object) => Ok(Box::new(object.clone())),
-            None => Err(Error::NotFound(format!("object '{}'", object_name))),
-        }
-    }
-
-    async fn upload_object(
-        &self,
-        bucket_name: &str,
-        object_name: &str,
-    ) -> Result<Box<dyn ObjectUploader>> {
-        let uploader = MemObjectUploader::new(
-            self.buckets.clone(),
-            bucket_name.to_owned(),
-            object_name.to_owned(),
-        );
-        Ok(Box::new(uploader))
-    }
-
-    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
-        let mut buckets = self.buckets.lock().await;
-        let objects = match buckets.get_mut(bucket_name) {
-            Some(objects) => Ok(objects),
-            None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
-        }?;
-        match objects.remove(object_name) {
-            Some(_) => Ok(()),
-            None => Err(Error::NotFound(format!("object '{}'", object_name))),
+            None => Err(Error::NotFound(format!("bucket '{}'", name))),
         }
     }
 }

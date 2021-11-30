@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Error as IoError, ErrorKind};
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -22,6 +24,19 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error(transparent)]
+    Io(IoError),
+}
+
+impl From<IoError> for Error {
+    fn from(err: IoError) -> Self {
+        match err.kind() {
+            ErrorKind::NotFound => Self::NotFound(err.to_string()),
+            ErrorKind::AlreadyExists => Self::AlreadyExists(err.to_string()),
+            ErrorKind::InvalidInput => Self::InvalidArgument(err.to_string()),
+            _ => Self::Io(err),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

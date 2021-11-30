@@ -54,6 +54,7 @@ impl From<StorageError> for Error {
             StorageError::NotFound(s) => Self::NotFound(s),
             StorageError::AlreadyExists(s) => Self::AlreadyExists(s),
             StorageError::InvalidArgument(s) => Self::InvalidArgument(s),
+            err => Self::Storage(err),
         }
     }
 }

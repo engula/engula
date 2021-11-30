@@ -12,7 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
-mod kernel;
+use tokio::io::{AsyncRead, AsyncWrite};
 
-pub use self::{engine::LocalEngine, kernel::LocalKernel};
+use crate::{async_trait, Result};
+
+/// An interface to manipulate a bucket.
+#[async_trait]
+pub trait Bucket: Send + Sync {
+    type SequentialReader: AsyncRead;
+    type SequentialWriter: AsyncWrite;
+
+    async fn delete_object(&self, name: &str) -> Result<()>;
+
+    async fn new_sequential_reader(&self, name: &str) -> Result<Self::SequentialReader>;
+
+    async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter>;
+}
