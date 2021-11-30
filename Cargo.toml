@@ -9,7 +9,7 @@ path = "bin/engula.rs"
 
 [workspace]
 members = [
-    "src/api",
+    "src/engine/hash",
     "src/journal",
     "src/storage",
     "src/manifest",

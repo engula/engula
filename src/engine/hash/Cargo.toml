@@ -1,0 +1,8 @@
+[package]
+name = "engula-hash-engine"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+thiserror = "1.0"
+tokio = { version = "1.14", features = ["full"] }

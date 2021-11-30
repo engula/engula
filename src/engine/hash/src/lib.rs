@@ -12,31 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
+mod engine;
+mod error;
+mod memtable;
 
-use crate::DataValue;
+pub use self::{
+    engine::Engine,
+    error::{Error, Result},
+};
 
-#[derive(Default)]
-pub struct List<V>(V);
+#[cfg(test)]
+mod tests {
+    use crate::*;
 
-impl<V: DataValue> DataValue for List<V> {
-    type Mutation = ListMutation<V>;
-    type Value = ListValue<V::Value>;
-}
-
-pub type ListValue<V> = Vec<V>;
-
-#[derive(Default)]
-pub struct ListMutation<V> {
-    _v: PhantomData<V>,
-}
-
-impl<V: DataValue> ListMutation<V> {
-    pub fn append(&mut self, _v: V::Value) -> &mut Self {
-        self
-    }
-
-    pub fn update(&mut self, _i: u64, _m: V::Mutation) -> &mut Self {
-        self
+    #[tokio::test]
+    async fn it_works() -> Result<()> {
+        let engine = Engine::new();
+        let key = vec![1];
+        let value = vec![2];
+        engine.set(key.clone(), value.clone()).await?;
+        let got = engine.get(&key).await?;
+        assert_eq!(got, Some(value));
+        Ok(())
     }
 }
