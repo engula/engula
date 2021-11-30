@@ -44,12 +44,12 @@ mod tests {
     async fn table() -> Result<()> {
         let records = vec![(vec![1], vec![1]), (vec![2], vec![2])];
 
-        let filename = "/tmp/hash";
+        let path = std::env::temp_dir().join("table");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(filename)
+            .open(&path)
             .await?;
         let mut builder = TableBuilder::new(file);
         for record in &records {
@@ -57,7 +57,7 @@ mod tests {
         }
         builder.finish().await?;
 
-        let file = OpenOptions::new().read(true).open(filename).await?;
+        let file = OpenOptions::new().read(true).open(&path).await?;
         let reader = TableReader::new(file).await?;
         for record in &records {
             let got = reader.get(&record.0).await?;
