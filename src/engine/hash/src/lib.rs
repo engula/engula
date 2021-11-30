@@ -15,6 +15,8 @@
 mod engine;
 mod error;
 mod memtable;
+mod table_builder;
+mod table_reader;
 
 pub use self::{
     engine::Engine,
@@ -23,16 +25,45 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
+    use tokio::fs::OpenOptions;
+
+    use crate::{table_builder::TableBuilder, table_reader::TableReader, *};
 
     #[tokio::test]
-    async fn it_works() -> Result<()> {
+    async fn engine() -> Result<()> {
         let engine = Engine::new();
         let key = vec![1];
         let value = vec![2];
         engine.set(key.clone(), value.clone()).await?;
         let got = engine.get(&key).await?;
         assert_eq!(got, Some(value));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn table() -> Result<()> {
+        let records = vec![(vec![1], vec![1]), (vec![2], vec![2])];
+
+        let filename = "/tmp/hash";
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(filename)
+            .await?;
+        let mut builder = TableBuilder::new(file);
+        for record in &records {
+            builder.add(&record.0, &record.1).await?;
+        }
+        builder.finish().await?;
+
+        let file = OpenOptions::new().read(true).open(filename).await?;
+        let reader = TableReader::new(file).await?;
+        for record in &records {
+            let got = reader.get(&record.0).await?;
+            assert_eq!(got.as_ref(), Some(&record.1));
+        }
+
         Ok(())
     }
 }

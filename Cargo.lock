@@ -394,6 +394,7 @@ dependencies = [
 name = "engula-hash-engine"
 version = "0.2.0"
 dependencies = [
+ "bytes",
  "thiserror",
  "tokio",
 ]

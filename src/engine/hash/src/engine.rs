@@ -29,6 +29,12 @@ struct Inner {
 
 const MEMTABLE_SIZE: usize = 4 * 1024 * 1024;
 
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Engine {
     pub fn new() -> Self {
         let inner = Inner {
