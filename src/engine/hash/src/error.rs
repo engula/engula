@@ -12,31 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
+use thiserror::Error;
 
-use crate::DataValue;
-
-#[derive(Default)]
-pub struct List<V>(V);
-
-impl<V: DataValue> DataValue for List<V> {
-    type Mutation = ListMutation<V>;
-    type Value = ListValue<V::Value>;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
-pub type ListValue<V> = Vec<V>;
-
-#[derive(Default)]
-pub struct ListMutation<V> {
-    _v: PhantomData<V>,
-}
-
-impl<V: DataValue> ListMutation<V> {
-    pub fn append(&mut self, _v: V::Value) -> &mut Self {
-        self
-    }
-
-    pub fn update(&mut self, _i: u64, _m: V::Mutation) -> &mut Self {
-        self
-    }
-}
+pub type Result<T> = std::result::Result<T, Error>;
