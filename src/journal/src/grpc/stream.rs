@@ -50,8 +50,8 @@ impl<T: Timestamp> RemoteStream<T> {
 #[async_trait]
 impl<T: Timestamp> Stream for RemoteStream<T> {
     type Error = Error;
-    type EventStream = EventStream<T>;
     type Timestamp = T;
+    type EventStream = EventStream<T>;
 
     async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream> {
         let input = ReadEventRequest {

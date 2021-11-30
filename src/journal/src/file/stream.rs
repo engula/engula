@@ -12,33 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::VecDeque,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::path::{Path, PathBuf};
 
+use tokio::{fs, io};
 use tokio::sync::Mutex;
+
 
 use super::error::{Error, Result};
 use crate::{async_trait, Event, Stream, Timestamp};
 
+
 #[derive(Clone)]
-pub struct MemStream<T: Timestamp> {
-    events: Arc<Mutex<VecDeque<Event<T>>>>,
+pub struct FileStream<T: Timestamp> {
+    root: PathBuf,
+
 }
 
-impl<T: Timestamp> Default for MemStream<T> {
-    fn default() -> Self {
-        MemStream {
-            events: Arc::new(Mutex::new(VecDeque::new())),
+impl<T: Timestamp> FileStream<T> {
+    pub fn new(root: impl Into<PathBuf>) -> Result<FileStream<T>> {
+        let path = root.into();
+        fs::DirBuilder::new().recursive(true).create(&path).await?;
+        match fs::DirBuilder::new().recursive(true).create(&path).await {
+            Ok(_) => {
+                let mut stream = FileStream {
+                    root: path,
+                };
+                stream.init();
+                Ok(stream)
+            }
+            Err(e) => Error::IO(e),
         }
     }
+
+    pub fn init(&self) -> Result<()> {
+
+    }
+
+    pub fn clean(&self) -> Result<()> {
+        fs::remove_dir_all(self.root.clone()).await?;
+        Ok(())
+    }
+
 }
 
 #[async_trait]
-impl<T: Timestamp> Stream for MemStream<T> {
+impl<T: Timestamp> Stream for FileStream<T> {
     type Error = Error;
     type Timestamp = T;
     type EventStream = EventStream<Self::Timestamp>;
@@ -82,20 +100,6 @@ impl<T: Timestamp> EventStream<T> {
     }
 }
 
-impl<T: Timestamp> futures::Stream for EventStream<T> {
-    type Item = Result<Event<T>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.offset == self.events.len() {
-            Poll::Ready(None)
-        } else {
-            self.as_mut().get_mut().offset += 1;
-            Poll::Ready(Some(Ok(self.events[self.offset - 1].clone())))
-        }
-    }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.events.len() - self.offset;
-        (size, Some(size))
-    }
-}
+
