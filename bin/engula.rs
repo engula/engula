@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use clap::{crate_version, Parser};
-use engula::node;
 
 #[derive(Parser)]
 #[clap(version = crate_version!())]
@@ -25,14 +24,14 @@ struct Command {
 impl Command {
     async fn run(&self) {
         match &self.subcmd {
-            SubCommand::Node(cmd) => cmd.run().await,
+            SubCommand::Hello => println!("Hello, Engula!"),
         }
     }
 }
 
 #[derive(Parser)]
 enum SubCommand {
-    Node(node::Command),
+    Hello,
 }
 
 #[tokio::main]
