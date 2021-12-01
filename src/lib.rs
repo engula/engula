@@ -18,6 +18,10 @@ pub mod engine {
     }
 }
 
+pub mod journal {
+    pub use engula_journal::*;
+}
+
 pub mod storage {
     pub use engula_storage::*;
 }
