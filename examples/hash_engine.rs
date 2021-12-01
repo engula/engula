@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod manifest;
-mod version_edit;
+use engula::engine::hash::{Engine, Result};
 
-pub use self::{
-    error::{Error, Result},
-    manifest::Manifest,
-    version_edit::VersionEdit,
-};
+#[tokio::main]
+async fn main() -> Result<()> {
+    let engine = Engine::new();
+    let key = vec![1];
+    let value = vec![2];
+    engine.set(key.clone(), value.clone()).await?;
+    let got = engine.get(&key).await?;
+    assert_eq!(got, Some(value));
+    Ok(())
+}
