@@ -12,14 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod object;
-mod storage;
-mod uploader;
+//! A data object storage module for Engula.
+//!
+//! Storage is an abstraction to store data objects.
 
-pub mod file;
-pub mod grpc;
+mod bucket;
+mod error;
+mod storage;
+
+// pub mod file;
+// pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub use self::{object::Object, storage::Storage, uploader::ObjectUploader};
+pub use self::{
+    bucket::Bucket,
+    error::{Error, Result},
+    storage::Storage,
+};
