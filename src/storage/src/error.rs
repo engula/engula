@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::async_trait;
+use thiserror::Error;
 
-/// An interface to upload an object.
-#[async_trait]
-pub trait ObjectUploader {
-    type Error;
-
-    /// Writes some bytes.
-    async fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
-
-    /// Finishes this upload.
-    async fn finish(self) -> Result<usize, Self::Error>;
+/// Errors for all storage operations.
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0} is not found")]
+    NotFound(String),
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+    #[error("{0}")]
+    InvalidArgument(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
+
+pub type Result<T> = std::result::Result<T, Error>;

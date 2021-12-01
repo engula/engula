@@ -17,3 +17,7 @@ pub mod engine {
         pub use engula_hash_engine::*;
     }
 }
+
+pub mod storage {
+    pub use engula_storage::*;
+}

@@ -133,6 +133,7 @@ version = "0.2.0"
 dependencies = [
  "clap",
  "engula-hash-engine",
+ "engula-storage",
  "tokio",
 ]
 
@@ -143,6 +144,17 @@ dependencies = [
  "bytes",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "engula-storage"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "thiserror",
+ "tokio",
+ "tonic-build",
 ]
 
 [[package]]
@@ -856,20 +868,6 @@ checksum = "5dc90fe6c7be1a323296982db1836d1ea9e47b6839496dde9a541bc496df3516"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "storage"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "bytes",
- "prost",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-build",
 ]
 
 [[package]]

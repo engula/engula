@@ -12,38 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod object;
-mod storage;
-mod uploader;
+//! A storage implementation that stores data in memory.
 
-pub use self::{
-    error::{Error, Result},
-    object::MemObject,
-    storage::MemStorage,
-};
+mod bucket;
+mod storage;
+
+pub use self::{bucket::Bucket, storage::Storage};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use crate::*;
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        let s = MemStorage::default();
-        s.create_bucket("a").await?;
+        let s = super::Storage::default();
+        let bucket = s.create_bucket("a").await?;
 
+        let name = "abc";
         let data = vec![0, 1, 2];
-        let mut up = s.upload_object("a", "b").await?;
-        up.write(&data).await?;
-        up.finish().await?;
-        let object = s.object("a", "b").await?;
+        let mut writer = bucket.new_sequential_writer(name).await?;
+        writer.write_all(&data).await?;
+        writer.shutdown().await?;
 
-        let mut buf = [0u8; 3];
-        let pos = 1;
-        let len = object.read_at(&mut buf, pos).await?;
-        assert_eq!(len, data.len() - pos);
-        assert_eq!(buf[..len], data[pos..]);
+        let mut reader = bucket.new_sequential_reader(name).await?;
+        let mut got = Vec::new();
+        reader.read_to_end(&mut got).await?;
+        assert_eq!(got, data);
+
         Ok(())
     }
 }
