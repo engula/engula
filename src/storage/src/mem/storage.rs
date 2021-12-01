@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{hash_map, HashMap};
+use std::{
+    collections::{hash_map, HashMap},
+    sync::Arc,
+};
 
 use tokio::sync::Mutex;
 
 use super::bucket::Bucket;
 use crate::{async_trait, Error, Result};
 
+#[derive(Clone)]
 pub struct Storage {
-    buckets: Mutex<HashMap<String, Bucket>>,
+    buckets: Arc<Mutex<HashMap<String, Bucket>>>,
 }
 
 impl Default for Storage {
     fn default() -> Self {
         Self {
-            buckets: Mutex::new(HashMap::new()),
+            buckets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

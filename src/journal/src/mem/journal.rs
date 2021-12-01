@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{hash_map, HashMap};
+use std::{
+    collections::{hash_map, HashMap},
+    sync::Arc,
+};
 
 use tokio::sync::Mutex;
 
 use super::stream::Stream;
 use crate::{async_trait, Error, Result};
 
+#[derive(Clone)]
 pub struct Journal {
-    streams: Mutex<HashMap<String, Stream>>,
+    streams: Arc<Mutex<HashMap<String, Stream>>>,
 }
 
 impl Default for Journal {
     fn default() -> Self {
         Self {
-            streams: Mutex::new(HashMap::new()),
+            streams: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

@@ -18,9 +18,9 @@ use crate::{async_trait, Result};
 
 /// An interface to manipulate a bucket.
 #[async_trait]
-pub trait Bucket: Send + Sync {
-    type SequentialReader: AsyncRead;
-    type SequentialWriter: AsyncWrite;
+pub trait Bucket: Clone + Send + Sync {
+    type SequentialReader: AsyncRead + Send + Unpin;
+    type SequentialWriter: AsyncWrite + Send + Unpin;
 
     async fn delete_object(&self, name: &str) -> Result<()>;
 

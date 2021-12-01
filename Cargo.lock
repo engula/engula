@@ -214,6 +214,10 @@ name = "engula-hash-engine"
 version = "0.2.0"
 dependencies = [
  "bytes",
+ "engula-journal",
+ "engula-kernel",
+ "engula-storage",
+ "futures",
  "thiserror",
  "tokio",
 ]

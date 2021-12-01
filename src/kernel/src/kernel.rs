@@ -20,7 +20,7 @@ use engula_storage::Bucket;
 use crate::{async_trait, Result, ResultStream, Sequence, UpdateAction, Version, VersionUpdate};
 
 #[async_trait]
-pub trait Kernel {
+pub trait Kernel: Clone + Send + Sync + 'static {
     type Stream: Stream;
     type Bucket: Bucket;
 
@@ -35,6 +35,7 @@ pub trait Kernel {
     async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
 }
 
+#[derive(Default)]
 pub struct KernelUpdate {
     pub(crate) actions: Vec<UpdateAction>,
 }

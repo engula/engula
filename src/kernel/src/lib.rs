@@ -21,7 +21,7 @@ pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Unpin>;
+pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Sync + Unpin>;
 
 pub use self::{
     error::{Error, Result},

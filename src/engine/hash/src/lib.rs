@@ -14,6 +14,7 @@
 
 mod engine;
 mod error;
+mod format;
 mod memtable;
 mod table_builder;
 mod table_reader;
@@ -25,18 +26,24 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use engula_kernel::mem::Kernel;
     use tokio::fs::OpenOptions;
 
     use crate::{table_builder::TableBuilder, table_reader::TableReader, *};
 
     #[tokio::test]
     async fn engine() -> Result<()> {
-        let engine = Engine::new();
-        let key = vec![1];
-        let value = vec![2];
-        engine.set(key.clone(), value.clone()).await?;
-        let got = engine.get(&key).await?;
-        assert_eq!(got, Some(value));
+        let kernel = Kernel::default();
+        let engine = Engine::new(kernel).await?;
+
+        let n: u32 = 32 * 1024;
+        for i in 0..n {
+            let v = i.to_be_bytes().to_vec();
+            engine.set(v.clone(), v.clone()).await?;
+            let got = engine.get(&v).await?;
+            assert_eq!(got, Some(v));
+        }
+
         Ok(())
     }
 

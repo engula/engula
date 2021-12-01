@@ -16,7 +16,7 @@ use crate::{async_trait, Bucket, Result};
 
 /// An interface to manipulate a storage.
 #[async_trait]
-pub trait Storage: Send + Sync {
+pub trait Storage: Clone + Send + Sync {
     type Bucket: Bucket;
 
     /// Returns a bucket.

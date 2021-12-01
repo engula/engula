@@ -29,11 +29,11 @@ pub enum Error {
     #[error(transparent)]
     Storage(StorageError),
     #[error(transparent)]
-    Unknown(Box<dyn std::error::Error>),
+    Unknown(Box<dyn std::error::Error + Send>),
 }
 
 impl Error {
-    pub fn unknown(err: impl std::error::Error + 'static) -> Error {
+    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Error {
         Error::Unknown(Box::new(err))
     }
 }

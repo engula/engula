@@ -16,7 +16,7 @@ use crate::{async_trait, Result, Stream};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal: Send + Sync {
+pub trait Journal: Clone + Send + Sync {
     type Stream: Stream;
 
     /// Returns a stream.
