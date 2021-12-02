@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A [`Journal`] implementation that stores data in memory.
+//!
+//! [`Journal`]: crate::Journal
+
 mod journal;
 mod stream;
 
@@ -19,13 +23,13 @@ pub use self::{journal::Journal, stream::Stream};
 
 #[cfg(test)]
 mod tests {
-    use futures::StreamExt;
+    use futures::TryStreamExt;
 
     use crate::*;
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        let j = super::Journal::default();
+        let j = mem::Journal::default();
         let stream = j.create_stream("a").await?;
         let event = Event {
             ts: 0.into(),
@@ -33,8 +37,8 @@ mod tests {
         };
         stream.append_event(event.clone()).await?;
         let mut events = stream.read_events(0.into()).await;
-        let got = events.next().await.unwrap()?;
-        assert_eq!(got, vec![event]);
+        let got = events.try_next().await?;
+        assert_eq!(got, Some(vec![event]));
         Ok(())
     }
 }

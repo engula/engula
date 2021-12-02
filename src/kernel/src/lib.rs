@@ -12,20 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An Engula module that provides stateful environment abstractions and
+//! implementations.
+//!
+//! # Abstraction
+//!
+//! [`Kernel`] is an abstraction to provide a stateful environment to storage
+//! engines.
+//!
+//! # Implementation
+//!
+//! Some built-in implementations of [`Kernel`]:
+//!
+//! - [`mem`](crate::mem)
+//!
+//! [`Kernel`]: crate::Kernel
+
 mod error;
 mod kernel;
-mod update;
 mod version;
 
-pub mod mem;
+mod local;
 
 pub use async_trait::async_trait;
+pub use engula_journal::{Stream, Timestamp};
+pub use engula_storage::Bucket;
 
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Sync + Unpin>;
+pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Unpin>;
 
 pub use self::{
     error::{Error, Result},
     kernel::{Kernel, KernelUpdate},
-    update::UpdateAction,
+    local::mem,
     version::{Sequence, Version, VersionUpdate},
 };

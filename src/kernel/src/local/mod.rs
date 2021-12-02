@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod manifest;
-mod version_edit;
+//! A [`Kernel`] implementation that stores everything in memory.
+//!
+//! [`Kernel`]: crate::Kernel
 
-pub use self::{
-    error::{Error, Result},
-    manifest::Manifest,
-    version_edit::VersionEdit,
-};
+mod kernel;
+
+pub mod mem;
+
+pub use self::kernel::Kernel;

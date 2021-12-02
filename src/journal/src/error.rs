@@ -14,6 +14,7 @@
 
 use thiserror::Error;
 
+/// Errors for all journal operations.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("{0} is not found")]

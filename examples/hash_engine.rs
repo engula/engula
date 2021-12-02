@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod object;
-mod storage;
-mod uploader;
+use engula::engine::hash::{Engine, Result};
 
-pub use self::storage::S3Storage;
+#[tokio::main]
+async fn main() -> Result<()> {
+    let engine = Engine::new();
+    let key = vec![1];
+    let value = vec![2];
+    engine.set(key.clone(), value.clone()).await?;
+    let got = engine.get(&key).await?;
+    assert_eq!(got, Some(value));
+    Ok(())
+}

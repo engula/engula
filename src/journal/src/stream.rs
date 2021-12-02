@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
-
 use crate::{async_trait, Result, ResultStream};
 
 /// A generic timestamp to order events.
@@ -21,8 +19,8 @@ use crate::{async_trait, Result, ResultStream};
 pub struct Timestamp(u64);
 
 impl From<u64> for Timestamp {
-    fn from(v: u64) -> Timestamp {
-        Timestamp(v)
+    fn from(v: u64) -> Self {
+        Self(v)
     }
 }
 
@@ -34,7 +32,7 @@ pub struct Event {
 
 /// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream: Clone + Send + Sync {
+pub trait Stream: Clone + Send + Sync + 'static {
     /// Reads events since a timestamp (inclusive).
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>>;
 

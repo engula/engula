@@ -21,9 +21,7 @@ use std::{
 };
 
 use engula_journal::{Event, Stream};
-use engula_kernel::{
-    Kernel, KernelUpdate, ResultStream, Sequence, UpdateAction, Version, VersionUpdate,
-};
+use engula_kernel::{Kernel, KernelUpdate, ResultStream, Sequence, Version, VersionUpdate};
 use engula_storage::Bucket;
 use futures::TryStreamExt;
 use tokio::sync::Mutex;
@@ -33,7 +31,7 @@ use crate::{
     memtable::Memtable,
     table_builder::TableBuilder,
     table_reader::TableReader,
-    Error, Result,
+    Result,
 };
 
 pub struct Engine<K: Kernel> {
@@ -117,7 +115,7 @@ impl<K: Kernel> VersionSet<K> {
         Ok(())
     }
 
-    async fn flush(self: Self, imm: Arc<Memtable>) -> Result<()> {
+    async fn flush(self, imm: Arc<Memtable>) -> Result<()> {
         let number = self.number.fetch_add(1, Ordering::SeqCst);
         let object = format!("{}", number);
         let writer = self.bucket.new_sequential_writer(&object).await?;
@@ -145,7 +143,7 @@ impl<K: Kernel> VersionSet<K> {
     }
 
     async fn handle_version_updates(
-        self: Self,
+        self,
         mut updates: ResultStream<Arc<VersionUpdate>>,
     ) -> Result<()> {
         while let Some(update) = updates.try_next().await? {
@@ -232,19 +230,14 @@ impl<K: Kernel> EngineVersion<K> {
         assert_eq!(self.sequence + 1, update.sequence);
 
         let mut version = self.clone();
-        for action in &update.actions {
-            match action {
-                UpdateAction::AddObject(object) => {
-                    // For now, we assume that this object is flushed from the oldest immtable.
-                    let reader = version.bucket.new_sequential_reader(object).await?;
-                    let table_reader = TableReader::new(reader).await?;
-                    version.tables.push(Arc::new(table_reader));
-                    let imm = version.imm.pop_front().unwrap();
-                    let last_ts = imm.last_update_timestamp().await;
-                    version.stream.release_events(last_ts.into()).await?;
-                }
-                _ => return Err(Error::Unsupported(format!("{:?}", action))),
-            }
+        for object in &update.added_objects {
+            // For now, we assume that this object is flushed from the oldest immtable.
+            let reader = version.bucket.new_sequential_reader(object).await?;
+            let table_reader = TableReader::new(reader).await?;
+            version.tables.push(Arc::new(table_reader));
+            let imm = version.imm.pop_front().unwrap();
+            let last_ts = imm.last_update_timestamp().await;
+            version.stream.release_events(last_ts.into()).await?;
         }
         version.sequence = update.sequence;
         Ok(version)

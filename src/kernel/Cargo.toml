@@ -2,6 +2,10 @@
 name = "engula-kernel"
 version = "0.2.0"
 edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "An Engula module that provides stateful environment abstractions and implementations."
 
 [dependencies]
 engula-journal = { path = "../journal" }

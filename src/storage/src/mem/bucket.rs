@@ -28,22 +28,18 @@ use tokio::{
 
 use crate::{async_trait, Error, Result};
 
+type Object = Arc<Vec<u8>>;
+type Objects = Arc<Mutex<HashMap<String, Object>>>;
+
 #[derive(Clone)]
 pub struct Bucket {
-    inner: Arc<Mutex<Inner>>,
-}
-
-struct Inner {
-    objects: HashMap<String, Arc<Vec<u8>>>,
+    objects: Objects,
 }
 
 impl Default for Bucket {
     fn default() -> Self {
-        let inner = Inner {
-            objects: HashMap::new(),
-        };
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            objects: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -55,34 +51,34 @@ impl crate::Bucket for Bucket {
     type SequentialWriter = SequentialWriter;
 
     async fn delete_object(&self, name: &str) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        match inner.objects.remove(name) {
+        let mut objects = self.objects.lock().await;
+        match objects.remove(name) {
             Some(_) => Ok(()),
             None => Err(Error::NotFound(format!("object '{}'", name))),
         }
     }
 
     async fn new_sequential_reader(&self, name: &str) -> Result<Self::SequentialReader> {
-        let inner = self.inner.lock().await;
-        match inner.objects.get(name) {
+        let objects = self.objects.lock().await;
+        match objects.get(name) {
             Some(object) => Ok(SequentialReader::new(object.clone())),
             None => Err(Error::NotFound(format!("object '{}'", name))),
         }
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter> {
-        Ok(SequentialWriter::new(name.to_owned(), self.inner.clone()))
+        Ok(SequentialWriter::new(name.to_owned(), self.objects.clone()))
     }
 }
 
 pub struct SequentialReader {
-    buf: Arc<Vec<u8>>,
-    pos: usize,
+    object: Object,
+    offset: usize,
 }
 
 impl SequentialReader {
-    fn new(buf: Arc<Vec<u8>>) -> Self {
-        Self { buf, pos: 0 }
+    fn new(object: Object) -> Self {
+        Self { object, offset: 0 }
     }
 }
 
@@ -92,9 +88,9 @@ impl AsyncRead for SequentialReader {
         _: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<IoResult<()>> {
-        let end = std::cmp::min(self.buf.len(), self.pos + buf.remaining());
-        buf.put_slice(&self.buf[self.pos..end]);
-        self.pos = end;
+        let start = self.offset;
+        self.offset = std::cmp::min(self.object.len(), start + buf.remaining());
+        buf.put_slice(&self.object[start..self.offset]);
         Poll::Ready(Ok(()))
     }
 }
@@ -102,15 +98,15 @@ impl AsyncRead for SequentialReader {
 pub struct SequentialWriter {
     name: String,
     data: Vec<u8>,
-    inner: Arc<Mutex<Inner>>,
+    objects: Objects,
 }
 
 impl SequentialWriter {
-    fn new(name: String, inner: Arc<Mutex<Inner>>) -> Self {
+    fn new(name: String, objects: Objects) -> Self {
         Self {
             name,
             data: Vec::new(),
-            inner,
+            objects,
         }
     }
 }
@@ -133,9 +129,9 @@ impl AsyncWrite for SequentialWriter {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
         if Pin::new(&mut self.data).poll_shutdown(cx).is_ready() {
             let data = self.data.split_off(0);
-            let mut lock = Box::pin(self.inner.lock());
-            if let Poll::Ready(mut inner) = lock.as_mut().poll(cx) {
-                match inner.objects.entry(self.name.clone()) {
+            let mut lock = Box::pin(self.objects.lock());
+            if let Poll::Ready(mut objects) = lock.as_mut().poll(cx) {
+                match objects.entry(self.name.clone()) {
                     hash_map::Entry::Vacant(ent) => {
                         ent.insert(Arc::new(data));
                         return Poll::Ready(Ok(()));

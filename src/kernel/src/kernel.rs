@@ -14,42 +14,43 @@
 
 use std::sync::Arc;
 
-use engula_journal::Stream;
-use engula_storage::Bucket;
+use crate::{async_trait, Bucket, Result, ResultStream, Sequence, Stream, Version, VersionUpdate};
 
-use crate::{async_trait, Result, ResultStream, Sequence, UpdateAction, Version, VersionUpdate};
-
+/// An interface to interact with a kernel.
 #[async_trait]
 pub trait Kernel: Clone + Send + Sync + 'static {
     type Stream: Stream;
     type Bucket: Bucket;
 
+    /// Returns a journal stream.
     async fn stream(&self) -> Result<Self::Stream>;
 
+    /// Returns a storage bucket.
     async fn bucket(&self) -> Result<Self::Bucket>;
 
+    /// Installs a kernel update.
     async fn install_update(&self, update: KernelUpdate) -> Result<()>;
 
+    /// Returns the current version.
     async fn current_version(&self) -> Result<Arc<Version>>;
 
+    /// Returns a stream of version updates since a given sequence (inclusive).
     async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
 }
 
 #[derive(Default)]
 pub struct KernelUpdate {
-    pub(crate) actions: Vec<UpdateAction>,
+    pub(crate) update: VersionUpdate,
 }
 
 impl KernelUpdate {
-    pub fn add_object(&mut self, object_name: String) -> &mut Self {
-        let action = UpdateAction::AddObject(object_name);
-        self.actions.push(action);
+    pub fn add_object(&mut self, name: String) -> &mut Self {
+        self.update.added_objects.push(name);
         self
     }
 
-    pub fn delete_object(&mut self, object_name: String) -> &mut Self {
-        let action = UpdateAction::DeleteObject(object_name);
-        self.actions.push(action);
+    pub fn delete_object(&mut self, name: String) -> &mut Self {
+        self.update.deleted_objects.push(name);
         self
     }
 }

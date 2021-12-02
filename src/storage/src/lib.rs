@@ -12,11 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An Engula module that provides object storage abstractions and
+//! implementations.
+//!
+//! # Abstraction
+//!
+//! [`Storage`] is an abstraction to store data objects.
+//!
+//! # Implementation
+//!
+//! Some built-in implementations of [`Storage`]:
+//!
+//! - [`mem`](crate::mem)
+//!
+//! [`Storage`]: crate::Storage
+
 mod bucket;
 mod error;
 mod storage;
 
-// pub mod file;
+pub mod file;
 // pub mod grpc;
 pub mod mem;
 

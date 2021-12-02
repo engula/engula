@@ -18,13 +18,20 @@ use crate::{async_trait, Result};
 
 /// An interface to manipulate a bucket.
 #[async_trait]
-pub trait Bucket: Clone + Send + Sync {
+pub trait Bucket: Clone + Send + Sync + 'static {
     type SequentialReader: AsyncRead + Send + Unpin;
     type SequentialWriter: AsyncWrite + Send + Unpin;
 
+    /// Deletes an object.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotFound` if the object doesn't exist.
     async fn delete_object(&self, name: &str) -> Result<()>;
 
+    /// Returns a reader that reads sequentially from the object.
     async fn new_sequential_reader(&self, name: &str) -> Result<Self::SequentialReader>;
 
+    /// Returns a writer that writes sequentially to the object.
     async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter>;
 }

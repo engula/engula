@@ -12,4 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod node;
+pub mod engine {
+    pub mod hash {
+        pub use engula_hash_engine::*;
+    }
+}
+
+pub mod kernel {
+    pub use engula_kernel::*;
+}
+
+pub mod journal {
+    pub use engula_journal::*;
+}
+
+pub mod storage {
+    pub use engula_storage::*;
+}

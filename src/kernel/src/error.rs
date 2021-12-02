@@ -25,9 +25,7 @@ pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
     #[error(transparent)]
-    Journal(JournalError),
-    #[error(transparent)]
-    Storage(StorageError),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     Unknown(Box<dyn std::error::Error + Send>),
 }
@@ -54,7 +52,7 @@ impl From<StorageError> for Error {
             StorageError::NotFound(s) => Self::NotFound(s),
             StorageError::AlreadyExists(s) => Self::AlreadyExists(s),
             StorageError::InvalidArgument(s) => Self::InvalidArgument(s),
-            err => Self::Storage(err),
+            StorageError::Io(err) => Self::Io(err),
         }
     }
 }

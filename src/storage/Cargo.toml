@@ -2,15 +2,19 @@
 name = "engula-storage"
 version = "0.2.0"
 edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "An Engula module that provides object storage abstractions and implementations."
 
 [dependencies]
 thiserror = "1.0"
 async-trait = "0.1"
 bytes = "1.1.0"
-tokio = { version = "1.14", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["net"] }
-tonic = "0.6"
-prost = "0.9"
+tokio = { version = "1.13", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [build-dependencies]
 tonic-build = "0.6"

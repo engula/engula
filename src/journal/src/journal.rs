@@ -16,15 +16,23 @@ use crate::{async_trait, Result, Stream};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal: Clone + Send + Sync {
+pub trait Journal: Clone + Send + Sync + 'static {
     type Stream: Stream;
 
     /// Returns a stream.
     async fn stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Creates a stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AlreadyExists` if the stream already exists.
     async fn create_stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Deletes a stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotFound` if the stream doesn't exist.
     async fn delete_stream(&self, name: &str) -> Result<()>;
 }

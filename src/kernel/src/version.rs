@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::UpdateAction;
-
+/// An increasing number to order versions.
 pub type Sequence = u64;
 
+/// The state of a kernel at a specific time.
 #[derive(Clone, Debug, Default)]
 pub struct Version {
     pub sequence: Sequence,
@@ -25,5 +25,6 @@ pub struct Version {
 #[derive(Clone, Debug, Default)]
 pub struct VersionUpdate {
     pub sequence: Sequence,
-    pub actions: Vec<UpdateAction>,
+    pub added_objects: Vec<String>,
+    pub deleted_objects: Vec<String>,
 }

@@ -16,15 +16,25 @@ use crate::{async_trait, Bucket, Result};
 
 /// An interface to manipulate a storage.
 #[async_trait]
-pub trait Storage: Clone + Send + Sync {
+pub trait Storage: Clone + Send + Sync + 'static {
     type Bucket: Bucket;
 
     /// Returns a bucket.
     async fn bucket(&self, name: &str) -> Result<Self::Bucket>;
 
     /// Creates a bucket.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AlreadyExists` if the bucket already exists.
     async fn create_bucket(&self, name: &str) -> Result<Self::Bucket>;
 
     /// Deletes a bucket.
+    ///
+    /// Using a deleted bucket is an undefined behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotFound` if the bucket doesn't exist.
     async fn delete_bucket(&self, name: &str) -> Result<()>;
 }

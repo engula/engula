@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct Error {}
+//! A [`Kernel`] implementation that stores everything in memory.
+//!
+//! [`Kernel`]: crate::Kernel
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub use engula_journal::mem::Stream;
+pub use engula_storage::mem::Bucket;
+
+pub type Kernel = super::Kernel<Stream, Bucket>;
+
+impl Default for Kernel {
+    fn default() -> Self {
+        let stream = Stream::default();
+        let bucket = Bucket::default();
+        Self::new(stream, bucket)
+    }
+}
