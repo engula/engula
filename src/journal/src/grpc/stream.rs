@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use futures::StreamExt;
+use tonic::Streaming;
 
 use super::{client::Client, proto::*};
 use crate::{
@@ -31,29 +32,36 @@ impl Stream {
     pub fn new(client: Client, stream: String) -> Stream {
         Stream { client, stream }
     }
-}
 
-#[async_trait]
-impl crate::Stream for Stream {
-    async fn read_events(&self, ts: Timestamp) -> Result<ResultStream<Vec<Event>>> {
+    async fn read_events_internal(&self, ts: Timestamp) -> Result<Streaming<ReadEventResponse>> {
         let input = ReadEventRequest {
             stream: self.stream.clone(),
             ts: serialize_ts(&ts)?,
         };
-        let output = self.client.read_event(input).await?;
-        Ok(Box::new(output.map(|result| match result {
-            Ok(resp) => {
-                let mut events = vec![];
-                for e in resp.events.iter().cloned() {
-                    events.push(Event {
-                        ts: deserialize_ts(&e.ts)?,
-                        data: e.data,
-                    })
+        self.client.read_event(input).await
+    }
+}
+
+#[async_trait]
+impl crate::Stream for Stream {
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>> {
+        let output = self.read_events_internal(ts).await;
+        match output {
+            Ok(output) => Box::new(output.map(|result| match result {
+                Ok(resp) => {
+                    let mut events = vec![];
+                    for e in resp.events.iter().cloned() {
+                        events.push(Event {
+                            ts: deserialize_ts(&e.ts)?,
+                            data: e.data,
+                        })
+                    }
+                    Ok(events)
                 }
-                Ok(events)
-            }
-            Err(status) => Err(Error::GrpcStatus(status)),
-        })))
+                Err(status) => Err(Error::GrpcStatus(status)),
+            })),
+            Err(e) => Box::new(futures::stream::once(futures::future::err(e))),
+        }
     }
 
     async fn append_event(&self, event: Event) -> Result<()> {

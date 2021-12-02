@@ -52,13 +52,13 @@ mod tests {
         };
         stream.append_event(event.clone()).await?;
         {
-            let mut events = stream.read_events(0.into()).await?;
+            let mut events = stream.read_events(0.into()).await;
             let got = events.try_next().await?.unwrap();
             assert_eq!(got, vec![event]);
         }
         stream.release_events(2.into()).await?;
         {
-            let mut events = stream.read_events(0.into()).await?;
+            let mut events = stream.read_events(0.into()).await;
             let got = events.try_next().await?.unwrap();
             assert_eq!(got, vec![]);
         }
