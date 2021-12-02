@@ -41,17 +41,15 @@ impl crate::Stream for Stream {
             ts: serialize_ts(&ts)?,
         };
         let output = self.client.read_event(input).await?;
-        Ok(Box::new(output.map(|response| match response {
+        Ok(Box::new(output.map(|result| match result {
             Ok(resp) => {
-                let events = resp
-                    .events
-                    .iter()
-                    .cloned()
-                    .map(|e| Event {
-                        ts: deserialize_ts(&e.ts).unwrap(),
+                let mut events = vec![];
+                for e in resp.events.iter().cloned() {
+                    events.push(Event {
+                        ts: deserialize_ts(&e.ts)?,
                         data: e.data,
                     })
-                    .collect();
+                }
                 Ok(events)
             }
             Err(status) => Err(Error::GrpcStatus(status)),

@@ -95,20 +95,21 @@ where
     ) -> Result<Response<Self::ReadEventStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let events = stream.read_events(deserialize_ts(&input.ts)?).await?;
-        Ok(Response::new(Box::new(events.map(|events| match events {
-            Ok(es) => {
-                let result = es
-                    .iter()
-                    .cloned()
-                    .map(|e| proto::Event {
-                        ts: serialize_ts(&e.ts).unwrap(),
-                        data: e.data,
-                    })
-                    .collect();
-                Ok(ReadEventResponse { events: result })
-            }
-            Err(error) => Err(Status::from(error)),
-        }))))
+        let event_stream = stream.read_events(deserialize_ts(&input.ts)?).await?;
+        Ok(Response::new(Box::new(event_stream.map(
+            |result| match result {
+                Ok(es) => {
+                    let mut events = vec![];
+                    for e in es.iter().cloned() {
+                        events.push(proto::Event {
+                            ts: serialize_ts(&e.ts)?,
+                            data: e.data,
+                        })
+                    }
+                    Ok(ReadEventResponse { events })
+                }
+                Err(e) => Err(Status::from(e)),
+            },
+        ))))
     }
 }
