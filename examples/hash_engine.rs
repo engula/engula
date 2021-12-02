@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula::engine::hash::{Engine, Result};
+use engula::{
+    engine::hash::{Engine, Result},
+    kernel::mem::Kernel,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let engine = Engine::new();
+    let kernel = Kernel::default();
+    let engine = Engine::new(kernel).await?;
     let key = vec![1];
     let value = vec![2];
     engine.set(key.clone(), value.clone()).await?;
