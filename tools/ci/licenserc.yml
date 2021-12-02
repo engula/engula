@@ -23,6 +23,7 @@ header:
     - 'Cargo.lock'
     - 'Cargo.toml'
     - 'LICENSE'
+    - 'Makefile'
     - 'rust-toolchain.toml'
     - 'rustfmt.toml'
     - '.cargo/audit.toml'
