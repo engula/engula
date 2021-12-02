@@ -14,7 +14,8 @@
 
 use tonic::{transport::Channel, Streaming};
 
-use super::{error::Result, proto::*};
+use super::proto::*;
+use crate::error::Result;
 
 type JournalClient = journal_client::JournalClient<Channel>;
 

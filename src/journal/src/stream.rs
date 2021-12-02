@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use serde::{Deserialize, Serialize};
+
 use crate::{async_trait, Result, ResultStream};
 
 /// A generic timestamp to order events.
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Timestamp(u64);
 
 impl From<u64> for Timestamp {
@@ -34,7 +36,7 @@ pub struct Event {
 #[async_trait]
 pub trait Stream: Clone + Send + Sync + 'static {
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>>;
+    async fn read_events(&self, ts: Timestamp) -> Result<ResultStream<Vec<Event>>>;
 
     /// Appends an event.
     async fn append_event(&self, event: Event) -> Result<()>;

@@ -65,6 +65,10 @@ message ReadEventRequest {
 }
 
 message ReadEventResponse {
+    repeated Event events = 1;
+}
+
+message Event {
     bytes ts = 1;
     bytes data = 2;
 }

@@ -23,6 +23,26 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error(transparent)]
+    GrpcStatus(#[from] tonic::Status),
+    #[error(transparent)]
+    GrpcTransport(#[from] tonic::transport::Error),
+    #[error(transparent)]
+    Serialize(#[from] serde_json::Error),
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let (code, message) = match err {
+            Error::NotFound(s) => (tonic::Code::NotFound, s),
+            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
+            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::GrpcStatus(s) => (s.code(), s.message().to_owned()),
+            Error::GrpcTransport(e) => (tonic::Code::Internal, e.to_string()),
+            Error::Serialize(s) => (tonic::Code::Internal, s.to_string()),
+        };
+        tonic::Status::new(code, message)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

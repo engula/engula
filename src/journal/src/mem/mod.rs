@@ -36,7 +36,7 @@ mod tests {
             data: vec![1, 2, 3],
         };
         stream.append_event(event.clone()).await?;
-        let mut events = stream.read_events(0.into()).await;
+        let mut events = stream.read_events(0.into()).await?;
         let got = events.try_next().await?;
         assert_eq!(got, Some(vec![event]));
         Ok(())

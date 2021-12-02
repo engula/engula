@@ -31,7 +31,7 @@ mod error;
 mod journal;
 mod stream;
 
-// pub mod grpc;
+pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
