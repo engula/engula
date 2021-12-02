@@ -18,16 +18,16 @@ use futures::TryStreamExt;
 use tokio::sync::{broadcast, Mutex};
 use tokio_stream::wrappers::BroadcastStream;
 
-use super::{Bucket, Stream};
 use crate::{
-    async_trait, Error, KernelUpdate, Result, ResultStream, Sequence, Version, VersionUpdate,
+    async_trait, Bucket, Error, KernelUpdate, Result, ResultStream, Sequence, Stream, Version,
+    VersionUpdate,
 };
 
 #[derive(Clone)]
-pub struct Kernel {
+pub struct Kernel<S: Stream, B: Bucket> {
     inner: Arc<Mutex<Inner>>,
-    stream: Stream,
-    bucket: Bucket,
+    stream: S,
+    bucket: B,
 }
 
 struct Inner {
@@ -36,8 +36,8 @@ struct Inner {
     last_sequence: Sequence,
 }
 
-impl Default for Kernel {
-    fn default() -> Self {
+impl<S: Stream, B: Bucket> Kernel<S, B> {
+    pub fn new(stream: S, bucket: B) -> Self {
         let (tx, _) = broadcast::channel(1024);
         let inner = Inner {
             current: Arc::new(Version::default()),
@@ -46,16 +46,16 @@ impl Default for Kernel {
         };
         Self {
             inner: Arc::new(Mutex::new(inner)),
-            stream: Stream::default(),
-            bucket: Bucket::default(),
+            stream,
+            bucket,
         }
     }
 }
 
 #[async_trait]
-impl crate::Kernel for Kernel {
-    type Bucket = Bucket;
-    type Stream = Stream;
+impl<S: Stream, B: Bucket> crate::Kernel for Kernel<S, B> {
+    type Bucket = B;
+    type Stream = S;
 
     async fn stream(&self) -> Result<Self::Stream> {
         Ok(self.stream.clone())

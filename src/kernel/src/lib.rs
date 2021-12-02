@@ -32,7 +32,7 @@ mod error;
 mod kernel;
 mod version;
 
-pub mod mem;
+mod local;
 
 pub use async_trait::async_trait;
 pub use engula_journal::{Stream, Timestamp};
@@ -43,5 +43,6 @@ pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Un
 pub use self::{
     error::{Error, Result},
     kernel::{Kernel, KernelUpdate},
+    local::mem,
     version::{Sequence, Version, VersionUpdate},
 };

@@ -18,7 +18,6 @@
 
 mod kernel;
 
-pub use engula_journal::mem::Stream;
-pub use engula_storage::mem::Bucket;
+pub mod mem;
 
 pub use self::kernel::Kernel;
