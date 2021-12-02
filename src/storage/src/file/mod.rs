@@ -19,38 +19,16 @@ pub use self::storage::Storage;
 
 #[cfg(test)]
 mod tests {
-    use std::{env, path::PathBuf, process};
-
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use crate::*;
 
-    struct TestEnvGuard {
-        path: PathBuf,
-    }
-
-    impl TestEnvGuard {
-        fn setup(case: &str) -> Self {
-            let mut path = env::temp_dir();
-            path.push("engula-storage-fs-test");
-            path.push(process::id().to_string());
-            path.push(case);
-            Self { path }
-        }
-    }
-
-    impl Drop for TestEnvGuard {
-        fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.path).unwrap();
-        }
-    }
-
     #[tokio::test]
     async fn test_bucket_manage() -> Result<()> {
         const BUCKET_NAME: &str = "test_bucket";
-        let g = TestEnvGuard::setup("test_bucket_manage");
+        let tmp = tempfile::tempdir()?;
 
-        let s = super::Storage::new(&g.path).await?;
+        let s = super::Storage::new(tmp.path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         assert!(s.create_bucket(BUCKET_NAME).await.is_err());
         s.delete_bucket(BUCKET_NAME).await?;
@@ -60,9 +38,8 @@ mod tests {
     #[tokio::test]
     async fn test_object_manage() -> Result<()> {
         const BUCKET_NAME: &str = "test_object";
-        let g = TestEnvGuard::setup("test_object_manage");
-
-        let s = super::Storage::new(&g.path).await?;
+        let tmp = tempfile::tempdir()?;
+        let s = super::Storage::new(tmp.path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
 
         let b = s.bucket(BUCKET_NAME).await?;
@@ -82,9 +59,8 @@ mod tests {
     #[tokio::test]
     async fn test_duplicate_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_bucket_dup";
-        let g = TestEnvGuard::setup("test_bucket_duplicate");
-
-        let s = super::Storage::new(&g.path).await?;
+        let tmp = tempfile::tempdir()?;
+        let s = super::Storage::new(tmp.path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let r = s.create_bucket(BUCKET_NAME).await;
         assert!(r.is_err());
@@ -95,8 +71,8 @@ mod tests {
     #[tokio::test]
     async fn test_clear_non_empty_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_non_empty_delete";
-        let g = TestEnvGuard::setup("test_non_empty_delete");
-        let s = super::Storage::new(&g.path).await?;
+        let tmp = tempfile::tempdir()?;
+        let s = super::Storage::new(tmp.path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let b = s.bucket(BUCKET_NAME).await?;
         let mut w = b.new_sequential_writer("obj-1").await?;
@@ -110,8 +86,8 @@ mod tests {
     #[tokio::test]
     async fn test_put_duplicate_obj() -> Result<()> {
         const BUCKET_NAME: &str = "test_put_dup_obj";
-        let g = TestEnvGuard::setup("test_put_dup_obj");
-        let s = super::Storage::new(&g.path).await?;
+        let tmp = tempfile::tempdir()?;
+        let s = super::Storage::new(tmp.path()).await?;
         s.create_bucket(BUCKET_NAME).await?;
         let b = s.bucket(BUCKET_NAME).await?;
 
@@ -134,8 +110,8 @@ mod tests {
     #[tokio::test]
     async fn test_not_exist_bucket() -> Result<()> {
         const BUCKET_NAME: &str = "test_not_exist_bucket";
-        let g = TestEnvGuard::setup("test_not_exist_bucket");
-        let s = super::Storage::new(&g.path).await?;
+        let tmp = tempfile::tempdir()?;
+        let s = super::Storage::new(tmp.path()).await?;
         let b = s.bucket(BUCKET_NAME).await?;
 
         let r = b.delete_object("obj-1").await;
