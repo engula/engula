@@ -151,6 +151,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic-build",

@@ -31,7 +31,7 @@ mod bucket;
 mod error;
 mod storage;
 
-// pub mod file;
+pub mod file;
 // pub mod grpc;
 pub mod mem;
 
