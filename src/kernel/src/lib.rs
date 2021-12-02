@@ -12,33 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
+//! An Engula module that provides stateful environment abstractions and
 //! implementations.
 //!
 //! # Abstraction
 //!
-//! [`Storage`] is an abstraction to store data objects.
+//! [`Kernel`] is an abstraction to provide a stateful environment to storage
+//! engines.
 //!
 //! # Implementation
 //!
-//! Some built-in implementations of [`Storage`]:
+//! Some built-in implementations of [`Kernel`]:
 //!
 //! - [`mem`](crate::mem)
 //!
-//! [`Storage`]: crate::Storage
+//! [`Kernel`]: crate::Kernel
 
-mod bucket;
 mod error;
-mod storage;
+mod kernel;
+mod version;
 
-// pub mod file;
-// pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
+pub use engula_journal::{Stream, Timestamp};
+pub use engula_storage::Bucket;
+
+pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Unpin>;
 
 pub use self::{
-    bucket::Bucket,
     error::{Error, Result},
-    storage::Storage,
+    kernel::{Kernel, KernelUpdate},
+    version::{Sequence, Version, VersionUpdate},
 };

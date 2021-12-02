@@ -12,20 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod engine {
-    pub mod hash {
-        pub use engula_hash_engine::*;
-    }
-}
+//! A [`Kernel`] implementation that stores everything in memory.
+//!
+//! [`Kernel`]: crate::Kernel
 
-pub mod kernel {
-    pub use engula_kernel::*;
-}
+mod kernel;
 
-pub mod journal {
-    pub use engula_journal::*;
-}
+pub use engula_journal::mem::Stream;
+pub use engula_storage::mem::Bucket;
 
-pub mod storage {
-    pub use engula_storage::*;
-}
+pub use self::kernel::Kernel;

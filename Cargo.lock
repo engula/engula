@@ -107,6 +107,7 @@ dependencies = [
  "clap",
  "engula-hash-engine",
  "engula-journal",
+ "engula-kernel",
  "engula-storage",
  "tokio",
 ]
@@ -129,6 +130,19 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic-build",
+]
+
+[[package]]
+name = "engula-kernel"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "engula-journal",
+ "engula-storage",
+ "futures",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -746,6 +760,32 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50145484efff8818b5ccd256697f36863f587da82cf8b409c53adf1e840798e3"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e99e1983e5d376cd8eb4b66604d2e99e79f5bd988c3055891dcd8c9e2604cc0"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]

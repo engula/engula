@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod engine {
-    pub mod hash {
-        pub use engula_hash_engine::*;
-    }
+/// An increasing number to order versions.
+pub type Sequence = u64;
+
+/// The state of a kernel at a specific time.
+#[derive(Clone, Debug, Default)]
+pub struct Version {
+    pub sequence: Sequence,
+    pub objects: Vec<String>,
 }
 
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
-pub mod journal {
-    pub use engula_journal::*;
-}
-
-pub mod storage {
-    pub use engula_storage::*;
+#[derive(Clone, Debug, Default)]
+pub struct VersionUpdate {
+    pub sequence: Sequence,
+    pub added_objects: Vec<String>,
+    pub deleted_objects: Vec<String>,
 }

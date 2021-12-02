@@ -5,7 +5,7 @@ edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
-description = "A data object storage module for Engula."
+description = "An Engula module that provides object storage abstractions and implementations."
 
 [dependencies]
 thiserror = "1.0"

@@ -16,12 +16,14 @@ path = "bin/engula.rs"
 [workspace]
 members = [
     "src/engine/hash",
+    "src/kernel",
     "src/journal",
     "src/storage",
 ]
 
 [dependencies]
 engula-hash-engine = { path = "src/engine/hash" }
+engula-kernel = { path = "src/kernel" }
 engula-journal = { path = "src/journal" }
 engula-storage = { path = "src/storage" }
 
