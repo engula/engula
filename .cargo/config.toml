@@ -1,0 +1,5 @@
+[alias]
+setup = "install cargo-audit cargo-udeps cargo-make"
+lint = "make lint"
+deps-check = "make deps-check"
+workflow = "make workflow"
