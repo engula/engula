@@ -43,9 +43,9 @@ impl crate::Stream for Stream {
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>> {
         let output = self.read_events_internal(ts).await;
         match output {
-            Ok(output) => Box::new(output.map(|result| {
-                match result {
-                    Ok(resp) => Ok(resp
+            Ok(output) => Box::new(output.map(|result| match result {
+                Ok(resp) => {
+                    let events: Result<Vec<Event>> = resp
                         .events
                         .into_iter()
                         .map(|e| {
@@ -54,9 +54,10 @@ impl crate::Stream for Stream {
                                 data: e.data,
                             })
                         })
-                        .collect::<Result<Vec<Event>>>()?),
-                    Err(status) => Err(Error::from(status)),
+                        .collect();
+                    Ok(events?)
                 }
+                Err(status) => Err(Error::from(status)),
             })),
             Err(e) => Box::new(futures::stream::once(futures::future::err(e))),
         }
