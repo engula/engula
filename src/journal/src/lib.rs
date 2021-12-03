@@ -24,6 +24,7 @@
 //! Some built-in implementations of [`Journal`]:
 //!
 //! - [`mem`](crate::mem)
+//! - [`grpc`](crate::grpc)
 //!
 //! [`Journal`]: crate::Journal
 

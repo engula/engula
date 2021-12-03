@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A [`Journal`] implementation that interacts with gRPC journal service.
+//!
+//! [`Journal`]: crate::Journal
+
 mod client;
 mod error;
 mod journal;
