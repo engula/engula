@@ -16,7 +16,7 @@ use futures::StreamExt;
 use tonic::{Request, Response, Status};
 
 use super::{proto, proto::*};
-use crate::{Event, Journal, Stream};
+use crate::{Event, Journal, Stream, Timestamp};
 
 pub struct Server<J: Journal> {
     journal: J,
@@ -63,7 +63,7 @@ impl<J: Journal> journal_server::Journal for Server<J> {
         let stream = self.journal.stream(&input.stream).await?;
         stream
             .append_event(Event {
-                ts: deserialize_ts(&input.ts)?,
+                ts: Timestamp::deserialize(input.ts)?,
                 data: input.data,
             })
             .await?;
@@ -76,7 +76,8 @@ impl<J: Journal> journal_server::Journal for Server<J> {
     ) -> Result<Response<ReleaseEventsResponse>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        stream.release_events(deserialize_ts(&input.ts)?).await?;
+        let ts = Timestamp::deserialize(input.ts)?;
+        stream.release_events(ts).await?;
         Ok(Response::new(ReleaseEventsResponse {}))
     }
 
@@ -86,17 +87,18 @@ impl<J: Journal> journal_server::Journal for Server<J> {
     ) -> Result<Response<Self::ReadEventsStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let event_stream = stream.read_events(deserialize_ts(&input.ts)?).await;
+        let ts = Timestamp::deserialize(input.ts)?;
+        let event_stream = stream.read_events(ts).await;
         Ok(Response::new(Box::new(event_stream.map(
             |result| match result {
                 Ok(es) => {
-                    let mut events = vec![];
-                    for e in es.iter().cloned() {
-                        events.push(proto::Event {
-                            ts: serialize_ts(&e.ts)?,
+                    let events = es
+                        .into_iter()
+                        .map(|e| proto::Event {
+                            ts: e.ts.serialize(),
                             data: e.data,
                         })
-                    }
+                        .collect();
                     Ok(ReadEventsResponse { events })
                 }
                 Err(e) => Err(Status::from(e)),
