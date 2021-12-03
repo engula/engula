@@ -29,12 +29,12 @@ impl Stream {
         Stream { client, stream }
     }
 
-    async fn read_events_internal(&self, ts: Timestamp) -> Result<Streaming<ReadEventResponse>> {
-        let input = ReadEventRequest {
+    async fn read_events_internal(&self, ts: Timestamp) -> Result<Streaming<ReadEventsResponse>> {
+        let input = ReadEventsRequest {
             stream: self.stream.clone(),
             ts: serialize_ts(&ts)?,
         };
-        self.client.read_event(input).await
+        self.client.read_events(input).await
     }
 }
 

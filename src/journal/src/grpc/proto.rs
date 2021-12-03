@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-tonic::include_proto!("engula.journal.grpc.v1");
+tonic::include_proto!("engula.journal.v1");
 
 use crate::{Error, Timestamp};
 

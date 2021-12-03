@@ -14,7 +14,7 @@
 
 syntax = "proto3";
 
-package engula.journal.grpc.v1;
+package engula.journal.v1;
 
 service Journal {
     // APIs to manipulate a journal.
@@ -29,7 +29,7 @@ service Journal {
 
     rpc ReleaseEvents(ReleaseEventsRequest) returns (ReleaseEventsResponse) {}
 
-    rpc ReadEvent(ReadEventRequest) returns (stream ReadEventResponse) {}
+    rpc ReadEvents(ReadEventsRequest) returns (stream ReadEventsResponse) {}
 }
 
 message CreateStreamRequest {
@@ -59,12 +59,12 @@ message ReleaseEventsRequest {
 
 message ReleaseEventsResponse {}
 
-message ReadEventRequest {
+message ReadEventsRequest {
     string stream = 1;
     bytes ts = 2;
 }
 
-message ReadEventResponse {
+message ReadEventsResponse {
     repeated Event events = 1;
 }
 

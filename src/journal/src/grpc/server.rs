@@ -18,17 +18,11 @@ use tonic::{Request, Response, Status};
 use super::{proto, proto::*};
 use crate::{Event, Journal, Stream};
 
-pub struct Server<J>
-where
-    J: Journal,
-{
+pub struct Server<J: Journal> {
     journal: J,
 }
 
-impl<J> Server<J>
-where
-    J: Journal + Send + Sync + 'static,
-{
+impl<J: Journal> Server<J> {
     pub fn new(journal: J) -> Self {
         Server { journal }
     }
@@ -39,12 +33,9 @@ where
 }
 
 #[tonic::async_trait]
-impl<J> journal_server::Journal for Server<J>
-where
-    J: Journal + Send + Sync + 'static,
-{
-    type ReadEventStream =
-        Box<dyn futures::Stream<Item = Result<ReadEventResponse, Status>> + Send + Unpin>;
+impl<J: Journal> journal_server::Journal for Server<J> {
+    type ReadEventsStream =
+        Box<dyn futures::Stream<Item = Result<ReadEventsResponse, Status>> + Send + Unpin>;
 
     async fn create_stream(
         &self,
@@ -89,10 +80,10 @@ where
         Ok(Response::new(ReleaseEventsResponse {}))
     }
 
-    async fn read_event(
+    async fn read_events(
         &self,
-        request: Request<ReadEventRequest>,
-    ) -> Result<Response<Self::ReadEventStream>, Status> {
+        request: Request<ReadEventsRequest>,
+    ) -> Result<Response<Self::ReadEventsStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
         let event_stream = stream.read_events(deserialize_ts(&input.ts)?).await;
@@ -106,7 +97,7 @@ where
                             data: e.data,
                         })
                     }
-                    Ok(ReadEventResponse { events })
+                    Ok(ReadEventsResponse { events })
                 }
                 Err(e) => Err(Status::from(e)),
             },
