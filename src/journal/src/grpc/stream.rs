@@ -32,7 +32,7 @@ impl Stream {
     async fn read_events_internal(&self, ts: Timestamp) -> Result<Streaming<ReadEventsResponse>> {
         let input = ReadEventsRequest {
             stream: self.stream.clone(),
-            ts: serialize_ts(&ts)?,
+            ts: ts.serialize(),
         };
         self.client.read_events(input).await
     }
@@ -45,14 +45,17 @@ impl crate::Stream for Stream {
         match output {
             Ok(output) => Box::new(output.map(|result| match result {
                 Ok(resp) => {
-                    let mut events = vec![];
-                    for e in resp.events.iter().cloned() {
-                        events.push(Event {
-                            ts: deserialize_ts(&e.ts)?,
-                            data: e.data,
+                    let events: Result<Vec<Event>> = resp
+                        .events
+                        .into_iter()
+                        .map(|e| {
+                            Ok(Event {
+                                ts: Timestamp::deserialize(e.ts)?,
+                                data: e.data,
+                            })
                         })
-                    }
-                    Ok(events)
+                        .collect();
+                    Ok(events?)
                 }
                 Err(status) => Err(Error::from(status)),
             })),
@@ -63,7 +66,7 @@ impl crate::Stream for Stream {
     async fn append_event(&self, event: Event) -> Result<()> {
         let input = AppendEventRequest {
             stream: self.stream.clone(),
-            ts: serialize_ts(&event.ts)?,
+            ts: event.ts.serialize(),
             data: event.data,
         };
         self.client.append_event(input).await?;
@@ -73,7 +76,7 @@ impl crate::Stream for Stream {
     async fn release_events(&self, ts: Timestamp) -> Result<()> {
         let input = ReleaseEventsRequest {
             stream: self.stream.clone(),
-            ts: serialize_ts(&ts)?,
+            ts: ts.serialize(),
         };
         self.client.release_events(input).await?;
         Ok(())

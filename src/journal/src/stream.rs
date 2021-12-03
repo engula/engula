@@ -12,13 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 
-use crate::{async_trait, Result, ResultStream};
+use crate::{async_trait, Error, Result, ResultStream};
 
 /// A generic timestamp to order events.
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Timestamp(u64);
+
+impl Timestamp {
+    pub fn serialize(&self) -> Vec<u8> {
+        self.0.to_be_bytes().to_vec()
+    }
+
+    pub fn deserialize(bytes: Vec<u8>) -> Result<Self> {
+        let bytes: [u8; 8] = bytes
+            .try_into()
+            .map_err(|v| Error::Unknown(format!("malformed bytes: {:?}", v)))?;
+        Ok(Self(u64::from_be_bytes(bytes)))
+    }
+}
 
 impl From<u64> for Timestamp {
     fn from(v: u64) -> Self {
