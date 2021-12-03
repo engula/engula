@@ -17,7 +17,7 @@ use super::{
     proto::{CreateStreamRequest, DeleteStreamRequest},
     stream::Stream,
 };
-use crate::{async_trait, error::Result};
+use crate::{async_trait, Result};
 
 #[derive(Clone)]
 pub struct Journal {

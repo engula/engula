@@ -16,11 +16,7 @@ use futures::StreamExt;
 use tonic::Streaming;
 
 use super::{client::Client, proto::*};
-use crate::{
-    async_trait,
-    error::{Error, Result},
-    Event, ResultStream, Timestamp,
-};
+use crate::{async_trait, Error, Event, Result, ResultStream, Timestamp};
 
 #[derive(Clone)]
 pub struct Stream {
