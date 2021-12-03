@@ -35,7 +35,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let j: mem::Journal = mem::Journal::default();
+            let j = mem::Journal::default();
             let server = Server::new(j);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
