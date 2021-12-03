@@ -12,27 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
-use tonic::{Code, Status};
+use crate::Error;
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    GrpcStatus(#[from] Status),
-    #[error(transparent)]
-    GrpcTransport(#[from] tonic::transport::Error),
-    #[error(transparent)]
-    Serialize(#[from] serde_json::Error),
-}
-
-impl From<Error> for Status {
-    fn from(err: Error) -> Self {
-        match err {
-            Error::GrpcStatus(s) => s,
-            Error::GrpcTransport(e) => Status::new(Code::Internal, e.to_string()),
-            Error::Serialize(s) => Status::new(Code::Internal, s.to_string()),
-        }
+impl From<tonic::Status> for Error {
+    fn from(s: tonic::Status) -> Self {
+        Error::Unknown(s.to_string())
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Unknown(e.to_string())
+    }
+}
+
+impl From<tonic::transport::Error> for Error {
+    fn from(e: tonic::transport::Error) -> Self {
+        Error::Unknown(e.to_string())
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let (code, message) = match err {
+            Error::NotFound(s) => (tonic::Code::NotFound, s),
+            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
+            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::Unknown(s) => (tonic::Code::Unknown, s),
+        };
+        tonic::Status::new(code, message)
+    }
+}

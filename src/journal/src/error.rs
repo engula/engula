@@ -23,6 +23,8 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error("unknown: {0}")]
+    Unknown(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

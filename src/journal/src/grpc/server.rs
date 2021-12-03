@@ -12,61 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    marker::PhantomData,
-    pin::Pin,
-    task::{Context, Poll},
-};
-
+use futures::StreamExt;
 use tonic::{Request, Response, Status};
 
-use super::proto::*;
-use crate::{Event, Journal, Stream, Timestamp};
+use super::{proto, proto::*};
+use crate::{Event, Journal, Stream};
 
-pub struct Server<S, J, T>
-where
-    S: Stream,
-    J: Journal<S>,
-    T: Timestamp,
-{
+pub struct Server<J: Journal> {
     journal: J,
-    _stream: PhantomData<S>,
-    _t: PhantomData<T>,
 }
 
-impl<S, J, T> Server<S, J, T>
-where
-    T: Timestamp + 'static,
-    S: Stream<Timestamp = T> + Send + Sync + 'static,
-    S::Error: Send + Sync + 'static,
-    S::EventStream: Send + Sync + 'static,
-    J: Journal<S> + Send + Sync + 'static,
-    Status: From<S::Error>,
-{
+impl<J: Journal> Server<J> {
     pub fn new(journal: J) -> Self {
-        Server {
-            journal,
-            _stream: PhantomData,
-            _t: PhantomData,
-        }
+        Server { journal }
     }
 
-    pub fn into_service(self) -> journal_server::JournalServer<Server<S, J, T>> {
+    pub fn into_service(self) -> journal_server::JournalServer<Server<J>> {
         journal_server::JournalServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<S, J, T> journal_server::Journal for Server<S, J, T>
-where
-    T: Timestamp + 'static,
-    S: Stream<Timestamp = T> + Send + Sync + 'static,
-    S::Error: Send + Sync + 'static,
-    S::EventStream: Send + Sync + 'static,
-    J: Journal<S> + Send + Sync + 'static,
-    Status: From<S::Error>,
-{
-    type ReadEventStream = EventStream<S>;
+impl<J: Journal> journal_server::Journal for Server<J> {
+    type ReadEventsStream =
+        Box<dyn futures::Stream<Item = Result<ReadEventsResponse, Status>> + Send + Unpin>;
 
     async fn create_stream(
         &self,
@@ -111,53 +80,27 @@ where
         Ok(Response::new(ReleaseEventsResponse {}))
     }
 
-    async fn read_event(
+    async fn read_events(
         &self,
-        request: Request<ReadEventRequest>,
-    ) -> Result<Response<Self::ReadEventStream>, Status> {
+        request: Request<ReadEventsRequest>,
+    ) -> Result<Response<Self::ReadEventsStream>, Status> {
         let input = request.into_inner();
         let stream = self.journal.stream(&input.stream).await?;
-        let events = stream.read_events(deserialize_ts(&input.ts)?).await?;
-        Ok(Response::new(EventStream::new(events)))
-    }
-}
-
-pub struct EventStream<S>
-where
-    S: Stream,
-{
-    events: S::EventStream,
-}
-
-impl<S> EventStream<S>
-where
-    S: Stream,
-{
-    fn new(events: S::EventStream) -> Self {
-        EventStream { events }
-    }
-}
-
-impl<S> futures::Stream for EventStream<S>
-where
-    S: Stream,
-    Status: From<S::Error>,
-{
-    type Item = Result<ReadEventResponse, Status>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.events).poll_next(cx) {
-            Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(ReadEventResponse {
-                ts: serialize_ts(&event.ts)?,
-                data: event.data,
-            }))),
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(Status::from(err)))),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.events.size_hint()
+        let event_stream = stream.read_events(deserialize_ts(&input.ts)?).await;
+        Ok(Response::new(Box::new(event_stream.map(
+            |result| match result {
+                Ok(es) => {
+                    let mut events = vec![];
+                    for e in es.iter().cloned() {
+                        events.push(proto::Event {
+                            ts: serialize_ts(&e.ts)?,
+                            data: e.data,
+                        })
+                    }
+                    Ok(ReadEventsResponse { events })
+                }
+                Err(e) => Err(Status::from(e)),
+            },
+        ))))
     }
 }

@@ -14,7 +14,8 @@
 
 use tonic::{transport::Channel, Streaming};
 
-use super::{error::Result, proto::*};
+use super::proto::*;
+use crate::Result;
 
 type JournalClient = journal_client::JournalClient<Channel>;
 
@@ -51,12 +52,12 @@ impl Client {
         Ok(response.into_inner())
     }
 
-    pub async fn read_event(
+    pub async fn read_events(
         &self,
-        input: ReadEventRequest,
-    ) -> Result<Streaming<ReadEventResponse>> {
+        input: ReadEventsRequest,
+    ) -> Result<Streaming<ReadEventsResponse>> {
         let mut client = self.client.clone();
-        let response = client.read_event(input).await?;
+        let response = client.read_events(input).await?;
         Ok(response.into_inner())
     }
 
