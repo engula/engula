@@ -31,8 +31,8 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Error {
-        Error::Unknown(Box::new(err))
+    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
+        Self::Unknown(Box::new(err))
     }
 }
 

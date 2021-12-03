@@ -44,6 +44,16 @@ pub struct KernelUpdate {
 }
 
 impl KernelUpdate {
+    pub fn set_meta(&mut self, key: Vec<u8>, value: Vec<u8>) -> &mut Self {
+        self.update.set_meta.push((key, value));
+        self
+    }
+
+    pub fn delete_meta(&mut self, key: Vec<u8>) -> &mut Self {
+        self.update.deleted_meta.push(key);
+        self
+    }
+
     pub fn add_object(&mut self, name: String) -> &mut Self {
         self.update.added_objects.push(name);
         self
