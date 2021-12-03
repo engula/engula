@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 /// An increasing number to order versions.
 pub type Sequence = u64;
 
@@ -19,12 +21,15 @@ pub type Sequence = u64;
 #[derive(Clone, Debug, Default)]
 pub struct Version {
     pub sequence: Sequence,
+    pub meta: HashMap<Vec<u8>, Vec<u8>>,
     pub objects: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct VersionUpdate {
     pub sequence: Sequence,
+    pub set_meta: Vec<(Vec<u8>, Vec<u8>)>,
+    pub deleted_meta: Vec<Vec<u8>>,
     pub added_objects: Vec<String>,
     pub deleted_objects: Vec<String>,
 }
