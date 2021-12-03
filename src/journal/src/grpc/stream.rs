@@ -58,7 +58,7 @@ impl crate::Stream for Stream {
                     }
                     Ok(events)
                 }
-                Err(status) => Err(Error::GrpcStatus(status)),
+                Err(status) => Err(Error::from(status)),
             })),
             Err(e) => Box::new(futures::stream::once(futures::future::err(e))),
         }

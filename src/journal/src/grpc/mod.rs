@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod client;
+mod error;
 mod journal;
 mod proto;
 mod server;
