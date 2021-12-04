@@ -65,7 +65,7 @@ impl<S: Stream, B: Bucket> crate::Kernel for Kernel<S, B> {
         Ok(self.bucket.clone())
     }
 
-    async fn install_update(&self, update: KernelUpdate) -> Result<()> {
+    async fn apply_update(&self, update: KernelUpdate) -> Result<()> {
         let mut inner = self.inner.lock().await;
         inner.last_sequence += 1;
         let mut version_update = update.update;

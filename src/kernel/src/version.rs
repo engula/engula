@@ -18,18 +18,18 @@ use std::collections::HashMap;
 pub type Sequence = u64;
 
 /// The state of a kernel at a specific time.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Version {
     pub sequence: Sequence,
-    pub meta: HashMap<Vec<u8>, Vec<u8>>,
+    pub meta: HashMap<String, Vec<u8>>,
     pub objects: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct VersionUpdate {
     pub sequence: Sequence,
-    pub set_meta: HashMap<Vec<u8>, Vec<u8>>,
-    pub delete_meta: Vec<Vec<u8>>,
+    pub set_meta: HashMap<String, Vec<u8>>,
+    pub delete_meta: Vec<String>,
     pub add_objects: Vec<String>,
     pub delete_objects: Vec<String>,
 }

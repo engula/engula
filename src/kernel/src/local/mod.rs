@@ -21,3 +21,40 @@ mod kernel;
 pub mod mem;
 
 pub use self::kernel::Kernel;
+
+#[cfg(test)]
+mod tests {
+    use futures::TryStreamExt;
+
+    use super::mem;
+    use crate::*;
+
+    #[tokio::test]
+    async fn update() -> Result<()> {
+        let kernel = mem::Kernel::default();
+
+        let handle = {
+            let mut expect = VersionUpdate::default();
+            expect.sequence = 1;
+            expect.set_meta.insert("a".to_owned(), b"b".to_vec());
+            expect.delete_meta.push("b".to_owned());
+            expect.add_objects.push("a".to_owned());
+            expect.delete_objects.push("b".to_owned());
+            let mut version_updates = kernel.version_updates(0).await;
+            tokio::spawn(async move {
+                let update = version_updates.try_next().await.unwrap().unwrap();
+                assert_eq!(*update, expect);
+            })
+        };
+
+        let mut update = KernelUpdate::default();
+        update.set_meta("a", "b");
+        update.delete_meta("b");
+        update.add_object("a");
+        update.delete_object("b");
+        kernel.apply_update(update).await?;
+
+        handle.await.unwrap();
+        Ok(())
+    }
+}
