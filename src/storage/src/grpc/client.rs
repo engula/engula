@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tonic::transport::Channel;
+use tonic::{transport::Channel, IntoStreamingRequest, Streaming};
 
-use super::{error::Result, proto::*};
+use super::proto::*;
+use crate::Result;
 
 type StorageClient = storage_client::StorageClient<Channel>;
 
@@ -38,11 +39,25 @@ impl Client {
 
     method!(delete_bucket, DeleteBucketRequest, DeleteBucketResponse);
 
-    method!(upload_object, UploadObjectRequest, UploadObjectResponse);
-
     method!(delete_object, DeleteObjectRequest, DeleteObjectResponse);
 
-    method!(read_object, ReadObjectRequest, ReadObjectResponse);
+    pub async fn upload_object(
+        &self,
+        input: impl IntoStreamingRequest<Message = UploadObjectRequest>,
+    ) -> Result<UploadObjectResponse> {
+        let mut client = self.client.clone();
+        let response = client.upload_object(input).await?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn read_object(
+        &self,
+        input: ReadObjectRequest,
+    ) -> Result<Streaming<ReadObjectResponse>> {
+        let mut client = self.client.clone();
+        let response = client.read_object(input).await?;
+        Ok(response.into_inner())
+    }
 
     pub async fn connect(addr: &str) -> Result<Client> {
         let client = StorageClient::connect(addr.to_owned()).await?;

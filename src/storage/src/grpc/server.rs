@@ -14,49 +14,51 @@
 
 use std::marker::PhantomData;
 
-use tonic::{Request, Response, Status};
+use futures::{stream, Stream, StreamExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tonic::{Request, Response, Status, Streaming};
 
 use super::proto::*;
-use crate::{Object, ObjectUploader, Storage};
+use crate::{Bucket, Storage};
 
-pub struct Server<O, S>
+pub struct Server<B, S>
 where
-    O: Object,
-    S: Storage<O>,
+    B: Bucket,
+    S: Storage,
 {
     storage: S,
-    _object: PhantomData<O>,
+    _bucket: PhantomData<B>,
 }
 
-impl<O, S> Server<O, S>
+impl<B, S> Server<B, S>
 where
-    O: Object + Send + Sync + 'static,
-    O::Error: Send + Sync + 'static,
-    S: Storage<O> + Send + Sync + 'static,
-    S::ObjectUploader: Send + Sync + 'static,
-    Status: From<O::Error>,
+    B: Bucket + Send + Sync + 'static,
+    B::SequentialWriter: AsyncWrite + Send + Sync + 'static,
+    B::SequentialReader: AsyncRead + Send + Sync + 'static,
+    S: Storage<Bucket = B> + Send + Sync + 'static,
 {
     pub fn new(storage: S) -> Self {
         Server {
             storage,
-            _object: PhantomData,
+            _bucket: PhantomData,
         }
     }
 
-    pub fn into_service(self) -> storage_server::StorageServer<Server<O, S>> {
+    pub fn into_service(self) -> storage_server::StorageServer<Server<B, S>> {
         storage_server::StorageServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<O, S> storage_server::Storage for Server<O, S>
+impl<B, S> storage_server::Storage for Server<B, S>
 where
-    O: Object + Send + Sync + 'static,
-    O::Error: Send + Sync + 'static,
-    S: Storage<O> + Send + Sync + 'static,
-    S::ObjectUploader: Send + Sync + 'static,
-    Status: From<O::Error>,
+    B: Bucket + Send + Sync + 'static,
+    B::SequentialWriter: AsyncWrite + Send + Sync + 'static,
+    B::SequentialReader: AsyncRead + Send + Sync + 'static,
+    S: Storage<Bucket = B> + Send + Sync + 'static,
 {
+    type ReadObjectStream = impl Stream<Item = std::result::Result<ReadObjectResponse, Status>>;
+
     async fn create_bucket(
         &self,
         request: Request<CreateBucketRequest>,
@@ -77,15 +79,26 @@ where
 
     async fn upload_object(
         &self,
-        request: Request<UploadObjectRequest>,
+        request: Request<Streaming<UploadObjectRequest>>,
     ) -> Result<Response<UploadObjectResponse>, Status> {
-        let input = request.into_inner();
-        let mut up = self
-            .storage
-            .upload_object(&input.bucket, &input.object)
-            .await?;
-        up.write(&input.content).await?;
-        up.finish().await?;
+        let mut stream = request.into_inner().ready_chunks(1);
+        let mut cw: Option<B::SequentialWriter> = None;
+        while let Some(reqs) = stream.next().await {
+            for req in reqs {
+                let req = req?;
+                if cw.is_none() {
+                    let b = self.storage.bucket(&req.bucket).await?;
+                    let w = b.new_sequential_writer(&req.object).await?;
+                    cw = Some(w);
+                }
+                if let Some(w) = &mut cw {
+                    w.write(&req.content).await?;
+                }
+            }
+        }
+        if let Some(w) = &mut cw {
+            w.shutdown().await?;
+        }
         Ok(Response::new(UploadObjectResponse {}))
     }
 
@@ -94,23 +107,64 @@ where
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let input = request.into_inner();
-        self.storage
-            .delete_object(&input.bucket, &input.object)
-            .await?;
+        let b = self.storage.bucket(&input.bucket).await?;
+        b.delete_object(&input.object).await?;
         Ok(Response::new(DeleteObjectResponse {}))
     }
 
     async fn read_object(
         &self,
         request: Request<ReadObjectRequest>,
-    ) -> Result<Response<ReadObjectResponse>, Status> {
+    ) -> Result<Response<Self::ReadObjectStream>, Status> {
         let input = request.into_inner();
-        let object = self.storage.object(&input.bucket, &input.object).await?;
-        let mut buf = vec![0; input.length as usize];
-        let len = object.read_at(&mut buf, input.offset as usize).await?;
-        let output = ReadObjectResponse {
-            content: buf[0..len].to_owned(),
+        let b = self.storage.bucket(&input.bucket).await?;
+        let r = b.new_sequential_reader(&input.object).await?;
+        let batch_size = core::cmp::min(input.length, 1024);
+        let req_size = input.length;
+
+        struct ReadCtx<B: Bucket> {
+            r: B::SequentialReader,
+            batch_size: i64,
+            req_size: i64,
+        }
+
+        let init_state = ReadCtx::<B> {
+            r,
+            batch_size,
+            req_size,
         };
-        Ok(Response::new(output))
+        let stream = stream::unfold(init_state, |mut s| async move {
+            let mut buf = vec![0; s.batch_size as usize];
+            let result = s.r.read(&mut buf).await;
+            match result {
+                Ok(n) => {
+                    if n == 0 || s.req_size == 0 {
+                        None
+                    } else {
+                        let mut cut = buf.len();
+                        if n < buf.len() {
+                            cut = n;
+                        }
+                        let output = ReadObjectResponse {
+                            content: buf[..cut].to_owned(),
+                        };
+                        Some((
+                            Ok(output),
+                            ReadCtx::<B> {
+                                r: s.r,
+                                batch_size: s.batch_size,
+                                req_size: s.req_size - cut as i64,
+                            },
+                        ))
+                    }
+                }
+                Err(e) => {
+                    let status: Status = e.into();
+                    Some((Err(status), s))
+                }
+            }
+        });
+
+        Ok(Response::new(stream))
     }
 }

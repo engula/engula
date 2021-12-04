@@ -25,6 +25,8 @@ pub enum Error {
     InvalidArgument(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("unknown: {0}")]
+    Unknown(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
