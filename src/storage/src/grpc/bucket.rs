@@ -70,7 +70,7 @@ impl crate::Bucket for Bucket {
             bucket: self.bucket_name.to_owned(),
             object: name.to_owned(),
         };
-        let _ = self.client.delete_object(input).await?;
+        self.client.delete_object(input).await?;
         Ok(())
     }
 
@@ -81,8 +81,8 @@ impl crate::Bucket for Bucket {
             offset: 0_i64,
             length: i64::MAX,
         };
-        let s = self.client.read_object(input).await?;
-        Ok(SequentialReader::new(s))
+        let stream = self.client.read_object(input).await?;
+        Ok(SequentialReader::new(stream))
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter> {
@@ -114,8 +114,7 @@ impl crate::Bucket for Bucket {
                 None => None,
             }
         });
-        let req = Request::new(is);
-        let upload_fut = Self::init_upload(self.client.clone(), req);
+        let upload_fut = Self::init_upload(self.client.clone(), Request::new(is));
         Ok(SequentialWriter::new(tx, Box::pin(upload_fut)))
     }
 }
@@ -202,7 +201,7 @@ impl AsyncWrite for SequentialWriter {
                     "flush on shutdown writer",
                 ))),
             },
-            Err(e) => Poll::Ready(Err(IoError::new(ErrorKind::Other, e.to_string()))),
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 
