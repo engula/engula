@@ -20,12 +20,6 @@ impl From<tonic::Status> for Error {
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::Unknown(e.to_string())
-    }
-}
-
 impl From<tonic::transport::Error> for Error {
     fn from(e: tonic::transport::Error) -> Self {
         Error::Unknown(e.to_string())

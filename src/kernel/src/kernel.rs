@@ -44,23 +44,23 @@ pub struct KernelUpdate {
 }
 
 impl KernelUpdate {
-    pub fn set_meta(&mut self, key: Vec<u8>, value: Vec<u8>) -> &mut Self {
-        self.update.set_meta.push((key, value));
+    pub fn set_meta(&mut self, key: impl Into<Vec<u8>>, value: impl Into<Vec<u8>>) -> &mut Self {
+        self.update.set_meta.insert(key.into(), value.into());
         self
     }
 
-    pub fn delete_meta(&mut self, key: Vec<u8>) -> &mut Self {
-        self.update.deleted_meta.push(key);
+    pub fn delete_meta(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
+        self.update.delete_meta.push(key.into());
         self
     }
 
-    pub fn add_object(&mut self, name: String) -> &mut Self {
-        self.update.added_objects.push(name);
+    pub fn add_object(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.add_objects.push(name.into());
         self
     }
 
-    pub fn delete_object(&mut self, name: String) -> &mut Self {
-        self.update.deleted_objects.push(name);
+    pub fn delete_object(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.delete_objects.push(name.into());
         self
     }
 }

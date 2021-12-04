@@ -230,7 +230,7 @@ impl<K: Kernel> EngineVersion<K> {
         assert_eq!(self.sequence + 1, update.sequence);
 
         let mut version = self.clone();
-        for object in &update.added_objects {
+        for object in &update.add_objects {
             // For now, we assume that this object is flushed from the oldest immtable.
             let reader = version.bucket.new_sequential_reader(object).await?;
             let table_reader = TableReader::new(reader).await?;

@@ -28,8 +28,8 @@ pub struct Version {
 #[derive(Clone, Debug, Default)]
 pub struct VersionUpdate {
     pub sequence: Sequence,
-    pub set_meta: Vec<(Vec<u8>, Vec<u8>)>,
-    pub deleted_meta: Vec<Vec<u8>>,
-    pub added_objects: Vec<String>,
-    pub deleted_objects: Vec<String>,
+    pub set_meta: HashMap<Vec<u8>, Vec<u8>>,
+    pub delete_meta: Vec<Vec<u8>>,
+    pub add_objects: Vec<String>,
+    pub delete_objects: Vec<String>,
 }

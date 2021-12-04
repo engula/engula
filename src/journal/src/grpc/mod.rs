@@ -51,8 +51,9 @@ mod tests {
         let url = format!("http://{}", local_addr);
         let journal = grpc::Journal::connect(&url).await?;
         let stream = journal.create_stream("s").await?;
+        let ts = 31340128116183;
         let event = Event {
-            ts: 1.into(),
+            ts: ts.into(),
             data: vec![0, 1, 2],
         };
         stream.append_event(event.clone()).await?;
@@ -61,7 +62,7 @@ mod tests {
             let got = events.try_next().await?.unwrap();
             assert_eq!(got, vec![event]);
         }
-        stream.release_events(2.into()).await?;
+        stream.release_events((ts + 1).into()).await?;
         {
             let mut events = stream.read_events(0.into()).await;
             let got = events.try_next().await?.unwrap();
