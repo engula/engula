@@ -34,8 +34,10 @@ mod tests {
         let kernel = mem::Kernel::default();
 
         let handle = {
-            let mut expect = VersionUpdate::default();
-            expect.sequence = 1;
+            let mut expect = VersionUpdate {
+                sequence: 1,
+                ..Default::default()
+            };
             expect.set_meta.insert("a".to_owned(), b"b".to_vec());
             expect.delete_meta.push("b".to_owned());
             expect.add_objects.push("a".to_owned());
