@@ -42,6 +42,7 @@ impl From<JournalError> for Error {
             JournalError::NotFound(s) => Self::NotFound(s),
             JournalError::AlreadyExists(s) => Self::AlreadyExists(s),
             JournalError::InvalidArgument(s) => Self::InvalidArgument(s),
+            err @ JournalError::Unknown(_) => Self::Unknown(Box::new(err)),
         }
     }
 }

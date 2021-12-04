@@ -24,6 +24,7 @@
 //! Some built-in implementations of [`Journal`]:
 //!
 //! - [`mem`](crate::mem)
+//! - [`grpc`](crate::grpc)
 //!
 //! [`Journal`]: crate::Journal
 
@@ -31,7 +32,7 @@ mod error;
 mod journal;
 mod stream;
 
-// pub mod grpc;
+pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
