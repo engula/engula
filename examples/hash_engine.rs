@@ -20,7 +20,7 @@ use engula::{
 #[tokio::main]
 async fn main() -> Result<()> {
     let kernel = Kernel::default();
-    let engine = Engine::new(kernel).await?;
+    let engine = Engine::open(kernel).await?;
     let key = vec![1];
     let value = vec![2];
     engine.set(key.clone(), value.clone()).await?;

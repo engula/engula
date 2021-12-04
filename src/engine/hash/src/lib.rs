@@ -33,15 +33,23 @@ mod tests {
 
     #[tokio::test]
     async fn engine() -> Result<()> {
-        let kernel = Kernel::default();
-        let engine = Engine::new(kernel).await?;
+        const N: u32 = 4096;
 
-        let n: u32 = 32 * 1024;
-        for i in 0..n {
+        let kernel = Kernel::default();
+        let engine = Engine::open(kernel.clone()).await?;
+        for i in 0..N {
             let v = i.to_be_bytes().to_vec();
             engine.set(v.clone(), v.clone()).await?;
             let got = engine.get(&v).await?;
             assert_eq!(got, Some(v));
+        }
+
+        // Re-open
+        let engine = Engine::open(kernel.clone()).await?;
+        for i in 0..N {
+            let v = i.to_be_bytes().to_vec();
+            let got = engine.get(&v).await?;
+            assert_eq!(got, Some(v))
         }
 
         Ok(())

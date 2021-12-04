@@ -24,8 +24,8 @@ pub struct TableReader {
 
 #[allow(dead_code)]
 impl TableReader {
-    pub async fn new<R: AsyncRead + Unpin>(mut read: R) -> Result<TableReader> {
-        let map = read_all(&mut read).await?;
+    pub async fn new<R: AsyncRead + Unpin>(mut r: R) -> Result<TableReader> {
+        let map = read_all(&mut r).await?;
         Ok(TableReader { map })
     }
 
@@ -36,10 +36,10 @@ impl TableReader {
 
 type IoResult<T> = std::result::Result<T, std::io::Error>;
 
-async fn read_all<R: AsyncRead + Unpin>(read: &mut R) -> IoResult<HashMap<Vec<u8>, Vec<u8>>> {
+async fn read_all<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<HashMap<Vec<u8>, Vec<u8>>> {
     let mut map = HashMap::new();
     loop {
-        match format::read_record(read).await {
+        match format::read_record(r).await {
             Ok(record) => {
                 assert!(map.insert(record.0, record.1).is_none());
             }

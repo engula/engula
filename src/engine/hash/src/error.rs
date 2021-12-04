@@ -21,14 +21,22 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("corrupted: {0}")]
+    Corrupted(String),
+    #[error("unsupported: {0}")]
+    Unsupported(String),
     #[error(transparent)]
     Kernel(#[from] KernelError),
     #[error(transparent)]
     Journal(#[from] JournalError),
     #[error(transparent)]
     Storage(#[from] StorageError),
-    #[error("unsupported {0}")]
-    Unsupported(String),
+}
+
+impl Error {
+    pub fn corrupted<E: ToString>(err: E) -> Self {
+        Self::Corrupted(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
