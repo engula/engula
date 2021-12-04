@@ -18,6 +18,10 @@ pub mod engine {
     }
 }
 
+pub mod kernel {
+    pub use engula_kernel::*;
+}
+
 pub mod journal {
     pub use engula_journal::*;
 }

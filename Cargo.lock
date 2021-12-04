@@ -134,6 +134,7 @@ dependencies = [
  "clap",
  "engula-hash-engine",
  "engula-journal",
+ "engula-kernel",
  "engula-storage",
  "tokio",
 ]
@@ -159,6 +160,19 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "engula-kernel"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "engula-journal",
+ "engula-storage",
+ "futures",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -935,6 +949,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

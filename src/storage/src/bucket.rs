@@ -18,7 +18,7 @@ use crate::{async_trait, Result};
 
 /// An interface to manipulate a bucket.
 #[async_trait]
-pub trait Bucket: Clone + Send + Sync {
+pub trait Bucket: Clone + Send + Sync + 'static {
     type SequentialReader: AsyncRead + Send + Unpin;
     type SequentialWriter: AsyncWrite + Send + Unpin;
 
