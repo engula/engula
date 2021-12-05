@@ -54,6 +54,7 @@ impl From<StorageError> for Error {
             StorageError::AlreadyExists(s) => Self::AlreadyExists(s),
             StorageError::InvalidArgument(s) => Self::InvalidArgument(s),
             StorageError::Io(err) => Self::Io(err),
+            err @ StorageError::Unknown(_) => Self::Unknown(Box::new(err)),
         }
     }
 }
