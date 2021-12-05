@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An Engula engine that provides simple key-value data storage.
+
 mod engine;
 mod error;
 mod format;

@@ -2,6 +2,10 @@
 name = "engula-hash-engine"
 version = "0.2.0"
 edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "An Engula engine that provides simple key-value data storage."
 
 [dependencies]
 engula-kernel = { path = "../../kernel" }
