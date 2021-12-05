@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A [`Storage`] implementation that stores data in memory.
+//!
+//! [`Storage`]: crate::Storage
+
 mod bucket;
 mod storage;
 

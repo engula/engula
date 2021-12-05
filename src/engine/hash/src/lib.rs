@@ -33,7 +33,7 @@ mod tests {
 
     #[tokio::test]
     async fn engine() -> Result<()> {
-        const N: u32 = 4096;
+        const N: u32 = 128;
 
         let kernel = Kernel::default();
         let engine = Engine::open(kernel.clone()).await?;

@@ -28,8 +28,8 @@ pub trait Kernel: Clone + Send + Sync + 'static {
     /// Returns a storage bucket.
     async fn bucket(&self) -> Result<Self::Bucket>;
 
-    /// Installs a kernel update.
-    async fn install_update(&self, update: KernelUpdate) -> Result<()>;
+    /// Applies a kernel update.
+    async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
 
     /// Returns the current version.
     async fn current_version(&self) -> Result<Arc<Version>>;
@@ -44,12 +44,12 @@ pub struct KernelUpdate {
 }
 
 impl KernelUpdate {
-    pub fn set_meta(&mut self, key: impl Into<Vec<u8>>, value: impl Into<Vec<u8>>) -> &mut Self {
+    pub fn set_meta(&mut self, key: impl Into<String>, value: impl Into<Vec<u8>>) -> &mut Self {
         self.update.set_meta.insert(key.into(), value.into());
         self
     }
 
-    pub fn delete_meta(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
+    pub fn delete_meta(&mut self, key: impl Into<String>) -> &mut Self {
         self.update.delete_meta.push(key.into());
         self
     }

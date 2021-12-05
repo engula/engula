@@ -133,7 +133,7 @@ impl<K: Kernel> Engine<K> {
         let last_ts = encode_last_timestamp(imm.last_update_timestamp().await);
         update.set_meta(last_ts.0, last_ts.1);
         update.add_object(object);
-        self.kernel.install_update(update).await?;
+        self.kernel.apply_update(update).await?;
         Ok(())
     }
 
@@ -254,13 +254,13 @@ impl<K: Kernel> EngineVersion<K> {
 }
 
 const MEMTABLE_SIZE: usize = 4 * 1024;
-const LAST_TIMESTAMP: &[u8] = b"last_timestamp";
+const LAST_TIMESTAMP: &str = "last_timestamp";
 
-fn encode_last_timestamp(ts: Timestamp) -> (Vec<u8>, Vec<u8>) {
-    (LAST_TIMESTAMP.to_vec(), ts.to_be_bytes().to_vec())
+fn encode_last_timestamp(ts: Timestamp) -> (&'static str, Vec<u8>) {
+    (LAST_TIMESTAMP, ts.to_be_bytes().to_vec())
 }
 
-fn decode_last_timestamp(map: &HashMap<Vec<u8>, Vec<u8>>) -> Result<Option<Timestamp>> {
+fn decode_last_timestamp(map: &HashMap<String, Vec<u8>>) -> Result<Option<Timestamp>> {
     if let Some(buf) = map.get(LAST_TIMESTAMP) {
         let buf = buf.as_slice().try_into().map_err(Error::corrupted)?;
         Ok(Some(u64::from_be_bytes(buf)))
