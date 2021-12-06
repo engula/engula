@@ -16,7 +16,7 @@ use std::{collections::HashMap, io::ErrorKind};
 
 use tokio::io::AsyncRead;
 
-use crate::{format, Result};
+use crate::{codec, Result};
 
 pub struct TableReader {
     map: HashMap<Vec<u8>, Vec<u8>>,
@@ -39,7 +39,7 @@ type IoResult<T> = std::result::Result<T, std::io::Error>;
 async fn read_all<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<HashMap<Vec<u8>, Vec<u8>>> {
     let mut map = HashMap::new();
     loop {
-        match format::read_record(r).await {
+        match codec::read_record(r).await {
             Ok(record) => {
                 assert!(map.insert(record.0, record.1).is_none());
             }

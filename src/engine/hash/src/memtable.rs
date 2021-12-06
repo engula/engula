@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
 
-use crate::format::{self, Timestamp};
+use crate::codec::{self, Timestamp};
 
 pub struct Memtable {
     inner: Mutex<Inner>,
@@ -47,7 +47,8 @@ impl Memtable {
 
     pub async fn set(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
         let mut inner = self.inner.lock().await;
-        inner.size += format::record_size(&key, &value);
+        inner.size += codec::record_size(&key, &value);
+        assert!(ts > inner.last_ts);
         inner.last_ts = ts;
         inner.map.insert(key, value);
     }

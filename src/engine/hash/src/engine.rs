@@ -14,10 +14,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 
 use engula_kernel::{
@@ -27,7 +24,7 @@ use futures::TryStreamExt;
 use tokio::sync::Mutex;
 
 use crate::{
-    format::{self, Timestamp},
+    codec::{self, Timestamp},
     memtable::Memtable,
     table_builder::TableBuilder,
     table_reader::TableReader,
@@ -40,8 +37,8 @@ pub struct Engine<K: Kernel> {
     stream: K::Stream,
     bucket: K::Bucket,
     current: Arc<Mutex<Arc<EngineVersion<K>>>>,
-    last_ts: Arc<Mutex<Timestamp>>,
-    last_number: Arc<AtomicU64>,
+    last_timestamp: Arc<Mutex<Timestamp>>,
+    last_object_number: Arc<Mutex<u64>>,
 }
 
 impl<K: Kernel> Engine<K> {
@@ -57,8 +54,8 @@ impl<K: Kernel> Engine<K> {
             stream,
             bucket,
             current: Arc::new(Mutex::new(Arc::new(current))),
-            last_ts: Arc::new(Mutex::new(0)),
-            last_number: Arc::new(AtomicU64::new(0)),
+            last_timestamp: Arc::new(Mutex::new(0)),
+            last_object_number: Arc::new(Mutex::new(0)),
         };
         engine.recover().await?;
 
@@ -82,11 +79,11 @@ impl<K: Kernel> Engine<K> {
         while let Some(events) = stream.try_next().await? {
             for event in events {
                 ts += 1;
-                let (key, value) = format::decode_record(&event.data)?;
+                let (key, value) = codec::decode_record(&event.data)?;
                 current.set(ts, key.to_owned(), value.to_owned()).await;
             }
         }
-        *self.last_ts.lock().await = ts;
+        *self.last_timestamp.lock().await = ts;
         Ok(())
     }
 
@@ -96,12 +93,12 @@ impl<K: Kernel> Engine<K> {
     }
 
     pub async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        let mut ts = self.last_ts.lock().await;
+        let mut ts = self.last_timestamp.lock().await;
         *ts += 1;
 
         let event = Event {
             ts: (*ts).into(),
-            data: format::encode_record(&key, &value),
+            data: codec::encode_record(&key, &value),
         };
         self.stream.append_event(event).await?;
 
@@ -119,7 +116,9 @@ impl<K: Kernel> Engine<K> {
     }
 
     async fn flush(self, imm: Arc<Memtable>) -> Result<()> {
-        let number = self.last_number.fetch_add(1, Ordering::SeqCst);
+        let mut number = self.last_object_number.lock().await;
+        (*number) += 1;
+
         let object = format!("{}", number);
         let writer = self.bucket.new_sequential_writer(&object).await?;
 
@@ -130,8 +129,10 @@ impl<K: Kernel> Engine<K> {
         table_builder.finish().await?;
 
         let mut update = KernelUpdate::default();
-        let last_ts = encode_last_timestamp(imm.last_update_timestamp().await);
-        update.set_meta(last_ts.0, last_ts.1);
+        let last_ts = encode_u64_meta(imm.last_update_timestamp().await);
+        update.set_meta(LAST_TIMESTAMP, last_ts);
+        let last_number = encode_u64_meta(*number);
+        update.set_meta(LAST_OBJECT_NUMBER, last_number);
         update.add_object(object);
         self.kernel.apply_update(update).await?;
         Ok(())
@@ -167,6 +168,7 @@ struct EngineVersion<K: Kernel> {
     bucket: K::Bucket,
     last_sequence: Sequence,
     last_timestamp: Timestamp,
+    last_object_number: u64,
     mem: Arc<Memtable>,
     imm: VecDeque<Arc<Memtable>>,
     tables: Vec<Arc<TableReader>>,
@@ -180,11 +182,13 @@ impl<K: Kernel> EngineVersion<K> {
             let table_reader = TableReader::new(reader).await?;
             tables.push(Arc::new(table_reader));
         }
-        let last_timestamp = decode_last_timestamp(&version.meta)?.unwrap_or(0);
+        let last_timestamp = decode_u64_meta(&version.meta, LAST_TIMESTAMP)?.unwrap_or(0);
+        let last_object_number = decode_u64_meta(&version.meta, LAST_OBJECT_NUMBER)?.unwrap_or(0);
         Ok(Self {
             bucket,
             last_sequence: version.sequence,
             last_timestamp,
+            last_object_number,
             mem: Arc::new(Memtable::new(0)),
             imm: VecDeque::new(),
             tables,
@@ -233,8 +237,11 @@ impl<K: Kernel> EngineVersion<K> {
 
         let mut version = self.clone();
         version.last_sequence = update.sequence;
-        if let Some(ts) = decode_last_timestamp(&update.set_meta)? {
-            version.last_timestamp = ts;
+        if let Some(value) = decode_u64_meta(&update.set_meta, LAST_TIMESTAMP)? {
+            version.last_timestamp = value;
+        }
+        if let Some(value) = decode_u64_meta(&update.set_meta, LAST_OBJECT_NUMBER)? {
+            version.last_object_number = value;
         }
 
         for object in &update.add_objects {
@@ -251,13 +258,14 @@ impl<K: Kernel> EngineVersion<K> {
 
 const MEMTABLE_SIZE: usize = 4 * 1024;
 const LAST_TIMESTAMP: &str = "last_timestamp";
+const LAST_OBJECT_NUMBER: &str = "last_object_number";
 
-fn encode_last_timestamp(ts: Timestamp) -> (&'static str, Vec<u8>) {
-    (LAST_TIMESTAMP, ts.to_be_bytes().to_vec())
+fn encode_u64_meta(value: u64) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
 }
 
-fn decode_last_timestamp(map: &HashMap<String, Vec<u8>>) -> Result<Option<Timestamp>> {
-    if let Some(buf) = map.get(LAST_TIMESTAMP) {
+fn decode_u64_meta(map: &HashMap<String, Vec<u8>>, name: &str) -> Result<Option<u64>> {
+    if let Some(buf) = map.get(name) {
         let buf = buf.as_slice().try_into().map_err(Error::corrupted)?;
         Ok(Some(u64::from_be_bytes(buf)))
     } else {

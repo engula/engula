@@ -14,7 +14,7 @@
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{format, Result};
+use crate::{codec, Result};
 
 pub struct TableBuilder<W: AsyncWrite + Unpin> {
     write: W,
@@ -67,7 +67,7 @@ impl BlockBuilder {
     }
 
     fn add(&mut self, key: &[u8], value: &[u8]) {
-        format::put_record(&mut self.buf, key, value);
+        codec::put_record(&mut self.buf, key, value);
     }
 
     fn data(&self) -> &[u8] {

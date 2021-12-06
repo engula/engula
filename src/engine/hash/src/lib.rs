@@ -14,9 +14,9 @@
 
 //! An Engula engine that provides simple key-value data storage.
 
+mod codec;
 mod engine;
 mod error;
-mod format;
 mod memtable;
 mod table_builder;
 mod table_reader;
