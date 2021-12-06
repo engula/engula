@@ -13,21 +13,20 @@
 // limitations under the License.
 
 use std::{
-    io::{Error as IoError, ErrorKind, IoSlice},
+    io::{Error as IoError, ErrorKind},
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::{
-    ready,
-    stream::{self, StreamExt},
-    Future, FutureExt,
-};
+use futures::{stream::StreamExt, FutureExt};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    sync::mpsc::{self, error::TrySendError, Receiver, Sender},
+    sync::mpsc,
+    task::JoinHandle,
 };
-use tonic::{IntoStreamingRequest, Request, Streaming};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::PollSender;
+use tonic::Streaming;
 
 use super::{
     client::Client,
@@ -36,7 +35,7 @@ use super::{
         UploadObjectResponse,
     },
 };
-use crate::{async_trait, Error, Result};
+use crate::{async_trait, Result};
 
 #[derive(Clone)]
 pub struct Bucket {
@@ -50,13 +49,6 @@ impl Bucket {
             client,
             bucket_name: bucket_name.into(),
         }
-    }
-
-    async fn init_upload(
-        client: Client,
-        req: impl IntoStreamingRequest<Message = UploadObjectRequest>,
-    ) -> std::result::Result<UploadObjectResponse, Error> {
-        client.upload_object(req).await
     }
 }
 
@@ -78,7 +70,7 @@ impl crate::Bucket for Bucket {
         let input = ReadObjectRequest {
             bucket: self.bucket_name.to_owned(),
             object: name.to_owned(),
-            offset: 0_i64,
+            offset: 0,
             length: i64::MAX,
         };
         let stream = self.client.read_object(input).await?;
@@ -86,36 +78,11 @@ impl crate::Bucket for Bucket {
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter> {
-        let (tx, rx) = mpsc::channel(1);
-        let bucket_name = self.bucket_name.to_owned();
-        let object_name = name.to_owned();
-
-        struct WriteCtx {
-            rx: Receiver<Vec<u8>>,
-            bucket_name: String,
-            object_name: String,
-        }
-
-        let init = WriteCtx {
-            rx,
-            bucket_name,
-            object_name,
-        };
-        let is = stream::unfold(init, |mut s| async move {
-            match s.rx.recv().await {
-                Some(up) => Some((
-                    UploadObjectRequest {
-                        bucket: s.bucket_name.to_owned(),
-                        object: s.object_name.to_owned(),
-                        content: up,
-                    },
-                    s,
-                )),
-                None => None,
-            }
-        });
-        let upload_fut = Self::init_upload(self.client.clone(), Request::new(is));
-        Ok(SequentialWriter::new(tx, Box::pin(upload_fut)))
+        Ok(SequentialWriter::new(
+            self.client.clone(),
+            self.bucket_name.to_owned(),
+            name.to_owned(),
+        ))
     }
 }
 
@@ -152,20 +119,23 @@ impl AsyncRead for SequentialReader {
 }
 
 pub struct SequentialWriter {
-    tx: Option<Sender<Vec<u8>>>,
-    fut: Pin<Box<dyn Future<Output = std::result::Result<UploadObjectResponse, Error>> + Send>>,
-    buf: Vec<u8>,
+    tx: PollSender<UploadObjectRequest>,
+    upload: JoinHandle<Result<UploadObjectResponse>>,
+    bucket_name: String,
+    object_name: String,
 }
 
 impl SequentialWriter {
-    fn new(
-        tx: Sender<Vec<u8>>,
-        fut: Pin<Box<dyn Future<Output = std::result::Result<UploadObjectResponse, Error>> + Send>>,
-    ) -> Self {
+    fn new(client: Client, bucket_name: String, object_name: String) -> Self {
+        let (tx, rx) = mpsc::channel(16);
+        let tx = PollSender::new(tx);
+        let rx = ReceiverStream::new(rx);
+        let upload = tokio::spawn(async move { client.upload_object(rx).await });
         Self {
-            tx: Some(tx),
-            fut,
-            buf: Vec::new(),
+            tx,
+            upload,
+            bucket_name,
+            object_name,
         }
     }
 }
@@ -176,67 +146,40 @@ impl AsyncWrite for SequentialWriter {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<IoResult<usize>> {
-        Pin::new(&mut self.buf).poll_write(cx, buf)
+        self.tx.poll_send_done(cx).map(|ready| {
+            ready
+                .and_then(|_| {
+                    let req = UploadObjectRequest {
+                        bucket: self.bucket_name.clone(),
+                        object: self.object_name.clone(),
+                        content: buf.to_owned(),
+                    };
+                    self.tx.start_send(req)
+                })
+                .map(|_| buf.len())
+                .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
+        })
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        match ready!(Pin::new(&mut self.buf).poll_flush(cx)) {
-            Ok(_) => match &self.tx {
-                Some(tx) => match tx.try_send(self.buf.clone()) {
-                    Ok(_) => {
-                        Pin::new(&mut self.buf).clear();
-                        Poll::Ready(Ok(()))
-                    }
-                    Err(TrySendError::Full(_)) => match Pin::new(&mut self).fut.poll_unpin(cx) {
-                        Poll::Ready(_) => Poll::Pending,
-                        Poll::Pending => Poll::Pending,
-                    },
-                    Err(TrySendError::Closed(_)) => Poll::Ready(Err(IoError::new(
-                        ErrorKind::Other,
-                        "unexpect channel closed",
-                    ))),
-                },
-                None => Poll::Ready(Err(IoError::new(
-                    ErrorKind::Other,
-                    "flush on shutdown writer",
-                ))),
-            },
-            Err(e) => Poll::Ready(Err(e)),
-        }
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<IoResult<()>> {
+        // Not sure what guarantee we should provide here yet.
+        Poll::Ready(Ok(()))
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        match ready!(Pin::new(&mut self.buf).poll_shutdown(cx)) {
-            Ok(_) => {
-                if !self.buf.is_empty() {
-                    if let Some(tx) = &self.tx {
-                        if tx.try_send(self.buf.clone()).is_ok() {
-                            Pin::new(&mut self.buf).clear();
-                        }
-                    }
+        match self.tx.poll_send_done(cx) {
+            Poll::Ready(ready) => match ready {
+                Ok(()) => {
+                    self.tx.close_this_sender();
+                    self.upload.poll_unpin(cx).map(|ready| {
+                        ready
+                            .map(|_| ())
+                            .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
+                    })
                 }
-                let p = Pin::new(&mut self.fut).poll_unpin(cx);
-                if self.buf.is_empty() {
-                    self.tx = None;
-                }
-                match p {
-                    Poll::Ready(_) => Poll::Ready(Ok(())),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-            Err(e) => Poll::Ready(Err(IoError::new(ErrorKind::Other, e.to_string()))),
+                Err(err) => Poll::Ready(Err(IoError::new(ErrorKind::Other, err.to_string()))),
+            },
+            Poll::Pending => Poll::Pending,
         }
-    }
-
-    fn poll_write_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bufs: &[IoSlice<'_>],
-    ) -> Poll<IoResult<usize>> {
-        Pin::new(&mut self.buf).poll_write_vectored(cx, bufs)
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        self.buf.is_write_vectored()
     }
 }
