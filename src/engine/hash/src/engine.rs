@@ -180,11 +180,7 @@ impl<K: Kernel> EngineVersion<K> {
             let table_reader = TableReader::new(reader).await?;
             tables.push(Arc::new(table_reader));
         }
-        let last_timestamp = if let Some(ts) = decode_last_timestamp(&version.meta)? {
-            ts
-        } else {
-            0
-        };
+        let last_timestamp = decode_last_timestamp(&version.meta)?.unwrap_or(0);
         Ok(Self {
             bucket,
             last_sequence: version.sequence,
