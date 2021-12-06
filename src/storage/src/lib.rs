@@ -23,16 +23,20 @@
 //!
 //! Some built-in implementations of [`Storage`]:
 //!
+//! - [`file`](crate::file)
+//! - [`grpc`](crate::grpc)
 //! - [`mem`](crate::mem)
 //!
 //! [`Storage`]: crate::Storage
+
+#![feature(type_alias_impl_trait)]
 
 mod bucket;
 mod error;
 mod storage;
 
 pub mod file;
-// pub mod grpc;
+pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;

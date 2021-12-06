@@ -12,14 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
+use crate::Error;
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    GrpcStatus(#[from] tonic::Status),
-    #[error(transparent)]
-    GrpcTransport(#[from] tonic::transport::Error),
+impl From<tonic::Status> for Error {
+    fn from(s: tonic::Status) -> Self {
+        Error::Unknown(Box::new(s))
+    }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+impl From<tonic::transport::Error> for Error {
+    fn from(e: tonic::transport::Error) -> Self {
+        Error::Unknown(Box::new(e))
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let (code, message) = match err {
+            Error::NotFound(s) => (tonic::Code::NotFound, s),
+            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
+            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
+            Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
+        };
+        tonic::Status::new(code, message)
+    }
+}
