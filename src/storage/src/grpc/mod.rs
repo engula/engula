@@ -23,7 +23,7 @@ mod proto;
 mod server;
 mod storage;
 
-pub use self::{client::Client, server::Server, storage::Storage as RemoteStorage};
+pub use self::{client::Client, server::Server, storage::Storage};
 
 #[cfg(test)]
 mod tests {
@@ -34,7 +34,6 @@ mod tests {
     };
     use tokio_stream::wrappers::TcpListenerStream;
 
-    use super::*;
     use crate::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -42,7 +41,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let server = Server::new(mem::Storage::default());
+            let server = super::Server::new(mem::Storage::default());
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
@@ -50,7 +49,7 @@ mod tests {
                 .unwrap();
         });
         let url = format!("http://{}", local_addr);
-        let storage = RemoteStorage::connect(&url).await?;
+        let storage = super::Storage::connect(&url).await?;
         storage.create_bucket("bucket").await?;
         let b = storage.bucket("bucket").await?;
         let mut w = b.new_sequential_writer("object").await?;

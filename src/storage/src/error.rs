@@ -25,7 +25,7 @@ pub enum Error {
     InvalidArgument(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("unknown: {0}")]
+    #[error(transparent)]
     Unknown(Box<dyn std::error::Error + Send>),
 }
 

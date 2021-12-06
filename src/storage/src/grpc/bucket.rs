@@ -68,9 +68,6 @@ impl crate::Bucket for Bucket {
         let input = ReadObjectRequest {
             bucket: self.bucket_name.to_owned(),
             object: name.to_owned(),
-            // both unused for sequential reader.
-            offset: 0,
-            length: 0,
         };
         let stream = self.client.read_object(input).await?;
 

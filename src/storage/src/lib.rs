@@ -24,8 +24,8 @@
 //! Some built-in implementations of [`Storage`]:
 //!
 //! - [`file`](crate::file)
-//! - [`mem`](crate::mem)
 //! - [`grpc`](crate::grpc)
+//! - [`mem`](crate::mem)
 //!
 //! [`Storage`]: crate::Storage
 

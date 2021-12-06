@@ -64,8 +64,6 @@ message DeleteObjectResponse {}
 message ReadObjectRequest {
     string bucket = 1;
     string object = 2;
-    int64 offset = 3;
-    int64 length = 4;
 }
 
 message ReadObjectResponse {
