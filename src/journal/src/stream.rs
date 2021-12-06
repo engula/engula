@@ -12,39 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
+use std::convert::TryInto;
 
-use serde::{de::DeserializeOwned, Serialize};
-
-use super::async_trait;
+use crate::{async_trait, Error, Result, ResultStream};
 
 /// A generic timestamp to order events.
-pub trait Timestamp:
-    Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned
-{
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub struct Timestamp(u64);
+
+impl Timestamp {
+    pub fn serialize(&self) -> Vec<u8> {
+        self.0.to_be_bytes().to_vec()
+    }
+
+    pub fn deserialize(bytes: Vec<u8>) -> Result<Self> {
+        let bytes: [u8; 8] = bytes
+            .try_into()
+            .map_err(|v| Error::Unknown(format!("malformed bytes: {:?}", v)))?;
+        Ok(Self(u64::from_be_bytes(bytes)))
+    }
 }
 
-impl<T: Ord + Send + Sync + Copy + Debug + Unpin + Serialize + DeserializeOwned> Timestamp for T {}
+impl From<u64> for Timestamp {
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Event<T: Timestamp> {
-    pub ts: T,
+pub struct Event {
+    pub ts: Timestamp,
     pub data: Vec<u8>,
 }
 
 /// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream {
-    type Error;
-    type Timestamp: Timestamp;
-    type EventStream: futures::Stream<Item = Result<Event<Self::Timestamp>, Self::Error>> + Unpin;
-
+pub trait Stream: Clone + Send + Sync + 'static {
     /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Self::Timestamp) -> Result<Self::EventStream, Self::Error>;
+    async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>>;
 
     /// Appends an event.
-    async fn append_event(&self, event: Event<Self::Timestamp>) -> Result<(), Self::Error>;
+    async fn append_event(&self, event: Event) -> Result<()>;
 
     /// Releases events up to a timestamp (exclusive).
-    async fn release_events(&self, ts: Self::Timestamp) -> Result<(), Self::Error>;
+    async fn release_events(&self, ts: Timestamp) -> Result<()>;
 }

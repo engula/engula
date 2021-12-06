@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   audit:
-    name: Audit
+    name: Audit License
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
