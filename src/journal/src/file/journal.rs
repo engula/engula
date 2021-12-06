@@ -20,27 +20,28 @@ use tokio::{fs, io};
 
 use super::{
     error::{Error, Result},
-    stream::MemStream,
+    stream::Stream,
 };
 
-use crate::{async_trait, Journal, Timestamp};
+use crate::{async_trait, Timestamp};
 use crate::file::FileStream;
 use futures::StreamExt;
 use std::ffi::{OsString, OsStr};
 
 
-pub struct FileJournal<T: Timestamp> {
-    streams: Mutex<HashMap<String, FileStream<T>>>,
+#[derive(Clone)]
+pub struct Journal {
+    streams: Mutex<HashMap<String, Stream>>,
     root: PathBuf,
 }
 
-impl<T: Timestamp> FileJournal<T> {
-    pub fn new(root: impl Into<PathBuf>) -> Result<FileJournal<T>> {
+impl Journal {
+    pub fn new(root: impl Into<PathBuf>) -> Result<Journal> {
         let path = root.into();
 
         match fs::DirBuilder::new().recursive(true).create(&path).await {
             Ok(_) => {
-                let mut journal = FileJournal {
+                let mut journal = Journal {
                     root: path,
                     streams: Mutex::new(HashMap::new()),
                 };
@@ -81,17 +82,19 @@ impl<T: Timestamp> FileJournal<T> {
 
 
 #[async_trait]
-impl<T: Timestamp> Journal<FileStream<T>> for FileJournal<T> {
+impl crate::Journal for Journal {
+    type Stream = Stream;
 
-    async fn stream(&self, name: &str) -> Result<FileStream<T>> {
+    async fn stream(&self, name: &str) -> Result<Stream> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
+            // todo 如何进行拷贝？？？？
             Some(stream) => Ok(stream.clone()),
             None => Err(Error::NotFound(format!("stream '{}'", name))),
         }
     }
 
-    async fn create_stream(&self, name: &str) -> Result<FileStream<T>> {
+    async fn create_stream(&self, name: &str) -> Result<Stream> {
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {

@@ -16,11 +16,7 @@ mod error;
 mod journal;
 mod stream;
 
-pub use self::{
-    error::{Error, Result},
-    journal::FileJournal,
-    stream::FileStream,
-};
+pub use self::{journal::Journal, stream::Stream};
 
 #[cfg(test)]
 mod tests {
