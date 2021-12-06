@@ -23,8 +23,6 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("corrupted: {0}")]
     Corrupted(String),
-    #[error("unsupported: {0}")]
-    Unsupported(String),
     #[error(transparent)]
     Kernel(#[from] KernelError),
     #[error(transparent)]

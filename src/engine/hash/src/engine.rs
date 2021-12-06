@@ -20,9 +20,9 @@ use std::{
     },
 };
 
-use engula_journal::{Event, Stream};
-use engula_kernel::{Kernel, KernelUpdate, ResultStream, Sequence, Version, VersionUpdate};
-use engula_storage::Bucket;
+use engula_kernel::{
+    Bucket, Event, Kernel, KernelUpdate, ResultStream, Sequence, Stream, Version, VersionUpdate,
+};
 use futures::TryStreamExt;
 use tokio::sync::Mutex;
 
