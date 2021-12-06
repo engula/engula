@@ -16,7 +16,6 @@ members = [
     "src/background",
     "src/microunit",
     "src/platform/aws",
-    "src/cache"
 ]
 
 [dependencies]
