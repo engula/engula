@@ -64,31 +64,4 @@ mod tests {
         assert_eq!(got, buf);
         Ok(())
     }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_forgot_flush() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let local_addr = listener.local_addr()?;
-        tokio::task::spawn(async move {
-            let server = Server::new(mem::Storage::default());
-            tonic::transport::Server::builder()
-                .add_service(server.into_service())
-                .serve_with_incoming(TcpListenerStream::new(listener))
-                .await
-                .unwrap();
-        });
-        let url = format!("http://{}", local_addr);
-        let storage = RemoteStorage::connect(&url).await?;
-        storage.create_bucket("bucket").await?;
-        let b = storage.bucket("bucket").await?;
-        let mut w = b.new_sequential_writer("object").await?;
-        let buf = vec![0, 1, 2];
-        w.write(&buf).await?;
-        w.shutdown().await?;
-        let mut r = b.new_sequential_reader("object").await?;
-        let mut got = Vec::new();
-        r.read_to_end(&mut got).await?;
-        assert_eq!(got, buf);
-        Ok(())
-    }
 }

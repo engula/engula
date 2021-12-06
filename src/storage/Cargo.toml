@@ -16,7 +16,7 @@ tonic = "0.6"
 prost = "0.9"
 futures = "0.3"
 tokio-stream = { version = "0.1", features = ["net"] }
-tokio-util = { version = "0.6" }
+tokio-util = { version = "0.6", features = ["io"] }
 
 [dev-dependencies]
 tempfile = "3"

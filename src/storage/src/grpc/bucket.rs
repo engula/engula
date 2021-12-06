@@ -18,22 +18,19 @@ use std::{
     task::{Context, Poll},
 };
 
+use bytes::Bytes;
 use futures::{stream::StreamExt, FutureExt};
 use tokio::{
-    io::{AsyncRead, AsyncWrite, ReadBuf},
+    io::{AsyncRead, AsyncWrite},
     sync::mpsc,
     task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_util::sync::PollSender;
-use tonic::Streaming;
+use tokio_util::{io::StreamReader, sync::PollSender};
 
 use super::{
     client::Client,
-    proto::{
-        DeleteObjectRequest, ReadObjectRequest, ReadObjectResponse, UploadObjectRequest,
-        UploadObjectResponse,
-    },
+    proto::{DeleteObjectRequest, ReadObjectRequest, UploadObjectRequest, UploadObjectResponse},
 };
 use crate::{async_trait, Result};
 
@@ -54,8 +51,9 @@ impl Bucket {
 
 #[async_trait]
 impl crate::Bucket for Bucket {
-    type SequentialReader = SequentialReader;
     type SequentialWriter = SequentialWriter;
+
+    type SequentialReader = impl AsyncRead + Send + Unpin;
 
     async fn delete_object(&self, name: &str) -> Result<()> {
         let input = DeleteObjectRequest {
@@ -70,11 +68,17 @@ impl crate::Bucket for Bucket {
         let input = ReadObjectRequest {
             bucket: self.bucket_name.to_owned(),
             object: name.to_owned(),
+            // both unused for sequential reader.
             offset: 0,
-            length: i64::MAX,
+            length: 0,
         };
         let stream = self.client.read_object(input).await?;
-        Ok(SequentialReader::new(stream))
+
+        let byte_stream = stream.map(|res| {
+            res.map(|resp| Bytes::from(resp.content))
+                .map_err(|s| IoError::new(ErrorKind::Other, format!("{:?}", s)))
+        });
+        Ok(StreamReader::new(byte_stream))
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter> {
@@ -87,36 +91,6 @@ impl crate::Bucket for Bucket {
 }
 
 type IoResult<T> = std::result::Result<T, IoError>;
-
-pub struct SequentialReader {
-    stream: Streaming<ReadObjectResponse>,
-}
-
-impl SequentialReader {
-    fn new(stream: Streaming<ReadObjectResponse>) -> Self {
-        Self { stream }
-    }
-}
-
-impl AsyncRead for SequentialReader {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<IoResult<()>> {
-        match self.stream.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(m))) => {
-                buf.put_slice(&m.content);
-                Poll::Ready(Ok(()))
-            }
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Err(IoError::new(ErrorKind::Other, format!("{:?}", e))))
-            }
-            Poll::Ready(None) => Poll::Ready(Ok(())),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
 
 pub struct SequentialWriter {
     tx: PollSender<UploadObjectRequest>,
