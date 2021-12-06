@@ -12,51 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
-
-use futures::{stream, Stream, StreamExt};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use futures::{stream, Stream, TryStreamExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tonic::{Request, Response, Status, Streaming};
 
 use super::proto::*;
 use crate::{Bucket, Storage};
 
-pub struct Server<B, S>
-where
-    B: Bucket,
-    S: Storage,
-{
+pub struct Server<S: Storage> {
     storage: S,
-    _bucket: PhantomData<B>,
 }
 
-impl<B, S> Server<B, S>
-where
-    B: Bucket + Send + Sync + 'static,
-    B::SequentialWriter: AsyncWrite + Send + Sync + 'static,
-    B::SequentialReader: AsyncRead + Send + Sync + 'static,
-    S: Storage<Bucket = B> + Send + Sync + 'static,
-{
+impl<S: Storage> Server<S> {
     pub fn new(storage: S) -> Self {
-        Server {
-            storage,
-            _bucket: PhantomData,
-        }
+        Self { storage }
     }
 
-    pub fn into_service(self) -> storage_server::StorageServer<Server<B, S>> {
+    pub fn into_service(self) -> storage_server::StorageServer<Server<S>> {
         storage_server::StorageServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<B, S> storage_server::Storage for Server<B, S>
-where
-    B: Bucket + Send + Sync + 'static,
-    B::SequentialWriter: AsyncWrite + Send + Sync + 'static,
-    B::SequentialReader: AsyncRead + Send + Sync + 'static,
-    S: Storage<Bucket = B> + Send + Sync + 'static,
-{
+impl<S: Storage> storage_server::Storage for Server<S> {
     type ReadObjectStream = impl Stream<Item = std::result::Result<ReadObjectResponse, Status>>;
 
     async fn create_bucket(
@@ -81,19 +59,16 @@ where
         &self,
         request: Request<Streaming<UploadObjectRequest>>,
     ) -> Result<Response<UploadObjectResponse>, Status> {
-        let mut stream = request.into_inner().ready_chunks(1);
-        let mut cw: Option<B::SequentialWriter> = None;
-        while let Some(reqs) = stream.next().await {
-            for req in reqs {
-                let req = req?;
-                if cw.is_none() {
-                    let b = self.storage.bucket(&req.bucket).await?;
-                    let w = b.new_sequential_writer(&req.object).await?;
-                    cw = Some(w);
-                }
-                if let Some(w) = &mut cw {
-                    w.write(&req.content).await?;
-                }
+        let mut stream = request.into_inner();
+        let mut cw = None;
+        while let Some(req) = stream.try_next().await? {
+            if cw.is_none() {
+                let b = self.storage.bucket(&req.bucket).await?;
+                let w = b.new_sequential_writer(&req.object).await?;
+                cw = Some(w);
+            }
+            if let Some(w) = &mut cw {
+                w.write_all(&req.content).await?;
             }
         }
         if let Some(w) = &mut cw {
@@ -128,7 +103,7 @@ where
             req_size: i64,
         }
 
-        let init_state = ReadCtx::<B> {
+        let init_state = ReadCtx::<S::Bucket> {
             r,
             batch_size,
             req_size,
@@ -150,7 +125,7 @@ where
                         };
                         Some((
                             Ok(output),
-                            ReadCtx::<B> {
+                            ReadCtx::<S::Bucket> {
                                 r: s.r,
                                 batch_size: s.batch_size,
                                 req_size: s.req_size - cut as i64,
