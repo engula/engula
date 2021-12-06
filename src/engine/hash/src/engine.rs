@@ -80,7 +80,7 @@ impl<K: Kernel> Engine<K> {
             for event in events {
                 ts += 1;
                 let (key, value) = codec::decode_record(&event.data)?;
-                current.set(ts, key.to_owned(), value.to_owned()).await;
+                current.put(ts, key.to_owned(), value.to_owned()).await;
             }
         }
         *self.last_timestamp.lock().await = ts;
@@ -92,7 +92,7 @@ impl<K: Kernel> Engine<K> {
         current.get(key).await
     }
 
-    pub async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let mut ts = self.last_timestamp.lock().await;
         *ts += 1;
 
@@ -103,7 +103,7 @@ impl<K: Kernel> Engine<K> {
         self.stream.append_event(event).await?;
 
         let current = self.current_version().await;
-        current.set(*ts, key, value).await;
+        current.put(*ts, key, value).await;
 
         if let Some((imm, version)) = current.should_flush().await {
             self.install_version(Arc::new(version)).await;
@@ -214,8 +214,8 @@ impl<K: Kernel> EngineVersion<K> {
         Ok(None)
     }
 
-    async fn set(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
-        self.mem.set(ts, key, value).await;
+    async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
+        self.mem.put(ts, key, value).await;
     }
 
     async fn should_flush(&self) -> Option<(Arc<Memtable>, EngineVersion<K>)> {

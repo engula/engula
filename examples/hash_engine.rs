@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let engine = Engine::open(kernel).await?;
     let key = vec![1];
     let value = vec![2];
-    engine.set(key.clone(), value.clone()).await?;
+    engine.put(key.clone(), value.clone()).await?;
     let got = engine.get(&key).await?;
     assert_eq!(got, Some(value));
     Ok(())

@@ -41,7 +41,7 @@ mod tests {
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
             let v = i.to_be_bytes().to_vec();
-            engine.set(v.clone(), v.clone()).await?;
+            engine.put(v.clone(), v.clone()).await?;
             let got = engine.get(&v).await?;
             assert_eq!(got, Some(v));
         }

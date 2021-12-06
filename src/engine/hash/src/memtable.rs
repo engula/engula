@@ -45,7 +45,7 @@ impl Memtable {
         inner.map.get(key).cloned()
     }
 
-    pub async fn set(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
+    pub async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
         let mut inner = self.inner.lock().await;
         inner.size += codec::record_size(&key, &value);
         assert!(ts > inner.last_ts);
