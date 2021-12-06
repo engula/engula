@@ -25,13 +25,13 @@ service Storage {
 
     // APIs to manipulate a bucket.
 
-    rpc UploadObject(UploadObjectRequest) returns (UploadObjectResponse) {}
+    rpc UploadObject(stream UploadObjectRequest) returns (UploadObjectResponse) {}
 
     rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
 
     // APIs to manipulate an object.
 
-    rpc ReadObject(ReadObjectRequest) returns (ReadObjectResponse) {}
+    rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse) {}
 }
 
 message CreateBucketRequest {
@@ -64,8 +64,6 @@ message DeleteObjectResponse {}
 message ReadObjectRequest {
     string bucket = 1;
     string object = 2;
-    int64 offset = 3;
-    int64 length = 4;
 }
 
 message ReadObjectResponse {
