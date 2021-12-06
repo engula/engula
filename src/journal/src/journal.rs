@@ -12,17 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{async_trait, stream::Stream};
+use crate::{async_trait, Result, Stream};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal<S: Stream> {
+pub trait Journal: Clone + Send + Sync + 'static {
+    type Stream: Stream;
+
     /// Returns a stream.
-    async fn stream(&self, name: &str) -> Result<S, S::Error>;
+    async fn stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Creates a stream.
-    async fn create_stream(&self, name: &str) -> Result<S, S::Error>;
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AlreadyExists` if the stream already exists.
+    async fn create_stream(&self, name: &str) -> Result<Self::Stream>;
 
     /// Deletes a stream.
-    async fn delete_stream(&self, name: &str) -> Result<(), S::Error>;
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NotFound` if the stream doesn't exist.
+    async fn delete_stream(&self, name: &str) -> Result<()>;
 }

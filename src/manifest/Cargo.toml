@@ -1,8 +1,0 @@
-[package]
-name = "manifest"
-version = "0.2.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-async-trait = "0.1"

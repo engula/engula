@@ -12,33 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
-//! implementations.
+//! A [`Kernel`] implementation that stores everything in memory.
 //!
-//! # Abstraction
-//!
-//! [`Storage`] is an abstraction to store data objects.
-//!
-//! # Implementation
-//!
-//! Some built-in implementations of [`Storage`]:
-//!
-//! - [`mem`](crate::mem)
-//!
-//! [`Storage`]: crate::Storage
+//! [`Kernel`]: crate::Kernel
 
-mod bucket;
-mod error;
-mod storage;
+pub use engula_journal::mem::Stream;
+pub use engula_storage::mem::Bucket;
 
-pub mod file;
-// pub mod grpc;
-pub mod mem;
+pub type Kernel = super::Kernel<Stream, Bucket>;
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    bucket::Bucket,
-    error::{Error, Result},
-    storage::Storage,
-};
+impl Default for Kernel {
+    fn default() -> Self {
+        let stream = Stream::default();
+        let bucket = Bucket::default();
+        Self::new(stream, bucket)
+    }
+}

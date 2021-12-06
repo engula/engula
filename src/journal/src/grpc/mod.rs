@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A [`Journal`] implementation that interacts with gRPC journal service.
+//!
+//! [`Journal`]: crate::Journal
+
 mod client;
 mod error;
 mod journal;
@@ -19,21 +23,15 @@ mod proto;
 mod server;
 mod stream;
 
-pub use self::{
-    client::Client,
-    error::{Error, Result},
-    journal::RemoteJournal,
-    server::Server,
-    stream::{EventStream, RemoteStream},
-};
+pub use self::{client::Client, journal::Journal, server::Server, stream::Stream};
 
 #[cfg(test)]
 mod tests {
-    use futures::StreamExt;
+    use futures::TryStreamExt;
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
 
-    use super::*;
+    use super::Server;
     use crate::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -41,7 +39,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let j: mem::MemJournal<u64> = mem::MemJournal::default();
+            let j = mem::Journal::default();
             let server = Server::new(j);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
@@ -51,23 +49,24 @@ mod tests {
         });
 
         let url = format!("http://{}", local_addr);
-        let journal = RemoteJournal::connect(&url).await?;
+        let journal = grpc::Journal::connect(&url).await?;
         let stream = journal.create_stream("s").await?;
+        let ts = 31340128116183;
         let event = Event {
-            ts: 1,
+            ts: ts.into(),
             data: vec![0, 1, 2],
         };
         stream.append_event(event.clone()).await?;
         {
-            let mut events = stream.read_events(0).await?;
-            let got = events.next().await.unwrap()?;
-            assert_eq!(got, event);
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![event]);
         }
-        stream.release_events(2).await?;
+        stream.release_events((ts + 1).into()).await?;
         {
-            let mut events = stream.read_events(0).await?;
-            let got = events.next().await;
-            assert!(got.is_none());
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![]);
         }
         let _ = journal.delete_stream("s").await?;
         Ok(())

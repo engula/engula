@@ -12,33 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
-//! implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an abstraction to store data objects.
-//!
-//! # Implementation
-//!
-//! Some built-in implementations of [`Storage`]:
-//!
-//! - [`mem`](crate::mem)
-//!
-//! [`Storage`]: crate::Storage
+use thiserror::Error;
 
-mod bucket;
-mod error;
-mod storage;
+/// Errors for all journal operations.
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0} is not found")]
+    NotFound(String),
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+    #[error("{0}")]
+    InvalidArgument(String),
+    #[error("unknown: {0}")]
+    Unknown(String),
+}
 
-pub mod file;
-// pub mod grpc;
-pub mod mem;
-
-pub use async_trait::async_trait;
-
-pub use self::{
-    bucket::Bucket,
-    error::{Error, Result},
-    storage::Storage,
-};
+pub type Result<T> = std::result::Result<T, Error>;

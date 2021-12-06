@@ -12,33 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
-//! implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an abstraction to store data objects.
-//!
-//! # Implementation
-//!
-//! Some built-in implementations of [`Storage`]:
-//!
-//! - [`mem`](crate::mem)
-//!
-//! [`Storage`]: crate::Storage
+use engula::engine::hash::{Engine, Result};
 
-mod bucket;
-mod error;
-mod storage;
-
-pub mod file;
-// pub mod grpc;
-pub mod mem;
-
-pub use async_trait::async_trait;
-
-pub use self::{
-    bucket::Bucket,
-    error::{Error, Result},
-    storage::Storage,
-};
+#[tokio::main]
+async fn main() -> Result<()> {
+    let engine = Engine::new();
+    let key = vec![1];
+    let value = vec![2];
+    engine.set(key.clone(), value.clone()).await?;
+    let got = engine.get(&key).await?;
+    assert_eq!(got, Some(value));
+    Ok(())
+}

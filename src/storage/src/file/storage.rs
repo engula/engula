@@ -14,21 +14,18 @@
 
 use std::path::{Path, PathBuf};
 
-use tokio::{fs, io};
+use tokio::fs;
 
-use super::{
-    error::{Error, Result},
-    object::FileObject,
-    uploader::FileObjectUploader,
-};
-use crate::{async_trait, Storage};
+use super::bucket::{try_exists, Bucket};
+use crate::{async_trait, Error, Result};
 
-pub struct FileStorage {
+#[derive(Clone)]
+pub struct Storage {
     root: PathBuf,
 }
 
-impl FileStorage {
-    pub async fn new(root: impl Into<PathBuf>) -> Result<FileStorage> {
+impl Storage {
+    pub async fn new(root: impl Into<PathBuf>) -> Result<Storage> {
         let path = root.into();
         fs::DirBuilder::new().recursive(true).create(&path).await?;
         Ok(Self { root: path })
@@ -37,17 +34,18 @@ impl FileStorage {
     fn bucket_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.root.join(name)
     }
-
-    fn object_path(&self, bucket_name: impl AsRef<Path>, object_name: impl AsRef<Path>) -> PathBuf {
-        self.root.join(bucket_name).join(object_name)
-    }
 }
 
 #[async_trait]
-impl Storage<FileObject> for FileStorage {
-    type ObjectUploader = FileObjectUploader;
+impl crate::Storage for Storage {
+    type Bucket = Bucket;
 
-    async fn create_bucket(&self, name: &str) -> Result<()> {
+    async fn bucket(&self, name: &str) -> Result<Self::Bucket> {
+        let path = self.bucket_path(name);
+        Ok(Bucket::new(path))
+    }
+
+    async fn create_bucket(&self, name: &str) -> Result<Self::Bucket> {
         let path = self.bucket_path(name);
 
         if try_exists(&path).await? {
@@ -56,7 +54,7 @@ impl Storage<FileObject> for FileStorage {
 
         fs::create_dir_all(&path).await?;
 
-        Ok(())
+        self.bucket(name).await
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
@@ -65,56 +63,5 @@ impl Storage<FileObject> for FileStorage {
         fs::remove_dir(path).await?;
 
         Ok(())
-    }
-
-    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<FileObject> {
-        let path = self.object_path(bucket_name, object_name);
-        Ok(FileObject::new(path))
-    }
-
-    async fn upload_object(
-        &self,
-        bucket_name: &str,
-        object_name: &str,
-    ) -> Result<FileObjectUploader> {
-        let path = self.object_path(bucket_name, object_name);
-        Ok(FileObjectUploader::new(path))
-    }
-
-    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
-        let path = self.object_path(bucket_name, object_name);
-        check_io_result(fs::remove_file(&path).await, &path).await?;
-        Ok(())
-    }
-}
-
-pub async fn check_io_result<T>(r: io::Result<T>, obj_path: impl AsRef<Path>) -> Result<T> {
-    match r {
-        Ok(t) => Ok(t),
-        Err(err) => {
-            if err.kind() == io::ErrorKind::NotFound {
-                let parent = obj_path.as_ref().parent().unwrap();
-                if !try_exists(parent).await? {
-                    return Err(Error::NotFound(format!(
-                        "bucket '{}'",
-                        parent.file_name().unwrap().to_str().unwrap(),
-                    )));
-                }
-                return Err(Error::NotFound(format!(
-                    "object '{}'",
-                    obj_path.as_ref().file_name().unwrap().to_str().unwrap(),
-                )));
-            }
-            Err(err.into())
-        }
-    }
-}
-
-// async version for `std:fs:try_exist`, remove me after https://github.com/tokio-rs/tokio/pull/3375 addressed.
-pub async fn try_exists(path: impl AsRef<Path>) -> io::Result<bool> {
-    match fs::metadata(path).await {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
     }
 }

@@ -12,33 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
-//! implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an abstraction to store data objects.
-//!
-//! # Implementation
-//!
-//! Some built-in implementations of [`Storage`]:
-//!
-//! - [`mem`](crate::mem)
-//!
-//! [`Storage`]: crate::Storage
+use std::collections::HashMap;
 
-mod bucket;
-mod error;
-mod storage;
+/// An increasing number to order versions.
+pub type Sequence = u64;
 
-pub mod file;
-// pub mod grpc;
-pub mod mem;
+/// The state of a kernel at a specific time.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Version {
+    pub sequence: Sequence,
+    pub meta: HashMap<String, Vec<u8>>,
+    pub objects: Vec<String>,
+}
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    bucket::Bucket,
-    error::{Error, Result},
-    storage::Storage,
-};
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VersionUpdate {
+    pub sequence: Sequence,
+    pub set_meta: HashMap<String, Vec<u8>>,
+    pub delete_meta: Vec<String>,
+    pub add_objects: Vec<String>,
+    pub delete_objects: Vec<String>,
+}
