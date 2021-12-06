@@ -24,22 +24,24 @@ pub struct Client {
     client: StorageClient,
 }
 
-macro_rules! method {
-    ($name:ident, $input:ty, $output:ty) => {
-        pub async fn $name(&self, input: $input) -> Result<$output> {
-            let mut client = self.client.clone();
-            let response = client.$name(input).await?;
-            Ok(response.into_inner())
-        }
-    };
-}
-
 impl Client {
-    method!(create_bucket, CreateBucketRequest, CreateBucketResponse);
+    pub async fn create_bucket(&self, input: CreateBucketRequest) -> Result<CreateBucketResponse> {
+        let mut client = self.client.clone();
+        let response = client.create_bucket(input).await?;
+        Ok(response.into_inner())
+    }
 
-    method!(delete_bucket, DeleteBucketRequest, DeleteBucketResponse);
+    pub async fn delete_bucket(&self, input: DeleteBucketRequest) -> Result<DeleteBucketResponse> {
+        let mut client = self.client.clone();
+        let response = client.delete_bucket(input).await?;
+        Ok(response.into_inner())
+    }
 
-    method!(delete_object, DeleteObjectRequest, DeleteObjectResponse);
+    pub async fn delete_object(&self, input: DeleteObjectRequest) -> Result<DeleteObjectResponse> {
+        let mut client = self.client.clone();
+        let response = client.delete_object(input).await?;
+        Ok(response.into_inner())
+    }
 
     pub async fn upload_object(
         &self,

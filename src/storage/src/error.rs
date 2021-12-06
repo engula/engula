@@ -26,7 +26,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("unknown: {0}")]
-    Unknown(String),
+    Unknown(Box<dyn std::error::Error + Send>),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

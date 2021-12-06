@@ -16,13 +16,13 @@ use crate::Error;
 
 impl From<tonic::Status> for Error {
     fn from(s: tonic::Status) -> Self {
-        Error::Unknown(s.to_string())
+        Error::Unknown(Box::new(s))
     }
 }
 
 impl From<tonic::transport::Error> for Error {
     fn from(e: tonic::transport::Error) -> Self {
-        Error::Unknown(e.to_string())
+        Error::Unknown(Box::new(e))
     }
 }
 
@@ -33,7 +33,7 @@ impl From<Error> for tonic::Status {
             Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
             Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
-            Error::Unknown(s) => (tonic::Code::Unknown, s),
+            Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
         };
         tonic::Status::new(code, message)
     }
