@@ -19,41 +19,52 @@ use tokio::sync::{broadcast, Mutex};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    async_trait, Bucket, Error, KernelUpdate, Result, ResultStream, Sequence, Stream, Version,
-    VersionUpdate,
+    async_trait, manifest::Manifest, Bucket, Error, KernelUpdate, Result, ResultStream, Sequence,
+    Stream, Version, VersionUpdate,
 };
 
 #[derive(Clone)]
-pub struct Kernel<S: Stream, B: Bucket> {
+pub struct Kernel<S: Stream, B: Bucket, M: Manifest> {
     inner: Arc<Mutex<Inner>>,
     stream: S,
     bucket: B,
+    manifest: M,
 }
 
 struct Inner {
     current: Arc<Version>,
     updates: broadcast::Sender<Arc<VersionUpdate>>,
-    last_sequence: Sequence,
 }
 
-impl<S: Stream, B: Bucket> Kernel<S, B> {
-    pub fn new(stream: S, bucket: B) -> Self {
-        let (tx, _) = broadcast::channel(1024);
+impl<S, B, M> Kernel<S, B, M>
+where
+    S: Stream,
+    B: Bucket,
+    M: Manifest,
+{
+    pub async fn init(stream: S, bucket: B, manifest: M) -> Result<Self> {
+        let version = manifest.load_version().await?;
+        let (updates, _) = broadcast::channel(1024);
         let inner = Inner {
-            current: Arc::new(Version::default()),
-            updates: tx,
-            last_sequence: 0,
+            current: Arc::new(version),
+            updates,
         };
-        Self {
+        Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
             stream,
             bucket,
-        }
+            manifest,
+        })
     }
 }
 
 #[async_trait]
-impl<S: Stream, B: Bucket> crate::Kernel for Kernel<S, B> {
+impl<S, B, M> crate::Kernel for Kernel<S, B, M>
+where
+    S: Stream,
+    B: Bucket,
+    M: Manifest,
+{
     type Bucket = B;
     type Stream = S;
 
@@ -67,10 +78,14 @@ impl<S: Stream, B: Bucket> crate::Kernel for Kernel<S, B> {
 
     async fn apply_update(&self, update: KernelUpdate) -> Result<()> {
         let mut inner = self.inner.lock().await;
-        inner.last_sequence += 1;
+
+        let mut version = (*inner.current).clone();
         let mut version_update = update.update;
-        version_update.sequence = inner.last_sequence;
-        // TODO: update current version
+        version_update.sequence = version.sequence + 1;
+        version.update(&version_update);
+        self.manifest.save_version(&version).await?;
+
+        inner.current = Arc::new(version);
         inner
             .updates
             .send(Arc::new(version_update))

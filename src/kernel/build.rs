@@ -12,24 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
-
-/// An increasing number to order versions.
-pub type Sequence = u64;
-
-/// The state of a kernel at a specific time.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Version {
-    pub sequence: Sequence,
-    pub meta: HashMap<String, Vec<u8>>,
-    pub objects: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct VersionUpdate {
-    pub sequence: Sequence,
-    pub set_meta: HashMap<String, Vec<u8>>,
-    pub delete_meta: Vec<String>,
-    pub add_objects: Vec<String>,
-    pub delete_objects: Vec<String>,
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::compile_protos("src/metadata.proto")?;
+    Ok(())
 }

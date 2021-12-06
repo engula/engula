@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A [`Kernel`] implementation that stores everything in memory.
-//!
-//! [`Kernel`]: crate::Kernel
+syntax = "proto3";
 
-pub use engula_journal::mem::Stream;
-pub use engula_storage::mem::Bucket;
+package engula.kernel.v1;
 
-pub type Kernel = super::Kernel<Stream, Bucket>;
+message Version {
+  uint64 sequence = 1;
+  map<string, bytes> meta = 2;
+  repeated string objects = 3;
+}
 
-impl Default for Kernel {
-    fn default() -> Self {
-        let stream = Stream::default();
-        let bucket = Bucket::default();
-        Self::new(stream, bucket)
-    }
+message VersionUpdate {
+  uint64 sequence = 1;
+  map<string, bytes> add_meta = 2;
+  repeated string remove_meta = 3;
+  repeated string add_objects = 4;
+  repeated string remove_objects = 5;
 }

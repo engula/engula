@@ -170,9 +170,12 @@ dependencies = [
  "engula-journal",
  "engula-storage",
  "futures",
+ "prost",
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod kernel;
+use crate::{async_trait, Result, Version};
 
-pub use self::kernel::Kernel;
+#[async_trait]
+pub trait Manifest: Clone + Send + Sync + 'static {
+    async fn load_version(&self) -> Result<Version>;
+
+    async fn save_version(&self, version: &Version) -> Result<()>;
+}
