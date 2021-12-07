@@ -19,7 +19,7 @@ use engula::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let kernel = Kernel::default();
+    let kernel = Kernel::open().await?;
     let engine = Engine::open(kernel).await?;
     let key = vec![1];
     let value = vec![2];

@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod kernel;
+use super::{manifest::Manifest, Bucket, Stream};
+use crate::Result;
 
-pub use self::kernel::Kernel;
+pub type Kernel = crate::local::Kernel<Stream, Bucket, Manifest>;
+
+impl Kernel {
+    pub async fn open() -> Result<Self> {
+        let stream = Stream::default();
+        let bucket = Bucket::default();
+        let manifest = Manifest::default();
+        Self::init(stream, bucket, manifest).await
+    }
+}
