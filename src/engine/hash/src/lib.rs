@@ -31,7 +31,7 @@ mod tests {
     use engula_kernel::mem::Kernel;
     use tokio::fs::OpenOptions;
 
-    use crate::{codec::Value, table_builder::TableBuilder, table_reader::TableReader, *};
+    use crate::{table_builder::TableBuilder, table_reader::TableReader, *};
 
     #[tokio::test]
     async fn engine() -> Result<()> {
@@ -70,9 +70,9 @@ mod tests {
     #[tokio::test]
     async fn table() -> Result<()> {
         let records = vec![
-            (vec![1], Value::Put(vec![1])),
-            (vec![2], Value::Put(vec![2])),
-            (vec![3], Value::Deletion),
+            (vec![1], Some(vec![1])),
+            (vec![2], Some(vec![2])),
+            (vec![3], None),
         ];
 
         let path = std::env::temp_dir().join("table");
