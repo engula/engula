@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bytes::BufMut;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::Result;
+use crate::{codec, Result};
 
 pub struct TableBuilder<W: AsyncWrite + Unpin> {
     write: W,
     block: BlockBuilder,
 }
 
-#[allow(dead_code)]
 impl<W: AsyncWrite + Unpin> TableBuilder<W> {
     pub fn new(write: W) -> Self {
         Self {
@@ -68,10 +66,7 @@ impl BlockBuilder {
     }
 
     fn add(&mut self, key: &[u8], value: &[u8]) {
-        self.buf.put_u64(key.len() as u64);
-        self.buf.put_slice(key);
-        self.buf.put_u64(value.len() as u64);
-        self.buf.put_slice(value);
+        codec::put_record(&mut self.buf, key, value);
     }
 
     fn data(&self) -> &[u8] {

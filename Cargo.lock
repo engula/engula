@@ -144,6 +144,10 @@ name = "engula-hash-engine"
 version = "0.2.0"
 dependencies = [
  "bytes",
+ "engula-journal",
+ "engula-kernel",
+ "engula-storage",
+ "futures",
  "thiserror",
  "tokio",
 ]
@@ -170,9 +174,12 @@ dependencies = [
  "engula-journal",
  "engula-storage",
  "futures",
+ "prost",
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -181,9 +188,14 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "futures",
+ "prost",
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
  "tonic-build",
 ]
 

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An Engula engine that provides simple key-value data storage.
+
+mod codec;
 mod engine;
 mod error;
 mod memtable;
@@ -25,18 +28,32 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use engula_kernel::mem::Kernel;
     use tokio::fs::OpenOptions;
 
     use crate::{table_builder::TableBuilder, table_reader::TableReader, *};
 
     #[tokio::test]
     async fn engine() -> Result<()> {
-        let engine = Engine::new();
-        let key = vec![1];
-        let value = vec![2];
-        engine.set(key.clone(), value.clone()).await?;
-        let got = engine.get(&key).await?;
-        assert_eq!(got, Some(value));
+        const N: u32 = 4096;
+
+        let kernel = Kernel::open().await?;
+        let engine = Engine::open(kernel.clone()).await?;
+        for i in 0..N {
+            let v = i.to_be_bytes().to_vec();
+            engine.put(v.clone(), v.clone()).await?;
+            let got = engine.get(&v).await?;
+            assert_eq!(got, Some(v));
+        }
+
+        // Re-open
+        let engine = Engine::open(kernel.clone()).await?;
+        for i in 0..N {
+            let v = i.to_be_bytes().to_vec();
+            let got = engine.get(&v).await?;
+            assert_eq!(got, Some(v))
+        }
+
         Ok(())
     }
 

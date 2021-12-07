@@ -13,35 +13,38 @@
 // limitations under the License.
 
 use super::{
+    bucket::Bucket,
     client::Client,
-    error::Result,
-    object::RemoteObject,
-    proto::{CreateBucketRequest, DeleteBucketRequest, DeleteObjectRequest},
-    RemoteObjectUploader,
+    proto::{CreateBucketRequest, DeleteBucketRequest},
 };
-use crate::{async_trait, Storage};
+use crate::{async_trait, Result};
 
-pub struct RemoteStorage {
+#[derive(Clone)]
+pub struct Storage {
     client: Client,
 }
 
-impl RemoteStorage {
-    pub async fn connect(addr: &str) -> Result<RemoteStorage> {
+impl Storage {
+    pub async fn connect(addr: &str) -> Result<Storage> {
         let client = Client::connect(addr).await?;
-        Ok(RemoteStorage { client })
+        Ok(Storage { client })
     }
 }
 
 #[async_trait]
-impl Storage<RemoteObject> for RemoteStorage {
-    type ObjectUploader = RemoteObjectUploader;
+impl crate::Storage for Storage {
+    type Bucket = Bucket;
 
-    async fn create_bucket(&self, name: &str) -> Result<()> {
+    async fn bucket(&self, name: &str) -> Result<Self::Bucket> {
+        Ok(Bucket::new(self.client.clone(), name))
+    }
+
+    async fn create_bucket(&self, name: &str) -> Result<Self::Bucket> {
         let input = CreateBucketRequest {
             bucket: name.to_owned(),
         };
         self.client.create_bucket(input).await?;
-        Ok(())
+        self.bucket(name).await
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
@@ -49,36 +52,6 @@ impl Storage<RemoteObject> for RemoteStorage {
             bucket: name.to_owned(),
         };
         self.client.delete_bucket(input).await?;
-        Ok(())
-    }
-
-    async fn object(&self, bucket_name: &str, object_name: &str) -> Result<RemoteObject> {
-        let object = RemoteObject::new(
-            self.client.clone(),
-            bucket_name.to_owned(),
-            object_name.to_owned(),
-        );
-        Ok(object)
-    }
-
-    async fn upload_object(
-        &self,
-        bucket_name: &str,
-        object_name: &str,
-    ) -> Result<Self::ObjectUploader> {
-        Ok(RemoteObjectUploader::new(
-            self.client.clone(),
-            bucket_name.to_owned(),
-            object_name.to_owned(),
-        ))
-    }
-
-    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()> {
-        let input = DeleteObjectRequest {
-            bucket: bucket_name.to_owned(),
-            object: object_name.to_owned(),
-        };
-        let _ = self.client.delete_object(input).await?;
         Ok(())
     }
 }
