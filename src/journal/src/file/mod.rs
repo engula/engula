@@ -20,53 +20,88 @@ pub use self::{journal::Journal, stream::Stream};
 
 #[cfg(test)]
 mod tests {
-    use std::{env, path::PathBuf, process};
 
-    use super::{
-        error::{Error, Result},
-        *,
-    };
     use crate::*;
 
-    struct TestEnvGuard {
-        path: PathBuf,
-    }
-
-    impl TestEnvGuard {
-        fn setup(case: &str) -> Self {
-            let mut path = env::temp_dir();
-            path.push("engula-storage-fs-test");
-            path.push(process::id().to_string());
-            path.push(case);
-            Self { path }
-        }
-    }
-
-    impl Drop for TestEnvGuard {
-        fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.path).unwrap();
-        }
-    }
-
     #[tokio::test]
-    async fn test_bucket_manage() -> Result<()> {
-        let g = TestEnvGuard::setup("test_local_journal");
-        let s = FileStream::new(&g.path).await?;
+    async fn simple() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
 
-    }
-
-    #[tokio::test]
-    async fn test() -> Result<()> {
-        let j: MemJournal<u64> = MemJournal::default();
-        let stream = j.create_stream("a").await?;
+        let journal = file::Journal::new(tmp).await?;
+        let stream = journal.create_stream("s").await?;
+        let ts = 31340128116183;
         let event = Event {
-            ts: 0,
-            data: vec![1, 2, 3],
+            ts: ts.into(),
+            data: vec![0, 1, 2],
         };
         stream.append_event(event.clone()).await?;
-        let mut events = stream.read_events(0).await?;
-        let got = events.next().await.unwrap()?;
-        assert_eq!(got, event);
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![event]);
+        }
+        stream.release_events((ts + 1).into()).await?;
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![]);
+        }
+        let _ = journal.delete_stream("s").await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn big() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+
+        let journal = file::Journal::new(tmp).await?;
+        let stream = journal.create_stream("s").await?;
+        let ts = 31340128116183;
+        let event = Event {
+            ts: ts.into(),
+            data: vec![0, 1, 2],
+        };
+        stream.append_event(event.clone()).await?;
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![event]);
+        }
+        stream.release_events((ts + 1).into()).await?;
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![]);
+        }
+        let _ = journal.delete_stream("s").await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recover() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+
+        let journal = file::Journal::new(tmp).await?;
+        let stream = journal.create_stream("s").await?;
+        let ts = 31340128116183;
+        let event = Event {
+            ts: ts.into(),
+            data: vec![0, 1, 2],
+        };
+        stream.append_event(event.clone()).await?;
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![event]);
+        }
+        stream.release_events((ts + 1).into()).await?;
+        {
+            let mut events = stream.read_events(0.into()).await;
+            let got = events.try_next().await?.unwrap();
+            assert_eq!(got, vec![]);
+        }
+        let _ = journal.delete_stream("s").await?;
         Ok(())
     }
 }
+

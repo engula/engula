@@ -19,15 +19,12 @@ use tokio::sync::Mutex;
 use tokio::{fs, io};
 
 use super::{
-    error::{Error, Result},
     stream::Stream,
 };
 
-use crate::{async_trait, Timestamp};
-use crate::file::FileStream;
+use crate::{async_trait, Timestamp, Error, Result};
 use futures::StreamExt;
 use std::ffi::{OsString, OsStr};
-
 
 #[derive(Clone)]
 pub struct Journal {
@@ -36,11 +33,11 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub fn new(root: impl Into<PathBuf>) -> Result<Journal> {
+    pub async fn new(root: impl Into<PathBuf>) -> Result<Journal> {
         let path = root.into();
 
         match fs::DirBuilder::new().recursive(true).create(&path).await {
-            Ok(_) => {
+            io::Result::Ok(_) => {
                 let mut journal = Journal {
                     root: path,
                     streams: Mutex::new(HashMap::new()),
@@ -48,7 +45,7 @@ impl Journal {
                 journal.init();
                 Ok(journal)
             }
-            Err(e) => Error::IO(e),
+            io::Result::Err(e) => Err(Error::Unknown(e.to_string())),
         }
     }
 
@@ -56,27 +53,46 @@ impl Journal {
         self.root.join(name)
     }
 
-    fn init(&self) {
-        let streams = read_stream_dir(self.root.clone())?;
-        for &stream in &streams {
-            self.create_stream(stream)
+    async fn init(&self) {
+        if let Ok(streams) = Journal::read_stream_dir(self.root.clone()).await {
+            for stream in streams {
+                let Some(name) = stream.file_name(); {
+                    self.create_stream_internal(name.to_str().unwrap());
+                }
+            }
         }
     }
 
-    fn read_stream_dir(root: impl Into<PathBuf>) -> Result<Vec<str>> {
+    async fn read_stream_dir(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
         let path = root.into();
 
-        let mut stream_list: Vec<str> = fs::read_dir(path)?
+        let mut stream_list: Vec<PathBuf> = fs::read_dir(path)
             .flat_map(|res| -> Result<_> { Ok(res?.path()) })
             .filter(|path| path.is_dir())
             .flat_map(|path| {
-                path.file_name()
-                    .and_then(OsStr::to_str)
+                path.file_name().into()
             })
             .flatten()
             .collect();
 
         Ok(stream_list)
+    }
+
+    async fn  create_stream_internal(&self, name: &str) -> Result<Stream> {
+        let mut streams = self.streams.lock().await;
+        match streams.entry(name.to_owned()) {
+            hash_map::Entry::Vacant(ent) => {
+                let path = self.stream_dir_path(name);
+                match Stream::new(path) {
+                    Ok(stream) => {
+                        ent.insert(stream.clone());
+                        Ok(stream)
+                    }
+                    Err(e) => Result::Err(e)
+                }
+            }
+            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
+        }
     }
 }
 
@@ -88,27 +104,13 @@ impl crate::Journal for Journal {
     async fn stream(&self, name: &str) -> Result<Stream> {
         let streams = self.streams.lock().await;
         match streams.get(name) {
-            // todo 如何进行拷贝？？？？
             Some(stream) => Ok(stream.clone()),
             None => Err(Error::NotFound(format!("stream '{}'", name))),
         }
     }
 
     async fn create_stream(&self, name: &str) -> Result<Stream> {
-        let mut streams = self.streams.lock().await;
-        match streams.entry(name.to_owned()) {
-            hash_map::Entry::Vacant(ent) => {
-                let path = self.stream_dir_path(name);
-                match FileStream::new(path) {
-                    Ok(stream) => {
-                        ent.insert(stream.clone());
-                        Ok(stream)
-                    }
-                    Err(e) => Result::Err(e)
-                }
-            }
-            hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
-        }
+        self.create_stream_internal(name).await
     }
 
     async fn delete_stream(&self, name: &str) -> Result<()> {
