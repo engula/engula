@@ -26,5 +26,8 @@ async fn main() -> Result<()> {
     engine.put(key.clone(), value.clone()).await?;
     let got = engine.get(&key).await?;
     assert_eq!(got, Some(value));
+    engine.delete(key.clone()).await?;
+    let got = engine.get(&key).await?;
+    assert_eq!(got, None);
     Ok(())
 }

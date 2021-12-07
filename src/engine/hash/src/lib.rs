@@ -31,7 +31,7 @@ mod tests {
     use engula_kernel::mem::Kernel;
     use tokio::fs::OpenOptions;
 
-    use crate::{table_builder::TableBuilder, table_reader::TableReader, *};
+    use crate::{codec::Value, table_builder::TableBuilder, table_reader::TableReader, *};
 
     #[tokio::test]
     async fn engine() -> Result<()> {
@@ -40,18 +40,28 @@ mod tests {
         let kernel = Kernel::open().await?;
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
-            let v = i.to_be_bytes().to_vec();
-            engine.put(v.clone(), v.clone()).await?;
-            let got = engine.get(&v).await?;
-            assert_eq!(got, Some(v));
+            let k = i.to_be_bytes().to_vec();
+            engine.put(k.clone(), k.clone()).await?;
+            let got = engine.get(&k).await?;
+            assert_eq!(got, Some(k.clone()));
+            if i % 2 == 0 {
+                engine.delete(k.clone()).await?;
+                let got = engine.get(&k).await?;
+                assert_eq!(got, None);
+            }
         }
 
         // Re-open
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
-            let v = i.to_be_bytes().to_vec();
-            let got = engine.get(&v).await?;
-            assert_eq!(got, Some(v))
+            let k = i.to_be_bytes().to_vec();
+            if i % 2 == 0 {
+                let got = engine.get(&k).await?;
+                assert_eq!(got, None);
+            } else {
+                let got = engine.get(&k).await?;
+                assert_eq!(got, Some(k))
+            }
         }
 
         Ok(())
@@ -59,7 +69,11 @@ mod tests {
 
     #[tokio::test]
     async fn table() -> Result<()> {
-        let records = vec![(vec![1], vec![1]), (vec![2], vec![2])];
+        let records = vec![
+            (vec![1], Value::Put(vec![1])),
+            (vec![2], Value::Put(vec![2])),
+            (vec![3], Value::Deletion),
+        ];
 
         let path = std::env::temp_dir().join("table");
         let file = OpenOptions::new()

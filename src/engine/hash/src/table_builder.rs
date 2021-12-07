@@ -14,7 +14,7 @@
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{codec, Result};
+use crate::{codec, codec::Value, Result};
 
 pub struct TableBuilder<W: AsyncWrite + Unpin> {
     write: W,
@@ -29,7 +29,7 @@ impl<W: AsyncWrite + Unpin> TableBuilder<W> {
         }
     }
 
-    pub async fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub async fn add(&mut self, key: &[u8], value: &Value) -> Result<()> {
         self.block.add(key, value);
         if self.block.size() >= BLOCK_SIZE {
             self.flush().await?;
@@ -65,7 +65,7 @@ impl BlockBuilder {
         }
     }
 
-    fn add(&mut self, key: &[u8], value: &[u8]) {
+    fn add(&mut self, key: &[u8], value: &Value) {
         codec::put_record(&mut self.buf, key, value);
     }
 
