@@ -6,7 +6,12 @@ license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
 keywords = ["database", "serverless", "storage-engine"]
-categories = ["asynchronous", "data-structures", "database", "database-implementations"]
+categories = [
+    "asynchronous",
+    "data-structures",
+    "database",
+    "database-implementations",
+]
 description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
 
 [[bin]]
@@ -14,12 +19,7 @@ name = "engula"
 path = "bin/engula.rs"
 
 [workspace]
-members = [
-    "src/engine/hash",
-    "src/kernel",
-    "src/journal",
-    "src/storage",
-]
+members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
 
 [dependencies]
 engula-hash-engine = { path = "src/engine/hash" }

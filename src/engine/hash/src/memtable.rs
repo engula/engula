@@ -12,41 +12,57 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::BTreeMap,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
 
+use crate::codec::{self, Timestamp};
+
 pub struct Memtable {
-    map: Mutex<BTreeMap<Vec<u8>, Vec<u8>>>,
-    size: AtomicUsize,
+    inner: Mutex<Inner>,
+}
+
+struct Inner {
+    map: BTreeMap<Vec<u8>, Vec<u8>>,
+    size: usize,
+    last_ts: Timestamp,
 }
 
 impl Memtable {
-    pub fn new() -> Self {
-        Self {
-            map: Mutex::new(BTreeMap::new()),
-            size: AtomicUsize::new(0),
+    pub fn new(ts: Timestamp) -> Self {
+        let inner = Inner {
+            map: BTreeMap::new(),
+            size: 0,
+            last_ts: ts,
+        };
+        Memtable {
+            inner: Mutex::new(inner),
         }
     }
 
-    pub async fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<Vec<u8>> {
-        let map = self.map.lock().await;
-        map.get(key.as_ref()).cloned()
+    pub async fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let inner = self.inner.lock().await;
+        inner.map.get(key).cloned()
     }
 
-    pub async fn set<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(&self, key: K, value: V) {
-        let key = key.into();
-        let value = value.into();
-        let entry_size = key.len() + value.len();
-        self.size.fetch_add(entry_size, Ordering::Relaxed);
-        let mut map = self.map.lock().await;
-        map.insert(key, value);
+    pub async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
+        let mut inner = self.inner.lock().await;
+        inner.size += codec::record_size(&key, &value);
+        assert!(ts > inner.last_ts);
+        inner.last_ts = ts;
+        inner.map.insert(key, value);
     }
 
-    pub fn approximate_size(&self) -> usize {
-        self.size.load(Ordering::Relaxed)
+    pub async fn iter(&self) -> BTreeMap<Vec<u8>, Vec<u8>> {
+        let inner = self.inner.lock().await;
+        inner.map.clone()
+    }
+
+    pub async fn approximate_size(&self) -> usize {
+        self.inner.lock().await.size
+    }
+
+    pub async fn last_update_timestamp(&self) -> Timestamp {
+        self.inner.lock().await.last_ts
     }
 }
