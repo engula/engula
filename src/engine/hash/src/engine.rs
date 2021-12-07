@@ -89,20 +89,18 @@ impl<K: Kernel> Engine<K> {
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let current = self.current_version().await;
-        let value = match current.get(key).await? {
-            Some(Value::Put(value)) => Some(value),
-            Some(Value::Deletion) => None,
-            None => None,
-        };
-        Ok(value)
+        match current.get(key).await? {
+            Some(Some(value)) => Ok(Some(value)),
+            _ => Ok(None),
+        }
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        self.write(key, Value::Put(value)).await
+        self.write(key, Some(value)).await
     }
 
     pub async fn delete(&self, key: Vec<u8>) -> Result<()> {
-        self.write(key, Value::Deletion).await
+        self.write(key, None).await
     }
 
     async fn write(&self, key: Vec<u8>, value: Value) -> Result<()> {
