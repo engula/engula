@@ -26,3 +26,6 @@ header:
     - 'rust-toolchain.toml'
     - 'rustfmt.toml'
     - '.cargo/audit.toml'
+    - 'amd64.dockerfile'
+    - 'arm64.dockerfile'
+    - '.dockerignore'
