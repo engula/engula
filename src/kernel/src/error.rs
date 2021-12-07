@@ -24,6 +24,8 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error("{0}")]
+    Internal(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

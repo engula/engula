@@ -12,20 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
+pub use crate::{Version, VersionUpdate};
 
-package engula.metadata.v1;
-
-message Version {
-  uint64 sequence = 1;
-  map<string, bytes> meta = 2;
-  repeated string objects = 3;
-}
-
-message VersionUpdate {
-  uint64 sequence = 1;
-  map<string, bytes> add_meta = 2;
-  repeated string remove_meta = 3;
-  repeated string add_objects = 4;
-  repeated string remove_objects = 5;
-}
+tonic::include_proto!("engula.kernel.v1");

@@ -22,7 +22,7 @@ mod manifest;
 pub use engula_journal::mem::Stream;
 pub use engula_storage::mem::Bucket;
 
-pub use self::kernel::Kernel;
+pub use self::{kernel::Kernel, manifest::Manifest};
 
 #[cfg(test)]
 mod tests {
