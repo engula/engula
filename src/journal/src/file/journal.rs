@@ -22,9 +22,8 @@ use super::{
     stream::Stream,
 };
 
-use crate::{async_trait, Timestamp, Error, Result};
+use crate::{async_trait, Error, Result};
 use futures::StreamExt;
-use std::ffi::{OsString, OsStr};
 
 #[derive(Clone)]
 pub struct Journal {
@@ -83,7 +82,7 @@ impl Journal {
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
                 let path = self.stream_dir_path(name);
-                match Stream::new(path) {
+                match Stream::new(path).await {
                     Ok(stream) => {
                         ent.insert(stream.clone());
                         Ok(stream)
@@ -117,7 +116,7 @@ impl crate::Journal for Journal {
         let mut streams = self.streams.lock().await;
         match streams.remove(name) {
             Some(stream) => {
-                stream.clean()?;
+                stream.clean().await?;
                 Ok(())
             }
             None => Err(Error::NotFound(format!("stream '{}'", name))),

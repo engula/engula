@@ -14,3 +14,14 @@
 
 use crate::Error;
 
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Unknown(e.to_string())
+    }
+}
+
+impl From<std::result::Result<(), std::error::Error>> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Unknown(e.to_string())
+    }
+}

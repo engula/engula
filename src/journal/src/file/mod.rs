@@ -22,6 +22,9 @@ pub use self::{journal::Journal, stream::Stream};
 mod tests {
 
     use crate::*;
+    use futures::TryStreamExt;
+    use tokio_stream::StreamExt;
+
 
     #[tokio::test]
     async fn simple() -> std::result::Result<(), Box<dyn std::error::Error>> {
