@@ -16,14 +16,14 @@ use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
 
-use crate::codec::{self, Timestamp};
+use crate::codec::{self, Timestamp, Value};
 
 pub struct Memtable {
     inner: Mutex<Inner>,
 }
 
 struct Inner {
-    map: BTreeMap<Vec<u8>, Vec<u8>>,
+    map: BTreeMap<Vec<u8>, Value>,
     size: usize,
     last_ts: Timestamp,
 }
@@ -40,22 +40,22 @@ impl Memtable {
         }
     }
 
-    pub async fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+    pub async fn get(&self, key: &[u8]) -> Option<Value> {
         let inner = self.inner.lock().await;
         inner.map.get(key).cloned()
     }
 
-    pub async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
+    pub async fn iter(&self) -> BTreeMap<Vec<u8>, Value> {
+        let inner = self.inner.lock().await;
+        inner.map.clone()
+    }
+
+    pub async fn insert(&self, ts: Timestamp, key: Vec<u8>, value: Value) {
         let mut inner = self.inner.lock().await;
         inner.size += codec::record_size(&key, &value);
         assert!(ts > inner.last_ts);
         inner.last_ts = ts;
         inner.map.insert(key, value);
-    }
-
-    pub async fn iter(&self) -> BTreeMap<Vec<u8>, Vec<u8>> {
-        let inner = self.inner.lock().await;
-        inner.map.clone()
     }
 
     pub async fn approximate_size(&self) -> usize {
