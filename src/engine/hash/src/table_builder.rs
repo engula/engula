@@ -21,7 +21,6 @@ pub struct TableBuilder<W: AsyncWrite + Unpin> {
     block: BlockBuilder,
 }
 
-#[allow(dead_code)]
 impl<W: AsyncWrite + Unpin> TableBuilder<W> {
     pub fn new(write: W) -> Self {
         Self {

@@ -22,7 +22,6 @@ pub struct TableReader {
     map: HashMap<Vec<u8>, Vec<u8>>,
 }
 
-#[allow(dead_code)]
 impl TableReader {
     pub async fn new<R: AsyncRead + Unpin>(mut r: R) -> Result<TableReader> {
         let map = read_all(&mut r).await?;
