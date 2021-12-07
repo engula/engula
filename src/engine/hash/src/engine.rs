@@ -130,9 +130,9 @@ impl<K: Kernel> Engine<K> {
 
         let mut update = KernelUpdate::default();
         let last_ts = encode_u64_meta(imm.last_update_timestamp().await);
-        update.set_meta(LAST_TIMESTAMP, last_ts);
+        update.add_meta(LAST_TIMESTAMP, last_ts);
         let last_number = encode_u64_meta(*number);
-        update.set_meta(LAST_OBJECT_NUMBER, last_number);
+        update.add_meta(LAST_OBJECT_NUMBER, last_number);
         update.add_object(object);
         self.kernel.apply_update(update).await?;
         Ok(())
@@ -237,10 +237,10 @@ impl<K: Kernel> EngineVersion<K> {
 
         let mut version = self.clone();
         version.last_sequence = update.sequence;
-        if let Some(value) = decode_u64_meta(&update.set_meta, LAST_TIMESTAMP)? {
+        if let Some(value) = decode_u64_meta(&update.add_meta, LAST_TIMESTAMP)? {
             version.last_timestamp = value;
         }
-        if let Some(value) = decode_u64_meta(&update.set_meta, LAST_OBJECT_NUMBER)? {
+        if let Some(value) = decode_u64_meta(&update.add_meta, LAST_OBJECT_NUMBER)? {
             version.last_object_number = value;
         }
 

@@ -35,9 +35,9 @@ mod tests {
 
     #[tokio::test]
     async fn engine() -> Result<()> {
-        const N: u32 = 128;
+        const N: u32 = 4096;
 
-        let kernel = Kernel::default();
+        let kernel = Kernel::open().await?;
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
             let v = i.to_be_bytes().to_vec();
