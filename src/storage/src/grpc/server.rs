@@ -12,51 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
-
-use tonic::{Request, Response, Status};
+use futures::{Stream, StreamExt, TryStreamExt};
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
+use tonic::{Request, Response, Status, Streaming};
 
 use super::proto::*;
-use crate::{Object, ObjectUploader, Storage};
+use crate::{Bucket, Storage};
 
-pub struct Server<O, S>
-where
-    O: Object,
-    S: Storage<O>,
-{
+pub struct Server<S: Storage> {
     storage: S,
-    _object: PhantomData<O>,
 }
 
-impl<O, S> Server<O, S>
-where
-    O: Object + Send + Sync + 'static,
-    O::Error: Send + Sync + 'static,
-    S: Storage<O> + Send + Sync + 'static,
-    S::ObjectUploader: Send + Sync + 'static,
-    Status: From<O::Error>,
-{
+impl<S: Storage> Server<S> {
     pub fn new(storage: S) -> Self {
-        Server {
-            storage,
-            _object: PhantomData,
-        }
+        Self { storage }
     }
 
-    pub fn into_service(self) -> storage_server::StorageServer<Server<O, S>> {
+    pub fn into_service(self) -> storage_server::StorageServer<Server<S>> {
         storage_server::StorageServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<O, S> storage_server::Storage for Server<O, S>
-where
-    O: Object + Send + Sync + 'static,
-    O::Error: Send + Sync + 'static,
-    S: Storage<O> + Send + Sync + 'static,
-    S::ObjectUploader: Send + Sync + 'static,
-    Status: From<O::Error>,
-{
+impl<S: Storage> storage_server::Storage for Server<S> {
+    type ReadObjectStream = impl Stream<Item = std::result::Result<ReadObjectResponse, Status>>;
+
     async fn create_bucket(
         &self,
         request: Request<CreateBucketRequest>,
@@ -77,15 +58,23 @@ where
 
     async fn upload_object(
         &self,
-        request: Request<UploadObjectRequest>,
+        request: Request<Streaming<UploadObjectRequest>>,
     ) -> Result<Response<UploadObjectResponse>, Status> {
-        let input = request.into_inner();
-        let mut up = self
-            .storage
-            .upload_object(&input.bucket, &input.object)
-            .await?;
-        up.write(&input.content).await?;
-        up.finish().await?;
+        let mut stream = request.into_inner();
+        let mut cw = None;
+        while let Some(req) = stream.try_next().await? {
+            if cw.is_none() {
+                let b = self.storage.bucket(&req.bucket).await?;
+                let w = b.new_sequential_writer(&req.object).await?;
+                cw = Some(w);
+            }
+            if let Some(w) = &mut cw {
+                w.write_all(&req.content).await?;
+            }
+        }
+        if let Some(w) = &mut cw {
+            w.shutdown().await?;
+        }
         Ok(Response::new(UploadObjectResponse {}))
     }
 
@@ -94,23 +83,25 @@ where
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let input = request.into_inner();
-        self.storage
-            .delete_object(&input.bucket, &input.object)
-            .await?;
+        let b = self.storage.bucket(&input.bucket).await?;
+        b.delete_object(&input.object).await?;
         Ok(Response::new(DeleteObjectResponse {}))
     }
 
     async fn read_object(
         &self,
         request: Request<ReadObjectRequest>,
-    ) -> Result<Response<ReadObjectResponse>, Status> {
+    ) -> Result<Response<Self::ReadObjectStream>, Status> {
         let input = request.into_inner();
-        let object = self.storage.object(&input.bucket, &input.object).await?;
-        let mut buf = vec![0; input.length as usize];
-        let len = object.read_at(&mut buf, input.offset as usize).await?;
-        let output = ReadObjectResponse {
-            content: buf[0..len].to_owned(),
-        };
-        Ok(Response::new(output))
+        let b = self.storage.bucket(&input.bucket).await?;
+        let r = b.new_sequential_reader(&input.object).await?;
+        let byte_stream = ReaderStream::new(r);
+        let resp_stream = byte_stream.map(move |res| {
+            res.map(|b| ReadObjectResponse {
+                content: b.to_vec(),
+            })
+            .map_err(|e| e.into())
+        });
+        Ok(Response::new(resp_stream))
     }
 }

@@ -12,12 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_journal::Error as JournalError;
+use engula_kernel::Error as KernelError;
+use engula_storage::Error as StorageError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("corrupted: {0}")]
+    Corrupted(String),
+    #[error(transparent)]
+    Kernel(#[from] KernelError),
+    #[error(transparent)]
+    Journal(#[from] JournalError),
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
+
+impl Error {
+    pub fn corrupted<E: ToString>(err: E) -> Self {
+        Self::Corrupted(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

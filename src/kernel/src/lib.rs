@@ -37,7 +37,7 @@ mod local;
 pub mod mem;
 
 pub use async_trait::async_trait;
-pub use engula_journal::{Stream, Timestamp};
+pub use engula_journal::{Event, Stream, Timestamp};
 pub use engula_storage::Bucket;
 
 pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Unpin>;
