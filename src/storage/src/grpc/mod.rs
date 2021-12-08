@@ -23,7 +23,7 @@ mod proto;
 mod server;
 mod storage;
 
-pub use self::{client::Client, server::Server, storage::Storage};
+pub use self::{bucket::Bucket, client::Client, server::Server, storage::Storage};
 
 #[cfg(test)]
 mod tests {

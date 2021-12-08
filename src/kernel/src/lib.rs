@@ -33,6 +33,7 @@ mod kernel;
 mod manifest;
 mod metadata;
 
+pub mod grpc;
 mod local;
 pub mod mem;
 
