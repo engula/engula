@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{hash_map, HashMap};
-use std::path::{Path, PathBuf};
-
-use tokio::sync::Mutex;
-use tokio::{fs, io};
-
-use super::{
-    stream::Stream,
+use std::{
+    collections::{hash_map, HashMap},
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
+use tokio::{fs, io, sync::Mutex};
+
+use super::stream::Stream;
 use crate::{async_trait, Error, Result};
-use futures::StreamExt;
 
 #[derive(Clone)]
 pub struct Journal {
-    streams: Mutex<HashMap<String, Stream>>,
+    streams: Arc<Mutex<HashMap<String, Stream>>>,
     root: PathBuf,
 }
 
@@ -37,11 +35,11 @@ impl Journal {
 
         match fs::DirBuilder::new().recursive(true).create(&path).await {
             io::Result::Ok(_) => {
-                let mut journal = Journal {
+                let journal = Journal {
                     root: path,
-                    streams: Mutex::new(HashMap::new()),
+                    streams: Arc::new(Mutex::new(HashMap::new())),
                 };
-                journal.init();
+                journal.init().await?;
                 Ok(journal)
             }
             io::Result::Err(e) => Err(Error::Unknown(e.to_string())),
@@ -52,32 +50,32 @@ impl Journal {
         self.root.join(name)
     }
 
-    async fn init(&self) {
+    async fn init(&self) -> Result<()> {
         if let Ok(streams) = Journal::read_stream_dir(self.root.clone()).await {
             for stream in streams {
-                let Some(name) = stream.file_name(); {
-                    self.create_stream_internal(name.to_str().unwrap());
+                if let Some(name) = stream.file_name() {
+                    self.create_stream_internal(name.to_str().unwrap()).await?;
                 }
             }
         }
+        Ok(())
     }
 
     async fn read_stream_dir(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
         let path = root.into();
 
-        let mut stream_list: Vec<PathBuf> = fs::read_dir(path)
-            .flat_map(|res| -> Result<_> { Ok(res?.path()) })
-            .filter(|path| path.is_dir())
-            .flat_map(|path| {
-                path.file_name().into()
-            })
-            .flatten()
-            .collect();
+        let mut stream_list: Vec<PathBuf> = Vec::new();
 
+        let mut dir = fs::read_dir(path).await?;
+        while let Some(child) = dir.next_entry().await? {
+            if child.metadata().await?.is_dir() {
+                stream_list.push(child.file_name().into())
+            }
+        }
         Ok(stream_list)
     }
 
-    async fn  create_stream_internal(&self, name: &str) -> Result<Stream> {
+    async fn create_stream_internal(&self, name: &str) -> Result<Stream> {
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
@@ -87,14 +85,13 @@ impl Journal {
                         ent.insert(stream.clone());
                         Ok(stream)
                     }
-                    Err(e) => Result::Err(e)
+                    Err(e) => Result::Err(e),
                 }
             }
             hash_map::Entry::Occupied(_) => Err(Error::AlreadyExists(format!("stream '{}'", name))),
         }
     }
 }
-
 
 #[async_trait]
 impl crate::Journal for Journal {

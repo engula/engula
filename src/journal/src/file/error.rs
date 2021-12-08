@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{array::TryFromSliceError, str::Utf8Error};
+
 use crate::Error;
 
 impl From<std::io::Error> for Error {
@@ -20,8 +22,20 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<std::result::Result<(), std::error::Error>> for Error {
-    fn from(e: std::io::Error) -> Self {
+impl From<&str> for Error {
+    fn from(s: &str) -> Self {
+        Error::Unknown(s.to_string())
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(e: TryFromSliceError) -> Self {
+        Error::Unknown(e.to_string())
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(e: Utf8Error) -> Self {
         Error::Unknown(e.to_string())
     }
 }

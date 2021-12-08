@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{Path, PathBuf};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
-use tokio::{fs};
-use tokio::sync::Mutex;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter, SeekFrom};
+use futures::{future, stream};
+use tokio::{
+    fs,
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter, SeekFrom},
+    sync::Mutex,
+};
 
-use crate::{async_trait, Event, Error, ResultStream, Timestamp, Result};
-use std::{collections::VecDeque, sync::Arc};
+use crate::{async_trait, Error, Event, Result, ResultStream, Timestamp};
 
 #[derive(Clone)]
 pub struct Stream {
@@ -36,24 +38,24 @@ impl Stream {
         fs::DirBuilder::new().recursive(true).create(&path).await?;
         match fs::DirBuilder::new().recursive(true).create(&path).await {
             Ok(_) => {
-
                 let segments = Arc::new(Mutex::new(VecDeque::new()));
                 let index = Arc::new(Mutex::new(VecDeque::new()));
                 let delete_path = Stream::delete_file_path(path.clone());
-                let stream = Stream {
+                let mut stream = Stream {
                     root: path,
                     delete_path,
                     index,
-                    segments
+                    segments,
                 };
+                stream.try_recovery().await?;
                 Ok(stream)
             }
-            Err(e) => Err(Error::Unknown(e.to_string()))
+            Err(e) => Err(Error::Unknown(e.to_string())),
         }
     }
 
-    fn active_segment_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.root. join(name)
+    fn active_segment_path(&self, name: &str) -> PathBuf {
+        self.root.join(name)
     }
 
     fn delete_file_path(dir: PathBuf) -> PathBuf {
@@ -66,38 +68,122 @@ impl Stream {
     }
 
     async fn read_events_internal(&self, ts: Timestamp) -> Result<ResultStream<Vec<Event>>> {
-
-        let mut indexes = self.index.lock().await;
+        let indexes = self.index.lock().await;
         let mut segments = self.segments.lock().await;
 
         let offset = indexes.partition_point(|x| x.ts < ts);
 
-        let index = indexes.get(offset).ok_or(Err(Error::Unknown(format!("segment not found {:?}", ts))))?;
+        let index_option = indexes.get(offset);
+
+        if index_option.is_none() {
+            return Ok(Box::new(stream::once(future::ok(Vec::new()))));
+        }
+
+        let index = index_option.expect("index out of offset");
 
         let mut events = Vec::new();
 
         for i in (0..segments.len()).rev() {
-            let mut segment = segments.get(i).ok_or(Err(Error::Unknown(format!("segment not found {:?}", ts))))?;
-            let start = segment.start?;
-            let end = segment.end?;
+            let segment = &mut segments[i];
+            let start = segment.start.as_ref().ok_or("segment no start index")?;
+            let end = segment.end.as_ref().ok_or("segment no end index")?;
 
             if end.ts < index.ts {
                 continue;
             }
 
             if start.ts < index.ts {
-                events.push(segment.read(index.location, end.location + end.size)?);
+                events.append(
+                    segment
+                        .read(index.location, end.location + end.size)
+                        .await?
+                        .as_mut(),
+                );
             } else {
-                events.push(segment.read(start.location, end.location + end.size)?);
+                events.append(
+                    segment
+                        .read(start.location, end.location + end.size)
+                        .await?
+                        .as_mut(),
+                );
             }
         }
-        Ok(ResultStream::new(events))
+        Ok(Box::new(stream::once(future::ok(events))))
+    }
+
+    async fn create_segment(&self, path: PathBuf) -> Result<Segment> {
+        let write_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .read(false)
+            .append(true)
+            .truncate(false)
+            .open(path.clone())
+            .await?;
+
+        let read_file = OpenOptions::new()
+            .write(false)
+            .create(false)
+            .read(true)
+            .append(false)
+            .truncate(false)
+            .open(path.clone())
+            .await?;
+
+        let writer = BufWriter::new(write_file);
+        let reader = BufReader::new(read_file);
+
+        let segment = Segment {
+            path: path.clone(),
+            writer: Arc::new(Mutex::new(writer)),
+            reader: Arc::new(Mutex::new(reader)),
+            start: None,
+            end: None,
+            limit: 1024 * 1024 * 50, // 50MB
+            position: 0,
+        };
+        Ok(segment)
+    }
+
+    async fn try_recovery(&mut self) -> Result<()> {
+        // let delete_file_result = File::open(&self.delete_path).await;
+        // if let Ok(deleted_file) = delete_file_result {
+        //     let mut delete_reader = BufReader::new(deleted_file);
+        //     let delete_time = delete_reader.read_u64().await?;
+        // }
+
+        if let Ok(segment_file) = Stream::read_segment_file(self.root.clone()).await {
+            let mut segments = self.segments.lock().await;
+
+            for segment_file in segment_file {
+                if let Some(name) = segment_file.file_name() {
+                    let segment_path: PathBuf =
+                        self.active_segment_path(name.to_str().ok_or("name to str error")?);
+                    let segment = self.create_segment(segment_path).await?;
+                    segments.push_front(segment);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn read_segment_file(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
+        let path = root.into();
+
+        let mut stream_list: Vec<PathBuf> = Vec::new();
+
+        let mut dir = fs::read_dir(path).await?;
+        while let Some(child) = dir.next_entry().await? {
+            if child.metadata().await?.is_file() {
+                stream_list.push(child.file_name().into())
+            }
+        }
+        Ok(stream_list)
     }
 }
 
 #[async_trait]
 impl crate::Stream for Stream {
-
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>> {
         let output = self.read_events_internal(ts).await;
         match output {
@@ -105,66 +191,59 @@ impl crate::Stream for Stream {
             Err(e) => Box::new(futures::stream::once(futures::future::err(e))),
         }
     }
+
     async fn append_event(&self, event: Event) -> Result<()> {
         let entry = Entry::from(event);
 
         let mut indexes = self.index.lock().await;
         let mut segments = self.segments.lock().await;
 
-        let mut active = segments.get(0)?;
+        if segments.get(0).is_none() {
+            let segment_path: PathBuf =
+                self.active_segment_path(format!("{:}?", &entry.time).as_str());
+            let segment = self.create_segment(segment_path).await?;
+            segments.push_front(segment);
+        }
 
-        match active {
-            None => {
-                let segment_path = self.active_segment_path(event.ts.into());
-                segments.push_front(Segment::create(segment_path).await?);
-                segments.get(0)
-            }
-            Some(segment) => {
-                if segment.remaining() < entry.size {
-                    let segment_path = self.active_segment_path(event.ts.into());
-                    segments.push_front(Segment::create(segment_path).await?);
-                    active = segments.get(0)?;
-                } else {
-                    active = segment;
-                }
-            }
-        };
-
-        let index = active.write(entry)?;
+        let active = &mut segments[0];
+        let index = active.write(&entry).await?;
         indexes.push_back(index);
+
+        // check if need move to another file
+        if active.is_full() {
+            let segment_path = self.active_segment_path(format!("{:}?", &entry.time).as_str());
+            let segment = self.create_segment(segment_path).await?;
+            segments.push_front(segment);
+        }
         Ok(())
     }
 
     async fn release_events(&self, ts: Timestamp) -> Result<()> {
-        let mut events = self.events.lock().await;
-        let index = events.partition_point(|x| x.ts < ts);
-        events.drain(..index);
-
         let mut indexes = self.index.lock().await;
         let mut segments = self.segments.lock().await;
 
         let offset = indexes.partition_point(|x| x.ts < ts);
-        let index = indexes.get(offset)?;
 
         for i in (0..segments.len()).rev() {
-            let mut segment = segments.get(i)?;
-            let end = segment.end?;
-            if end < index.ts {
-                segment.clean().await;
+            let segment = &mut segments[i];
+            let end = &segment.end.as_ref().ok_or("segment no end index")?;
+            if end.ts < ts {
+                segment.clean().await?;
                 segments.drain(i..i + 1);
             }
         }
 
-        let mut time_buf = [0 as u8; 8];
-        let time_bytes = ts.to_be_bytes();
+        let mut time_buf = [0_u8; 8];
+        let time_bytes = ts.serialize();
         time_buf.clone_from_slice(&time_bytes);
 
         // create will truncate old content
-        let delete_file = File::create(&self.delete_path)?;
+        let delete_file = File::create(&self.delete_path).await?;
         let mut delete_writer = BufWriter::new(delete_file);
-        delete_writer.write(&time_buf);
+        delete_writer.write(&time_buf).await?;
+        delete_writer.flush().await?;
 
-        indexes.drain(..index);
+        indexes.drain(..offset);
 
         Ok(())
     }
@@ -181,130 +260,103 @@ pub struct Index {
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub size: u64,
-    pub time: Vec<u8>,
-    pub data: Vec<u8>
+    pub time: Timestamp,
+    pub data: Vec<u8>,
 }
-
 
 impl From<Event> for Entry {
     fn from(event: Event) -> Self {
-        let  time = event.ts.serialize();
-
         Entry {
-            size: (time.len() + event.data.len()) as u64,
-            time,
+            size: (8 + event.ts.serialize().len() + event.data.len()) as u64,
+            time: event.ts,
             data: event.data,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Segment {
     pub path: PathBuf,
-    pub writer: BufWriter<File>,
-    pub reader: BufReader<File>,
+    pub writer: Arc<Mutex<BufWriter<File>>>,
+    pub reader: Arc<Mutex<BufReader<File>>>,
     pub start: Option<Index>,
     pub end: Option<Index>,
-    pub size: u64,
-    pub limit: u64
-}
-
-impl Clone for Segment {
-    fn clone(&self) -> Self {
-        todo!()
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        todo!()
-    }
+    pub limit: u64,
+    position: u64,
 }
 
 impl Segment {
-    pub async fn create<P>(path: PathBuf) -> Result<Segment> {
-        let mut file = File::open(path).await?;
-        let mut writer = BufWriter::new(file.try_clone().await?);
-        let mut reader = BufReader::new(file.try_clone().await?);
-
-        let segment = Segment {
-            path: path.as_ref().to_path_buf(),
-            writer,
-            reader,
-            start: None,
-            end: None,
-            size: 0,
-            limit: 1024 * 1024 * 10 // 10MB
-        };
-
-        Ok(segment)
+    pub fn is_full(&self) -> bool {
+        self.limit <= self.position
     }
 
-    pub fn remaining(&self) -> u64 {
-        return self.limit - self.size
-    }
+    pub async fn read(&self, start: u64, end: u64) -> Result<Vec<Event>> {
+        let buf_size = end - start;
 
-    pub fn read(&mut self, start :u64, end :u64) -> Result<Vec<Event>> {
-        let buf_size = ((end - start) / 8) as usize;
-        self.reader.seek(SeekFrom::Start(start));
-        let mut buf = vec![0u8; buf_size];
-        self.reader.read(&mut buf);
+        let mut reader = self.reader.lock().await;
+
+        reader.seek(SeekFrom::Start(start)).await?;
+        let mut buf = vec![0u8; buf_size as usize];
+        let n = reader.read(&mut buf).await?;
+        println!("{}", n);
 
         let mut ret = Vec::new();
 
-        let mut i = 0;
+        let mut i = 0_u64;
         loop {
-
             if i >= buf_size {
                 break;
             }
+            let size_bytes = &buf[i as usize..(i + 8) as usize];
+            let mut size_buf = [0; 8];
+            size_buf.clone_from_slice(size_bytes);
+            let size = u64::from_be_bytes(size_buf);
 
-            let size = buf[i..(i+3)].into();
-            let time = Timestamp::deserialize(buf[(i+4) .. i+7].to_vec())?;
-            let data : [u8] = buf[(i + 7) .. (i + size)].into();
-            ret.push(Event{
-                ts: time,
-                data: data.to_vec(),
-            });
+            let time_bytes = buf[(i + 8) as usize..(i + 16) as usize].to_vec();
+            let time = Timestamp::deserialize(time_bytes)?;
+
+            let data = buf[(i + 16) as usize..(i + size) as usize].to_vec();
+            ret.push(Event { ts: time, data });
             i += size;
         }
 
-        return Ok(ret);
+        Ok(ret)
     }
 
-    pub fn write(&mut self, entry : Entry) -> Result<Index> {
+    pub async fn write(&mut self, entry: &Entry) -> Result<Index> {
+        let mut writer = self.writer.lock().await;
 
         let mut size_buf = [0; 8];
         let size_bytes = entry.size.to_be_bytes();
         size_buf.clone_from_slice(&size_bytes);
 
         let mut time_buf = [0; 8];
-        let time_bytes = entry.time;
+        let time_bytes = entry.time.serialize();
         time_buf.clone_from_slice(&time_bytes);
 
-        let current_pos = self.writer.seek(SeekFrom::Start(0));
+        writer.write(&size_buf).await?;
+        writer.write(&time_buf).await?;
+        writer.write(&entry.data).await?;
+        writer.flush().await?;
 
-        self.writer.write(&size_buf);
-        self.writer.write(&time_buf);
-        self.writer.write(&entry.data);
-        self.writer.flush();
-
-        let index = Index{
-            ts: Timestamp::deserialize(entry.time.clone())?,
+        let index = Index {
+            ts: entry.time,
             path: self.path.clone(),
-            location: current_pos.into(),
-            size: entry.size
+            location: self.position,
+            size: entry.size,
         };
 
         if self.start.is_none() {
             self.start = Some(index.clone());
         }
         self.end = Some(index.clone());
+        self.position += entry.size;
 
-        return Ok(index);
+        Ok(index)
     }
 
     pub async fn clean(&mut self) -> Result<()> {
         fs::remove_file(&self.path).await?;
         Ok(())
     }
-
 }

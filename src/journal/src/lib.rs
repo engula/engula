@@ -32,9 +32,9 @@ mod error;
 mod journal;
 mod stream;
 
+pub mod file;
 pub mod grpc;
 pub mod mem;
-pub mod file;
 
 pub use async_trait::async_trait;
 
