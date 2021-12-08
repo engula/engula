@@ -217,7 +217,7 @@ mod tests {
                 assert_eq!(got[0], event1);
                 assert_eq!(got[1], event2);
             }
-            stream.release_events(0.into()).await?
+            stream.release_events((ts + 1).into()).await?
         }
 
         // check delete file when recover
