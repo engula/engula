@@ -1,0 +1,18 @@
+name: 'Cargo Cache'
+description: 'Cache the cargo'
+runs:
+  using: "composite"
+  steps:
+    - name: Cache cargo registry
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-buildcache-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-buildcache-
+          ${{ runner.os }}-cargo-

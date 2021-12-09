@@ -36,6 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - uses: ./.github/actions/cargo-cache
+
       - name: Install cargo-audit
         uses: actions-rs/cargo@v1
         with:
