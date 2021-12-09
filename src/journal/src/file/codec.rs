@@ -12,30 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{array::TryFromSliceError, str::Utf8Error};
+use crate::Event;
 
-use crate::Error;
+pub struct EventCodec;
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Unknown(e.to_string())
+impl EventCodec {
+    #[inline]
+    pub fn encode_event(buf: &mut [u8], e: Event) {
+        assert!(!buf.is_empty());
+        buf[0] = v;
     }
-}
 
-impl From<&str> for Error {
-    fn from(s: &str) -> Self {
-        Error::Unknown(s.to_string())
-    }
-}
-
-impl From<TryFromSliceError> for Error {
-    fn from(e: TryFromSliceError) -> Self {
-        Error::Unknown(e.to_string())
-    }
-}
-
-impl From<Utf8Error> for Error {
-    fn from(e: Utf8Error) -> Self {
-        Error::Unknown(e.to_string())
+    #[inline]
+    pub fn decode_event(buf: &[u8]) -> Result<Event, E> {
+        
     }
 }

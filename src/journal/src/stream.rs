@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{convert::TryInto, fmt};
+use std::convert::TryInto;
 
 use crate::{async_trait, Error, Result, ResultStream};
 
@@ -36,12 +36,6 @@ impl Timestamp {
 impl From<u64> for Timestamp {
     fn from(v: u64) -> Self {
         Self(v)
-    }
-}
-
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

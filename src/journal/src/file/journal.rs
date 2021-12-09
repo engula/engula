@@ -30,7 +30,7 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub async fn new(root: impl Into<PathBuf>) -> Result<Journal> {
+    pub async fn open(root: impl Into<PathBuf>) -> Result<Journal> {
         let path = root.into();
 
         match fs::DirBuilder::new().recursive(true).create(&path).await {
@@ -39,10 +39,10 @@ impl Journal {
                     root: path,
                     streams: Arc::new(Mutex::new(HashMap::new())),
                 };
-                journal.init().await?;
+                journal.try_recovery().await?;
                 Ok(journal)
             }
-            io::Result::Err(e) => Err(Error::Unknown(e.to_string())),
+            io::Result::Err(e) => Err(Error::Io(e)),
         }
     }
 
@@ -50,8 +50,8 @@ impl Journal {
         self.root.join(name)
     }
 
-    async fn init(&self) -> Result<()> {
-        if let Ok(streams) = Journal::read_stream_dir(self.root.clone()).await {
+    async fn try_recovery(&self) -> Result<()> {
+        if let Ok(streams) = self.get_exist_stream_path().await {
             for stream in streams {
                 if let Some(name) = stream.file_name() {
                     self.create_stream_internal(name.to_str().unwrap()).await?;
@@ -61,15 +61,15 @@ impl Journal {
         Ok(())
     }
 
-    async fn read_stream_dir(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
-        let path = root.into();
+    async fn get_exist_stream_path(&self) -> Result<Vec<PathBuf>> {
+        let path = &self.root;
 
         let mut stream_list: Vec<PathBuf> = Vec::new();
 
         let mut dir = fs::read_dir(path).await?;
         while let Some(child) = dir.next_entry().await? {
             if child.metadata().await?.is_dir() {
-                stream_list.push(child.file_name().into())
+                stream_list.push(child.path())
             }
         }
         Ok(stream_list)
@@ -80,7 +80,7 @@ impl Journal {
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
                 let path = self.stream_dir_path(name);
-                match Stream::new(path).await {
+                match Stream::create(path).await {
                     Ok(stream) => {
                         ent.insert(stream.clone());
                         Ok(stream)

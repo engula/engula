@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
+mod codec;
 mod journal;
+mod segment;
 mod stream;
 
 pub use self::{journal::Journal, stream::Stream};
@@ -28,7 +29,7 @@ mod tests {
     async fn simple() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
 
-        let journal = file::Journal::new(tmp.path()).await?;
+        let journal = file::Journal::open(tmp.path()).await?;
         let stream = journal.create_stream("s").await?;
         let ts = 31340128116183;
         let event = Event {
@@ -55,7 +56,7 @@ mod tests {
     async fn two_read() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
 
-        let journal = file::Journal::new(tmp.path()).await?;
+        let journal = file::Journal::open(tmp.path()).await?;
         let stream = journal.create_stream("s").await?;
         let mut ts = 31340128116183;
 
@@ -95,7 +96,7 @@ mod tests {
     async fn delete_and_read() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
 
-        let journal = file::Journal::new(tmp.path()).await?;
+        let journal = file::Journal::open(tmp.path()).await?;
         let stream = journal.create_stream("s").await?;
         let mut ts = 31340128116183;
 
@@ -128,7 +129,7 @@ mod tests {
     async fn big() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
 
-        let journal = file::Journal::new(tmp.path()).await?;
+        let journal = file::Journal::open(tmp.path()).await?;
         let stream = journal.create_stream("s").await?;
         let mut ts = 31340128116183;
 
@@ -175,7 +176,7 @@ mod tests {
         let tmp = tempfile::tempdir()?;
 
         {
-            let journal = file::Journal::new(tmp.path()).await?;
+            let journal = file::Journal::open(tmp.path()).await?;
             let stream = journal.create_stream("s").await?;
             let mut ts = 31340128116183;
 
@@ -195,7 +196,7 @@ mod tests {
 
         // use two journal object to mock recover situation
         {
-            let journal = file::Journal::new(tmp.path()).await?;
+            let journal = file::Journal::open(tmp.path()).await?;
             let stream = journal.stream("s").await?;
             let mut ts = 31340128116183;
 
@@ -222,7 +223,7 @@ mod tests {
 
         // check delete file when recover
         {
-            let journal = file::Journal::new(tmp.path()).await?;
+            let journal = file::Journal::open(tmp.path()).await?;
             let stream = journal.stream("s").await?;
             let mut events = stream.read_events(0.into()).await;
             let got = events.try_next().await?.unwrap();

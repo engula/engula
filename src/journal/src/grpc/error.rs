@@ -33,6 +33,7 @@ impl From<Error> for tonic::Status {
             Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
             Error::Unknown(s) => (tonic::Code::Unknown, s),
+            Error::Io(e) => (tonic::Code::Unknown, e.to_string()),
         };
         tonic::Status::new(code, message)
     }
