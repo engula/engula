@@ -14,7 +14,8 @@
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{codec, codec::Value, Result};
+use super::codec::{self, Value};
+use crate::Result;
 
 pub struct TableBuilder<W: AsyncWrite + Unpin> {
     write: W,

@@ -16,7 +16,8 @@ use std::{collections::HashMap, io::ErrorKind};
 
 use tokio::io::AsyncRead;
 
-use crate::{codec, codec::Value, Result};
+use super::codec::{self, Value};
+use crate::Result;
 
 pub struct TableReader {
     map: HashMap<Vec<u8>, Value>,

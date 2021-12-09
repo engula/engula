@@ -5,13 +5,14 @@ edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
-description = "An Engula engine that provides simple key-value data storage."
+description = "A simple key-value storage engine."
 
 [dependencies]
 engula-kernel = { path = "../../kernel" }
 engula-journal = { path = "../../journal" }
 engula-storage = { path = "../../storage" }
 
+async-trait = "0.1"
 thiserror = "1.0"
 tokio = { version = "1.14", features = ["full"] }
 bytes = "1.1"

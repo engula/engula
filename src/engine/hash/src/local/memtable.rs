@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
 
-use crate::codec::{self, Timestamp, Value};
+use super::codec::{self, Timestamp, Value};
 
 pub struct Memtable {
     inner: Mutex<Inner>,

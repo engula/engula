@@ -143,6 +143,7 @@ dependencies = [
 name = "engula-hash-engine"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "bytes",
  "engula-journal",
  "engula-kernel",

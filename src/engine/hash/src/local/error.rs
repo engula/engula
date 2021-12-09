@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A simple key-value storage engine.
+use crate::Error;
 
-mod engine;
-mod error;
-mod local;
+macro_rules! from_unknown {
+    ($name:ty) => {
+        impl From<$name> for Error {
+            fn from(err: $name) -> Self {
+                Self::unknown(err)
+            }
+        }
+    };
+}
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    engine::Engine,
-    error::{Error, Result},
-    local::MemEngine,
-};
+from_unknown!(engula_kernel::Error);
+from_unknown!(engula_journal::Error);
+from_unknown!(engula_storage::Error);
