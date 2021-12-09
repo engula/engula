@@ -119,7 +119,7 @@ async fn run(args: &RunArgs) -> Result<()> {
     signal::ctrl_c().await?;
     let _ = tx.send(());
 
-    server_handle.await.unwrap_or_else(|_| Ok(()))?;
+    server_handle.await.unwrap_or(Ok(()))?;
 
     Ok(())
 }
