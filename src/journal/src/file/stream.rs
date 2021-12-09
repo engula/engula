@@ -212,23 +212,24 @@ impl crate::Stream for Stream {
     }
 
     async fn append_event(&self, event: Event) -> Result<()> {
+        let entry = Entry::from(event);
 
         let mut indexes = self.index.lock().await;
         let mut segments = self.segments.lock().await;
 
         if segments.get(0).is_none() {
-            let segment_path: PathBuf = self.segment_path(format!("{:?}", &event.time));
+            let segment_path: PathBuf = self.segment_path(format!("{:?}", &entry.time));
             let segment = self.create_segment(segment_path).await?;
             segments.push_front(segment);
         }
 
         let active_segment = &mut segments[0];
-        let index = active_segment.write(&event).await?;
+        let index = active_segment.write(&entry).await?;
         indexes.push_back(index);
 
         // check if need move to another file
         if active_segment.is_full() {
-            let segment_path = self.segment_path(format!("{:?}", &event.time));
+            let segment_path = self.segment_path(format!("{:?}", &entry.time));
             let segment = self.create_segment(segment_path).await?;
             segments.push_front(segment);
         }

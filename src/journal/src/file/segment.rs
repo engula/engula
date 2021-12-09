@@ -22,7 +22,6 @@ use tokio::{
 };
 
 use crate::{Event, Result, Timestamp};
-use crate::file::codec::EventCodec;
 
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -116,13 +115,8 @@ impl Segment {
         Ok(ret)
     }
 
-    pub async fn write(&mut self, entry: &Event) -> Result<Index> {
+    pub async fn write(&mut self, entry: &Entry) -> Result<Index> {
         let mut writer = self.writer.lock().await;
-
-
-        let mut buf = vec![0u8; () as usize];
-
-        EventCodec::encode_event(entry);
 
         let mut size_buf = [0; 8];
         let size_bytes = entry.size.to_be_bytes();
