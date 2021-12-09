@@ -24,7 +24,7 @@ use futures::TryStreamExt;
 use tokio::sync::Mutex;
 
 use crate::{
-    codec::{self, Timestamp},
+    codec::{self, Timestamp, Value},
     memtable::Memtable,
     table_builder::TableBuilder,
     table_reader::TableReader,
@@ -80,7 +80,7 @@ impl<K: Kernel> Engine<K> {
             for event in events {
                 ts += 1;
                 let (key, value) = codec::decode_record(&event.data)?;
-                current.put(ts, key.to_owned(), value.to_owned()).await;
+                current.insert(ts, key, value).await;
             }
         }
         *self.last_timestamp.lock().await = ts;
@@ -89,10 +89,21 @@ impl<K: Kernel> Engine<K> {
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let current = self.current_version().await;
-        current.get(key).await
+        match current.get(key).await? {
+            Some(Some(value)) => Ok(Some(value)),
+            _ => Ok(None),
+        }
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        self.write(key, Some(value)).await
+    }
+
+    pub async fn delete(&self, key: Vec<u8>) -> Result<()> {
+        self.write(key, None).await
+    }
+
+    async fn write(&self, key: Vec<u8>, value: Value) -> Result<()> {
         let mut ts = self.last_timestamp.lock().await;
         *ts += 1;
 
@@ -103,7 +114,7 @@ impl<K: Kernel> Engine<K> {
         self.stream.append_event(event).await?;
 
         let current = self.current_version().await;
-        current.put(*ts, key, value).await;
+        current.insert(*ts, key, value).await;
 
         if let Some((imm, version)) = current.should_flush().await {
             self.install_version(Arc::new(version)).await;
@@ -195,7 +206,7 @@ impl<K: Kernel> EngineVersion<K> {
         })
     }
 
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    async fn get(&self, key: &[u8]) -> Result<Option<Value>> {
         if let Some(value) = self.mem.get(key).await {
             return Ok(Some(value));
         }
@@ -214,8 +225,8 @@ impl<K: Kernel> EngineVersion<K> {
         Ok(None)
     }
 
-    async fn put(&self, ts: Timestamp, key: Vec<u8>, value: Vec<u8>) {
-        self.mem.put(ts, key, value).await;
+    async fn insert(&self, ts: Timestamp, key: Vec<u8>, value: Value) {
+        self.mem.insert(ts, key, value).await;
     }
 
     async fn should_flush(&self) -> Option<(Arc<Memtable>, EngineVersion<K>)> {

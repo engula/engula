@@ -12,51 +12,124 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Error as IoError, ErrorKind};
+
 use bytes::{Buf, BufMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{Error, Result};
 
 pub type Timestamp = u64;
+pub type Value = Option<Vec<u8>>;
 
-pub fn record_size(key: &[u8], value: &[u8]) -> usize {
-    16 + key.len() + value.len()
+#[repr(u8)]
+enum ValueKind {
+    Some = 0,
+    None = 1,
+    Unknown = 255,
 }
 
-pub fn put_record(buf: &mut impl BufMut, key: &[u8], value: &[u8]) {
-    buf.put_u64(key.len() as u64);
-    buf.put_u64(value.len() as u64);
-    buf.put_slice(key);
-    buf.put_slice(value);
+impl From<ValueKind> for u8 {
+    fn from(v: ValueKind) -> Self {
+        v as u8
+    }
 }
 
-pub fn encode_record(key: &[u8], value: &[u8]) -> Vec<u8> {
+impl From<u8> for ValueKind {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => ValueKind::Some,
+            1 => ValueKind::None,
+            _ => ValueKind::Unknown,
+        }
+    }
+}
+
+pub fn record_size(key: &[u8], value: &Value) -> usize {
+    let klen = 8 + key.len();
+    let vlen = match value {
+        Some(value) => 8 + value.len(),
+        None => 0,
+    };
+    1 + klen + vlen
+}
+
+pub fn put_record(buf: &mut impl BufMut, key: &[u8], value: &Value) {
+    match value {
+        Some(value) => {
+            buf.put_u8(ValueKind::Some.into());
+            buf.put_u64(key.len() as u64);
+            buf.put_u64(value.len() as u64);
+            buf.put_slice(key);
+            buf.put_slice(value);
+        }
+        None => {
+            buf.put_u8(ValueKind::None.into());
+            buf.put_u64(key.len() as u64);
+            buf.put_slice(key);
+        }
+    }
+}
+
+pub fn encode_record(key: &[u8], value: &Value) -> Vec<u8> {
     let cap = record_size(key, value);
     let mut buf = Vec::with_capacity(cap);
     put_record(&mut buf, key, value);
     buf
 }
 
-pub fn decode_record(mut buf: &[u8]) -> Result<(&[u8], &[u8])> {
-    if buf.len() < 16 {
+pub fn decode_record(mut buf: &[u8]) -> Result<(Vec<u8>, Value)> {
+    if buf.len() < 9 {
         return Err(Error::corrupted("record size too small"));
     }
+    let kind = buf.get_u8();
     let klen = buf.get_u64() as usize;
-    let vlen = buf.get_u64() as usize;
-    if buf.len() < klen + vlen {
-        return Err(Error::corrupted("record size too small"));
+    match ValueKind::from(kind) {
+        ValueKind::Some => {
+            let vlen = buf.get_u64() as usize;
+            if buf.len() < klen + vlen {
+                Err(Error::corrupted("record size too small"))
+            } else {
+                Ok((
+                    buf[0..klen].to_vec(),
+                    Some(buf[klen..(klen + vlen)].to_vec()),
+                ))
+            }
+        }
+        ValueKind::None => {
+            if buf.len() < klen {
+                Err(Error::corrupted("record size too small"))
+            } else {
+                Ok((buf[0..klen].to_vec(), None))
+            }
+        }
+        ValueKind::Unknown => Err(Error::corrupted(format!("invalid value kind {}", kind))),
     }
-    Ok((&buf[0..klen], &buf[klen..(klen + vlen)]))
 }
 
-type IoResult<T> = std::result::Result<T, std::io::Error>;
+type IoResult<T> = std::result::Result<T, IoError>;
 
-pub async fn read_record<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<(Vec<u8>, Vec<u8>)> {
+pub async fn read_record<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<(Vec<u8>, Value)> {
+    let kind = r.read_u8().await?;
     let klen = r.read_u64().await?;
-    let vlen = r.read_u64().await?;
-    let mut key = vec![0; klen as usize];
-    r.read_exact(&mut key).await?;
-    let mut value = vec![0; vlen as usize];
-    r.read_exact(&mut value).await?;
-    Ok((key, value))
+
+    match ValueKind::from(kind) {
+        ValueKind::Some => {
+            let vlen = r.read_u64().await?;
+            let mut key = vec![0; klen as usize];
+            r.read_exact(&mut key).await?;
+            let mut value = vec![0; vlen as usize];
+            r.read_exact(&mut value).await?;
+            Ok((key, Some(value)))
+        }
+        ValueKind::None => {
+            let mut key = vec![0; klen as usize];
+            r.read_exact(&mut key).await?;
+            Ok((key, None))
+        }
+        ValueKind::Unknown => Err(IoError::new(
+            ErrorKind::InvalidData,
+            format!("invalid value kind {}", kind),
+        )),
+    }
 }

@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-tonic::include_proto!("engula.kernel.v1");
+pub mod v1 {
+    tonic::include_proto!("engula.metadata.v1");
+}
+
+pub use v1::{Version, VersionUpdate};
 
 /// An increasing number to order versions.
 pub type Sequence = u64;

@@ -40,18 +40,28 @@ mod tests {
         let kernel = Kernel::open().await?;
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
-            let v = i.to_be_bytes().to_vec();
-            engine.put(v.clone(), v.clone()).await?;
-            let got = engine.get(&v).await?;
-            assert_eq!(got, Some(v));
+            let k = i.to_be_bytes().to_vec();
+            engine.put(k.clone(), k.clone()).await?;
+            let got = engine.get(&k).await?;
+            assert_eq!(got, Some(k.clone()));
+            if i % 2 == 0 {
+                engine.delete(k.clone()).await?;
+                let got = engine.get(&k).await?;
+                assert_eq!(got, None);
+            }
         }
 
         // Re-open
         let engine = Engine::open(kernel.clone()).await?;
         for i in 0..N {
-            let v = i.to_be_bytes().to_vec();
-            let got = engine.get(&v).await?;
-            assert_eq!(got, Some(v))
+            let k = i.to_be_bytes().to_vec();
+            if i % 2 == 0 {
+                let got = engine.get(&k).await?;
+                assert_eq!(got, None);
+            } else {
+                let got = engine.get(&k).await?;
+                assert_eq!(got, Some(k))
+            }
         }
 
         Ok(())
@@ -59,7 +69,11 @@ mod tests {
 
     #[tokio::test]
     async fn table() -> Result<()> {
-        let records = vec![(vec![1], vec![1]), (vec![2], vec![2])];
+        let records = vec![
+            (vec![1], Some(vec![1])),
+            (vec![2], Some(vec![2])),
+            (vec![3], None),
+        ];
 
         let path = std::env::temp_dir().join("table");
         let file = OpenOptions::new()

@@ -14,7 +14,7 @@
 
 syntax = "proto3";
 
-package engula.kernel.v1;
+package engula.metadata.v1;
 
 message Version {
   uint64 sequence = 1;

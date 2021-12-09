@@ -12,22 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula::{
-    engine::hash::{Engine, Result},
-    kernel::mem::Kernel,
-};
+pub use crate::{Version, VersionUpdate};
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let kernel = Kernel::open().await?;
-    let engine = Engine::open(kernel).await?;
-    let key = vec![1];
-    let value = vec![2];
-    engine.put(key.clone(), value.clone()).await?;
-    let got = engine.get(&key).await?;
-    assert_eq!(got, Some(value));
-    engine.delete(key.clone()).await?;
-    let got = engine.get(&key).await?;
-    assert_eq!(got, None);
-    Ok(())
-}
+tonic::include_proto!("engula.kernel.v1");

@@ -12,27 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A [`Kernel`] implementation that stores everything in memory.
-//!
-//! [`Kernel`]: crate::Kernel
-
+mod client;
+mod error;
 mod kernel;
-mod manifest;
+mod proto;
+mod server;
 
-pub use engula_journal::mem::Stream;
-pub use engula_storage::mem::Bucket;
-
-pub use self::{kernel::Kernel, manifest::Manifest};
+pub use self::{client::Client, kernel::Kernel, server::Server};
 
 #[cfg(test)]
 mod tests {
     use futures::TryStreamExt;
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
 
+    use super::Server;
     use crate::*;
 
-    #[tokio::test]
-    async fn update() -> Result<()> {
-        let kernel = super::Kernel::open().await?;
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        tokio::task::spawn(async move {
+            let kernel = mem::Kernel::open().await.unwrap();
+            let server = Server::new(kernel);
+            tonic::transport::Server::builder()
+                .add_service(server.into_service())
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+
+        let url = format!("http://{}", local_addr);
+        let kernel = grpc::Kernel::connect(&url).await?;
+        let version = kernel.current_version().await?;
+        assert_eq!(version.sequence, 0);
+        assert_eq!(version.meta.len(), 0);
+        assert_eq!(version.objects.len(), 0);
 
         let handle = {
             let mut expect = VersionUpdate {
@@ -58,6 +74,12 @@ mod tests {
         kernel.apply_update(update).await?;
 
         handle.await.unwrap();
+
+        let new_version = kernel.current_version().await?;
+        assert_eq!(new_version.sequence, 1);
+        assert_eq!(new_version.meta.len(), 1);
+        assert_eq!(new_version.objects.len(), 1);
+
         Ok(())
     }
 }

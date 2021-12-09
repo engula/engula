@@ -16,10 +16,10 @@ use std::{collections::HashMap, io::ErrorKind};
 
 use tokio::io::AsyncRead;
 
-use crate::{codec, Result};
+use crate::{codec, codec::Value, Result};
 
 pub struct TableReader {
-    map: HashMap<Vec<u8>, Vec<u8>>,
+    map: HashMap<Vec<u8>, Value>,
 }
 
 impl TableReader {
@@ -28,14 +28,14 @@ impl TableReader {
         Ok(TableReader { map })
     }
 
-    pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub async fn get(&self, key: &[u8]) -> Result<Option<Value>> {
         Ok(self.map.get(key).cloned())
     }
 }
 
 type IoResult<T> = std::result::Result<T, std::io::Error>;
 
-async fn read_all<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<HashMap<Vec<u8>, Vec<u8>>> {
+async fn read_all<R: AsyncRead + Unpin>(r: &mut R) -> IoResult<HashMap<Vec<u8>, Value>> {
     let mut map = HashMap::new();
     loop {
         match codec::read_record(r).await {
