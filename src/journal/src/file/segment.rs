@@ -16,7 +16,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use tokio::{
     fs,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter, SeekFrom},
     sync::Mutex,
 };
@@ -35,8 +35,40 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn is_full(&self) -> bool {
-        self.limit <= self.position
+    pub async fn create(path: PathBuf) -> Result<Segment> {
+        let write_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .read(false)
+            .append(true)
+            .truncate(false)
+            .open(path.clone())
+            .await?;
+
+        let read_file = OpenOptions::new()
+            .write(false)
+            .create(false)
+            .read(true)
+            .append(false)
+            .truncate(false)
+            .open(path.clone())
+            .await?;
+
+        let total_size = read_file.metadata().await?.len();
+
+        let writer = BufWriter::new(write_file);
+        let reader = BufReader::new(read_file);
+
+        let segment = Segment {
+            path: path.clone(),
+            writer: Arc::new(Mutex::new(writer)),
+            reader: Arc::new(Mutex::new(reader)),
+            start_index: None,
+            end_index: None,
+            limit: 1024 * 1024 * 50, // 50MB
+            position: total_size,
+        };
+        Ok(segment)
     }
 
     pub async fn read_index(&mut self, start: u64, end: u64) -> Result<Vec<Index>> {
@@ -46,7 +78,8 @@ impl Segment {
 
         reader.seek(SeekFrom::Start(start)).await?;
         let mut buf = vec![0u8; buf_size];
-        let n = reader.read(&mut buf).await?;
+
+        let n = reader.read_exact(&mut buf).await?;
 
         if n != buf_size {
             return Err(Error::Unknown(format!(
@@ -74,7 +107,7 @@ impl Segment {
         reader.seek(SeekFrom::Start(start)).await?;
 
         let mut buf = vec![0u8; buf_size as usize];
-        let n = reader.read(&mut buf).await?;
+        let n = reader.read_exact(&mut buf).await?;
 
         if n != buf_size {
             return Err(Error::Unknown(format!(
@@ -91,7 +124,7 @@ impl Segment {
         let ts = event.ts;
         let buf = Codec::encode(event);
 
-        writer.write(&buf).await?;
+        writer.write_all(&buf).await?;
         writer.flush().await?;
 
         let index = Index {
@@ -112,6 +145,10 @@ impl Segment {
     pub async fn clean(&mut self) -> Result<()> {
         fs::remove_file(&self.path).await?;
         Ok(())
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.limit <= self.position
     }
 }
 

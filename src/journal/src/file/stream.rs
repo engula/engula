@@ -17,7 +17,7 @@ use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 use futures::{future, stream};
 use tokio::{
     fs,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
     sync::Mutex,
 };
@@ -28,12 +28,12 @@ use crate::{
     Error, Event, Result, ResultStream, Timestamp,
 };
 
-const DELETE_FILE_NAME: &str = "delete_timestamp";
+const RELEASE_TS_FILE_NAME: &str = "release_timestamp";
 
 #[derive(Clone)]
 pub struct Stream {
     root: PathBuf,
-    delete_path: PathBuf,
+    release_ts_file_path: PathBuf,
     index: Arc<Mutex<VecDeque<Index>>>,
     segments: Arc<Mutex<VecDeque<Segment>>>,
 }
@@ -46,10 +46,10 @@ impl Stream {
             Ok(_) => {
                 let segments = Arc::new(Mutex::new(VecDeque::new()));
                 let index = Arc::new(Mutex::new(VecDeque::new()));
-                let delete_path = Stream::delete_file_path(path.clone());
+                let release_ts_file_path = Stream::release_ts_file_path(path.clone());
                 let mut stream = Stream {
                     root: path,
-                    delete_path,
+                    release_ts_file_path,
                     index,
                     segments,
                 };
@@ -64,8 +64,8 @@ impl Stream {
         self.root.join(name)
     }
 
-    fn delete_file_path(dir: PathBuf) -> PathBuf {
-        dir.join(DELETE_FILE_NAME)
+    fn release_ts_file_path(dir: PathBuf) -> PathBuf {
+        dir.join(RELEASE_TS_FILE_NAME)
     }
 
     pub async fn clean(&self) -> Result<()> {
@@ -110,57 +110,21 @@ impl Stream {
         Ok(Box::new(stream::once(future::ok(events))))
     }
 
-    async fn create_segment(&self, path: PathBuf) -> Result<Segment> {
-        let write_file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .read(false)
-            .append(true)
-            .truncate(false)
-            .open(path.clone())
-            .await?;
-
-        let read_file = OpenOptions::new()
-            .write(false)
-            .create(false)
-            .read(true)
-            .append(false)
-            .truncate(false)
-            .open(path.clone())
-            .await?;
-
-        let total_size = read_file.metadata().await?.len();
-
-        let writer = BufWriter::new(write_file);
-        let reader = BufReader::new(read_file);
-
-        let segment = Segment {
-            path: path.clone(),
-            writer: Arc::new(Mutex::new(writer)),
-            reader: Arc::new(Mutex::new(reader)),
-            start_index: None,
-            end_index: None,
-            limit: 1024 * 1024 * 50, // 50MB
-            position: total_size,
-        };
-        Ok(segment)
-    }
-
     async fn try_recovery(&mut self) -> Result<()> {
         let mut delete_time = None;
 
-        let delete_file_result = File::open(&self.delete_path).await;
+        let delete_file_result = File::open(&self.release_ts_file_path).await;
         if let Ok(deleted_file) = delete_file_result {
             let mut delete_reader = BufReader::new(deleted_file);
             delete_time = Some(delete_reader.read_u64().await?);
         }
 
-        if let Ok(segment_file) = Stream::read_segment_file(self.root.clone()).await {
+        if let Ok(segment_file) = Stream::get_segment_file(self.root.clone()).await {
             let mut segments = self.segments.lock().await;
             let mut indexes = self.index.lock().await;
 
             for segment_file in segment_file {
-                let mut segment = self.create_segment(segment_file).await?;
+                let mut segment = Segment::create(segment_file).await?;
 
                 for index in segment.read_index(0, segment.position).await? {
                     if let Some(delete) = delete_time {
@@ -176,7 +140,7 @@ impl Stream {
         Ok(())
     }
 
-    async fn read_segment_file(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
+    async fn get_segment_file(root: impl Into<PathBuf>) -> Result<Vec<PathBuf>> {
         let path = root.into();
 
         let mut stream_list: Vec<PathBuf> = Vec::new();
@@ -185,7 +149,7 @@ impl Stream {
         while let Some(child) = dir.next_entry().await? {
             if child.metadata().await?.is_file() {
                 let name = child.file_name();
-                if name.ne(DELETE_FILE_NAME) {
+                if name.ne(RELEASE_TS_FILE_NAME) {
                     stream_list.push(child.path())
                 }
             }
@@ -210,7 +174,7 @@ impl crate::Stream for Stream {
 
         if segments.is_empty() || segments.front().unwrap().is_full() {
             let segment_path: PathBuf = self.segment_path(format!("{:?}", event.ts));
-            let segment = self.create_segment(segment_path).await?;
+            let segment = Segment::create(segment_path).await?;
             segments.push_front(segment);
         }
 
@@ -241,7 +205,7 @@ impl crate::Stream for Stream {
         time_buf.clone_from_slice(&time_bytes);
 
         // create will truncate old content
-        let delete_file = File::create(&self.delete_path).await?;
+        let delete_file = File::create(&self.release_ts_file_path).await?;
         let mut delete_writer = BufWriter::new(delete_file);
         delete_writer.write(&time_buf).await?;
         delete_writer.flush().await?;

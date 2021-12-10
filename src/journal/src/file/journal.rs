@@ -30,7 +30,7 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub async fn open(root: impl Into<PathBuf>) -> Result<Journal> {
+    pub async fn create(root: impl Into<PathBuf>) -> Result<Journal> {
         let path = root.into();
 
         match fs::DirBuilder::new().recursive(true).create(&path).await {

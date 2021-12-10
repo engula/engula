@@ -31,7 +31,9 @@ impl Codec {
             }
 
             if i + SIZE_LENGTH > buf_size {
-                return Err(Error::Unknown("decode_index size field not found".to_string()));
+                return Err(Error::Unknown(
+                    "decode_index size field not found".to_string(),
+                ));
             }
 
             let size_bytes = &buf[i as usize..(i + SIZE_LENGTH) as usize];
@@ -40,7 +42,9 @@ impl Codec {
             let size = u64::from_be_bytes(size_buf);
 
             if (i + HEADER_LENGTH) > buf_size {
-                return Err(Error::Unknown("decode_index timestamp field not found".to_string()));
+                return Err(Error::Unknown(
+                    "decode_index timestamp field not found".to_string(),
+                ));
             }
 
             let time_bytes = buf[(i + SIZE_LENGTH) as usize..(i + HEADER_LENGTH) as usize].to_vec();
@@ -68,7 +72,9 @@ impl Codec {
             }
 
             if i + SIZE_LENGTH > buf_size {
-                return Err(Error::Unknown("decode event size field not found".to_string()));
+                return Err(Error::Unknown(
+                    "decode event size field not found".to_string(),
+                ));
             }
 
             let size_bytes = &buf[i as usize..(i + SIZE_LENGTH) as usize];
@@ -77,14 +83,18 @@ impl Codec {
             let size = u64::from_be_bytes(size_buf);
 
             if i + HEADER_LENGTH > buf_size {
-                return Err(Error::Unknown("decode event timestamp field not found".to_string()));
+                return Err(Error::Unknown(
+                    "decode event timestamp field not found".to_string(),
+                ));
             }
 
             let time_bytes = buf[(i + SIZE_LENGTH) as usize..(i + HEADER_LENGTH) as usize].to_vec();
             let time = Timestamp::deserialize(time_bytes)?;
 
             if i + size > buf_size {
-                return Err(Error::Unknown("decode event data field not found".to_string()));
+                return Err(Error::Unknown(
+                    "decode event data field not found".to_string(),
+                ));
             }
 
             let data = buf[(i + HEADER_LENGTH) as usize..(i + size) as usize].to_vec();
