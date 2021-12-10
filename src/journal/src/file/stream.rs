@@ -60,8 +60,10 @@ impl Stream {
         }
     }
 
-    fn segment_path(&self, name: String) -> PathBuf {
-        self.root.join(name)
+    fn segment_path(&self, index: usize) -> PathBuf {
+        // file name format: fix ten size 000-{binary value of index}
+        // such as 0000000001 for 1 and 0000000011 for 2
+        self.root.join(format!("{:010b}", index))
     }
 
     fn release_ts_file_path(dir: PathBuf) -> PathBuf {
@@ -134,6 +136,10 @@ impl Stream {
                     }
                     indexes.push_back(index);
                 }
+
+                if let Some(old) = segments.get_mut(0) {
+                    old.become_read_only();
+                }
                 segments.push_front(segment);
             }
         }
@@ -154,6 +160,8 @@ impl Stream {
                 }
             }
         }
+        // with file name format in segment_path function, it will sort in right way
+        stream_list.sort();
         Ok(stream_list)
     }
 }
@@ -173,8 +181,11 @@ impl crate::Stream for Stream {
         let mut segments = self.segments.lock().await;
 
         if segments.is_empty() || segments.front().unwrap().is_full() {
-            let segment_path: PathBuf = self.segment_path(format!("{:?}", event.ts));
+            let segment_path: PathBuf = self.segment_path(segments.len() + 1);
             let segment = Segment::create(segment_path).await?;
+            if let Some(old) = segments.get_mut(0) {
+                old.become_read_only();
+            }
             segments.push_front(segment);
         }
 

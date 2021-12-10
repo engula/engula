@@ -26,7 +26,7 @@ use crate::{file::codec::Codec, Error, Event, Result, Timestamp};
 #[derive(Clone, Debug)]
 pub struct Segment {
     pub path: PathBuf,
-    pub writer: Arc<Mutex<BufWriter<File>>>,
+    pub writer: Option<Arc<Mutex<BufWriter<File>>>>,
     pub reader: Arc<Mutex<BufReader<File>>>,
     pub start_index: Option<Index>,
     pub end_index: Option<Index>,
@@ -61,7 +61,7 @@ impl Segment {
 
         let segment = Segment {
             path: path.clone(),
-            writer: Arc::new(Mutex::new(writer)),
+            writer: Some(Arc::new(Mutex::new(writer))),
             reader: Arc::new(Mutex::new(reader)),
             start_index: None,
             end_index: None,
@@ -120,7 +120,7 @@ impl Segment {
     }
 
     pub async fn write(&mut self, event: Event) -> Result<Index> {
-        let mut writer = self.writer.lock().await;
+        let mut writer = self.writer.as_ref().unwrap().lock().await;
         let ts = event.ts;
         let buf = Codec::encode(event);
 
@@ -145,6 +145,10 @@ impl Segment {
     pub async fn clean(&mut self) -> Result<()> {
         fs::remove_file(&self.path).await?;
         Ok(())
+    }
+
+    pub fn become_read_only(&mut self) {
+        self.writer = None;
     }
 
     pub fn is_full(&self) -> bool {
