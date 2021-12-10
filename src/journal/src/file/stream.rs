@@ -24,7 +24,7 @@ use tokio::{
 
 use crate::{
     async_trait,
-    file::segment::{Entry, Index, Segment},
+    file::segment::{Index, Segment},
     Error, Event, Result, ResultStream, Timestamp,
 };
 
@@ -98,21 +98,14 @@ impl Stream {
                 continue;
             }
 
-            if start_index.ts < index.ts {
-                events.append(
-                    segment
-                        .read(index.location, end_index.location + end_index.size)
-                        .await?
-                        .as_mut(),
-                );
+            let start_location = if start_index.ts < index.ts {
+                index.location
             } else {
-                events.append(
-                    segment
-                        .read(start_index.location, end_index.location + end_index.size)
-                        .await?
-                        .as_mut(),
-                );
-            }
+                start_index.location
+            };
+            let end_location = end_index.location + end_index.size;
+
+            events.append(segment.read(start_location, end_location).await?.as_mut());
         }
         Ok(Box::new(stream::once(future::ok(events))))
     }
@@ -212,27 +205,19 @@ impl crate::Stream for Stream {
     }
 
     async fn append_event(&self, event: Event) -> Result<()> {
-        let entry = Entry::from(event);
-
         let mut indexes = self.index.lock().await;
         let mut segments = self.segments.lock().await;
 
-        if segments.get(0).is_none() {
-            let segment_path: PathBuf = self.segment_path(format!("{:?}", &entry.time));
+        if segments.is_empty() || segments.front().unwrap().is_full() {
+            let segment_path: PathBuf = self.segment_path(format!("{:?}", event.ts));
             let segment = self.create_segment(segment_path).await?;
             segments.push_front(segment);
         }
 
-        let active_segment = &mut segments[0];
-        let index = active_segment.write(&entry).await?;
+        let active_segment = segments.front_mut().unwrap();
+        let index = active_segment.write(event).await?;
         indexes.push_back(index);
 
-        // check if need move to another file
-        if active_segment.is_full() {
-            let segment_path = self.segment_path(format!("{:?}", &entry.time));
-            let segment = self.create_segment(segment_path).await?;
-            segments.push_front(segment);
-        }
         Ok(())
     }
 

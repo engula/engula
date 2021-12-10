@@ -21,7 +21,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::{Event, Result, Timestamp};
+use crate::{file::codec::Codec, Error, Event, Result, Timestamp};
 
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -40,108 +40,71 @@ impl Segment {
     }
 
     pub async fn read_index(&mut self, start: u64, end: u64) -> Result<Vec<Index>> {
-        let buf_size = end - start;
+        let buf_size = (end - start) as usize;
 
         let mut reader = self.reader.lock().await;
 
         reader.seek(SeekFrom::Start(start)).await?;
-        let mut buf = vec![0u8; buf_size as usize];
+        let mut buf = vec![0u8; buf_size];
         let n = reader.read(&mut buf).await?;
-        println!("{}", n);
 
-        let mut ret = Vec::new();
-
-        let mut i = 0_u64;
-        loop {
-            if i >= buf_size {
-                break;
-            }
-            let size_bytes = &buf[i as usize..(i + 8) as usize];
-            let mut size_buf = [0; 8];
-            size_buf.clone_from_slice(size_bytes);
-            let size = u64::from_be_bytes(size_buf);
-
-            let time_bytes = buf[(i + 8) as usize..(i + 16) as usize].to_vec();
-            let time = Timestamp::deserialize(time_bytes)?;
-
-            let index = Index {
-                ts: time,
-                location: i,
-                size,
-            };
-
-            if self.start_index.is_none() {
-                self.start_index = Some(index.clone());
-            }
-            self.end_index = Some(index.clone());
-
-            ret.push(index);
-            i += size;
+        if n != buf_size {
+            return Err(Error::Unknown(format!(
+                "not read enough data of segment {:?} with start {:?} and end {:?}",
+                self.path, start, end
+            )));
         }
 
-        Ok(ret)
+        match Codec::decode_index(&buf) {
+            Ok(indexes) => {
+                if self.start_index.is_none() {
+                    self.start_index = indexes.get(0).cloned();
+                }
+                self.end_index = indexes.last().cloned();
+                Ok(indexes)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn read(&self, start: u64, end: u64) -> Result<Vec<Event>> {
-        let buf_size = end - start;
+        let buf_size = (end - start) as usize;
 
         let mut reader = self.reader.lock().await;
-
         reader.seek(SeekFrom::Start(start)).await?;
+
         let mut buf = vec![0u8; buf_size as usize];
         let n = reader.read(&mut buf).await?;
-        println!("{}", n);
 
-        let mut ret = Vec::new();
-
-        let mut i = 0_u64;
-        loop {
-            if i >= buf_size {
-                break;
-            }
-            let size_bytes = &buf[i as usize..(i + 8) as usize];
-            let mut size_buf = [0; 8];
-            size_buf.clone_from_slice(size_bytes);
-            let size = u64::from_be_bytes(size_buf);
-
-            let time_bytes = buf[(i + 8) as usize..(i + 16) as usize].to_vec();
-            let time = Timestamp::deserialize(time_bytes)?;
-
-            let data = buf[(i + 16) as usize..(i + size) as usize].to_vec();
-            ret.push(Event { ts: time, data });
-            i += size;
+        if n != buf_size {
+            return Err(Error::Unknown(format!(
+                "not read enough data {:?} with start {:?} and end {:?}",
+                self.path, start, end
+            )));
         }
 
-        Ok(ret)
+        Codec::decode_event(&buf)
     }
 
-    pub async fn write(&mut self, entry: &Entry) -> Result<Index> {
+    pub async fn write(&mut self, event: Event) -> Result<Index> {
         let mut writer = self.writer.lock().await;
+        let ts = event.ts;
+        let buf = Codec::encode(event);
 
-        let mut size_buf = [0; 8];
-        let size_bytes = entry.size.to_be_bytes();
-        size_buf.clone_from_slice(&size_bytes);
-
-        let mut time_buf = [0; 8];
-        let time_bytes = entry.time.serialize();
-        time_buf.clone_from_slice(&time_bytes);
-
-        writer.write(&size_buf).await?;
-        writer.write(&time_buf).await?;
-        writer.write(&entry.data).await?;
+        writer.write(&buf).await?;
         writer.flush().await?;
 
         let index = Index {
-            ts: entry.time,
+            ts,
             location: self.position,
-            size: entry.size,
+            size: buf.len() as u64,
         };
 
         if self.start_index.is_none() {
             self.start_index = Some(index.clone());
         }
         self.end_index = Some(index.clone());
-        self.position += entry.size;
+        self.position += index.size;
 
         Ok(index)
     }
@@ -157,21 +120,4 @@ pub struct Index {
     pub ts: Timestamp,
     pub location: u64,
     pub size: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct Entry {
-    pub size: u64,
-    pub time: Timestamp,
-    pub data: Vec<u8>,
-}
-
-impl From<Event> for Entry {
-    fn from(event: Event) -> Self {
-        Entry {
-            size: (8 + event.ts.serialize().len() + event.data.len()) as u64,
-            time: event.ts,
-            data: event.data,
-        }
-    }
 }
