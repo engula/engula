@@ -14,10 +14,15 @@
 
 name: 'Cargo Cache'
 description: 'Cache cargo installation'
+outputs:
+  cache-hit:
+    description: "Whether this cache hit or not"
+    value: ${{ steps.cache.outputs.cache-hit }}
 runs:
   using: "composite"
   steps:
     - name: Cache cargo registry
+      id: cache
       uses: actions/cache@v2
       with:
         path: |
