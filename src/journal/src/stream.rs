@@ -17,7 +17,7 @@ use std::convert::TryInto;
 use crate::{async_trait, Error, Result, ResultStream};
 
 /// A generic timestamp to order events.
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Timestamp(u64);
 
 impl Timestamp {

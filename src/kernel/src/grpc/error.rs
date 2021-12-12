@@ -34,6 +34,7 @@ impl From<Error> for tonic::Status {
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
             Error::Internal(s) => (tonic::Code::Internal, s),
             Error::Io(inner) => (tonic::Code::Internal, inner.to_string()),
+            Error::Corrupted(s) => (tonic::Code::DataLoss, s),
             Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
         };
         tonic::Status::new(code, message)

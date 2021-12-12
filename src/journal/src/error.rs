@@ -23,6 +23,10 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("corrupted: {0}")]
+    Corrupted(String),
     #[error("unknown: {0}")]
     Unknown(String),
 }
