@@ -43,18 +43,17 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
     - name: Install Rust toolchain
-      if: steps.cache.outputs.cache-hit != 'true'
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: ${{ matrix.rust }}
         components: rustfmt
         override: true
+
+    - name: Load cargo cache
+      id: cache
+      uses: ./.github/actions/cargo-cache
 
     - name: Cargo build
       uses: actions-rs/cargo@v1
@@ -75,18 +74,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
     - name: Install Rust toolchain
-      if: steps.cache.outputs.cache-hit != 'true'
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: nightly
         components: clippy, rustfmt
         override: true
+
+    - name: Load cargo cache
+      id: cache
+      uses: ./.github/actions/cargo-cache
 
     - name: Check clippy
       uses: actions-rs/cargo@v1
@@ -108,18 +106,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
     - name: Install Rust toolchain
-      if: steps.cache.outputs.cache-hit != 'true'
       uses: actions-rs/toolchain@v1
       with:
           profile: minimal
           toolchain: nightly
           components: rustfmt
           override: true
+
+    - name: Load cargo cache
+      id: cache
+      uses: ./.github/actions/cargo-cache
 
     - name: Cargo build
       uses: actions-rs/cargo@v1
