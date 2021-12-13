@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{manifest::Manifest, Journal, Storage};
-use crate::Result;
+//! A [`Kernel`] implementation that stores everything in memory.
+//!
+//! [`Kernel`]: crate::Kernel
 
-pub type Kernel = crate::local::Kernel<Journal, Storage, Manifest>;
+mod kernel;
+mod manifest;
 
-impl Kernel {
-    pub async fn open() -> Result<Self> {
-        let journal = Journal::default();
-        let storage = Storage::default();
-        let manifest = Manifest::default();
-        Self::init(journal, storage, manifest).await
-    }
-}
+pub use engula_journal::file::Journal;
+pub use engula_storage::file::Storage;
+
+pub use self::{kernel::Kernel, manifest::Manifest};

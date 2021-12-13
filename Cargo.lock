@@ -176,6 +176,7 @@ dependencies = [
  "engula-storage",
  "futures",
  "prost",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
