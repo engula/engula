@@ -14,20 +14,22 @@
 
 use std::sync::Arc;
 
+use engula_journal::Error as JournalError;
+use engula_storage::Error as StorageError;
 use futures::TryStreamExt;
 use tokio::sync::{broadcast, Mutex};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    async_trait, manifest::Manifest, Bucket, Error, KernelUpdate, Result, ResultStream, Sequence,
-    Stream, Version, VersionUpdate,
+    async_trait, manifest::Manifest, Error, Journal, KernelUpdate, Result, ResultStream, Sequence,
+    Storage, Version, VersionUpdate,
 };
 
 #[derive(Clone)]
-pub struct Kernel<S: Stream, B: Bucket, M: Manifest> {
+pub struct Kernel<J: Journal, S: Storage, M: Manifest> {
     inner: Arc<Mutex<Inner>>,
-    stream: S,
-    bucket: B,
+    journal: J,
+    storage: S,
     manifest: M,
 }
 
@@ -36,13 +38,13 @@ struct Inner {
     updates: broadcast::Sender<Arc<VersionUpdate>>,
 }
 
-impl<S, B, M> Kernel<S, B, M>
+impl<J, S, M> Kernel<J, S, M>
 where
-    S: Stream,
-    B: Bucket,
+    J: Journal,
+    S: Storage,
     M: Manifest,
 {
-    pub async fn init(stream: S, bucket: B, manifest: M) -> Result<Self> {
+    pub async fn init(journal: J, storage: S, manifest: M) -> Result<Self> {
         let version = manifest.load_version().await?;
         let (updates, _) = broadcast::channel(1024);
         let inner = Inner {
@@ -51,29 +53,45 @@ where
         };
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
-            stream,
-            bucket,
+            journal,
+            storage,
             manifest,
         })
     }
 }
 
+const DEFAULT_NAME: &str = "DEFAULT";
+
 #[async_trait]
-impl<S, B, M> crate::Kernel for Kernel<S, B, M>
+impl<J, S, M> crate::Kernel for Kernel<J, S, M>
 where
-    S: Stream,
-    B: Bucket,
+    J: Journal,
+    S: Storage,
     M: Manifest,
 {
-    type Bucket = B;
-    type Stream = S;
+    type Bucket = S::Bucket;
+    type Stream = J::Stream;
 
     async fn stream(&self) -> Result<Self::Stream> {
-        Ok(self.stream.clone())
+        match self.journal.stream(DEFAULT_NAME).await {
+            Ok(stream) => Ok(stream),
+            Err(JournalError::NotFound(_)) => {
+                let stream = self.journal.create_stream(DEFAULT_NAME).await?;
+                Ok(stream)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn bucket(&self) -> Result<Self::Bucket> {
-        Ok(self.bucket.clone())
+        match self.storage.bucket(DEFAULT_NAME).await {
+            Ok(bucket) => Ok(bucket),
+            Err(StorageError::NotFound(_)) => {
+                let bucket = self.storage.create_bucket(DEFAULT_NAME).await?;
+                Ok(bucket)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn apply_update(&self, update: KernelUpdate) -> Result<()> {
