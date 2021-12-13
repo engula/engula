@@ -57,6 +57,7 @@ impl crate::manifest::Manifest for Manifest {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&self.path)
             .await?;
         file.write_buf(&mut buf.as_ref()).await?;
