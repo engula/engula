@@ -43,7 +43,7 @@ impl crate::Stream for Stream {
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>> {
         let output = self.read_events_internal(ts).await;
         match output {
-            Ok(output) => Box::new(output.map(|result| match result {
+            Ok(output) => Box::pin(output.map(|result| match result {
                 Ok(resp) => {
                     let events: Result<Vec<Event>> = resp
                         .events
@@ -59,7 +59,7 @@ impl crate::Stream for Stream {
                 }
                 Err(status) => Err(Error::from(status)),
             })),
-            Err(e) => Box::new(futures::stream::once(futures::future::err(e))),
+            Err(e) => Box::pin(futures::stream::once(futures::future::err(e))),
         }
     }
 

@@ -28,6 +28,8 @@ pub enum Error {
     Internal(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Corrupted(String),
     #[error(transparent)]
     Unknown(Box<dyn std::error::Error + Send>),
 }
@@ -44,6 +46,8 @@ impl From<JournalError> for Error {
             JournalError::NotFound(s) => Self::NotFound(s),
             JournalError::AlreadyExists(s) => Self::AlreadyExists(s),
             JournalError::InvalidArgument(s) => Self::InvalidArgument(s),
+            JournalError::Io(err) => Self::Io(err),
+            JournalError::Corrupted(s) => Self::Corrupted(s),
             err @ JournalError::Unknown(_) => Self::Unknown(Box::new(err)),
         }
     }
