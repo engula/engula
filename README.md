@@ -1,9 +1,9 @@
 # [Engula](https://engula.io)
 
-[![Discord][discord-badge]][discord-url]
+[![Zulip][zulip-badge]][zulip-url]
 
-[discord-badge]: https://img.shields.io/discord/873004811774214145?logo=Discord&style=flat-square
-[discord-url]: https://discord.gg/AN6vgVXaHC
+[zulip-badge]: https://img.shields.io/badge/Zulip-chat-brightgreen?style=flat-square&logo=zulip
+[zulip-url]: https://engula.zulipchat.com
 
 Engula is a serverless storage engine that empowers engineers to build reliable and cost-effective databases.
 
