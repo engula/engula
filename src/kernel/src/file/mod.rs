@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A [`Kernel`] implementation that stores everything in memory.
+//! A [`Kernel`] implementation that stores everything in local files.
 //!
 //! [`Kernel`]: crate::Kernel
 
