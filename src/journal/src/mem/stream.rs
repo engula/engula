@@ -37,7 +37,7 @@ impl crate::Stream for Stream {
     async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>> {
         let events = self.events.lock().await;
         let offset = events.partition_point(|x| x.ts < ts);
-        Box::new(stream::once(future::ok(
+        Box::pin(stream::once(future::ok(
             events.range(offset..).cloned().collect(),
         )))
     }

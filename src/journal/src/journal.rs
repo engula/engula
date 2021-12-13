@@ -31,6 +31,8 @@ pub trait Journal: Clone + Send + Sync + 'static {
 
     /// Deletes a stream.
     ///
+    /// Using a deleted stream is an undefined behavior.
+    ///
     /// # Errors
     ///
     /// Returns `Error::NotFound` if the stream doesn't exist.

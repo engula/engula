@@ -24,6 +24,7 @@
 //! Some built-in implementations of [`Journal`]:
 //!
 //! - [`mem`](crate::mem)
+//! - [`file`](crate::file)
 //! - [`grpc`](crate::grpc)
 //!
 //! [`Journal`]: crate::Journal
@@ -32,12 +33,13 @@ mod error;
 mod journal;
 mod stream;
 
+pub mod file;
 pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Unpin>;
+pub type ResultStream<T> = futures::stream::BoxStream<'static, Result<T>>;
 
 pub use self::{
     error::{Error, Result},

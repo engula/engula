@@ -159,6 +159,7 @@ dependencies = [
  "async-trait",
  "futures",
  "prost",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
