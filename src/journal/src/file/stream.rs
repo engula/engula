@@ -33,6 +33,15 @@ pub struct Inner {
     sealed_segments: Vec<SegmentReader>,
 }
 
+// Journal file layout:
+//
+// - journal
+//   - stream_1
+//     - active_segment (CURRENT)
+//     - sealed_segment_1
+//     - sealed_segment_2
+//     - ...
+//   - stream_2
 const ACTIVE_SEGMENT: &str = "CURRENT";
 
 impl Inner {

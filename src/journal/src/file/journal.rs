@@ -43,7 +43,7 @@ impl crate::Journal for Journal {
         let root = self.root.lock().await;
         let path = root.join(name);
         if !path.exists() {
-            return Err(Error::NotFound(format!("stream '{}'", name)));
+            return Err(Error::NotFound(format!("stream '{:?}'", path)));
         }
         Stream::open(path, self.segment_size).await
     }
@@ -52,7 +52,7 @@ impl crate::Journal for Journal {
         let root = self.root.lock().await;
         let path = root.join(name);
         if path.exists() {
-            return Err(Error::AlreadyExists(format!("stream '{}'", name)));
+            return Err(Error::AlreadyExists(format!("stream '{:?}'", path)));
         }
         fs::create_dir_all(&path).await?;
         Stream::open(path, self.segment_size).await
@@ -62,7 +62,7 @@ impl crate::Journal for Journal {
         let root = self.root.lock().await;
         let path = root.join(name);
         if !path.exists() {
-            return Err(Error::NotFound(format!("stream '{}'", name)));
+            return Err(Error::NotFound(format!("stream '{:?}'", path)));
         }
         fs::remove_dir_all(path).await?;
         Ok(())
