@@ -42,7 +42,12 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Load cargo cache
+        id: cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Install taplo-cli
+        if: steps.cache.outputs.cache-hit != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: install
