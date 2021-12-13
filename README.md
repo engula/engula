@@ -38,4 +38,4 @@ For discussions about ideas, designs, and roadmaps, please see the [discussions]
 
 ## Contributing
 
-If you are interested in contributing to the Engula project, please take a look at the [CONTRIBUTING.md](CONTRIBUTING.md).
+Thanks for your help improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
