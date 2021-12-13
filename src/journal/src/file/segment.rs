@@ -20,13 +20,13 @@ use tokio::{
     io::AsyncWriteExt,
 };
 
-use super::segment_stream::SegmentStream;
+use super::{codec, segment_stream::SegmentStream};
 use crate::{Error, Event, Result, ResultStream, Timestamp};
 
 pub struct Segment {
     path: PathBuf,
     file: File,
-    offset: u64,
+    offset: usize,
     last_timestamp: Option<Timestamp>,
 }
 
@@ -41,7 +41,7 @@ impl Segment {
             .append(true)
             .open(&path)
             .await?;
-        let offset = file.metadata().await?.len();
+        let offset = file.metadata().await?.len() as usize;
 
         // Recovers the last timestamp.
         let mut stream = SegmentStream::open(&path, offset, None).await?;
@@ -64,9 +64,7 @@ impl Segment {
             Error::Unknown("should not seal a segment with no timestamp".to_owned())
         })?;
         // Records the last timestamp at the file footer.
-        let ts_bytes = ts.serialize();
-        self.file.write_buf(&mut ts_bytes.as_ref()).await?;
-        self.file.write_u32(ts_bytes.len() as u32).await?;
+        codec::write_footer(&mut self.file, ts).await?;
         self.file.sync_data().await?;
         Ok(ts)
     }
@@ -75,7 +73,7 @@ impl Segment {
         SegmentStream::open(&self.path, self.offset, Some(ts)).await
     }
 
-    pub async fn append_event(&mut self, event: Event) -> Result<u64> {
+    pub async fn append_event(&mut self, event: Event) -> Result<usize> {
         if let Some(last_ts) = self.last_timestamp {
             if event.ts <= last_ts {
                 return Err(Error::InvalidArgument(format!(
@@ -84,13 +82,9 @@ impl Segment {
                 )));
             }
         }
-        let ts_bytes = event.ts.serialize();
-        self.file.write_u32(ts_bytes.len() as u32).await?;
-        self.file.write_u32(event.data.len() as u32).await?;
-        self.file.write_buf(&mut ts_bytes.as_ref()).await?;
-        self.file.write_buf(&mut event.data.as_ref()).await?;
+        let size = codec::write_event(&mut self.file, &event).await?;
         self.file.flush().await?;
-        self.offset += (8 + ts_bytes.len() + event.data.len()) as u64;
+        self.offset += size;
         self.last_timestamp = Some(event.ts);
         Ok(self.offset)
     }

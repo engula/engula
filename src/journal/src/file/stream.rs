@@ -28,7 +28,7 @@ pub struct Stream {
 #[derive(Default)]
 pub struct Inner {
     path: PathBuf,
-    segment_size: u64,
+    segment_size: usize,
     active_segment: Option<Segment>,
     sealed_segments: Vec<SegmentReader>,
 }
@@ -46,7 +46,7 @@ impl Inner {
 }
 
 impl Stream {
-    pub async fn open(path: PathBuf, segment_size: u64) -> Result<Stream> {
+    pub async fn open(path: PathBuf, segment_size: usize) -> Result<Stream> {
         let mut inner = Inner {
             path,
             segment_size,

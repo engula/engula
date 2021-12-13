@@ -15,21 +15,22 @@
 use std::path::Path;
 
 use futures::stream;
-use tokio::{fs::File, io::AsyncReadExt};
+use tokio::fs::File;
 
-use crate::{Error, Event, Result, ResultStream, Timestamp};
+use super::codec;
+use crate::{Event, Result, ResultStream, Timestamp};
 
 pub struct SegmentStream {
     file: File,
-    offset: u64,
-    max_offset: u64,
+    offset: usize,
+    max_offset: usize,
     start_event: Option<Event>,
 }
 
 impl SegmentStream {
     pub async fn open(
         path: impl AsRef<Path>,
-        limit: u64,
+        limit: usize,
         start_ts: Option<Timestamp>,
     ) -> Result<ResultStream<Vec<Event>>> {
         let file = File::open(path).await?;
@@ -57,34 +58,14 @@ impl SegmentStream {
     }
 
     async fn read_event(&mut self) -> Result<Option<Event>> {
-        if self.offset == self.max_offset {
-            return Ok(None);
+        if let Some((event, offset)) =
+            codec::read_event_at(&mut self.file, self.offset, self.max_offset).await?
+        {
+            self.offset = offset;
+            Ok(Some(event))
+        } else {
+            Ok(None)
         }
-        self.offset += 8;
-        if self.offset > self.max_offset {
-            return Err(Error::Corrupted(format!(
-                "offset {} > max_offset {}",
-                self.offset, self.max_offset
-            )));
-        }
-        if self.offset == self.max_offset {
-            return Ok(None);
-        }
-        let ts_len = self.file.read_u32().await?;
-        let data_len = self.file.read_u32().await?;
-        self.offset += (ts_len + data_len) as u64;
-        if self.offset > self.max_offset {
-            return Err(Error::Corrupted(format!(
-                "offset {} > max_offset {}",
-                self.offset, self.max_offset
-            )));
-        }
-        let mut ts_buf = vec![0; ts_len as usize];
-        self.file.read_exact(&mut ts_buf).await?;
-        let ts = Timestamp::deserialize(ts_buf)?;
-        let mut data = vec![0; data_len as usize];
-        self.file.read_exact(&mut data).await?;
-        Ok(Some(Event { ts, data }))
     }
 
     async fn next_event(&mut self) -> Result<Option<Event>> {

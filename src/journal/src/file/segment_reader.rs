@@ -12,22 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    io::SeekFrom,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, AsyncSeekExt},
-};
+use tokio::fs::File;
 
-use super::segment_stream::SegmentStream;
-use crate::{Error, Event, Result, ResultStream, Timestamp};
+use super::{codec, segment_stream::SegmentStream};
+use crate::{Event, Result, ResultStream, Timestamp};
 
 pub struct SegmentReader {
     path: PathBuf,
-    max_offset: u64,
+    max_offset: usize,
     max_timestamp: Timestamp,
 }
 
@@ -35,22 +29,9 @@ impl SegmentReader {
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let mut file = File::open(&path).await?;
-        let mut max_offset = file.metadata().await?.len();
+        let max_offset = file.metadata().await?.len() as usize;
         // Reads the max timestamp from the file footer.
-        if max_offset < 4 {
-            return Err(Error::Corrupted("file size too small".to_owned()));
-        }
-        max_offset -= 4;
-        file.seek(SeekFrom::Start(max_offset)).await?;
-        let ts_len = file.read_u32().await?;
-        if max_offset < ts_len as u64 {
-            return Err(Error::Corrupted("file size too small".to_owned()));
-        }
-        max_offset -= ts_len as u64;
-        file.seek(SeekFrom::Start(max_offset)).await?;
-        let mut ts_buf = vec![0; ts_len as usize];
-        file.read_exact(&mut ts_buf).await?;
-        let max_timestamp = Timestamp::deserialize(ts_buf)?;
+        let (max_timestamp, max_offset) = codec::read_footer_from(&mut file, max_offset).await?;
         Ok(Self {
             path,
             max_offset,

@@ -22,11 +22,11 @@ use crate::{async_trait, Error, Result};
 #[derive(Clone)]
 pub struct Journal {
     root: Arc<Mutex<PathBuf>>,
-    segment_size: u64,
+    segment_size: usize,
 }
 
 impl Journal {
-    pub async fn open(root: impl Into<PathBuf>, segment_size: u64) -> Result<Self> {
+    pub async fn open(root: impl Into<PathBuf>, segment_size: usize) -> Result<Self> {
         let root = root.into();
         Ok(Self {
             root: Arc::new(Mutex::new(root)),
