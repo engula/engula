@@ -22,41 +22,21 @@ use engula_kernel::grpc::{FileKernel, MemKernel, Server as KernelServer};
 use engula_storage::{
     file::Storage as FileStorage, grpc::Server as StorageServer, mem::Storage as MemStorage,
 };
-use tokio::{signal, sync::oneshot};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 macro_rules! run_until_asked_to_quit {
     ($addr:expr, $server:expr) => {{
         let cloned_addr = $addr.clone();
-        let (tx, rx) = oneshot::channel();
-        let mut server_handle = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_service($server.into_service())
-                .serve_with_shutdown(cloned_addr, async {
-                    rx.await.unwrap_or_default();
-                })
-                .await
-        });
-
-        let mut server_is_quit = false;
-        tokio::select! {
-            resp = &mut server_handle => {
-                server_is_quit = true;
-                resp.unwrap_or(Ok(()))?;
-            }
-            _ = signal::ctrl_c() => {
-                let _ = tx.send(());
-            }
-        }
-        if !server_is_quit {
-            server_handle.await.unwrap_or(Ok(()))?;
-        }
+        tonic::transport::Server::builder()
+            .add_service($server.into_service())
+            .serve(cloned_addr)
+            .await?;
     }};
 }
 
 #[derive(Subcommand)]
-enum MemOrFile {
+enum RunMode {
     #[clap(name = "--mem", about = "An instance stores everything in memory")]
     Mem,
     #[clap(
@@ -69,37 +49,31 @@ enum MemOrFile {
     },
 }
 
-#[derive(Args)]
-struct EnvArgs {
-    #[clap(about = "Socket address to listen")]
-    addr: SocketAddr,
-}
-
 #[derive(Subcommand)]
 #[clap(about = "Commands to operate Storage")]
 enum StorageCommand {
     #[clap(about = "Run a storage server")]
     Run {
-        #[clap(flatten)]
-        env: EnvArgs,
+        #[clap(about = "Socket address to listen")]
+        addr: SocketAddr,
 
         #[clap(subcommand)]
-        cmd: MemOrFile,
+        cmd: RunMode,
     },
 }
 
 impl StorageCommand {
     async fn run(&self) -> Result<()> {
         match self {
-            StorageCommand::Run { env, cmd } => match cmd {
-                MemOrFile::File { path } => {
+            StorageCommand::Run { addr, cmd } => match cmd {
+                RunMode::File { path } => {
                     let storage = FileStorage::new(&path).await?;
                     let server = StorageServer::new(storage);
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
-                MemOrFile::Mem => {
+                RunMode::Mem => {
                     let server = StorageServer::new(MemStorage::default());
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
             },
         }
@@ -112,11 +86,11 @@ impl StorageCommand {
 enum JournalCommand {
     #[clap(about = "Run a journal server")]
     Run {
-        #[clap(flatten)]
-        env: EnvArgs,
+        #[clap(about = "Socket address to listen")]
+        addr: SocketAddr,
 
         #[clap(subcommand)]
-        cmd: MemOrFile,
+        cmd: RunMode,
 
         #[clap(
             long,
@@ -131,18 +105,18 @@ impl JournalCommand {
     async fn run(&self) -> Result<()> {
         match self {
             JournalCommand::Run {
-                env,
+                addr,
                 cmd,
                 segment_size,
             } => match cmd {
-                MemOrFile::File { path } => {
+                RunMode::File { path } => {
                     let journal = FileJournal::open(path, *segment_size).await?;
                     let server = JournalServer::new(journal);
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
-                MemOrFile::Mem => {
+                RunMode::Mem => {
                     let server = JournalServer::new(MemJournal::default());
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
             },
         }
@@ -155,11 +129,11 @@ impl JournalCommand {
 enum KernelCommand {
     #[clap(about = "Run a kernel server")]
     Run {
-        #[clap(flatten)]
-        env: EnvArgs,
+        #[clap(about = "Socket address to listen")]
+        addr: SocketAddr,
 
         #[clap(subcommand)]
-        cmd: MemOrFile,
+        mode: RunMode,
 
         #[clap(long, about = "The endpoint of journal server")]
         journal: String,
@@ -173,20 +147,20 @@ impl KernelCommand {
     async fn run(&self) -> Result<()> {
         match self {
             KernelCommand::Run {
-                env,
-                cmd,
+                addr,
+                mode: cmd,
                 journal,
                 storage,
             } => match cmd {
-                MemOrFile::Mem => {
+                RunMode::Mem => {
                     let kernel = MemKernel::open(&journal, &storage).await?;
                     let server = KernelServer::new(kernel);
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
-                MemOrFile::File { path } => {
+                RunMode::File { path } => {
                     let kernel = FileKernel::open(&journal, &storage, &path).await?;
                     let server = KernelServer::new(kernel);
-                    run_until_asked_to_quit!(&env.addr, server);
+                    run_until_asked_to_quit!(addr, server);
                 }
             },
         }
