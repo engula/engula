@@ -2,12 +2,12 @@
 
 I'm really glad you're reading this, because we need volunteer developers to help this project come to fruition.
 
-If you haven't already, come find us on [the discussion forum][discussion-forum] or [discord][discord-url]. We want you working on things you're excited about.
+If you haven't already, come find us on [the discussion forum][discussion-forum] or [Zulip][zulip-url]. We want you working on things you're excited about.
 
 Welcome to join discussions!
 
 [discussion-forum]: https://github.com/engula/engula/discussions
-[discord-url]: https://discord.gg/AN6vgVXaHC
+[zulip-url]: https://engula.zulipchat.com
 
 ## Get started
 
