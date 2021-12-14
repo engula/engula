@@ -14,7 +14,7 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use clap::{crate_description, crate_version, Args, Parser, Subcommand};
+use clap::{crate_description, crate_version, Parser, Subcommand};
 use engula_journal::{
     file::Journal as FileJournal, grpc::Server as JournalServer, mem::Journal as MemJournal,
 };
@@ -159,7 +159,7 @@ impl KernelCommand {
                 }
                 RunMode::File { path } => {
                     let kernel = FileKernel::open(&journal, &storage, &path).await?;
-                    let server = KernelServer::new(kernel);
+                    let server = KernelServer::new(&journal, &storage, kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
             },

@@ -60,7 +60,7 @@ where
     }
 }
 
-const DEFAULT_NAME: &str = "DEFAULT";
+pub(crate) const DEFAULT_NAME: &str = "DEFAULT";
 
 #[async_trait]
 impl<J, S, M> crate::Kernel for Kernel<J, S, M>

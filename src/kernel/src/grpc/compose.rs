@@ -14,22 +14,56 @@
 
 use std::path::Path;
 
-use engula_journal::grpc::Journal;
-use engula_storage::grpc::Storage;
+use engula_journal::{grpc as grpc_journal, Error as JournalError, Journal};
+use engula_storage::{grpc as grpc_storage, Error as StorageError, Storage};
 
 use crate::{
-    file::Manifest as FileManifest, local::Kernel as LocalKernel, mem::Manifest as MemManifest,
+    file::Manifest as FileManifest,
+    local::{Kernel as LocalKernel, DEFAULT_NAME},
+    manifest::Manifest,
+    mem::Manifest as MemManifest,
     Result,
 };
 
-pub type Kernel<M> = LocalKernel<Journal, Storage, M>;
+pub type Kernel<M> = LocalKernel<grpc_journal::Journal, grpc_storage::Storage, M>;
+
+async fn create_default_stream(journal: &impl Journal) -> Result<()> {
+    match journal.create_stream(DEFAULT_NAME).await {
+        Err(JournalError::AlreadyExists(_)) => Ok(()),
+        Ok(_) => Ok(()),
+        Err(e) => Err(e)?,
+    }
+}
+
+async fn create_default_bucket(storage: &impl Storage) -> Result<()> {
+    match storage.create_bucket(DEFAULT_NAME).await {
+        Err(StorageError::AlreadyExists(_)) => Ok(()),
+        Ok(_) => Ok(()),
+        Err(e) => Err(e)?,
+    }
+}
+
+async fn create_kernel<M: Manifest>(
+    journal_endpoint: &str,
+    storage_endpoint: &str,
+    manifest: M,
+) -> Result<Kernel<M>> {
+    let journal = grpc_journal::Journal::connect(journal_endpoint).await?;
+    let storage = grpc_storage::Storage::connect(storage_endpoint).await?;
+
+    // HACK: Create default stream & bucket here to avoid manipulating the stream or bucket
+    // from `Kernel::stream` or `Kernel::bucket` result not found.
+    // See https://github.com/engula/engula/issues/194 for details.
+    create_default_stream(&journal).await?;
+    create_default_bucket(&storage).await?;
+    Kernel::init(journal, storage, manifest).await
+}
+
 pub type MemKernel = Kernel<MemManifest>;
 
 impl MemKernel {
-    pub async fn open(journal_addr: &str, storage_addr: &str) -> Result<Self> {
-        let journal = Journal::connect(journal_addr).await?;
-        let storage = Storage::connect(storage_addr).await?;
-        Self::init(journal, storage, MemManifest::default()).await
+    pub async fn open(journal_endpoint: &str, storage_endpoint: &str) -> Result<Self> {
+        create_kernel(journal_endpoint, storage_endpoint, MemManifest::default()).await
     }
 }
 
@@ -41,9 +75,7 @@ impl FileKernel {
         storage_endpoint: &str,
         path: P,
     ) -> Result<Self> {
-        let journal = Journal::connect(journal_endpoint).await?;
-        let storage = Storage::connect(storage_endpoint).await?;
         let manifest = FileManifest::open(path.as_ref()).await;
-        Self::init(journal, storage, manifest).await
+        create_kernel(journal_endpoint, storage_endpoint, manifest).await
     }
 }
