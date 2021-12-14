@@ -14,45 +14,17 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use clap::{crate_version, Args, Parser, Subcommand};
+use clap::{crate_description, crate_version, Args, Parser, Subcommand};
 use engula_journal::{
     file::Journal as FileJournal, grpc::Server as JournalServer, mem::Journal as MemJournal,
-    Error as JournalError,
 };
-use engula_kernel::{
-    grpc::{FileKernel, MemKernel, Server as KernelServer},
-    Error as KernelError,
-};
+use engula_kernel::grpc::{FileKernel, MemKernel, Server as KernelServer};
 use engula_storage::{
     file::Storage as FileStorage, grpc::Server as StorageServer, mem::Storage as MemStorage,
-    Error as StorageError,
 };
-use thiserror::Error;
 use tokio::{signal, sync::oneshot};
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Transport(#[from] tonic::transport::Error),
-    #[error("corrupted: {0}")]
-    Corrupted(String),
-    #[error(transparent)]
-    Kernel(#[from] KernelError),
-    #[error(transparent)]
-    Journal(#[from] JournalError),
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-}
-
-impl Error {
-    pub fn corrupted<E: ToString>(err: E) -> Self {
-        Self::Corrupted(err.to_string())
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 macro_rules! run_until_asked_to_quit {
     ($addr:expr, $server:expr) => {{
@@ -237,8 +209,7 @@ enum SubCommand {
 #[derive(Parser)]
 #[clap(
     version = crate_version!(),
-    author = "The Engula Authors",
-    about = "Engula is a serverless storage engine that empowers engineers to build reliable and cost-effective databases."
+    about = crate_description!(),
 )]
 struct Command {
     #[clap(subcommand)]
