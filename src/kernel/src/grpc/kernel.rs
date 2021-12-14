@@ -35,8 +35,8 @@ impl Kernel {
     pub async fn connect(addr: &str) -> Result<Kernel> {
         let client = Client::connect(addr).await?;
         let resp = client.place_lookup(PlaceLookupRequest {}).await?;
-        let journal = grpc_journal::Journal::connect(&resp.journal_address).await?;
-        let storage = grpc_storage::Storage::connect(&resp.storage_address).await?;
+        let journal = grpc_journal::Journal::connect(&resp.journal_endpoint).await?;
+        let storage = grpc_storage::Storage::connect(&resp.storage_endpoint).await?;
         Ok(Kernel {
             client,
             journal,

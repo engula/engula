@@ -19,12 +19,18 @@ use super::{compose::Kernel as ComposeKernel, proto::*};
 use crate::{manifest::Manifest, Kernel, KernelUpdate};
 
 pub struct Server<M: Manifest> {
+    journal_endpoint: String,
+    storage_endpoint: String,
     kernel: ComposeKernel<M>,
 }
 
 impl<M: Manifest> Server<M> {
-    pub fn new(kernel: ComposeKernel<M>) -> Self {
-        Server { kernel }
+    pub fn new(journal_endpoint: &str, storage_endpoint: &str, kernel: ComposeKernel<M>) -> Self {
+        Server {
+            journal_endpoint: journal_endpoint.to_owned(),
+            storage_endpoint: storage_endpoint.to_owned(),
+            kernel,
+        }
     }
 
     pub fn into_service(self) -> kernel_server::KernelServer<Self> {
@@ -79,8 +85,8 @@ impl<M: Manifest> kernel_server::Kernel for Server<M> {
         _request: Request<PlaceLookupRequest>,
     ) -> Result<Response<PlaceLookupResponse>, Status> {
         Ok(Response::new(PlaceLookupResponse {
-            journal_address: self.kernel.get_journal_addr().to_owned(),
-            storage_address: self.kernel.get_storage_addr().to_owned(),
+            journal_endpoint: self.journal_endpoint.clone(),
+            storage_endpoint: self.storage_endpoint.clone(),
         }))
     }
 }

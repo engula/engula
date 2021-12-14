@@ -51,6 +51,6 @@ message VersionUpdatesResponse {
 message PlaceLookupRequest {}
 
 message PlaceLookupResponse {
-    string journal_address = 1;
-    string storage_address = 2;
+    string journal_endpoint = 1;
+    string storage_endpoint = 2;
 }

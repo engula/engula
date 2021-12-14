@@ -154,7 +154,7 @@ impl KernelCommand {
             } => match cmd {
                 RunMode::Mem => {
                     let kernel = MemKernel::open(&journal, &storage).await?;
-                    let server = KernelServer::new(kernel);
+                    let server = KernelServer::new(&journal, &storage, kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
                 RunMode::File { path } => {
