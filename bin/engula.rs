@@ -161,11 +161,11 @@ enum KernelCommand {
         #[clap(subcommand)]
         cmd: MemOrFile,
 
-        #[clap(long, about = "The address of journal server")]
-        journal: SocketAddr,
+        #[clap(long, about = "The endpoint of journal server")]
+        journal: String,
 
-        #[clap(long, about = "The address of storage server")]
-        storage: SocketAddr,
+        #[clap(long, about = "The endpoint of storage server")]
+        storage: String,
     },
 }
 
@@ -179,14 +179,12 @@ impl KernelCommand {
                 storage,
             } => match cmd {
                 MemOrFile::Mem => {
-                    let kernel =
-                        MemKernel::open(&journal.to_string(), &storage.to_string()).await?;
+                    let kernel = MemKernel::open(&journal, &storage).await?;
                     let server = KernelServer::new(kernel);
                     run_until_asked_to_quit!(&env.addr, server);
                 }
                 MemOrFile::File { path } => {
-                    let kernel =
-                        FileKernel::open(&journal.to_string(), &storage.to_string(), &path).await?;
+                    let kernel = FileKernel::open(&journal, &storage, &path).await?;
                     let server = KernelServer::new(kernel);
                     run_until_asked_to_quit!(&env.addr, server);
                 }
