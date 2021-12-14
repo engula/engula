@@ -137,7 +137,6 @@ dependencies = [
  "engula-kernel",
  "engula-storage",
  "futures",
- "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
