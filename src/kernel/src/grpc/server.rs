@@ -15,25 +15,25 @@
 use futures::StreamExt;
 use tonic::{Request, Response, Status};
 
-use super::proto::*;
-use crate::{Kernel, KernelUpdate};
+use super::{compose::Kernel as ComposeKernel, proto::*};
+use crate::{manifest::Manifest, Kernel, KernelUpdate};
 
-pub struct Server<K: Kernel> {
-    kernel: K,
+pub struct Server<M: Manifest> {
+    kernel: ComposeKernel<M>,
 }
 
-impl<K: Kernel> Server<K> {
-    pub fn new(kernel: K) -> Self {
+impl<M: Manifest> Server<M> {
+    pub fn new(kernel: ComposeKernel<M>) -> Self {
         Server { kernel }
     }
 
-    pub fn into_service(self) -> kernel_server::KernelServer<Server<K>> {
+    pub fn into_service(self) -> kernel_server::KernelServer<Self> {
         kernel_server::KernelServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<K: Kernel> kernel_server::Kernel for Server<K> {
+impl<M: Manifest> kernel_server::Kernel for Server<M> {
     type VersionUpdatesStream =
         Box<dyn futures::Stream<Item = Result<VersionUpdatesResponse, Status>> + Send + Unpin>;
 
@@ -72,5 +72,15 @@ impl<K: Kernel> kernel_server::Kernel for Server<K> {
                 Err(e) => Err(e.into()),
             },
         ))))
+    }
+
+    async fn place_lookup(
+        &self,
+        _request: Request<PlaceLookupRequest>,
+    ) -> Result<Response<PlaceLookupResponse>, Status> {
+        Ok(Response::new(PlaceLookupResponse {
+            journal_address: self.kernel.get_journal_addr().to_owned(),
+            storage_address: self.kernel.get_storage_addr().to_owned(),
+        }))
     }
 }

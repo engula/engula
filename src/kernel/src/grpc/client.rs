@@ -49,6 +49,12 @@ impl Client {
         Ok(resp.into_inner())
     }
 
+    pub async fn place_lookup(&self, input: PlaceLookupRequest) -> Result<PlaceLookupResponse> {
+        let mut client = self.client.clone();
+        let resp = client.place_lookup(input).await?;
+        Ok(resp.into_inner())
+    }
+
     pub async fn connect(addr: &str) -> Result<Client> {
         let client = KernelClient::connect(addr.to_owned()).await?;
         Ok(Client { client })

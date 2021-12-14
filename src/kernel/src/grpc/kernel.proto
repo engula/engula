@@ -24,6 +24,8 @@ service Kernel {
     rpc CurrentVersion(CurrentVersionRequest) returns (CurrentVersionResponse) {}
 
     rpc VersionUpdates(VersionUpdatesRequest) returns (stream VersionUpdatesResponse) {}
+
+    rpc PlaceLookup(PlaceLookupRequest) returns (PlaceLookupResponse) {}
 }
 
 message ApplyUpdateRequest {
@@ -44,4 +46,11 @@ message VersionUpdatesRequest {
 
 message VersionUpdatesResponse {
     metadata.v1.VersionUpdate version_update = 1;
+}
+
+message PlaceLookupRequest {}
+
+message PlaceLookupResponse {
+    string journal_address = 1;
+    string storage_address = 2;
 }

@@ -11,14 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+//! A [`Kernel`] implementation that interacts with gRPC kernel service.
+//!
+//! [`Kernel`]: crate::Kernel
 
 mod client;
+mod compose;
 mod error;
 mod kernel;
 mod proto;
 mod server;
 
-pub use self::{client::Client, kernel::Kernel, server::Server};
+pub use self::{
+    client::Client,
+    compose::{FileKernel, Kernel as ComposeKernel, MemKernel},
+    kernel::Kernel,
+    server::Server,
+};
 
 #[cfg(test)]
 mod tests {
@@ -26,7 +36,7 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
 
-    use super::Server;
+    use super::{MemKernel, Server};
     use crate::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -34,7 +44,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let kernel = mem::Kernel::open().await.unwrap();
+            let kernel = MemKernel::open(&local_addr.to_string(), &local_addr.to_string())
+                .await
+                .unwrap();
             let server = Server::new(kernel);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
