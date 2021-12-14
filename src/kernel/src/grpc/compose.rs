@@ -31,7 +31,7 @@ async fn create_default_stream(journal: &impl Journal) -> Result<()> {
     match journal.create_stream(DEFAULT_NAME).await {
         Err(JournalError::AlreadyExists(_)) => Ok(()),
         Ok(_) => Ok(()),
-        Err(e) => Err(e)?,
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -39,7 +39,7 @@ async fn create_default_bucket(storage: &impl Storage) -> Result<()> {
     match storage.create_bucket(DEFAULT_NAME).await {
         Err(StorageError::AlreadyExists(_)) => Ok(()),
         Ok(_) => Ok(()),
-        Err(e) => Err(e)?,
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -51,8 +51,8 @@ async fn create_kernel<M: Manifest>(
     let journal = grpc_journal::Journal::connect(journal_endpoint).await?;
     let storage = grpc_storage::Storage::connect(storage_endpoint).await?;
 
-    // HACK: Create default stream & bucket here to avoid manipulating the stream or bucket
-    // from `Kernel::stream` or `Kernel::bucket` result not found.
+    // HACK: Create default stream & bucket here to avoid manipulating the stream or
+    // bucket from `Kernel::stream` or `Kernel::bucket` result not found.
     // See https://github.com/engula/engula/issues/194 for details.
     create_default_stream(&journal).await?;
     create_default_bucket(&storage).await?;

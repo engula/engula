@@ -39,15 +39,32 @@ mod tests {
     use super::{MemKernel, Server};
     use crate::*;
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn mock_journal_and_storage_server(
+    ) -> std::result::Result<String, Box<dyn std::error::Error>> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let kernel = MemKernel::open(&local_addr.to_string(), &local_addr.to_string())
+            let journal = mem::Journal::default();
+            let storage = mem::Storage::default();
+            tonic::transport::Server::builder()
+                .add_service(engula_journal::grpc::Server::new(journal).into_service())
+                .add_service(engula_storage::grpc::Server::new(storage).into_service())
+                .serve_with_incoming(TcpListenerStream::new(listener))
                 .await
                 .unwrap();
-            let server = Server::new(kernel);
+        });
+
+        Ok(format!("http://{}", local_addr))
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let endpoint = mock_journal_and_storage_server().await?;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        tokio::task::spawn(async move {
+            let kernel = MemKernel::open(&endpoint, &endpoint).await.unwrap();
+            let server = Server::new(&endpoint, &endpoint, kernel);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))

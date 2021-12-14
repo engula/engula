@@ -153,13 +153,13 @@ impl KernelCommand {
                 storage,
             } => match cmd {
                 RunMode::Mem => {
-                    let kernel = MemKernel::open(&journal, &storage).await?;
-                    let server = KernelServer::new(&journal, &storage, kernel);
+                    let kernel = MemKernel::open(journal, storage).await?;
+                    let server = KernelServer::new(journal, storage, kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
                 RunMode::File { path } => {
-                    let kernel = FileKernel::open(&journal, &storage, &path).await?;
-                    let server = KernelServer::new(&journal, &storage, kernel);
+                    let kernel = FileKernel::open(journal, storage, &path).await?;
+                    let server = KernelServer::new(journal, storage, kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
             },
