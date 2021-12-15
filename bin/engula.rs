@@ -37,12 +37,9 @@ macro_rules! run_until_asked_to_quit {
 
 #[derive(Subcommand)]
 enum RunMode {
-    #[clap(name = "--mem", about = "An instance stores everything in memory")]
+    #[clap(name = "--mem", about = "Stores data in memory")]
     Mem,
-    #[clap(
-        name = "--file",
-        about = "An instance stores everything in local files"
-    )]
+    #[clap(name = "--file", about = "Stores data in local files")]
     File {
         #[clap(parse(from_os_str), about = "Path to store data")]
         path: PathBuf,
