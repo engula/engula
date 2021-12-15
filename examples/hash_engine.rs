@@ -24,9 +24,9 @@ use engula::{
 struct Args {
     #[clap(
         long,
-        about = "The address of a Kernel server, a memory kernel instance is running if not specified"
+        about = "The address of a Kernel server, a memory kernel instance is run if not specified"
     )]
-    address: Option<SocketAddr>,
+    kernel: Option<SocketAddr>,
 }
 
 async fn run<K: Kernel>(kernel: K) -> Result<()> {
@@ -45,7 +45,7 @@ async fn run<K: Kernel>(kernel: K) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let arg: Args = Args::parse();
-    if let Some(addr) = arg.address {
+    if let Some(addr) = arg.kernel {
         let kernel = KernelClient::connect(&addr.to_string()).await?;
         run(kernel).await
     } else {
