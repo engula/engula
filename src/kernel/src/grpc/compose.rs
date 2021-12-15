@@ -44,12 +44,12 @@ async fn create_default_bucket(storage: &impl Storage) -> Result<()> {
 }
 
 async fn create_kernel<M: Manifest>(
-    journal_endpoint: &str,
-    storage_endpoint: &str,
+    journal_addr: &str,
+    storage_addr: &str,
     manifest: M,
 ) -> Result<Kernel<M>> {
-    let journal = grpc_journal::Journal::connect(journal_endpoint).await?;
-    let storage = grpc_storage::Storage::connect(storage_endpoint).await?;
+    let journal = grpc_journal::Journal::connect(journal_addr).await?;
+    let storage = grpc_storage::Storage::connect(storage_addr).await?;
 
     // HACK: Create default stream & bucket here to avoid manipulating the stream or
     // bucket from `Kernel::stream` or `Kernel::bucket` result not found.
@@ -62,8 +62,8 @@ async fn create_kernel<M: Manifest>(
 pub type MemKernel = Kernel<MemManifest>;
 
 impl MemKernel {
-    pub async fn open(journal_endpoint: &str, storage_endpoint: &str) -> Result<Self> {
-        create_kernel(journal_endpoint, storage_endpoint, MemManifest::default()).await
+    pub async fn open(journal_addr: &str, storage_addr: &str) -> Result<Self> {
+        create_kernel(journal_addr, storage_addr, MemManifest::default()).await
     }
 }
 
@@ -71,11 +71,11 @@ pub type FileKernel = Kernel<FileManifest>;
 
 impl FileKernel {
     pub async fn open<P: AsRef<Path>>(
-        journal_endpoint: &str,
-        storage_endpoint: &str,
+        journal_addr: &str,
+        storage_addr: &str,
         path: P,
     ) -> Result<Self> {
         let manifest = FileManifest::open(path.as_ref()).await;
-        create_kernel(journal_endpoint, storage_endpoint, manifest).await
+        create_kernel(journal_addr, storage_addr, manifest).await
     }
 }

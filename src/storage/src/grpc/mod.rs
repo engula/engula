@@ -48,8 +48,7 @@ mod tests {
                 .await
                 .unwrap();
         });
-        let url = format!("http://{}", local_addr);
-        let storage = super::Storage::connect(&url).await?;
+        let storage = super::Storage::connect(&local_addr.to_string()).await?;
         storage.create_bucket("bucket").await?;
         let b = storage.bucket("bucket").await?;
         let mut w = b.new_sequential_writer("object").await?;

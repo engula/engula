@@ -135,11 +135,11 @@ enum KernelCommand {
         #[clap(subcommand)]
         mode: RunMode,
 
-        #[clap(long, about = "The endpoint of journal server")]
-        journal: String,
+        #[clap(long, about = "The address of journal server")]
+        journal: SocketAddr,
 
-        #[clap(long, about = "The endpoint of storage server")]
-        storage: String,
+        #[clap(long, about = "The address of storage server")]
+        storage: SocketAddr,
     },
 }
 
@@ -153,13 +153,17 @@ impl KernelCommand {
                 storage,
             } => match cmd {
                 RunMode::Mem => {
-                    let kernel = MemKernel::open(journal, storage).await?;
-                    let server = KernelServer::new(journal, storage, kernel);
+                    let kernel =
+                        MemKernel::open(&journal.to_string(), &storage.to_string()).await?;
+                    let server =
+                        KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
                 RunMode::File { path } => {
-                    let kernel = FileKernel::open(journal, storage, &path).await?;
-                    let server = KernelServer::new(journal, storage, kernel);
+                    let kernel =
+                        FileKernel::open(&journal.to_string(), &storage.to_string(), &path).await?;
+                    let server =
+                        KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
                     run_until_asked_to_quit!(addr, server);
                 }
             },

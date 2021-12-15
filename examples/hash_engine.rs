@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::SocketAddr;
+
 use clap::Parser;
 use engula::{
     engine::hash::{Engine, Result},
@@ -22,9 +24,9 @@ use engula::{
 struct Args {
     #[clap(
         long,
-        about = "The endpoint of a Kernel server, a memory kernel instance is running if not specified"
+        about = "The address of a Kernel server, a memory kernel instance is running if not specified"
     )]
-    endpoint: Option<String>,
+    address: Option<SocketAddr>,
 }
 
 async fn run<K: Kernel>(kernel: K) -> Result<()> {
@@ -43,8 +45,8 @@ async fn run<K: Kernel>(kernel: K) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let arg: Args = Args::parse();
-    if let Some(end) = arg.endpoint {
-        let kernel = KernelClient::connect(&end).await?;
+    if let Some(addr) = arg.address {
+        let kernel = KernelClient::connect(&addr.to_string()).await?;
         run(kernel).await
     } else {
         let kernel = MemKernel::open().await?;

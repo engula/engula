@@ -54,17 +54,17 @@ mod tests {
                 .unwrap();
         });
 
-        Ok(format!("http://{}", local_addr))
+        Ok(local_addr.to_string())
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let endpoint = mock_journal_and_storage_server().await?;
+        let address = mock_journal_and_storage_server().await?;
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let kernel = MemKernel::open(&endpoint, &endpoint).await.unwrap();
-            let server = Server::new(&endpoint, &endpoint, kernel);
+            let kernel = MemKernel::open(&address, &address).await.unwrap();
+            let server = Server::new(&address, &address, kernel);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
@@ -72,8 +72,7 @@ mod tests {
                 .unwrap();
         });
 
-        let url = format!("http://{}", local_addr);
-        let kernel = grpc::Kernel::connect(&url).await?;
+        let kernel = grpc::Kernel::connect(&local_addr.to_string()).await?;
         let version = kernel.current_version().await?;
         assert_eq!(version.sequence, 0);
         assert_eq!(version.meta.len(), 0);

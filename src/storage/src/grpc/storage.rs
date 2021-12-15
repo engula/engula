@@ -26,7 +26,8 @@ pub struct Storage {
 
 impl Storage {
     pub async fn connect(addr: &str) -> Result<Storage> {
-        let client = Client::connect(addr).await?;
+        let endpoint = format!("http://{}", addr);
+        let client = Client::connect(&endpoint).await?;
         Ok(Storage { client })
     }
 }

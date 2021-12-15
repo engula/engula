@@ -26,7 +26,8 @@ pub struct Journal {
 
 impl Journal {
     pub async fn connect(addr: &str) -> Result<Journal> {
-        let client = Client::connect(addr).await?;
+        let endpoint = format!("http://{}", addr);
+        let client = Client::connect(&endpoint).await?;
         Ok(Journal { client })
     }
 }
