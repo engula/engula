@@ -12,14 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::SocketAddr;
+
+use clap::Parser;
 use engula::{
     engine::hash::{Engine, Result},
-    kernel::mem::Kernel,
+    kernel::{grpc::Kernel as KernelClient, mem::Kernel as MemKernel, Kernel},
 };
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let kernel = Kernel::open().await?;
+#[derive(Parser)]
+struct Args {
+    #[clap(
+        long,
+        about = "The address of a Kernel server, a memory kernel instance is run if not specified"
+    )]
+    kernel: Option<SocketAddr>,
+}
+
+async fn run<K: Kernel>(kernel: K) -> Result<()> {
     let engine = Engine::open(kernel).await?;
     let key = vec![1];
     let value = vec![2];
@@ -30,4 +40,16 @@ async fn main() -> Result<()> {
     let got = engine.get(&key).await?;
     assert_eq!(got, None);
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let arg: Args = Args::parse();
+    if let Some(addr) = arg.kernel {
+        let kernel = KernelClient::connect(&addr.to_string()).await?;
+        run(kernel).await
+    } else {
+        let kernel = MemKernel::open().await?;
+        run(kernel).await
+    }
 }

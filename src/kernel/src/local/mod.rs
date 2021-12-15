@@ -15,3 +15,4 @@
 mod kernel;
 
 pub use self::kernel::Kernel;
+pub(crate) use self::kernel::DEFAULT_NAME;

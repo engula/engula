@@ -11,14 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+//! A [`Kernel`] implementation that interacts with gRPC kernel service.
+//!
+//! [`Kernel`]: crate::Kernel
 
 mod client;
+mod compose;
 mod error;
 mod kernel;
 mod proto;
 mod server;
 
-pub use self::{client::Client, kernel::Kernel, server::Server};
+pub use self::{
+    client::Client,
+    compose::{FileKernel, Kernel as ComposeKernel, MemKernel},
+    kernel::Kernel,
+    server::Server,
+};
 
 #[cfg(test)]
 mod tests {
@@ -26,16 +36,35 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
 
-    use super::Server;
+    use super::{MemKernel, Server};
     use crate::*;
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn mock_journal_and_storage_server(
+    ) -> std::result::Result<String, Box<dyn std::error::Error>> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let kernel = mem::Kernel::open().await.unwrap();
-            let server = Server::new(kernel);
+            let journal = mem::Journal::default();
+            let storage = mem::Storage::default();
+            tonic::transport::Server::builder()
+                .add_service(engula_journal::grpc::Server::new(journal).into_service())
+                .add_service(engula_storage::grpc::Server::new(storage).into_service())
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+
+        Ok(local_addr.to_string())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let address = mock_journal_and_storage_server().await?;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        tokio::task::spawn(async move {
+            let kernel = MemKernel::open(&address, &address).await.unwrap();
+            let server = Server::new(&address, &address, kernel);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
@@ -43,8 +72,7 @@ mod tests {
                 .unwrap();
         });
 
-        let url = format!("http://{}", local_addr);
-        let kernel = grpc::Kernel::connect(&url).await?;
+        let kernel = grpc::Kernel::connect(&local_addr.to_string()).await?;
         let version = kernel.current_version().await?;
         assert_eq!(version.sequence, 0);
         assert_eq!(version.meta.len(), 0);

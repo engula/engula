@@ -136,7 +136,10 @@ dependencies = [
  "engula-journal",
  "engula-kernel",
  "engula-storage",
+ "futures",
  "tokio",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]

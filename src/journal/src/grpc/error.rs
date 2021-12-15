@@ -16,7 +16,12 @@ use crate::Error;
 
 impl From<tonic::Status> for Error {
     fn from(s: tonic::Status) -> Self {
-        Error::Unknown(s.to_string())
+        match s.code() {
+            tonic::Code::NotFound => Error::NotFound(s.message().into()),
+            tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
+            tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
+            _ => Error::Unknown(s.to_string()),
+        }
     }
 }
 
