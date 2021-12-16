@@ -1,6 +1,6 @@
 [package]
 name = "hash-engine"
-version = "0.2.0"
+version = "0.2.0-alpha.0"
 edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
@@ -8,9 +8,9 @@ repository = "https://github.com/engula/engula"
 description = "An Engula engine that provides simple key-value storage."
 
 [dependencies]
-engula-kernel = { path = "../../kernel" }
-engula-journal = { path = "../../journal" }
-engula-storage = { path = "../../storage" }
+engula-kernel = { version = "0.2.0-alpha.0", path = "../../kernel" }
+engula-journal = { version = "0.2.0-alpha.0", path = "../../journal" }
+engula-storage = { version = "0.2.0-alpha.0", path = "../../storage" }
 
 thiserror = "1.0"
 tokio = { version = "1.14", features = ["full"] }
