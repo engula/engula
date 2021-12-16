@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A [`Journal`] implementation that stores data in local files.
+//!
+//! [`Journal`]: crate::Journal
+
 mod codec;
 mod journal;
 mod segment;

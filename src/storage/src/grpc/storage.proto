@@ -14,58 +14,52 @@
 
 syntax = "proto3";
 
-package engula.storage.grpc.v1;
+package engula.storage.v1;
 
 service Storage {
-    // APIs to manipulate a storage.
+  // APIs to manipulate a storage.
 
-    rpc CreateBucket(CreateBucketRequest) returns (CreateBucketResponse) {}
+  rpc CreateBucket(CreateBucketRequest) returns (CreateBucketResponse) {}
 
-    rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse) {}
+  rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse) {}
 
-    // APIs to manipulate a bucket.
+  // APIs to manipulate a bucket.
 
-    rpc UploadObject(stream UploadObjectRequest) returns (UploadObjectResponse) {}
+  rpc UploadObject(stream UploadObjectRequest) returns (UploadObjectResponse) {}
 
-    rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
 
-    // APIs to manipulate an object.
+  // APIs to manipulate an object.
 
-    rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse) {}
+  rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse) {}
 }
 
-message CreateBucketRequest {
-    string bucket = 1;
-}
+message CreateBucketRequest { string bucket = 1; }
 
 message CreateBucketResponse {}
 
-message DeleteBucketRequest {
-    string bucket = 1;
-}
+message DeleteBucketRequest { string bucket = 1; }
 
 message DeleteBucketResponse {}
 
 message UploadObjectRequest {
-    string bucket = 1;
-    string object = 2;
-    bytes content = 3;
+  string bucket = 1;
+  string object = 2;
+  bytes content = 3;
 }
 
 message UploadObjectResponse {}
 
 message DeleteObjectRequest {
-    string bucket = 1;
-    string object = 2;
+  string bucket = 1;
+  string object = 2;
 }
 
 message DeleteObjectResponse {}
 
 message ReadObjectRequest {
-    string bucket = 1;
-    string object = 2;
+  string bucket = 1;
+  string object = 2;
 }
 
-message ReadObjectResponse {
-    bytes content = 1;
-}
+message ReadObjectResponse { bytes content = 1; }

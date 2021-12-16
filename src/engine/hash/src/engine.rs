@@ -31,6 +31,7 @@ use crate::{
     Error, Result,
 };
 
+/// A hash engine that provides simple key-value storage.
 #[derive(Clone)]
 pub struct Engine<K: Kernel> {
     kernel: K,
@@ -42,6 +43,9 @@ pub struct Engine<K: Kernel> {
 }
 
 impl<K: Kernel> Engine<K> {
+    /// Opens an engine that runs on the given kernel.
+    ///
+    /// See [engula_kernel](engula_kernel) for available kernels.
     pub async fn open(kernel: K) -> Result<Self> {
         let stream = kernel.stream().await?;
         let bucket = kernel.bucket().await?;
@@ -87,6 +91,11 @@ impl<K: Kernel> Engine<K> {
         Ok(())
     }
 
+    /// Returns the value corresponding to the key.
+    ///
+    /// - Returns `Ok(Some())` if the value is found.
+    /// - Retruns `Ok(None)` if the value is not found.
+    /// - Returns `Err()` if any error occurs.
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let current = self.current_version().await;
         match current.get(key).await? {
@@ -95,10 +104,18 @@ impl<K: Kernel> Engine<K> {
         }
     }
 
+    /// Updates or inserts a key-value pair.
+    ///
+    /// - If the key exists, the entry will be updated.
+    /// - If the key doesn't exist, a new entry will be inserted.
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.write(key, Some(value)).await
     }
 
+    /// Deletes an entry.
+    ///
+    /// - If the key exists, the entry will be removed.
+    /// - If the key doesn't exists, it will not be regarded as an error.
     pub async fn delete(&self, key: Vec<u8>) -> Result<()> {
         self.write(key, None).await
     }

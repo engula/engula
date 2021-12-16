@@ -14,7 +14,7 @@
 
 pub mod engine {
     pub mod hash {
-        pub use engula_hash_engine::*;
+        pub use hash_engine::*;
     }
 }
 
