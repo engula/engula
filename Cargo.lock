@@ -132,27 +132,12 @@ name = "engula"
 version = "0.2.0"
 dependencies = [
  "clap",
- "engula-hash-engine",
  "engula-journal",
  "engula-kernel",
  "engula-storage",
- "futures",
+ "hash-engine",
  "tokio",
- "tokio-stream",
  "tonic",
-]
-
-[[package]]
-name = "engula-hash-engine"
-version = "0.2.0"
-dependencies = [
- "bytes",
- "engula-journal",
- "engula-kernel",
- "engula-storage",
- "futures",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -333,6 +318,19 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "hash-engine"
+version = "0.2.0"
+dependencies = [
+ "bytes",
+ "engula-journal",
+ "engula-kernel",
+ "engula-storage",
+ "futures",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

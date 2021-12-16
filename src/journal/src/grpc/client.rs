@@ -25,6 +25,11 @@ pub struct Client {
 }
 
 impl Client {
+    pub async fn connect(addr: &str) -> Result<Client> {
+        let client = JournalClient::connect(addr.to_owned()).await?;
+        Ok(Client { client })
+    }
+
     pub async fn create_stream(&self, input: CreateStreamRequest) -> Result<CreateStreamResponse> {
         let mut client = self.client.clone();
         let response = client.create_stream(input).await?;
@@ -59,10 +64,5 @@ impl Client {
         let mut client = self.client.clone();
         let response = client.read_events(input).await?;
         Ok(response.into_inner())
-    }
-
-    pub async fn connect(addr: &str) -> Result<Client> {
-        let client = JournalClient::connect(addr.to_owned()).await?;
-        Ok(Client { client })
     }
 }

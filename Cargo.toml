@@ -22,13 +22,11 @@ path = "bin/engula.rs"
 members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
 
 [dependencies]
-engula-hash-engine = { path = "src/engine/hash" }
+hash-engine = { path = "src/engine/hash" }
 engula-kernel = { path = "src/kernel" }
 engula-journal = { path = "src/journal" }
 engula-storage = { path = "src/storage" }
 
 clap = "3.0.0-beta.5"
-futures = "0.3"
 tonic = "0.6"
 tokio = { version = "1", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["sync"] }

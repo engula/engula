@@ -25,6 +25,11 @@ pub struct Client {
 }
 
 impl Client {
+    pub async fn connect(addr: &str) -> Result<Client> {
+        let client = StorageClient::connect(addr.to_owned()).await?;
+        Ok(Client { client })
+    }
+
     pub async fn create_bucket(&self, input: CreateBucketRequest) -> Result<CreateBucketResponse> {
         let mut client = self.client.clone();
         let response = client.create_bucket(input).await?;
@@ -59,10 +64,5 @@ impl Client {
         let mut client = self.client.clone();
         let response = client.read_object(input).await?;
         Ok(response.into_inner())
-    }
-
-    pub async fn connect(addr: &str) -> Result<Client> {
-        let client = StorageClient::connect(addr.to_owned()).await?;
-        Ok(Client { client })
     }
 }
