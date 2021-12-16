@@ -8,8 +8,8 @@ repository = "https://github.com/engula/engula"
 description = "An Engula module that provides stateful environment abstractions and implementations."
 
 [dependencies]
-engula-journal = { path = "../journal" }
-engula-storage = { path = "../storage" }
+engula-journal = { version = "0.2", path = "../journal" }
+engula-storage = { version = "0.2", path = "../storage" }
 
 thiserror = "1.0"
 async-trait = "0.1"
