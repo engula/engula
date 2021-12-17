@@ -1,6 +1,6 @@
 [package]
 name = "engula"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
@@ -22,10 +22,10 @@ path = "bin/engula.rs"
 members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
 
 [dependencies]
-hash-engine = { version = "0.2", path = "src/engine/hash" }
-engula-kernel = { version = "0.2", path = "src/kernel" }
-engula-journal = { version = "0.2", path = "src/journal" }
-engula-storage = { version = "0.2", path = "src/storage" }
+hash-engine = { version = "0.3.0", path = "src/engine/hash" }
+engula-kernel = { version = "0.3.0", path = "src/kernel" }
+engula-journal = { version = "0.3.0", path = "src/journal" }
+engula-storage = { version = "0.3.0", path = "src/storage" }
 
 clap = "=3.0.0-beta.5"
 tonic = "0.6"
