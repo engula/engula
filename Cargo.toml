@@ -22,11 +22,11 @@ path = "bin/engula.rs"
 members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
 
 [dependencies]
-hash-engine = { version = "0.2.0-alpha.0", path = "src/engine/hash" }
-engula-kernel = { version = "0.2.0-alpha.0", path = "src/kernel" }
-engula-journal = { version = "0.2.0-alpha.0", path = "src/journal" }
-engula-storage = { version = "0.2.0-alpha.0", path = "src/storage" }
+hash-engine = { version = "0.2", path = "src/engine/hash" }
+engula-kernel = { version = "0.2", path = "src/kernel" }
+engula-journal = { version = "0.2", path = "src/journal" }
+engula-storage = { version = "0.2", path = "src/storage" }
 
-clap = "3.0.0-beta.5"
+clap = "=3.0.0-beta.5"
 tonic = "0.6"
 tokio = { version = "1", features = ["full"] }

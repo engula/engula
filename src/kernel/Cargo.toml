@@ -1,6 +1,6 @@
 [package]
 name = "engula-kernel"
-version = "0.2.0-alpha.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
@@ -8,8 +8,8 @@ repository = "https://github.com/engula/engula"
 description = "An Engula module that provides stateful environment abstractions and implementations."
 
 [dependencies]
-engula-journal = { version = "0.2.0-alpha.0", path = "../journal" }
-engula-storage = { version = "0.2.0-alpha.0", path = "../storage" }
+engula-journal = { version = "0.2", path = "../journal" }
+engula-storage = { version = "0.2", path = "../storage" }
 
 thiserror = "1.0"
 async-trait = "0.1"
