@@ -19,12 +19,11 @@ Engula's design goals are as follows:
 
 ## Status
 
-We are working on version 0.2. Please check the [roadmap][roadmap] for more details.
+We are working on v0.3. Please check the [roadmap][roadmap] for more details.
 
-[roadmap]: https://github.com/engula/engula/issues/57
+[roadmap]: https://github.com/engula/engula/issues/203
 
-We have released Demo 1 in Oct 2021.
-You can check [the branch](https://github.com/engula/engula/tree/demo-1) and [the report](https://engula.com/posts/demo-1/) for more details.
+We have released demo 1 in Oct 2021 and v0.2 in Dec 2021. You can check the [demo 1 report](https://engula.com/posts/demo-1/) and [v0.2 release post](https://engula.io/posts/release-0.2/) for more details.
 
 ## Design
 
