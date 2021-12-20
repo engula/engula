@@ -12,24 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod luna {
-    pub use luna_engine::*;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0} doesn't exist")]
+    NotFound(String),
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+    #[error("{0}")]
+    InvalidArgument(String),
 }
 
-pub mod engine {
-    pub mod hash {
-        pub use hash_engine::*;
-    }
-}
-
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
-pub mod journal {
-    pub use engula_journal::*;
-}
-
-pub mod storage {
-    pub use engula_storage::*;
-}
+pub type Result<T> = std::result::Result<T, Error>;

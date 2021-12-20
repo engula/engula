@@ -136,6 +136,7 @@ dependencies = [
  "engula-kernel",
  "engula-storage",
  "hash-engine",
+ "luna-engine",
  "tokio",
  "tonic",
 ]
@@ -494,6 +495,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "luna-engine"
+version = "0.3.0"
+dependencies = [
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

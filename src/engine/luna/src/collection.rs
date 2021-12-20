@@ -12,24 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod luna {
-    pub use luna_engine::*;
+pub type CollectionId = u64;
+
+#[derive(Clone)]
+pub struct Collection {
+    id: CollectionId,
 }
 
-pub mod engine {
-    pub mod hash {
-        pub use hash_engine::*;
+impl Collection {
+    pub fn new(id: CollectionId) -> Self {
+        Self { id }
     }
-}
 
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
-pub mod journal {
-    pub use engula_journal::*;
-}
-
-pub mod storage {
-    pub use engula_storage::*;
+    pub fn id(&self) -> CollectionId {
+        self.id
+    }
 }
