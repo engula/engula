@@ -2,8 +2,14 @@
 
 ## Prerequisites
 
+The release process requires the following privileges:
+
+- [Cargo owner][cargo-owner] of the Engula crates
+- Commit permissions to the main and release branch of the Engula project
+
 Engula consists of multiple cargo crates. It is tedious and error-prone to update and publish all crates manually. We can use [cargo-workspaces][cargo-workspaces] to do the job instead.
 
+[cargo-owner]: https://doc.rust-lang.org/cargo/reference/publishing.html#cargo-owner
 [cargo-workspaces]: https://github.com/pksunkara/cargo-workspaces
 
 ## Branch management
