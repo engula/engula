@@ -502,7 +502,6 @@ name = "luna-engine"
 version = "0.3.0"
 dependencies = [
  "bytes",
- "futures",
  "tempfile",
  "thiserror",
  "tokio",
