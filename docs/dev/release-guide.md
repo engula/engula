@@ -23,11 +23,11 @@ We have two major git branches for now:
 
 When the current release is almost ready, we can start a release process. By default, the release day will be a Friday.
 
-## Prepare the release post (4 days before announce)
+### Prepare the release post (4 days before announce)
 
 Every release comes with a post announcing the release. Writing and reviewing the release post may take more time than expected. So it's a good idea to prepare it a few days before the release.
 
-## Resolve issues and prepare the branches (1 day before announce)
+### Resolve issues and prepare the branches (1 day before announce)
 
 Ensure all issues are resolved, and all commits are landed on the release branch.
 
@@ -46,7 +46,7 @@ Note that we don't tag here because we will do that along with the release on Gi
 
 Then send a pull request with the generated commit to the main and release branches, respectively. After the commits have been merged, close the tracking issues and the milestone for the current release.
 
-## Release day (Friday)
+### Release day (Friday)
 
 The following steps assume that you are on the release branch with `upstream` pointing to `github.com/engula/engula`.
 
