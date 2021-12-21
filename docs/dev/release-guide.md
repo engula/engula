@@ -19,13 +19,15 @@ We have two major git branches for now:
 - main: all new commits are merged into this branch first
 - release: commits for the current release are picked from the main branch to this branch
 
-When the current release is almost ready, we can start a release process. First of all, decide on a time, T, to do the release.
+## Release process
 
-## Prepare the release post (T-4d, Monday)
+When the current release is almost ready, we can start a release process. By default, the release day will be a Friday.
+
+## Prepare the release post (4 days before announce)
 
 Every release comes with a post announcing the release. Writing and reviewing the release post may take more time than expected. So it's a good idea to prepare it a few days before the release.
 
-## Resolve issues and prepare the branches (T-1d, Thursday)
+## Resolve issues and prepare the branches (1 day before announce)
 
 Ensure all issues are resolved, and all commits are landed on the release branch.
 
@@ -48,7 +50,7 @@ Then send a pull request with the generated commit to the main and release branc
 
 The following steps assume that you are on the release branch with `upstream` pointing to `github.com/engula/engula`.
 
-- **T-30m** - Publish to crates.io and release on Github
+- **30 minutes before announce** - Publish to crates.io and release on Github
   - Publish all crates:
 
     ```sh
@@ -66,13 +68,12 @@ The following steps assume that you are on the release branch with `upstream` po
 
   - Create a release with the tag on Github.
 
-- **T-5m** - Merge the release post
-
-- **T** - Tweet and post everything!
-  - Twitter
-  - Reddit
-  - Hacker News
-  - Zulip
+- **The announcement**
+    - First, merge the release post.
+    - Tweet on [Twitter](https://twitter.com/engulaio).
+    - Post on [Reddit](https://www.reddit.com/r/rust).
+    - Share on [Hacker News](https://news.ycombinator.com/)
+    - Send a message to everyone on [Zulip](https://engula.zulipchat.com/).
 
 - Take a break to celebrate with all the contributors!
 
