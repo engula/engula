@@ -501,6 +501,8 @@ dependencies = [
 name = "luna-engine"
 version = "0.3.0"
 dependencies = [
+ "bytes",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

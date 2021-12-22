@@ -8,5 +8,9 @@ repository = "https://github.com/engula/engula"
 description = "A transactional key-value storage engine."
 
 [dependencies]
+bytes = "1.1.0"
 thiserror = "1.0.3"
 tokio = { version = "1.15.0", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3.2.0"

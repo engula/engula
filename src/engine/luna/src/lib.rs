@@ -15,6 +15,7 @@
 mod collection;
 mod database;
 mod error;
+mod table;
 
 pub use self::{
     collection::Collection,
