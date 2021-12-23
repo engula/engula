@@ -31,3 +31,4 @@ engula-storage = { version = "0.3.0", path = "src/storage" }
 clap = "=3.0.0-beta.5"
 tonic = "0.6"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }

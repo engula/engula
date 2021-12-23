@@ -51,10 +51,6 @@ jobs:
         components: rustfmt
         override: true
 
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
     - name: Cargo build
       uses: actions-rs/cargo@v1
       with:

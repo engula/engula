@@ -22,15 +22,17 @@ use engula_kernel::grpc::{FileKernel, MemKernel, Server as KernelServer};
 use engula_storage::{
     file::Storage as FileStorage, grpc::Server as StorageServer, mem::Storage as MemStorage,
 };
+use tokio::net::TcpListener;
+use tokio_stream::wrappers::TcpListenerStream;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-macro_rules! run_until_asked_to_quit {
+macro_rules! bootstrap_service {
     ($addr:expr, $server:expr) => {{
-        let cloned_addr = $addr.clone();
+        let listener = TcpListener::bind($addr).await?;
         tonic::transport::Server::builder()
             .add_service($server.into_service())
-            .serve(cloned_addr)
+            .serve_with_incoming(TcpListenerStream::new(listener))
             .await?;
     }};
 }
@@ -52,7 +54,7 @@ enum StorageCommand {
     #[clap(about = "Run a storage server")]
     Run {
         #[clap(about = "Socket address to listen")]
-        addr: SocketAddr,
+        addr: String,
 
         #[clap(subcommand)]
         cmd: RunMode,
@@ -66,11 +68,11 @@ impl StorageCommand {
                 RunMode::File { path } => {
                     let storage = FileStorage::new(&path).await?;
                     let server = StorageServer::new(storage);
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
                 RunMode::Mem => {
                     let server = StorageServer::new(MemStorage::default());
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
             },
         }
@@ -84,7 +86,7 @@ enum JournalCommand {
     #[clap(about = "Run a journal server")]
     Run {
         #[clap(about = "Socket address to listen")]
-        addr: SocketAddr,
+        addr: String,
 
         #[clap(subcommand)]
         cmd: RunMode,
@@ -109,11 +111,11 @@ impl JournalCommand {
                 RunMode::File { path } => {
                     let journal = FileJournal::open(path, *segment_size).await?;
                     let server = JournalServer::new(journal);
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
                 RunMode::Mem => {
                     let server = JournalServer::new(MemJournal::default());
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
             },
         }
@@ -127,7 +129,7 @@ enum KernelCommand {
     #[clap(about = "Run a kernel server")]
     Run {
         #[clap(about = "Socket address to listen")]
-        addr: SocketAddr,
+        addr: String,
 
         #[clap(subcommand)]
         mode: RunMode,
@@ -154,14 +156,14 @@ impl KernelCommand {
                         MemKernel::open(&journal.to_string(), &storage.to_string()).await?;
                     let server =
                         KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
                 RunMode::File { path } => {
                     let kernel =
                         FileKernel::open(&journal.to_string(), &storage.to_string(), &path).await?;
                     let server =
                         KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
-                    run_until_asked_to_quit!(addr, server);
+                    bootstrap_service!(addr, server);
                 }
             },
         }
