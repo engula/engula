@@ -138,6 +138,7 @@ dependencies = [
  "hash-engine",
  "luna-engine",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 

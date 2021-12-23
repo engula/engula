@@ -49,6 +49,7 @@ pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Un
 pub use self::{
     error::{Error, Result},
     kernel::{Kernel, KernelUpdate},
+    manifest::Manifest,
     metadata::{Sequence, Version, VersionUpdate},
 };
 
