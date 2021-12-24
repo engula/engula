@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::{crate_description, crate_version, Parser, Subcommand};
 use engula_journal::{
@@ -135,10 +135,10 @@ enum KernelCommand {
         mode: RunMode,
 
         #[clap(long, about = "The address of journal server")]
-        journal: SocketAddr,
+        journal: String,
 
         #[clap(long, about = "The address of storage server")]
-        storage: SocketAddr,
+        storage: String,
     },
 }
 
@@ -152,17 +152,13 @@ impl KernelCommand {
                 storage,
             } => match cmd {
                 RunMode::Mem => {
-                    let kernel =
-                        MemKernel::open(&journal.to_string(), &storage.to_string()).await?;
-                    let server =
-                        KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
+                    let kernel = MemKernel::open(journal, storage).await?;
+                    let server = KernelServer::new(journal, storage, kernel);
                     bootstrap_service!(addr, server);
                 }
                 RunMode::File { path } => {
-                    let kernel =
-                        FileKernel::open(&journal.to_string(), &storage.to_string(), &path).await?;
-                    let server =
-                        KernelServer::new(&journal.to_string(), &storage.to_string(), kernel);
+                    let kernel = FileKernel::open(journal, storage, &path).await?;
+                    let server = KernelServer::new(journal, storage, kernel);
                     bootstrap_service!(addr, server);
                 }
             },
