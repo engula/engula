@@ -12,40 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Audit Security
+name: E2E Binary
 
 on:
   push:
-    paths:
-      - '**/Cargo.lock'
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
   pull_request:
-    paths:
-      - '**/Cargo.lock'
-  schedule:
-    - cron: '25 4 * * *'
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
-  audit-security:
-    name: Audit Security
-    runs-on: ubuntu-latest
+  test:
+    name: Run tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v2
-
-      - name: Load cargo cache
-        id: cache
-        uses: ./.github/actions/cargo-cache
-
-      - name: Install cargo-audit
-        uses: actions-rs/cargo@v1
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          command: install
-          args: cargo-audit
-
-      - name: Audit dependencies
-        uses: actions-rs/cargo@v1
-        with:
-          command: audit
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+          override: true
+      - uses: Swatinem/rust-cache@v1
+      - run: tools/ci/test_kernel_service.sh

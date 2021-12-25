@@ -12,20 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Audit License
+name: Check Security
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - '**/Cargo.lock'
+  pull_request:
+    paths:
+      - '**/Cargo.lock'
+  schedule:
+    - cron: '25 4 * * *'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
-  audit:
-    name: Audit License
+  security-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: apache/skywalking-eyes@main
+      - uses: Swatinem/rust-cache@v1
+      - name: Install cargo-audit
+        uses: actions-rs/cargo@v1
         with:
-          config: tools/ci/licenserc.yml
+          command: install
+          args: cargo-audit
+      - name: Audit dependencies
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit

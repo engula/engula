@@ -32,27 +32,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          components: rustfmt
-          override: true
-
-      - name: Load cargo cache
-        id: cache
-        uses: ./.github/actions/cargo-cache
-
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
       - name: Install cargo-udeps
         uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-udeps --locked
-
       - name: Check udeps
         uses: actions-rs/cargo@v1
         with:

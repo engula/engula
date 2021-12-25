@@ -32,25 +32,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Load cargo cache
-        id: cache
-        uses: ./.github/actions/cargo-cache
-
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
       - name: Install taplo-cli
         uses: actions-rs/cargo@v1
         with:
           command: install
           args: taplo-cli
-
       - name: Check TOML
         run: taplo format --check
