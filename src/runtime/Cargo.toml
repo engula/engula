@@ -9,4 +9,6 @@ description = "The Engula asynchronous runtime."
 
 [dependencies]
 futures = "0.3.19"
+
+[dev-dependencies]
 tokio = { version = "1.15.0", features = ["full"] }

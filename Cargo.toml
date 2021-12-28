@@ -19,7 +19,13 @@ name = "engula"
 path = "bin/engula.rs"
 
 [workspace]
-members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
+members = [
+  "src/engine/hash",
+  "src/kernel",
+  "src/journal",
+  "src/storage",
+  "src/runtime",
+]
 
 [dependencies]
 hash-engine = { version = "0.3.0", path = "src/engine/hash" }

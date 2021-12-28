@@ -33,3 +33,7 @@ pub mod journal {
 pub mod storage {
     pub use engula_storage::*;
 }
+
+pub mod runtime {
+    pub use engula_runtime::*;
+}
