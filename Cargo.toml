@@ -27,6 +27,7 @@ luna-engine = { version = "0.3.0", path = "src/engine/luna" }
 engula-kernel = { version = "0.3.0", path = "src/kernel" }
 engula-journal = { version = "0.3.0", path = "src/journal" }
 engula-storage = { version = "0.3.0", path = "src/storage" }
+engula-runtime = { version = "0.3.0", path = "src/runtime" }
 
 clap = "=3.0.0-beta.5"
 tonic = "0.6"
