@@ -17,28 +17,37 @@
 //! [`Journal`]: crate::Journal
 
 mod journal;
-mod stream;
 
-pub use self::{journal::Journal, stream::Stream};
+pub use self::journal::Journal;
 
 #[cfg(test)]
 mod tests {
-    use futures::TryStreamExt;
-
     use crate::*;
 
     #[tokio::test]
     async fn test() -> Result<()> {
+        let stream_name = "stream";
         let j = mem::Journal::default();
-        let stream = j.create_stream("a").await?;
-        let event = Event {
-            ts: 0.into(),
-            data: vec![1, 2, 3],
+        j.create_stream(stream_name).await?;
+
+        let mut writer = j.new_stream_writer(stream_name).await?;
+        let event1 = Event {
+            ts: 1,
+            data: vec![1],
         };
-        stream.append_event(event.clone()).await?;
-        let mut events = stream.read_events(0.into()).await;
-        let got = events.try_next().await?;
-        assert_eq!(got, Some(vec![event]));
+        writer.append(event1.clone()).await?;
+        let event2 = Event {
+            ts: 2,
+            data: vec![2],
+        };
+        writer.append(event2.clone()).await?;
+
+        let mut reader = j.new_stream_reader(stream_name).await?;
+        reader.seek(1).await?;
+        assert_eq!(reader.next().await?.as_ref(), Some(&event1));
+        assert_eq!(reader.next().await?.as_ref(), Some(&event2));
+        reader.seek(2).await?;
+        assert_eq!(reader.next().await?.as_ref(), Some(&event2));
         Ok(())
     }
 }
