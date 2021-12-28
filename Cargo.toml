@@ -14,18 +14,11 @@ categories = [
 ]
 description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
 
-[[bin]]
-name = "engula"
-path = "bin/engula.rs"
-
 [workspace]
-members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
+members = ["src/engine/luna", "src/storage", "src/runtime"]
 
 [dependencies]
-hash-engine = { version = "0.3.0", path = "src/engine/hash" }
 luna-engine = { version = "0.3.0", path = "src/engine/luna" }
-engula-kernel = { version = "0.3.0", path = "src/kernel" }
-engula-journal = { version = "0.3.0", path = "src/journal" }
 engula-storage = { version = "0.3.0", path = "src/storage" }
 engula-runtime = { version = "0.3.0", path = "src/runtime" }
 

@@ -16,32 +16,34 @@
 //!
 //! [`Storage`]: crate::Storage
 
-mod bucket;
 mod storage;
 
-pub use self::{bucket::Bucket, storage::Storage};
+pub use self::storage::Storage;
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use engula_runtime::io::{RandomReadExt, SequentialWriteExt};
 
     use crate::*;
 
     #[tokio::test]
     async fn test() -> Result<()> {
+        let bucket_name = "bucket";
+        let object_name = "object";
+
         let s = super::Storage::default();
-        let bucket = s.create_bucket("a").await?;
+        s.create_bucket(bucket_name).await?;
 
-        let name = "abc";
         let data = vec![0, 1, 2];
-        let mut writer = bucket.new_sequential_writer(name).await?;
+        let mut writer = s.sequential_write_object(bucket_name, object_name).await?;
         writer.write_all(&data).await?;
-        writer.shutdown().await?;
+        writer.close().await?;
 
-        let mut reader = bucket.new_sequential_reader(name).await?;
-        let mut got = Vec::new();
-        reader.read_to_end(&mut got).await?;
-        assert_eq!(got, data);
+        let mut reader = s.random_read_object(bucket_name, object_name).await?;
+        let mut buf = vec![0; 2];
+        let pos = 1;
+        reader.read_exact(&mut buf, pos).await?;
+        assert_eq!(buf, data[pos..(pos + buf.len())]);
 
         Ok(())
     }
