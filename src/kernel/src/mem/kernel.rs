@@ -15,9 +15,9 @@
 use super::{manifest::Manifest, Journal, Storage};
 use crate::Result;
 
-pub type Kernel = crate::local::Kernel<Journal, Storage, Manifest>;
+pub type Kernel<T> = crate::local::Kernel<Journal<T>, Storage, Manifest>;
 
-impl Kernel {
+impl<T> Kernel<T> {
     pub async fn open() -> Result<Self> {
         let journal = Journal::default();
         let storage = Storage::default();

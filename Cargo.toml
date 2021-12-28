@@ -15,10 +15,17 @@ categories = [
 description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
 
 [workspace]
-members = ["src/engine/luna", "src/journal", "src/storage", "src/runtime"]
+members = [
+  "src/engine/luna",
+  "src/kernel",
+  "src/journal",
+  "src/storage",
+  "src/runtime",
+]
 
 [dependencies]
 luna-engine = { version = "0.3.0", path = "src/engine/luna" }
+engula-kernel = { version = "0.3.0", path = "src/kernel" }
 engula-journal = { version = "0.3.0", path = "src/journal" }
 engula-storage = { version = "0.3.0", path = "src/storage" }
 engula-runtime = { version = "0.3.0", path = "src/runtime" }

@@ -12,55 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use engula_journal::{StreamRead, StreamWrite};
+use engula_runtime::io::{RandomRead, SequentialWrite};
 
-use crate::{async_trait, Bucket, Result, ResultStream, Sequence, Stream, Version, VersionUpdate};
+use crate::{async_trait, KernelUpdate, Result, Version, VersionUpdate};
 
 /// An interface to interact with a kernel.
 #[async_trait]
-pub trait Kernel: Clone + Send + Sync + 'static {
-    type Stream: Stream;
-    type Bucket: Bucket;
+pub trait Kernel<T>: Clone + Send + Sync + 'static {
+    type StreamReader: StreamRead<T>;
+    type StreamWriter: StreamWrite<T>;
+    type RandomReader: RandomRead;
+    type SequentialWriter: SequentialWrite;
+    type VersionUpdateStream: VersionUpdateStream;
 
-    /// Returns a journal stream.
-    async fn stream(&self) -> Result<Self::Stream>;
+    async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader>;
 
-    /// Returns a storage bucket.
-    async fn bucket(&self) -> Result<Self::Bucket>;
+    async fn new_stream_writer(&self, stream_name: &str) -> Result<Self::StreamWriter>;
+
+    async fn new_random_object_reader(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::RandomReader>;
+
+    async fn new_sequential_object_writer(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::SequentialWriter>;
 
     /// Applies a kernel update.
     async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
 
     /// Returns the current version.
-    async fn current_version(&self) -> Result<Arc<Version>>;
+    async fn current_version(&self) -> Result<Version>;
 
-    /// Returns a stream of version updates since a given sequence (inclusive).
-    async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
+    /// Returns a stream of version updates.
+    async fn subscribe_version_updates(&self) -> Result<Self::VersionUpdateStream>;
 }
 
-#[derive(Default)]
-pub struct KernelUpdate {
-    pub(crate) update: VersionUpdate,
-}
-
-impl KernelUpdate {
-    pub fn add_meta(&mut self, key: impl Into<String>, value: impl Into<Vec<u8>>) -> &mut Self {
-        self.update.add_meta.insert(key.into(), value.into());
-        self
-    }
-
-    pub fn remove_meta(&mut self, key: impl Into<String>) -> &mut Self {
-        self.update.remove_meta.push(key.into());
-        self
-    }
-
-    pub fn add_object(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.add_objects.push(name.into());
-        self
-    }
-
-    pub fn remove_object(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.remove_objects.push(name.into());
-        self
-    }
+#[async_trait]
+pub trait VersionUpdateStream: Send + 'static {
+    async fn next(&mut self) -> Result<VersionUpdate>;
 }
