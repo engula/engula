@@ -88,7 +88,7 @@ impl crate::Storage for Storage {
         }
     }
 
-    async fn random_read_object(
+    async fn new_random_reader(
         &self,
         bucket_name: &str,
         object_name: &str,
@@ -103,7 +103,7 @@ impl crate::Storage for Storage {
         }
     }
 
-    async fn sequential_write_object(
+    async fn new_sequential_writer(
         &self,
         bucket_name: &str,
         object_name: &str,
