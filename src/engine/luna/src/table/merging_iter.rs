@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::{
-    cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd},
     collections::BinaryHeap,
     pin::Pin,
     task::{Context, Poll},
@@ -21,40 +20,50 @@ use std::{
 
 use futures::ready;
 
-use super::iter::{BoxIter, Iter};
+use super::iter::Iter;
 use crate::Result;
 
-pub struct MergingIter {
-    children: Vec<BoxIter>,
-    heap: BinaryHeap<BoxIter>,
+pub struct MergingIter<I> {
+    heap: BinaryHeap<I>,
+    buffer: Vec<I>,
 }
 
 #[allow(dead_code)]
-impl MergingIter {
-    pub fn new(children: Vec<BoxIter>) -> Self {
+impl<I> MergingIter<I>
+where
+    I: Iter + Ord + Unpin,
+{
+    pub fn new(children: Vec<I>) -> Self {
         Self {
-            children,
             heap: BinaryHeap::new(),
+            buffer: children,
         }
     }
 
-    fn take_children(&mut self) -> Vec<BoxIter> {
-        if !self.children.is_empty() {
-            std::mem::take(&mut self.children)
-        } else {
-            let heap = std::mem::take(&mut self.heap);
-            heap.into_vec()
-        }
+    fn take_children(&mut self) -> Vec<I> {
+        let heap = std::mem::take(&mut self.heap);
+        let mut heap = heap.into_vec();
+        self.buffer.append(&mut heap);
+        std::mem::take(&mut self.buffer)
     }
 }
 
-impl Iter for MergingIter {
+impl<I> Iter for MergingIter<I>
+where
+    I: Iter + Ord + Unpin,
+{
     fn poll_seek_to_first(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        let mut children = self.take_children();
-        for child in &mut children {
-            ready!(Pin::new(child).poll_seek_to_first(cx))?;
+        let children = self.take_children();
+        let mut heap = Vec::with_capacity(children.len());
+        for mut iter in children {
+            ready!(Pin::new(&mut iter).poll_seek_to_first(cx))?;
+            if iter.valid() {
+                heap.push(iter);
+            } else {
+                self.buffer.push(iter);
+            }
         }
-        self.heap = BinaryHeap::from(children);
+        self.heap = BinaryHeap::from(heap);
         Poll::Ready(Ok(()))
     }
 
@@ -63,52 +72,45 @@ impl Iter for MergingIter {
         cx: &mut Context<'_>,
         target: &[u8],
     ) -> Poll<Result<()>> {
-        let mut children = self.take_children();
-        for child in &mut children {
-            ready!(Pin::new(child).poll_seek(cx, target))?;
+        let children = self.take_children();
+        let mut heap = Vec::with_capacity(children.len());
+        for mut iter in children {
+            ready!(Pin::new(&mut iter).poll_seek(cx, target))?;
+            if iter.valid() {
+                heap.push(iter);
+            } else {
+                self.buffer.push(iter);
+            }
         }
-        self.heap = BinaryHeap::from(children);
+        self.heap = BinaryHeap::from(heap);
         Poll::Ready(Ok(()))
     }
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        if let Some(mut first) = self.heap.pop() {
-            ready!(Pin::new(&mut first).poll_next(cx))?;
-            self.heap.push(first);
+        if let Some(mut iter) = self.heap.pop() {
+            ready!(Pin::new(&mut iter).poll_next(cx))?;
+            if iter.valid() {
+                self.heap.push(iter);
+            } else {
+                self.buffer.push(iter);
+            }
         }
         Poll::Ready(Ok(()))
     }
 
-    fn current(&self) -> Option<(&[u8], &[u8])> {
-        self.heap.peek().and_then(|x| x.current())
-    }
-}
-
-impl Eq for dyn Iter {}
-
-impl PartialEq for dyn Iter {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.current(), other.current()) {
-            (Some(a), Some(b)) => a.0 == b.0,
-            (None, None) => true,
-            _ => false,
+    fn valid(&self) -> bool {
+        if let Some(top) = self.heap.peek() {
+            top.valid()
+        } else {
+            false
         }
     }
-}
 
-impl Ord for dyn Iter {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self.current(), other.current()) {
-            (Some(a), Some(b)) => b.0.cmp(a.0),
-            (Some(_), None) => Ordering::Greater,
-            (None, Some(_)) => Ordering::Less,
-            (None, None) => Ordering::Equal,
-        }
+    fn key(&self) -> &[u8] {
+        self.heap.peek().unwrap().key()
     }
-}
 
-impl PartialOrd for dyn Iter {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+    fn value(&self) -> &[u8] {
+        self.heap.peek().unwrap().value()
     }
 }

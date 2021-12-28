@@ -17,6 +17,7 @@ mod block_handle;
 mod iter;
 mod merging_iter;
 mod table_builder;
+mod two_level_iter;
 
 pub use self::table_builder::{TableBuilder, TableBuilderOptions};
 

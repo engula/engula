@@ -20,8 +20,6 @@ use std::{
 
 use crate::Result;
 
-pub type BoxIter = Pin<Box<dyn Iter>>;
-
 pub trait Iter {
     fn poll_seek_to_first(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
@@ -29,10 +27,14 @@ pub trait Iter {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
-    fn current(&self) -> Option<(&[u8], &[u8])>;
+    fn valid(&self) -> bool;
+
+    fn key(&self) -> &[u8];
+
+    fn value(&self) -> &[u8];
 }
 
-impl<I: ?Sized + Iter + Unpin> Iter for Box<I> {
+impl<T: ?Sized + Iter + Unpin> Iter for Box<T> {
     fn poll_seek_to_first(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         Pin::new(&mut **self).poll_seek_to_first(cx)
     }
@@ -49,15 +51,23 @@ impl<I: ?Sized + Iter + Unpin> Iter for Box<I> {
         Pin::new(&mut **self).poll_next(cx)
     }
 
-    fn current(&self) -> Option<(&[u8], &[u8])> {
-        (**self).current()
+    fn valid(&self) -> bool {
+        (**self).valid()
+    }
+
+    fn key(&self) -> &[u8] {
+        (**self).key()
+    }
+
+    fn value(&self) -> &[u8] {
+        (**self).value()
     }
 }
 
-impl<P> Iter for Pin<P>
+impl<T> Iter for Pin<T>
 where
-    P: DerefMut + Unpin,
-    P::Target: Iter,
+    T: DerefMut + Unpin,
+    T::Target: Iter,
 {
     fn poll_seek_to_first(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         self.get_mut().as_mut().poll_seek_to_first(cx)
@@ -71,7 +81,15 @@ where
         self.get_mut().as_mut().poll_next(cx)
     }
 
-    fn current(&self) -> Option<(&[u8], &[u8])> {
-        (**self).current()
+    fn valid(&self) -> bool {
+        (**self).valid()
+    }
+
+    fn key(&self) -> &[u8] {
+        (**self).key()
+    }
+
+    fn value(&self) -> &[u8] {
+        (**self).value()
     }
 }
