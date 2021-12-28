@@ -35,11 +35,11 @@ mod tests {
         s.create_bucket(bucket_name).await?;
 
         let data = vec![0, 1, 2];
-        let mut writer = s.sequential_write_object(bucket_name, object_name).await?;
+        let mut writer = s.new_sequential_writer(bucket_name, object_name).await?;
         writer.write_all(&data).await?;
         writer.close().await?;
 
-        let mut reader = s.random_read_object(bucket_name, object_name).await?;
+        let mut reader = s.new_random_reader(bucket_name, object_name).await?;
         let mut buf = vec![0; 2];
         let pos = 1;
         reader.read_exact(&mut buf, pos).await?;

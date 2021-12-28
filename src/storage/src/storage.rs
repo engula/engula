@@ -44,13 +44,13 @@ pub trait Storage: Clone + Send + Sync + 'static {
 
     async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()>;
 
-    async fn random_read_object(
+    async fn new_random_reader(
         &self,
         bucket_name: &str,
         object_name: &str,
     ) -> Result<Self::RandomReader>;
 
-    async fn sequential_write_object(
+    async fn new_sequential_writer(
         &self,
         bucket_name: &str,
         object_name: &str,
