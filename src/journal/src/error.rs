@@ -25,10 +25,8 @@ pub enum Error {
     InvalidArgument(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("corrupted: {0}")]
-    Corrupted(String),
-    #[error("unknown: {0}")]
-    Unknown(String),
+    #[error(transparent)]
+    Unknown(Box<dyn std::error::Error + Send>),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

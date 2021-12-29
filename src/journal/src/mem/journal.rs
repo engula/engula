@@ -13,21 +13,22 @@
 // limitations under the License.
 
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{hash_map, HashMap, VecDeque},
     sync::Arc,
 };
 
 use tokio::sync::Mutex;
 
-use super::stream::Stream;
-use crate::{async_trait, Error, Result};
+use crate::{async_trait, Error, Event, Result, StreamRead, StreamWrite, Timestamp};
+
+type Stream<T> = Arc<Mutex<VecDeque<Event<T>>>>;
 
 #[derive(Clone)]
-pub struct Journal {
-    streams: Arc<Mutex<HashMap<String, Stream>>>,
+pub struct Journal<T> {
+    streams: Arc<Mutex<HashMap<String, Stream<T>>>>,
 }
 
-impl Default for Journal {
+impl<T> Default for Journal<T> {
     fn default() -> Self {
         Self {
             streams: Arc::new(Mutex::new(HashMap::new())),
@@ -35,25 +36,25 @@ impl Default for Journal {
     }
 }
 
-#[async_trait]
-impl crate::Journal for Journal {
-    type Stream = Stream;
-
-    async fn stream(&self, name: &str) -> Result<Self::Stream> {
+impl<T> Journal<T> {
+    async fn stream(&self, name: &str) -> Option<Stream<T>> {
         let streams = self.streams.lock().await;
-        match streams.get(name) {
-            Some(stream) => Ok(stream.clone()),
-            None => Err(Error::NotFound(format!("stream '{}'", name))),
-        }
+        streams.get(name).cloned()
     }
+}
 
-    async fn create_stream(&self, name: &str) -> Result<Self::Stream> {
-        let stream = Stream::default();
+#[async_trait]
+impl<T: Timestamp> crate::Journal<T> for Journal<T> {
+    type StreamReader = StreamReader<T>;
+    type StreamWriter = StreamWriter<T>;
+
+    async fn create_stream(&self, name: &str) -> Result<()> {
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
-                ent.insert(stream.clone());
-                Ok(stream)
+                let stream = Arc::new(Mutex::new(VecDeque::new()));
+                ent.insert(stream);
+                Ok(())
             }
             hash_map::Entry::Occupied(ent) => {
                 Err(Error::AlreadyExists(format!("stream '{}'", ent.key())))
@@ -67,5 +68,83 @@ impl crate::Journal for Journal {
             Some(_) => Ok(()),
             None => Err(Error::NotFound(format!("stream '{}'", name))),
         }
+    }
+
+    async fn new_stream_reader(&self, name: &str) -> Result<Self::StreamReader> {
+        if let Some(stream) = self.stream(name).await {
+            Ok(StreamReader::new(stream))
+        } else {
+            Err(Error::NotFound(format!("stream '{}'", name)))
+        }
+    }
+
+    async fn new_stream_writer(&self, name: &str) -> Result<Self::StreamWriter> {
+        if let Some(stream) = self.stream(name).await {
+            Ok(StreamWriter::new(stream))
+        } else {
+            Err(Error::NotFound(format!("stream '{}'", name)))
+        }
+    }
+}
+
+pub struct StreamReader<T> {
+    stream: Stream<T>,
+    events: VecDeque<Event<T>>,
+}
+
+impl<T> StreamReader<T> {
+    fn new(stream: Stream<T>) -> Self {
+        Self {
+            stream,
+            events: VecDeque::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl<T: Timestamp> StreamRead<T> for StreamReader<T> {
+    async fn seek(&mut self, ts: T) -> Result<()> {
+        let stream = self.stream.lock().await;
+        let offset = stream.partition_point(|x| x.ts < ts);
+        self.events = stream.range(offset..).cloned().collect();
+        Ok(())
+    }
+
+    async fn next(&mut self) -> Result<Option<Event<T>>> {
+        Ok(self.events.pop_front())
+    }
+}
+
+pub struct StreamWriter<T> {
+    stream: Stream<T>,
+}
+
+impl<T> StreamWriter<T> {
+    fn new(stream: Stream<T>) -> Self {
+        Self { stream }
+    }
+}
+
+#[async_trait]
+impl<T: Timestamp> StreamWrite<T> for StreamWriter<T> {
+    async fn append(&mut self, event: Event<T>) -> Result<()> {
+        let mut stream = self.stream.lock().await;
+        if let Some(last_ts) = stream.back().map(|x| x.ts.clone()) {
+            if event.ts <= last_ts {
+                return Err(Error::InvalidArgument(format!(
+                    "timestamp {:?} <= last timestamp {:?}",
+                    event.ts, last_ts
+                )));
+            }
+        }
+        stream.push_back(event);
+        Ok(())
+    }
+
+    async fn release(&mut self, ts: T) -> Result<()> {
+        let mut stream = self.stream.lock().await;
+        let index = stream.partition_point(|x| x.ts < ts);
+        stream.drain(..index);
+        Ok(())
     }
 }

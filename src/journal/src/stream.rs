@@ -12,48 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::convert::TryInto;
+use std::fmt::Debug;
 
-use crate::{async_trait, Error, Result, ResultStream};
+use crate::{async_trait, Result};
 
 /// A generic timestamp to order events.
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Timestamp(u64);
+pub trait Timestamp: Eq + Ord + PartialEq + PartialOrd + Clone + Debug + Send + 'static {}
 
-impl Timestamp {
-    pub fn serialize(&self) -> Vec<u8> {
-        self.0.to_be_bytes().to_vec()
-    }
-
-    pub fn deserialize(bytes: Vec<u8>) -> Result<Self> {
-        let bytes: [u8; 8] = bytes
-            .try_into()
-            .map_err(|v| Error::Unknown(format!("malformed bytes: {:?}", v)))?;
-        Ok(Self(u64::from_be_bytes(bytes)))
-    }
-}
-
-impl From<u64> for Timestamp {
-    fn from(v: u64) -> Self {
-        Self(v)
-    }
-}
+impl Timestamp for u64 {}
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Event {
-    pub ts: Timestamp,
+pub struct Event<T> {
+    pub ts: T,
     pub data: Vec<u8>,
 }
 
-/// An interface to manipulate a stream.
 #[async_trait]
-pub trait Stream: Clone + Send + Sync + 'static {
-    /// Reads events since a timestamp (inclusive).
-    async fn read_events(&self, ts: Timestamp) -> ResultStream<Vec<Event>>;
+pub trait StreamRead<T> {
+    async fn seek(&mut self, ts: T) -> Result<()>;
 
+    async fn next(&mut self) -> Result<Option<Event<T>>>;
+}
+
+#[async_trait]
+pub trait StreamWrite<T> {
     /// Appends an event.
-    async fn append_event(&self, event: Event) -> Result<()>;
+    async fn append(&mut self, event: Event<T>) -> Result<()>;
 
     /// Releases events up to a timestamp (exclusive).
-    async fn release_events(&self, ts: Timestamp) -> Result<()>;
+    async fn release(&mut self, ts: T) -> Result<()>;
 }

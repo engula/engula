@@ -62,10 +62,23 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 name = "engula"
 version = "0.3.0"
 dependencies = [
+ "engula-journal",
  "engula-runtime",
  "engula-storage",
  "luna-engine",
  "tokio",
+]
+
+[[package]]
+name = "engula-journal"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "prost",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tonic-build",
 ]
 
 [[package]]

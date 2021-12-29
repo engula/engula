@@ -33,16 +33,14 @@ mod error;
 mod journal;
 mod stream;
 
-pub mod file;
-pub mod grpc;
+// pub mod file;
+// pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
 
-pub type ResultStream<T> = futures::stream::BoxStream<'static, Result<T>>;
-
 pub use self::{
     error::{Error, Result},
     journal::Journal,
-    stream::{Event, Stream, Timestamp},
+    stream::{Event, StreamRead, StreamWrite, Timestamp},
 };

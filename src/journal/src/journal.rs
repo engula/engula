@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Result, Stream};
+use crate::{async_trait, Result, StreamRead, StreamWrite};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal: Clone + Send + Sync + 'static {
-    type Stream: Stream;
-
-    /// Returns a stream.
-    async fn stream(&self, name: &str) -> Result<Self::Stream>;
+pub trait Journal<T>: Clone + Send + Sync + 'static {
+    type StreamReader: StreamRead<T>;
+    type StreamWriter: StreamWrite<T>;
 
     /// Creates a stream.
     ///
     /// # Errors
     ///
     /// Returns `Error::AlreadyExists` if the stream already exists.
-    async fn create_stream(&self, name: &str) -> Result<Self::Stream>;
+    async fn create_stream(&self, name: &str) -> Result<()>;
 
     /// Deletes a stream.
     ///
@@ -37,4 +35,8 @@ pub trait Journal: Clone + Send + Sync + 'static {
     ///
     /// Returns `Error::NotFound` if the stream doesn't exist.
     async fn delete_stream(&self, name: &str) -> Result<()>;
+
+    async fn new_stream_reader(&self, name: &str) -> Result<Self::StreamReader>;
+
+    async fn new_stream_writer(&self, name: &str) -> Result<Self::StreamWriter>;
 }
