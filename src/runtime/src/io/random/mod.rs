@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod random_read;
-mod random_read_ext;
+mod async_read;
+mod async_read_ext;
 mod read;
 mod read_exact;
 
-pub use self::{random_read::RandomRead, random_read_ext::RandomReadExt};
+pub use self::{async_read::AsyncRead, async_read_ext::AsyncReadExt};
 
 #[cfg(test)]
 mod tests {

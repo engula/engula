@@ -19,7 +19,7 @@ use std::{
     task::{Context, Poll},
 };
 
-pub trait RandomRead {
+pub trait AsyncRead {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -28,9 +28,9 @@ pub trait RandomRead {
     ) -> Poll<io::Result<usize>>;
 }
 
-impl<T> RandomRead for Box<T>
+impl<T> AsyncRead for Box<T>
 where
-    T: RandomRead + ?Sized + Unpin,
+    T: AsyncRead + ?Sized + Unpin,
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -42,9 +42,9 @@ where
     }
 }
 
-impl<T> RandomRead for &mut T
+impl<T> AsyncRead for &mut T
 where
-    T: RandomRead + ?Sized + Unpin,
+    T: AsyncRead + ?Sized + Unpin,
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -56,10 +56,10 @@ where
     }
 }
 
-impl<T> RandomRead for Pin<T>
+impl<T> AsyncRead for Pin<T>
 where
     T: DerefMut + Unpin,
-    T::Target: RandomRead,
+    T::Target: AsyncRead,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -71,7 +71,7 @@ where
     }
 }
 
-impl RandomRead for &[u8] {
+impl AsyncRead for &[u8] {
     fn poll_read(
         self: Pin<&mut Self>,
         _: &mut Context<'_>,

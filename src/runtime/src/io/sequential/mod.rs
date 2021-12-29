@@ -12,7 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use futures::io::{
-    AsyncRead as SequentialRead, AsyncReadExt as SequentialReadExt, AsyncWrite as SequentialWrite,
-    AsyncWriteExt as SequentialWriteExt,
-};
+pub use futures::io::{AsyncWrite, AsyncWriteExt};
