@@ -12,14 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::metadata::{BucketUpdate, VersionUpdate};
+use crate::{
+    async_trait,
+    metadata::{BucketUpdate, KernelUpdate},
+    Result,
+};
 
 #[derive(Default)]
-pub struct KernelUpdate {
-    pub(crate) update: VersionUpdate,
+pub struct BucketUpdateBuilder {
+    update: BucketUpdate,
 }
 
-impl KernelUpdate {
+impl BucketUpdateBuilder {
+    pub fn add_object(
+        &mut self,
+        object_name: impl Into<String>,
+        object_meta: impl Into<Vec<u8>>,
+    ) -> &mut Self {
+        self.update
+            .add_objects
+            .insert(object_name.into(), object_meta.into());
+        self
+    }
+
+    pub fn remove_object(&mut self, object_name: impl Into<String>) -> &mut Self {
+        self.update.remove_objects.push(object_name.into());
+        self
+    }
+
+    pub fn build(&mut self) -> BucketUpdate {
+        std::mem::take(&mut self.update)
+    }
+}
+
+#[derive(Default)]
+pub struct KernelUpdateBuilder {
+    update: KernelUpdate,
+}
+
+impl KernelUpdateBuilder {
     pub fn put_meta(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
         self.update.put_meta.insert(name.into(), meta.into());
         self
@@ -45,39 +76,26 @@ impl KernelUpdate {
         self
     }
 
+    pub fn update_bucket(&mut self, name: impl Into<String>, update: BucketUpdate) -> &mut Self {
+        self.update.update_buckets.insert(name.into(), update);
+        self
+    }
+
     pub fn remove_bucket(&mut self, name: impl Into<String>) -> &mut Self {
         self.update.remove_buckets.push(name.into());
         self
     }
 
-    pub fn add_object(
-        &mut self,
-        bucket_name: impl Into<String>,
-        object_name: impl Into<String>,
-        object_meta: impl Into<Vec<u8>>,
-    ) -> &mut Self {
-        let bucket = self
-            .update
-            .update_buckets
-            .entry(bucket_name.into())
-            .or_insert_with(|| BucketUpdate::default());
-        bucket
-            .add_objects
-            .insert(object_name.into(), object_meta.into());
-        self
+    pub fn build(&mut self) -> KernelUpdate {
+        std::mem::take(&mut self.update)
     }
+}
 
-    pub fn remove_object(
-        &mut self,
-        bucket_name: impl Into<String>,
-        object_name: impl Into<String>,
-    ) -> &mut Self {
-        let bucket = self
-            .update
-            .update_buckets
-            .entry(bucket_name.into())
-            .or_insert_with(|| BucketUpdate::default());
-        bucket.remove_objects.push(object_name.into());
-        self
-    }
+#[async_trait]
+pub trait KernelUpdateReader: Send + 'static {
+    /// Returns the next update if it is available.
+    async fn try_next(&mut self) -> Result<Option<KernelUpdate>>;
+
+    /// Returns the next update or waits until it is available.
+    async fn wait_next(&mut self) -> Result<KernelUpdate>;
 }

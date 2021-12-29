@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_journal::{StreamRead, StreamWrite};
+use engula_journal::{StreamReader, StreamWriter};
 use engula_runtime::io::{RandomRead, SequentialWrite};
 
-use crate::{async_trait, KernelUpdate, Result, Version, VersionUpdate};
+use crate::{async_trait, KernelUpdate, KernelUpdateReader, Result};
 
 /// An interface to interact with a kernel.
 #[async_trait]
 pub trait Kernel<T>: Clone + Send + Sync + 'static {
-    type StreamReader: StreamRead<T>;
-    type StreamWriter: StreamWrite<T>;
-    type RandomReader: RandomRead;
-    type SequentialWriter: SequentialWrite;
-    type VersionUpdateStream: VersionUpdateStream;
+    type KernelUpdateReader: KernelUpdateReader;
+    type StreamReader: StreamReader<T>;
+    type StreamWriter: StreamWriter<T>;
+    type RandomObjectReader: RandomRead;
+    type SequentialObjectWriter: SequentialWrite;
+
+    /// Applies a kernel update.
+    async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
+
+    /// Returns a reader to receive kernel updates.
+    async fn new_update_reader(&self) -> Result<Self::KernelUpdateReader>;
 
     async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader>;
 
@@ -34,25 +40,11 @@ pub trait Kernel<T>: Clone + Send + Sync + 'static {
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::RandomReader>;
+    ) -> Result<Self::RandomObjectReader>;
 
     async fn new_sequential_object_writer(
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::SequentialWriter>;
-
-    /// Applies a kernel update.
-    async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
-
-    /// Returns the current version.
-    async fn current_version(&self) -> Result<Version>;
-
-    /// Returns a stream of version updates.
-    async fn subscribe_version_updates(&self) -> Result<Self::VersionUpdateStream>;
-}
-
-#[async_trait]
-pub trait VersionUpdateStream: Send + 'static {
-    async fn next(&mut self) -> Result<VersionUpdate>;
+    ) -> Result<Self::SequentialObjectWriter>;
 }

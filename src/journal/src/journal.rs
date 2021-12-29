@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Result, StreamRead, StreamWrite};
+use crate::{async_trait, Result, StreamReader, StreamWriter};
 
 /// An interface to manipulate a journal.
 #[async_trait]
 pub trait Journal<T>: Clone + Send + Sync + 'static {
-    type StreamReader: StreamRead<T>;
-    type StreamWriter: StreamWrite<T>;
+    type StreamReader: StreamReader<T>;
+    type StreamWriter: StreamWriter<T>;
 
     /// Creates a stream.
     ///

@@ -14,4 +14,21 @@
 
 mod kernel;
 
-pub use self::kernel::Kernel;
+pub use self::{kernel::Kernel, mem::Kernel as MemKernel};
+
+mod mem {
+    use engula_journal::mem::Journal;
+    use engula_storage::mem::Storage;
+
+    use crate::Result;
+
+    pub type Kernel<T> = super::Kernel<Journal<T>, Storage>;
+
+    impl<T> Kernel<T> {
+        pub async fn open() -> Result<Self> {
+            let journal = Journal::default();
+            let storage = Storage::default();
+            Self::init(journal, storage).await
+        }
+    }
+}

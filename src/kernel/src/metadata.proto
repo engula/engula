@@ -16,19 +16,12 @@ syntax = "proto3";
 
 package engula.metadata.v1;
 
-message Version {
-  uint64 sequence = 1;
-  map<string, bytes> meta = 2;
-  map<string, bytes> streams = 3;
-  map<string, BucketDesc> buckets = 4;
+message BucketUpdate {
+  map<string, bytes> add_objects = 1;
+  repeated string remove_objects = 2;
 }
 
-message BucketDesc {
-  bytes meta = 1;
-  map<string, bytes> objects = 2;
-}
-
-message VersionUpdate {
+message KernelUpdate {
   uint64 sequence = 1;
   map<string, bytes> put_meta = 2;
   repeated string remove_meta = 3;
@@ -37,9 +30,4 @@ message VersionUpdate {
   map<string, bytes> add_buckets = 6;
   repeated string remove_buckets = 7;
   map<string, BucketUpdate> update_buckets = 8;
-}
-
-message BucketUpdate {
-  map<string, bytes> add_objects = 1;
-  repeated string remove_objects = 2;
 }
