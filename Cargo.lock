@@ -137,6 +137,7 @@ dependencies = [
  "engula-storage",
  "hash-engine",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 
