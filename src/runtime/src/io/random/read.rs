@@ -19,7 +19,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::RandomRead;
+use super::AsyncRead;
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
@@ -31,13 +31,13 @@ pub struct Read<'a, R: ?Sized> {
 
 impl<R: ?Sized + Unpin> Unpin for Read<'_, R> {}
 
-impl<'a, R: RandomRead + ?Sized + Unpin> Read<'a, R> {
+impl<'a, R: AsyncRead + ?Sized + Unpin> Read<'a, R> {
     pub(super) fn new(reader: &'a mut R, buf: &'a mut [u8], pos: usize) -> Self {
         Self { reader, buf, pos }
     }
 }
 
-impl<R: RandomRead + ?Sized + Unpin> Future for Read<'_, R> {
+impl<R: AsyncRead + ?Sized + Unpin> Future for Read<'_, R> {
     type Output = io::Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
