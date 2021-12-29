@@ -24,22 +24,18 @@ pub trait Storage: Clone + Send + Sync + 'static {
 
     /// Creates a bucket.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// On failure, returns:
-    ///
-    /// - `Error::AlreadyExists` if the bucket already exists.
+    /// Returns `Error::AlreadyExists` if the bucket already exists.
     async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
 
     /// Deletes a bucket.
     ///
     /// Using a deleted bucket is an undefined behavior.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// On failure, returns:
-    ///
-    /// - `Error::NotFound` if the bucket doesn't exist.
+    /// Returns `Error::NotFound` if the bucket doesn't exist.
     async fn delete_bucket(&self, bucket_name: &str) -> Result<()>;
 
     async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()>;
