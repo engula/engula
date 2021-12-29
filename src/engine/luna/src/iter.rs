@@ -12,15 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod database;
-mod error;
-mod iter;
-mod table;
-mod write_batch;
+use crate::Result;
 
-pub use self::{
-    database::Database,
-    error::{Error, Result},
-    iter::Iter,
-    write_batch::WriteBatch,
-};
+#[derive(Default)]
+pub struct Iter {}
+
+impl Iter {
+    pub async fn seek_to_first(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    pub async fn seek(&mut self, _: &[u8]) -> Result<()> {
+        Ok(())
+    }
+
+    pub async fn next(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn valid(&self) -> bool {
+        false
+    }
+
+    pub fn key(&self) -> &[u8] {
+        &[]
+    }
+
+    pub fn value(&self) -> &[u8] {
+        &[]
+    }
+}

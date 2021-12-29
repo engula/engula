@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub type CollectionId = u64;
-
-#[derive(Clone)]
-pub struct Collection {
-    id: CollectionId,
+enum Op {
+    Put((Vec<u8>, Vec<u8>)),
+    Delete(Vec<u8>),
 }
 
-impl Collection {
-    pub fn new(id: CollectionId) -> Self {
-        Self { id }
+#[derive(Default)]
+pub struct WriteBatch {
+    mutations: Vec<Op>,
+}
+
+impl WriteBatch {
+    pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        self.mutations.push(Op::Put((key, value)));
     }
 
-    pub fn id(&self) -> CollectionId {
-        self.id
+    pub fn delete(&mut self, key: Vec<u8>) {
+        self.mutations.push(Op::Delete(key));
     }
 }
