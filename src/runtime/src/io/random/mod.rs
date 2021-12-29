@@ -12,28 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod luna {
-    pub use luna_engine::*;
-}
+mod async_read;
+mod async_read_ext;
+mod read;
+mod read_exact;
 
-pub mod engine {
-    pub mod hash {
-        pub use hash_engine::*;
+pub use self::{async_read::AsyncRead, async_read_ext::AsyncReadExt};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn random() {
+        let data = vec![0u8; 4];
+        let mut buf = vec![0u8; 3];
+        let n = data.as_slice().read(&mut buf, 0).await.unwrap();
+        assert_eq!(n, 3);
+        let n = data.as_slice().read(&mut buf, 2).await.unwrap();
+        assert_eq!(n, 2);
     }
-}
-
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
-pub mod journal {
-    pub use engula_journal::*;
-}
-
-pub mod storage {
-    pub use engula_storage::*;
-}
-
-pub mod runtime {
-    pub use engula_runtime::*;
 }

@@ -12,28 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod luna {
-    pub use luna_engine::*;
-}
+use super::{read::Read, read_exact::ReadExact, AsyncRead};
 
-pub mod engine {
-    pub mod hash {
-        pub use hash_engine::*;
+pub trait AsyncReadExt: AsyncRead {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> Read<'a, Self>
+    where
+        Self: Unpin,
+    {
+        Read::new(self, buf, pos)
+    }
+
+    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> ReadExact<'a, Self>
+    where
+        Self: Unpin,
+    {
+        ReadExact::new(self, buf, pos)
     }
 }
 
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
-pub mod journal {
-    pub use engula_journal::*;
-}
-
-pub mod storage {
-    pub use engula_storage::*;
-}
-
-pub mod runtime {
-    pub use engula_runtime::*;
-}
+impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}
