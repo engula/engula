@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{read::Read, read_exact::ReadExact, RandomRead};
+use super::{read::Read, read_exact::ReadExact, AsyncRead};
 
-pub trait RandomReadExt: RandomRead {
+pub trait AsyncReadExt: AsyncRead {
     fn read<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> Read<'a, Self>
     where
         Self: Unpin,
@@ -30,4 +30,4 @@ pub trait RandomReadExt: RandomRead {
     }
 }
 
-impl<R: RandomRead + ?Sized> RandomReadExt for R {}
+impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}

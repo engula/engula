@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod random;
-mod sequential;
+pub mod random;
+pub mod sequential;
 
-pub use self::{random::*, sequential::*};
+pub use self::{
+    random::{AsyncRead as AsyncRandomRead, AsyncReadExt as AsyncRandomReadExt},
+    sequential::{AsyncWrite as AsyncSequentialWrite, AsyncWriteExt as AsyncSequentialWriteExt},
+};

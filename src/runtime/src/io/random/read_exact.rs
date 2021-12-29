@@ -21,7 +21,7 @@ use std::{
 
 use futures::ready;
 
-use super::RandomRead;
+use super::AsyncRead;
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
@@ -33,13 +33,13 @@ pub struct ReadExact<'a, R: ?Sized> {
 
 impl<R: ?Sized + Unpin> Unpin for ReadExact<'_, R> {}
 
-impl<'a, R: RandomRead + ?Sized + Unpin> ReadExact<'a, R> {
+impl<'a, R: AsyncRead + ?Sized + Unpin> ReadExact<'a, R> {
     pub(super) fn new(reader: &'a mut R, buf: &'a mut [u8], pos: usize) -> Self {
         Self { reader, buf, pos }
     }
 }
 
-impl<R: RandomRead + ?Sized + Unpin> Future for ReadExact<'_, R> {
+impl<R: AsyncRead + ?Sized + Unpin> Future for ReadExact<'_, R> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
