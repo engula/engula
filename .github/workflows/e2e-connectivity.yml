@@ -12,33 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Check TOML
+name: E2E Connectivity
 
 on:
   push:
-    paths:
-      - '**/*.toml'
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
   pull_request:
-    paths:
-      - '**/*.toml'
+    paths-ignore:
+      - 'docs/'
+      - '*.md'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
-  taplo:
-    name: Check TOML
+  test:
+    name: Check Connectivity
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      - name: Install taplo-cli
+      - name: Run docker-compose stack
+        run: docker-compose -f ./tools/ci/docker-compose.yml up -d
+      - name: Run hash-engine example
         uses: actions-rs/cargo@v1
         with:
-          command: install
-          args: taplo-cli
-
-      - name: Check TOML
-        run: taplo format --check
+          command: run
+          args: --example hash_engine -- --kernel 127.0.0.1:10003

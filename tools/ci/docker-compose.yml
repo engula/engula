@@ -12,33 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Check TOML
+version: '3'
+services:
+  journal:
+    build: ../../
+    ports:
+      - "10001:10001"
+      - "10002:10002"
+      - "10003:10003"
+    command: journal run 0.0.0.0:10001 --mem
+  storage:
+    build: ../../
+    network_mode: "service:journal"
+    depends_on:
+      - journal
+    command: storage run 0.0.0.0:10002 --mem
+  kernel:
+    build: ../../
+    network_mode: "service:journal"
+    depends_on:
+      - journal
+      - storage
+    command: kernel run 0.0.0.0:10003 --journal 0.0.0.0:10001 --storage 0.0.0.0:10002 --mem
 
-on:
-  push:
-    paths:
-      - '**/*.toml'
-  pull_request:
-    paths:
-      - '**/*.toml'
-
-concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
-
-jobs:
-  taplo:
-    name: Check TOML
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      - name: Install taplo-cli
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: taplo-cli
-
-      - name: Check TOML
-        run: taplo format --check
