@@ -31,18 +31,16 @@
 
 #![feature(type_alias_impl_trait)]
 
-mod bucket;
 mod error;
 mod storage;
 
-pub mod file;
-pub mod grpc;
+// pub mod file;
+// pub mod grpc;
 pub mod mem;
 
 pub use async_trait::async_trait;
 
 pub use self::{
-    bucket::Bucket,
     error::{Error, Result},
     storage::Storage,
 };

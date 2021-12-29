@@ -16,6 +16,6 @@ pub mod random;
 pub mod sequential;
 
 pub use self::{
-    random::{AsyncRead as AsyncRandomRead, AsyncReadExt as AsyncRandomReadExt},
-    sequential::{AsyncWrite as AsyncSequentialWrite, AsyncWriteExt as AsyncSequentialWriteExt},
+    random::{AsyncRead as RandomRead, AsyncReadExt as RandomReadExt},
+    sequential::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt},
 };

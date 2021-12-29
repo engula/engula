@@ -12,22 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Bucket, Result};
+use engula_runtime::io::{RandomRead, SequentialWrite};
+
+use crate::{async_trait, Result};
 
 /// An interface to manipulate a storage.
 #[async_trait]
 pub trait Storage: Clone + Send + Sync + 'static {
-    type Bucket: Bucket;
-
-    /// Returns a bucket.
-    async fn bucket(&self, name: &str) -> Result<Self::Bucket>;
+    type RandomReader: RandomRead;
+    type SequentialWriter: SequentialWrite;
 
     /// Creates a bucket.
     ///
     /// # Errors
     ///
     /// Returns `Error::AlreadyExists` if the bucket already exists.
-    async fn create_bucket(&self, name: &str) -> Result<Self::Bucket>;
+    async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
 
     /// Deletes a bucket.
     ///
@@ -36,5 +36,19 @@ pub trait Storage: Clone + Send + Sync + 'static {
     /// # Errors
     ///
     /// Returns `Error::NotFound` if the bucket doesn't exist.
-    async fn delete_bucket(&self, name: &str) -> Result<()>;
+    async fn delete_bucket(&self, bucket_name: &str) -> Result<()>;
+
+    async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()>;
+
+    async fn new_random_reader(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::RandomReader>;
+
+    async fn new_sequential_writer(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::SequentialWriter>;
 }

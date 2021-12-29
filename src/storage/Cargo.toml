@@ -8,15 +8,13 @@ repository = "https://github.com/engula/engula"
 description = "An Engula module that provides object storage abstractions and implementations."
 
 [dependencies]
+engula-runtime = { version = "0.3.0", path = "../runtime" }
 thiserror = "1.0"
 async-trait = "0.1"
 bytes = "1.1.0"
 tokio = { version = "1.13", features = ["full"] }
-tonic = "0.6"
 prost = "0.9"
 futures = "0.3"
-tokio-stream = { version = "0.1", features = ["net"] }
-tokio-util = { version = "0.6", features = ["io"] }
 
 [dev-dependencies]
 tempfile = "3"
