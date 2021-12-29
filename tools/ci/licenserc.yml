@@ -19,6 +19,7 @@ header:
   paths-ignore:
     - 'docs'
     - '**/*.md'
+    - '.dockerignore'
     - '.gitignore'
     - 'Cargo.lock'
     - 'Cargo.toml'
