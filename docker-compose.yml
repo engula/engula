@@ -18,18 +18,20 @@ services:
     image: ghcr.io/tisonkun/engula:nightly
     ports:
       - "10001:10001"
+      - "10002:10002"
+      - "10003:10003"
     command: journal run 0.0.0.0:10001 --mem
   storage:
     image: ghcr.io/tisonkun/engula:nightly
-    ports:
-      - "10002:10002"
+    network_mode: "service:journal"
+    depends_on:
+      - journal
     command: storage run 0.0.0.0:10002 --mem
   kernel:
     image: ghcr.io/tisonkun/engula:nightly
-    ports:
-      - "10003:10003"
+    network_mode: "service:journal"
     depends_on:
       - journal
       - storage
-    command: kernel run 0.0.0.0:10003 --journal journal:10001 --storage storage:10002 --mem
+    command: kernel run 0.0.0.0:10003 --journal 0.0.0.0:10001 --storage 0.0.0.0:10002 --mem
 
