@@ -12,10 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod random;
-pub mod sequential;
+use super::{read::Read, read_exact::ReadExact, AsyncRead};
 
-pub use self::{
-    random::{AsyncRead as RandomRead, AsyncReadExt as RandomReadExt},
-    sequential::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt},
-};
+pub trait AsyncReadExt: AsyncRead {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> Read<'a, Self>
+    where
+        Self: Unpin,
+    {
+        Read::new(self, buf, pos)
+    }
+
+    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> ReadExact<'a, Self>
+    where
+        Self: Unpin,
+    {
+        ReadExact::new(self, buf, pos)
+    }
+}
+
+impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}
