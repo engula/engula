@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  audit:
+  audit-license:
     name: Audit License
     runs-on: ubuntu-latest
     steps:

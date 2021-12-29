@@ -12,23 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: 'Cargo Cache'
-description: 'Cache cargo installation'
-outputs:
-  cache-hit:
-    description: "Whether this cache hit or not"
-    value: ${{ steps.cache.outputs.cache-hit }}
-runs:
-  using: "composite"
-  steps:
-    - name: Cache cargo registry
-      id: cache
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+FROM rust:1.57 as build
+WORKDIR /build
+COPY . /build/
+RUN cargo build --locked --release --package=engula
+
+FROM gcr.io/distroless/cc
+COPY --from=build /build/target/release/engula /bin/
+ENTRYPOINT ["/bin/engula"]

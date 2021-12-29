@@ -12,41 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Check TOML
+name: Build Image
 
-on:
-  push:
-    paths:
-      - '**/*.toml'
-  pull_request:
-    paths:
-      - '**/*.toml'
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
-  taplo:
-    name: Check TOML
+  build-and-push-image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v2
+      - uses: docker/login-action@v1
+        if: github.event_name != 'pull_request'
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v1
-      - name: Install taplo-cli
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: taplo-cli
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check TOML
-        run: taplo format --check
+      - id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: nightly
+
+      - uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

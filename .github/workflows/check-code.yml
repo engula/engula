@@ -40,9 +40,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
-
+    - uses: actions/checkout@v2
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
@@ -50,16 +48,11 @@ jobs:
         toolchain: ${{ matrix.rust }}
         components: rustfmt
         override: true
-
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
+    - uses: Swatinem/rust-cache@v1
     - name: Cargo build
       uses: actions-rs/cargo@v1
       with:
         command: build
-
     - name: Cargo test
       uses: actions-rs/cargo@v1
       with:
@@ -71,9 +64,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
+    - uses: actions/checkout@v2
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
@@ -81,17 +72,12 @@ jobs:
         toolchain: nightly
         components: clippy, rustfmt
         override: true
-
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
+    - uses: Swatinem/rust-cache@v1
     - name: Check clippy
       uses: actions-rs/cargo@v1
       with:
         command: clippy
         args: --workspace --tests --all-features -- -D warnings
-
     - name: Check format
       uses: actions-rs/cargo@v1
       with:
@@ -103,9 +89,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
+    - uses: actions/checkout@v2
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
@@ -113,15 +97,10 @@ jobs:
           toolchain: nightly
           components: rustfmt
           override: true
-
-    - name: Load cargo cache
-      id: cache
-      uses: ./.github/actions/cargo-cache
-
+    - uses: Swatinem/rust-cache@v1
     - name: Cargo build
       uses: actions-rs/cargo@v1
       with:
         command: build
-
     - name: Verify tidy
       run: git diff --exit-code
