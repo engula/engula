@@ -14,112 +14,120 @@
 
 use std::sync::Arc;
 
-use engula_journal::Error as JournalError;
-use engula_storage::Error as StorageError;
-use futures::TryStreamExt;
 use tokio::sync::{broadcast, Mutex};
-use tokio_stream::wrappers::BroadcastStream;
 
-use crate::{
-    async_trait, manifest::Manifest, Error, Journal, KernelUpdate, Result, ResultStream, Sequence,
-    Storage, Version, VersionUpdate,
-};
+use crate::{async_trait, Error, Journal, KernelUpdate, Result, Sequence, Storage, Timestamp};
 
 #[derive(Clone)]
-pub struct Kernel<J: Journal, S: Storage, M: Manifest> {
+pub struct Kernel<J, S> {
     inner: Arc<Mutex<Inner>>,
     journal: J,
     storage: S,
-    manifest: M,
 }
 
 struct Inner {
-    current: Arc<Version>,
-    updates: broadcast::Sender<Arc<VersionUpdate>>,
+    sequence: Sequence,
+    update_tx: broadcast::Sender<KernelUpdate>,
 }
 
-impl<J, S, M> Kernel<J, S, M>
-where
-    J: Journal,
-    S: Storage,
-    M: Manifest,
-{
-    pub async fn init(journal: J, storage: S, manifest: M) -> Result<Self> {
-        let version = manifest.load_version().await?;
-        let (updates, _) = broadcast::channel(1024);
+impl<J, S> Kernel<J, S> {
+    pub async fn init(journal: J, storage: S) -> Result<Self> {
+        let (update_tx, _) = broadcast::channel(1024);
         let inner = Inner {
-            current: Arc::new(version),
-            updates,
+            sequence: 0,
+            update_tx,
         };
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
             journal,
             storage,
-            manifest,
         })
     }
 }
 
-pub(crate) const DEFAULT_NAME: &str = "DEFAULT";
-
 #[async_trait]
-impl<J, S, M> crate::Kernel for Kernel<J, S, M>
+impl<T, J, S> crate::Kernel<T> for Kernel<J, S>
 where
-    J: Journal,
+    T: Timestamp,
+    J: Journal<T>,
     S: Storage,
-    M: Manifest,
 {
-    type Bucket = S::Bucket;
-    type Stream = J::Stream;
+    type KernelUpdateReader = KernelUpdateReader;
+    type RandomObjectReader = S::RandomReader;
+    type SequentialObjectWriter = S::SequentialWriter;
+    type StreamReader = J::StreamReader;
+    type StreamWriter = J::StreamWriter;
 
-    async fn stream(&self) -> Result<Self::Stream> {
-        match self.journal.stream(DEFAULT_NAME).await {
-            Ok(stream) => Ok(stream),
-            Err(JournalError::NotFound(_)) => {
-                let stream = self.journal.create_stream(DEFAULT_NAME).await?;
-                Ok(stream)
-            }
-            Err(err) => Err(err.into()),
-        }
-    }
-
-    async fn bucket(&self) -> Result<Self::Bucket> {
-        match self.storage.bucket(DEFAULT_NAME).await {
-            Ok(bucket) => Ok(bucket),
-            Err(StorageError::NotFound(_)) => {
-                let bucket = self.storage.create_bucket(DEFAULT_NAME).await?;
-                Ok(bucket)
-            }
-            Err(err) => Err(err.into()),
-        }
-    }
-
-    async fn apply_update(&self, update: KernelUpdate) -> Result<()> {
+    async fn apply_update(&self, mut update: KernelUpdate) -> Result<()> {
         let mut inner = self.inner.lock().await;
-
-        let mut version = (*inner.current).clone();
-        let mut version_update = update.update;
-        version_update.sequence = version.sequence + 1;
-        version.update(&version_update);
-        self.manifest.save_version(&version).await?;
-
-        inner.current = Arc::new(version);
-        inner
-            .updates
-            .send(Arc::new(version_update))
-            .map_err(Error::unknown)?;
+        inner.sequence += 1;
+        update.sequence = inner.sequence;
+        inner.update_tx.send(update).map_err(Error::unknown)?;
         Ok(())
     }
 
-    async fn current_version(&self) -> Result<Arc<Version>> {
+    async fn new_update_reader(&self) -> Result<Self::KernelUpdateReader> {
         let inner = self.inner.lock().await;
-        Ok(inner.current.clone())
+        let reader = KernelUpdateReader::new(inner.update_tx.subscribe());
+        Ok(reader)
     }
 
-    async fn version_updates(&self, _: Sequence) -> ResultStream<Arc<VersionUpdate>> {
-        // TODO: handle sequence
-        let inner = self.inner.lock().await;
-        let stream = BroadcastStream::new(inner.updates.subscribe());
-        Box::new(stream.map_err(Error::unknown))
+    async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader> {
+        let reader = self.journal.new_stream_reader(stream_name).await?;
+        Ok(reader)
+    }
+
+    async fn new_stream_writer(&self, stream_name: &str) -> Result<Self::StreamWriter> {
+        let writer = self.journal.new_stream_writer(stream_name).await?;
+        Ok(writer)
+    }
+
+    async fn new_random_object_reader(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::RandomObjectReader> {
+        let reader = self
+            .storage
+            .new_random_reader(bucket_name, object_name)
+            .await?;
+        Ok(reader)
+    }
+
+    async fn new_sequential_object_writer(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::SequentialObjectWriter> {
+        let writer = self
+            .storage
+            .new_sequential_writer(bucket_name, object_name)
+            .await?;
+        Ok(writer)
+    }
+}
+
+pub struct KernelUpdateReader {
+    rx: broadcast::Receiver<KernelUpdate>,
+}
+
+impl KernelUpdateReader {
+    fn new(rx: broadcast::Receiver<KernelUpdate>) -> Self {
+        Self { rx }
+    }
+}
+
+#[async_trait]
+impl crate::KernelUpdateReader for KernelUpdateReader {
+    async fn try_next(&mut self) -> Result<Option<KernelUpdate>> {
+        match self.rx.try_recv() {
+            Ok(v) => Ok(Some(v)),
+            Err(broadcast::error::TryRecvError::Empty) => Ok(None),
+            Err(err) => Err(Error::unknown(err)),
+        }
+    }
+
+    async fn wait_next(&mut self) -> Result<KernelUpdate> {
+        self.rx.recv().await.map_err(Error::unknown)
     }
 }

@@ -42,5 +42,5 @@ pub use async_trait::async_trait;
 pub use self::{
     error::{Error, Result},
     journal::Journal,
-    stream::{Event, StreamRead, StreamWrite, Timestamp},
+    stream::{Event, StreamReader, StreamWriter, Timestamp},
 };

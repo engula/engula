@@ -12,55 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use engula_journal::{StreamReader, StreamWriter};
+use engula_runtime::io::{RandomRead, SequentialWrite};
 
-use crate::{async_trait, Bucket, Result, ResultStream, Sequence, Stream, Version, VersionUpdate};
+use crate::{async_trait, KernelUpdate, KernelUpdateReader, Result};
 
 /// An interface to interact with a kernel.
 #[async_trait]
-pub trait Kernel: Clone + Send + Sync + 'static {
-    type Stream: Stream;
-    type Bucket: Bucket;
-
-    /// Returns a journal stream.
-    async fn stream(&self) -> Result<Self::Stream>;
-
-    /// Returns a storage bucket.
-    async fn bucket(&self) -> Result<Self::Bucket>;
+pub trait Kernel<T>: Clone + Send + Sync + 'static {
+    type KernelUpdateReader: KernelUpdateReader;
+    type StreamReader: StreamReader<T>;
+    type StreamWriter: StreamWriter<T>;
+    type RandomObjectReader: RandomRead;
+    type SequentialObjectWriter: SequentialWrite;
 
     /// Applies a kernel update.
     async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
 
-    /// Returns the current version.
-    async fn current_version(&self) -> Result<Arc<Version>>;
+    /// Returns a reader to receive kernel updates.
+    async fn new_update_reader(&self) -> Result<Self::KernelUpdateReader>;
 
-    /// Returns a stream of version updates since a given sequence (inclusive).
-    async fn version_updates(&self, sequence: Sequence) -> ResultStream<Arc<VersionUpdate>>;
-}
+    async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader>;
 
-#[derive(Default)]
-pub struct KernelUpdate {
-    pub(crate) update: VersionUpdate,
-}
+    async fn new_stream_writer(&self, stream_name: &str) -> Result<Self::StreamWriter>;
 
-impl KernelUpdate {
-    pub fn add_meta(&mut self, key: impl Into<String>, value: impl Into<Vec<u8>>) -> &mut Self {
-        self.update.add_meta.insert(key.into(), value.into());
-        self
-    }
+    async fn new_random_object_reader(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::RandomObjectReader>;
 
-    pub fn remove_meta(&mut self, key: impl Into<String>) -> &mut Self {
-        self.update.remove_meta.push(key.into());
-        self
-    }
-
-    pub fn add_object(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.add_objects.push(name.into());
-        self
-    }
-
-    pub fn remove_object(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.remove_objects.push(name.into());
-        self
-    }
+    async fn new_sequential_object_writer(
+        &self,
+        bucket_name: &str,
+        object_name: &str,
+    ) -> Result<Self::SequentialObjectWriter>;
 }

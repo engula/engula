@@ -20,81 +20,55 @@
 //! [`Kernel`] is an abstraction to provide a stateful environment to storage
 //! engines.
 //!
-//! # Implementation
-//!
-//! Some built-in implementations of [`Kernel`]:
-//!
-//! - [`mem`](crate::mem)
-//! - [`file`](crate::file)
-//! - [`grpc`](crate::grpc)
-//!
 //! [`Kernel`]: crate::Kernel
 
 mod error;
 mod kernel;
-mod manifest;
+mod kernel_update;
 mod metadata;
 
-pub mod file;
-pub mod grpc;
 mod local;
-pub mod mem;
 
 pub use async_trait::async_trait;
-pub use engula_journal::{Event, Journal, Stream, Timestamp};
-pub use engula_storage::{Bucket, Storage};
-
-pub type ResultStream<T> = Box<dyn futures::Stream<Item = Result<T>> + Send + Unpin>;
+pub use engula_journal::{Event, Journal, StreamReader, StreamWriter, Timestamp};
+pub use engula_storage::Storage;
 
 pub use self::{
     error::{Error, Result},
-    kernel::{Kernel, KernelUpdate},
-    metadata::{Sequence, Version, VersionUpdate},
+    kernel::Kernel,
+    kernel_update::{BucketUpdateBuilder, KernelUpdateBuilder, KernelUpdateReader},
+    local::MemKernel,
+    metadata::{BucketUpdate, KernelUpdate, Sequence},
 };
 
 #[cfg(test)]
 mod tests {
-    use futures::TryStreamExt;
-
     use crate::*;
 
     #[tokio::test]
     async fn kernel() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
-
-        let kernel = mem::Kernel::open().await?;
+        let kernel = MemKernel::open().await?;
         test_kernel(kernel).await?;
-
-        let kernel = file::Kernel::open(tmp.path()).await?;
-        test_kernel(kernel).await?;
-
         Ok(())
     }
 
-    async fn test_kernel(kernel: impl Kernel) -> Result<()> {
+    async fn test_kernel(kernel: impl Kernel<u64>) -> Result<()> {
+        let update = KernelUpdateBuilder::default()
+            .put_meta("a", "b")
+            .remove_meta("b")
+            .build();
+
         let handle = {
-            let mut expect = VersionUpdate {
-                sequence: 1,
-                ..Default::default()
-            };
-            expect.add_meta.insert("a".to_owned(), b"b".to_vec());
-            expect.remove_meta.push("b".to_owned());
-            expect.add_objects.push("a".to_owned());
-            expect.remove_objects.push("b".to_owned());
-            let mut version_updates = kernel.version_updates(0).await;
+            let mut expect = update.clone();
+            expect.sequence = 1;
+            let mut update_reader = kernel.new_update_reader().await?;
             tokio::spawn(async move {
-                let update = version_updates.try_next().await.unwrap().unwrap();
-                assert_eq!(*update, expect);
+                let update = update_reader.wait_next().await.unwrap();
+                assert_eq!(update, expect);
             })
         };
 
-        let mut update = KernelUpdate::default();
-        update.add_meta("a", "b");
-        update.remove_meta("b");
-        update.add_object("a");
-        update.remove_object("b");
         kernel.apply_update(update).await?;
-
         handle.await.unwrap();
         Ok(())
     }

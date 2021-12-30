@@ -19,7 +19,7 @@ use std::{
 
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, Result, StreamRead, StreamWrite, Timestamp};
+use crate::{async_trait, Error, Event, Result, Timestamp};
 
 type Stream<T> = Arc<Mutex<VecDeque<Event<T>>>>;
 
@@ -102,7 +102,7 @@ impl<T> StreamReader<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> StreamRead<T> for StreamReader<T> {
+impl<T: Timestamp> crate::StreamReader<T> for StreamReader<T> {
     async fn seek(&mut self, ts: T) -> Result<()> {
         let stream = self.stream.lock().await;
         let offset = stream.partition_point(|x| x.ts < ts);
@@ -126,7 +126,7 @@ impl<T> StreamWriter<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> StreamWrite<T> for StreamWriter<T> {
+impl<T: Timestamp> crate::StreamWriter<T> for StreamWriter<T> {
     async fn append(&mut self, event: Event<T>) -> Result<()> {
         let mut stream = self.stream.lock().await;
         if let Some(last_ts) = stream.back().map(|x| x.ts.clone()) {

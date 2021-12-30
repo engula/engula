@@ -28,14 +28,14 @@ pub struct Event<T> {
 }
 
 #[async_trait]
-pub trait StreamRead<T> {
+pub trait StreamReader<T> {
     async fn seek(&mut self, ts: T) -> Result<()>;
 
     async fn next(&mut self) -> Result<Option<Event<T>>>;
 }
 
 #[async_trait]
-pub trait StreamWrite<T> {
+pub trait StreamWriter<T> {
     /// Appends an event.
     async fn append(&mut self, event: Event<T>) -> Result<()>;
 

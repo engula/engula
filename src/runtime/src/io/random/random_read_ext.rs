@@ -12,16 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{manifest::Manifest, Journal, Storage};
-use crate::Result;
+use super::{read::Read, read_exact::ReadExact, RandomRead};
 
-pub type Kernel = crate::local::Kernel<Journal, Storage, Manifest>;
+pub trait RandomReadExt: RandomRead {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> Read<'a, Self>
+    where
+        Self: Unpin,
+    {
+        Read::new(self, buf, pos)
+    }
 
-impl Kernel {
-    pub async fn open() -> Result<Self> {
-        let journal = Journal::default();
-        let storage = Storage::default();
-        let manifest = Manifest::default();
-        Self::init(journal, storage, manifest).await
+    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> ReadExact<'a, Self>
+    where
+        Self: Unpin,
+    {
+        ReadExact::new(self, buf, pos)
     }
 }
+
+impl<R: RandomRead + ?Sized> RandomReadExt for R {}
