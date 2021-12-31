@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Run docker-compose stack
-        run: ./tools/ci/run-docker-compose-stack.sh
+        run: docker-compose -f ./tools/ci/docker-compose-e2e-connectivity.yml up -d
       - uses: Swatinem/rust-cache@v1
       - name: Run hash-engine example
         uses: actions-rs/cargo@v1
