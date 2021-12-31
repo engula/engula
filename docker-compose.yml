@@ -15,20 +15,20 @@
 version: '3'
 services:
   journal:
-    image: ghcr.io/tisonkun/engula:nightly
+    image: ghcr.io/tisonkun/engula:latest
     ports:
       - "10001:10001"
       - "10002:10002"
       - "10003:10003"
     command: journal run 0.0.0.0:10001 --mem
   storage:
-    image: ghcr.io/tisonkun/engula:nightly
+    image: ghcr.io/tisonkun/engula:latest
     network_mode: "service:journal"
     depends_on:
       - journal
     command: storage run 0.0.0.0:10002 --mem
   kernel:
-    image: ghcr.io/tisonkun/engula:nightly
+    image: ghcr.io/tisonkun/engula:latest
     network_mode: "service:journal"
     depends_on:
       - journal

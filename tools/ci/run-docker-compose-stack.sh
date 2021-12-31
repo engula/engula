@@ -21,5 +21,5 @@ set -o pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
-sed -e 's@image: ghcr.io/tisonkun/engula:nightly@build: .@g' docker-compose.yml > docker-compose-ci.yml
+sed -e 's@image: ghcr.io/tisonkun/engula:latest@build: .@g' docker-compose.yml > docker-compose-ci.yml
 docker-compose -f docker-compose-ci.yml up -d
