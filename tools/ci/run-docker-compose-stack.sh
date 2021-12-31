@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # Copyright 2021 The Engula Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,26 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-version: '3'
-services:
-  journal:
-    build: ../../
-    ports:
-      - "10001:10001"
-      - "10002:10002"
-      - "10003:10003"
-    command: journal run 0.0.0.0:10001 --mem
-  storage:
-    build: ../../
-    network_mode: "service:journal"
-    depends_on:
-      - journal
-    command: storage run 0.0.0.0:10002 --mem
-  kernel:
-    build: ../../
-    network_mode: "service:journal"
-    depends_on:
-      - journal
-      - storage
-    command: kernel run 0.0.0.0:10003 --journal 0.0.0.0:10001 --storage 0.0.0.0:10002 --mem
+set -o errexit
+set -o nounset
+set -o pipefail
 
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}"
+
+sed -e 's@image: ghcr.io/tisonkun/engula:nightly@build: .@g' docker-compose.yml > docker-compose-ci.yml
+docker-compose -f docker-compose-ci.yml up -d

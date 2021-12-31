@@ -34,4 +34,3 @@ services:
       - journal
       - storage
     command: kernel run 0.0.0.0:10003 --journal 0.0.0.0:10001 --storage 0.0.0.0:10002 --mem
-
