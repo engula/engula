@@ -1,7 +1,7 @@
 # Tiered Storage
 
 - Status: draft
-- Pull Request: https://github.com/engula/engula/pull/242
+- Pull Request: https://github.com/engula/engula/pull/246
 
 ## Abstract
 
@@ -15,6 +15,8 @@ A tiered storage organizes objects in buckets and provides the following interfa
 
 ```rust
 trait TieredStorage {
+    /// Returns a description about the storage.
+    fn describe(&self);
     /// Creates a bucket.
     fn create_bucket(&self, bucket);
     /// Deletes a bucket.
