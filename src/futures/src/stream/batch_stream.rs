@@ -20,7 +20,7 @@ use std::{
 
 pub type BoxBatchStream<T> = Pin<Box<dyn BatchStream<Batch = T>>>;
 
-/// An extended stream that can return a batch of items at once.
+/// A stream that returns a batch of items at a time.
 pub trait BatchStream {
     type Batch;
 
