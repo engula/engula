@@ -18,10 +18,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::Stream;
+pub type BoxBatchStream<T> = Pin<Box<dyn BatchStream<Batch = T>>>;
 
 /// An extended stream that can return a batch of items at once.
-pub trait BatchStream: Stream {
+pub trait BatchStream {
     type Batch;
 
     /// Returns the next `n` items.

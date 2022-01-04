@@ -12,15 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::io::{RandomRead, SequentialWrite};
+use engula_futures::{
+    io::{RandomRead, SequentialWrite},
+    stream::BatchStream,
+};
 
 use crate::{async_trait, Result};
 
 /// An interface to manipulate a storage.
 #[async_trait]
 pub trait Storage: Clone + Send + Sync + 'static {
+    type BucketLister: BatchStream<Batch = Result<Vec<String>>>;
+    type ObjectLister: BatchStream<Batch = Result<Vec<String>>>;
     type RandomReader: RandomRead;
     type SequentialWriter: SequentialWrite;
+
+    /// Lists buckets.
+    async fn list_buckets(&self) -> Result<Self::BucketLister>;
 
     /// Creates a bucket.
     ///
@@ -31,21 +39,27 @@ pub trait Storage: Clone + Send + Sync + 'static {
 
     /// Deletes a bucket.
     ///
-    /// Using a deleted bucket is an undefined behavior.
+    /// The behavior of using a deleted bucket depends on the implementation.
     ///
     /// # Errors
     ///
     /// Returns `Error::NotFound` if the bucket doesn't exist.
     async fn delete_bucket(&self, bucket_name: &str) -> Result<()>;
 
+    /// Lists objects in the given bucket.
+    async fn list_objects(&self, bucket_name: &str) -> Result<Self::ObjectLister>;
+
+    /// Deletes an object from the given bucket.
     async fn delete_object(&self, bucket_name: &str, object_name: &str) -> Result<()>;
 
+    /// Returns an object reader for random reads.
     async fn new_random_reader(
         &self,
         bucket_name: &str,
         object_name: &str,
     ) -> Result<Self::RandomReader>;
 
+    /// Returns an object writer for sequential writes.
     async fn new_sequential_writer(
         &self,
         bucket_name: &str,

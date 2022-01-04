@@ -21,7 +21,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use engula_futures::io::{RandomRead, SequentialWrite};
+use engula_futures::{
+    io::{RandomRead, SequentialWrite},
+    stream::{BatchStream, BoxBatchStream},
+};
 use futures::ready;
 use tokio::sync::Mutex;
 
@@ -50,10 +53,20 @@ impl Storage {
     }
 }
 
+pub type ListStream = BoxBatchStream<Result<Vec<String>>>;
+
 #[async_trait]
 impl crate::Storage for Storage {
+    type BucketLister = ListStream;
+    type ObjectLister = ListStream;
     type RandomReader = RandomReader;
     type SequentialWriter = SequentialWriter;
+
+    async fn list_buckets(&self) -> Result<Self::BucketLister> {
+        let buckets = self.buckets.lock().await;
+        let stream = NameStream::new(buckets.keys().cloned().collect());
+        Ok(Box::pin(stream))
+    }
 
     async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
         let mut buckets = self.buckets.lock().await;
@@ -74,6 +87,16 @@ impl crate::Storage for Storage {
         match buckets.remove(bucket_name) {
             Some(_) => Ok(()),
             None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
+        }
+    }
+
+    async fn list_objects(&self, bucket_name: &str) -> Result<Self::ObjectLister> {
+        if let Some(bucket) = self.bucket(bucket_name).await {
+            let bucket = bucket.lock().await;
+            let stream = NameStream::new(bucket.keys().cloned().collect());
+            Ok(Box::pin(stream))
+        } else {
+            Err(Error::NotFound(format!("bucket '{}'", bucket_name)))
         }
     }
 
@@ -113,6 +136,32 @@ impl crate::Storage for Storage {
         } else {
             Err(Error::NotFound(format!("bucket '{}'", bucket_name)))
         }
+    }
+}
+
+struct NameStream {
+    names: Vec<String>,
+}
+
+impl NameStream {
+    fn new(names: Vec<String>) -> Self {
+        Self { names }
+    }
+}
+
+impl BatchStream for NameStream {
+    type Batch = Result<Vec<String>>;
+
+    fn poll_next_batch(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        n: usize,
+    ) -> Poll<Self::Batch> {
+        let mut batch = std::mem::take(&mut self.names);
+        if n < self.names.len() {
+            self.names = batch.split_off(n);
+        }
+        Poll::Ready(Ok(batch))
     }
 }
 

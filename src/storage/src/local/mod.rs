@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod batch_stream;
-mod batch_stream_ext;
+mod mem;
 
-pub use self::{
-    batch_stream::{BatchStream, BoxBatchStream},
-    batch_stream_ext::BatchStreamExt,
-};
+pub use self::mem::Storage as MemStorage;
