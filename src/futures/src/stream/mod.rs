@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod batch;
-mod batch_ext;
-mod seek;
-mod seek_ext;
+mod batch_stream;
+mod batch_stream_ext;
 
-pub use self::{batch::Batch, batch_ext::BatchExt, seek::Seek, seek_ext::SeekExt};
+pub use self::{batch_stream::BatchStream, batch_stream_ext::BatchStreamExt};

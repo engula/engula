@@ -18,43 +18,43 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::Batch;
+use super::BatchStream;
 
-pub trait BatchExt: Batch {
-    fn next_batch(&mut self, n: usize) -> BatchFuture<'_, Self>
+pub trait BatchStreamExt: BatchStream {
+    fn next_batch(&mut self, n: usize) -> NextBatchFuture<'_, Self>
     where
         Self: Unpin,
-        Self::Output: Unpin,
+        Self::Batch: Unpin,
     {
-        BatchFuture::new(self, n)
+        NextBatchFuture::new(self, n)
     }
 }
 
-impl<T: Batch + ?Sized> BatchExt for T {}
+impl<T: BatchStream + ?Sized> BatchStreamExt for T {}
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct BatchFuture<'a, T: ?Sized> {
+pub struct NextBatchFuture<'a, T: ?Sized> {
     inner: &'a mut T,
     n: usize,
 }
 
-impl<T: ?Sized + Unpin> Unpin for BatchFuture<'_, T> {}
+impl<T: ?Sized + Unpin> Unpin for NextBatchFuture<'_, T> {}
 
-impl<'a, T> BatchFuture<'a, T>
+impl<'a, T> NextBatchFuture<'a, T>
 where
-    T: Batch + ?Sized + Unpin,
+    T: BatchStream + ?Sized + Unpin,
 {
     fn new(inner: &'a mut T, n: usize) -> Self {
         Self { inner, n }
     }
 }
 
-impl<T> Future for BatchFuture<'_, T>
+impl<T> Future for NextBatchFuture<'_, T>
 where
-    T: Batch + ?Sized + Unpin,
+    T: BatchStream + ?Sized + Unpin,
 {
-    type Output = T::Output;
+    type Output = T::Batch;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

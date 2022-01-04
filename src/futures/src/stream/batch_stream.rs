@@ -18,43 +18,46 @@ use std::{
     task::{Context, Poll},
 };
 
-pub trait Batch {
-    type Output;
+use futures::Stream;
+
+/// An extended stream that can return a batch of items at once.
+pub trait BatchStream: Stream {
+    type Batch;
 
     /// Returns the next `n` items.
-    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Output>;
+    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Batch>;
 }
 
-macro_rules! impl_batch {
+macro_rules! impl_batch_stream {
     () => {
-        type Output = T::Output;
+        type Batch = T::Batch;
 
         fn poll_next_batch(
             mut self: Pin<&mut Self>,
             cx: &mut Context<'_>,
             len: usize,
-        ) -> Poll<Self::Output> {
+        ) -> Poll<Self::Batch> {
             Pin::new(&mut **self).poll_next_batch(cx, len)
         }
     };
 }
 
-impl<T: Batch + ?Sized + Unpin> Batch for Box<T> {
-    impl_batch!();
+impl<T: BatchStream + ?Sized + Unpin> BatchStream for Box<T> {
+    impl_batch_stream!();
 }
 
-impl<T: Batch + ?Sized + Unpin> Batch for &mut T {
-    impl_batch!();
+impl<T: BatchStream + ?Sized + Unpin> BatchStream for &mut T {
+    impl_batch_stream!();
 }
 
-impl<T> Batch for Pin<T>
+impl<T> BatchStream for Pin<T>
 where
     T: DerefMut + Unpin,
-    T::Target: Batch,
+    T::Target: BatchStream,
 {
-    type Output = <<T as Deref>::Target as Batch>::Output;
+    type Batch = <<T as Deref>::Target as BatchStream>::Batch;
 
-    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Output> {
+    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Batch> {
         self.get_mut().as_mut().poll_next_batch(cx, n)
     }
 }
