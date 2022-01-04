@@ -15,4 +15,7 @@
 mod batch_stream;
 mod batch_stream_ext;
 
-pub use self::{batch_stream::BatchStream, batch_stream_ext::BatchStreamExt};
+pub use self::{
+    batch_stream::{BatchStream, BoxBatchStream},
+    batch_stream_ext::BatchStreamExt,
+};
