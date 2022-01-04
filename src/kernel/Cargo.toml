@@ -10,7 +10,7 @@ description = "An Engula module that provides stateful environment abstractions 
 [dependencies]
 engula-journal = { version = "0.3.0", path = "../journal" }
 engula-storage = { version = "0.3.0", path = "../storage" }
-engula-runtime = { version = "0.3.0", path = "../runtime" }
+engula-futures = { version = "0.3.0", path = "../futures" }
 
 thiserror = "1.0"
 async-trait = "0.1"

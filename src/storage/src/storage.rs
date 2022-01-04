@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_runtime::io::{RandomRead, SequentialWrite};
+use engula_futures::io::{RandomRead, SequentialWrite};
 
 use crate::{async_trait, Result};
 

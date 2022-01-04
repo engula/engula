@@ -14,44 +14,57 @@
 
 use std::{
     future::Future,
-    io,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::ready;
+use super::Seek;
 
-use super::AsyncRead;
-
-#[derive(Debug)]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct ReadExact<'a, R: ?Sized> {
-    reader: &'a mut R,
-    buf: &'a mut [u8],
-    pos: usize,
-}
-
-impl<R: ?Sized + Unpin> Unpin for ReadExact<'_, R> {}
-
-impl<'a, R: AsyncRead + ?Sized + Unpin> ReadExact<'a, R> {
-    pub(super) fn new(reader: &'a mut R, buf: &'a mut [u8], pos: usize) -> Self {
-        Self { reader, buf, pos }
+pub trait SeekExt: Seek {
+    fn seek<'a>(&'a mut self, target: &'a Self::Target) -> SeekFuture<'a, Self>
+    where
+        Self: Unpin,
+        Self::Target: Unpin,
+    {
+        SeekFuture::new(self, target)
     }
 }
 
-impl<R: AsyncRead + ?Sized + Unpin> Future for ReadExact<'_, R> {
-    type Output = io::Result<()>;
+impl<T: Seek + ?Sized> SeekExt for T {}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct SeekFuture<'a, T: Seek + ?Sized> {
+    inner: &'a mut T,
+    target: &'a T::Target,
+}
+
+impl<T> Unpin for SeekFuture<'_, T>
+where
+    T: Seek + ?Sized + Unpin,
+    T::Target: Unpin,
+{
+}
+
+impl<'a, T> SeekFuture<'a, T>
+where
+    T: Seek + ?Sized + Unpin,
+    T::Target: Unpin,
+{
+    fn new(inner: &'a mut T, target: &'a T::Target) -> Self {
+        Self { inner, target }
+    }
+}
+
+impl<T> Future for SeekFuture<'_, T>
+where
+    T: Seek + ?Sized + Unpin,
+    T::Target: Unpin,
+{
+    type Output = T::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        while !this.buf.is_empty() {
-            let n = ready!(Pin::new(&mut this.reader).poll_read(cx, this.buf, this.pos))?;
-            if n == 0 {
-                return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
-            }
-            let (_, rest) = std::mem::take(&mut this.buf).split_at_mut(n);
-            this.buf = rest;
-        }
-        Poll::Ready(Ok(()))
+        Pin::new(&mut this.inner).poll_seek(cx, this.target)
     }
 }

@@ -19,7 +19,7 @@ use std::{
     task::{Context, Poll},
 };
 
-pub trait AsyncRead {
+pub trait Read {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -28,38 +28,31 @@ pub trait AsyncRead {
     ) -> Poll<io::Result<usize>>;
 }
 
-impl<T> AsyncRead for Box<T>
-where
-    T: AsyncRead + ?Sized + Unpin,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-        pos: usize,
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut **self).poll_read(cx, buf, pos)
-    }
+macro_rules! impl_read {
+    () => {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+            pos: usize,
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut **self).poll_read(cx, buf, pos)
+        }
+    };
 }
 
-impl<T> AsyncRead for &mut T
-where
-    T: AsyncRead + ?Sized + Unpin,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-        pos: usize,
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut **self).poll_read(cx, buf, pos)
-    }
+impl<T: Read + ?Sized + Unpin> Read for Box<T> {
+    impl_read!();
 }
 
-impl<T> AsyncRead for Pin<T>
+impl<T: Read + ?Sized + Unpin> Read for &mut T {
+    impl_read!();
+}
+
+impl<T> Read for Pin<T>
 where
     T: DerefMut + Unpin,
-    T::Target: AsyncRead,
+    T::Target: Read,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -71,7 +64,7 @@ where
     }
 }
 
-impl AsyncRead for &[u8] {
+impl Read for &[u8] {
     fn poll_read(
         self: Pin<&mut Self>,
         _: &mut Context<'_>,

@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod random;
-pub mod sequential;
+mod batch;
+mod batch_ext;
+mod seek;
+mod seek_ext;
 
-pub use self::{
-    random::{AsyncRead as RandomRead, AsyncReadExt as RandomReadExt},
-    sequential::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt},
-};
+pub use self::{batch::Batch, batch_ext::BatchExt, seek::Seek, seek_ext::SeekExt};
