@@ -21,7 +21,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use engula_futures::io::{RandomRead, SequentialWrite};
+use engula_futures::{
+    io::{RandomRead, SequentialWrite},
+    stream::BatchStream,
+};
 use futures::ready;
 use tokio::sync::Mutex;
 
@@ -52,8 +55,15 @@ impl Storage {
 
 #[async_trait]
 impl crate::Storage for Storage {
+    type BucketLister = NameStream;
+    type ObjectLister = NameStream;
     type RandomReader = RandomReader;
     type SequentialWriter = SequentialWriter;
+
+    async fn list_buckets(&self) -> Result<Self::BucketLister> {
+        let buckets = self.buckets.lock().await;
+        Ok(NameStream::new(buckets.keys().cloned().collect()))
+    }
 
     async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
         let mut buckets = self.buckets.lock().await;
@@ -74,6 +84,15 @@ impl crate::Storage for Storage {
         match buckets.remove(bucket_name) {
             Some(_) => Ok(()),
             None => Err(Error::NotFound(format!("bucket '{}'", bucket_name))),
+        }
+    }
+
+    async fn list_objects(&self, bucket_name: &str) -> Result<Self::ObjectLister> {
+        if let Some(bucket) = self.bucket(bucket_name).await {
+            let bucket = bucket.lock().await;
+            Ok(NameStream::new(bucket.keys().cloned().collect()))
+        } else {
+            Err(Error::NotFound(format!("bucket '{}'", bucket_name)))
         }
     }
 
@@ -113,6 +132,36 @@ impl crate::Storage for Storage {
         } else {
             Err(Error::NotFound(format!("bucket '{}'", bucket_name)))
         }
+    }
+}
+
+pub struct NameStream {
+    names: Vec<String>,
+}
+
+impl NameStream {
+    fn new(names: Vec<String>) -> Self {
+        Self { names }
+    }
+}
+
+impl BatchStream for NameStream {
+    type Batch = Result<Vec<String>>;
+
+    fn poll_next_batch(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        n: usize,
+    ) -> Poll<Self::Batch> {
+        let mut batch = std::mem::take(&mut self.names);
+        if n < batch.len() {
+            self.names = batch.split_off(n);
+        }
+        Poll::Ready(Ok(batch))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.names.len(), Some(self.names.len()))
     }
 }
 
