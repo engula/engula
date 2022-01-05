@@ -28,6 +28,6 @@ pub mod storage {
     pub use engula_storage::*;
 }
 
-pub mod runtime {
-    pub use engula_runtime::*;
+pub mod futures {
+    pub use engula_futures::*;
 }

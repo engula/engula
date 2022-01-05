@@ -12,4 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use futures::io::{AsyncWrite, AsyncWriteExt};
+mod random;
+
+pub use futures::io::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt};
+
+pub use self::random::{Read as RandomRead, ReadExt as RandomReadExt};

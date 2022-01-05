@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod async_read;
-mod async_read_ext;
 mod read;
-mod read_exact;
+mod read_ext;
 
-pub use self::{async_read::AsyncRead, async_read_ext::AsyncReadExt};
+pub use self::{read::Read, read_ext::ReadExt};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn random() {
+    async fn read() {
         let data = vec![0u8; 4];
         let mut buf = vec![0u8; 3];
         let n = data.as_slice().read(&mut buf, 0).await.unwrap();

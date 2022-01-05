@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod random;
-pub mod sequential;
+mod batch_stream;
+mod batch_stream_ext;
 
 pub use self::{
-    random::{AsyncRead as RandomRead, AsyncReadExt as RandomReadExt},
-    sequential::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt},
+    batch_stream::{BatchStream, BoxBatchStream},
+    batch_stream_ext::BatchStreamExt,
 };

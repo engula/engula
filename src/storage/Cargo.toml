@@ -8,7 +8,8 @@ repository = "https://github.com/engula/engula"
 description = "An Engula module that provides object storage abstractions and implementations."
 
 [dependencies]
-engula-runtime = { version = "0.3.0", path = "../runtime" }
+engula-futures = { version = "0.3.0", path = "../futures" }
+
 thiserror = "1.0"
 async-trait = "0.1"
 bytes = "1.1.0"

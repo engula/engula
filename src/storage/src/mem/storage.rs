@@ -21,7 +21,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use engula_runtime::io::{RandomRead, SequentialWrite};
+use engula_futures::io::{RandomRead, SequentialWrite};
 use futures::ready;
 use tokio::sync::Mutex;
 

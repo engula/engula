@@ -14,34 +14,50 @@
 
 use std::{
     future::Future,
-    io,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use super::AsyncRead;
+use super::BatchStream;
 
-#[derive(Debug)]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct Read<'a, R: ?Sized> {
-    reader: &'a mut R,
-    buf: &'a mut [u8],
-    pos: usize,
-}
-
-impl<R: ?Sized + Unpin> Unpin for Read<'_, R> {}
-
-impl<'a, R: AsyncRead + ?Sized + Unpin> Read<'a, R> {
-    pub(super) fn new(reader: &'a mut R, buf: &'a mut [u8], pos: usize) -> Self {
-        Self { reader, buf, pos }
+pub trait BatchStreamExt: BatchStream {
+    fn next_batch(&mut self, n: usize) -> NextBatchFuture<'_, Self>
+    where
+        Self: Unpin,
+        Self::Batch: Unpin,
+    {
+        NextBatchFuture::new(self, n)
     }
 }
 
-impl<R: AsyncRead + ?Sized + Unpin> Future for Read<'_, R> {
-    type Output = io::Result<usize>;
+impl<T: BatchStream + ?Sized> BatchStreamExt for T {}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct NextBatchFuture<'a, T: ?Sized> {
+    inner: &'a mut T,
+    n: usize,
+}
+
+impl<T: ?Sized + Unpin> Unpin for NextBatchFuture<'_, T> {}
+
+impl<'a, T> NextBatchFuture<'a, T>
+where
+    T: BatchStream + ?Sized + Unpin,
+{
+    fn new(inner: &'a mut T, n: usize) -> Self {
+        Self { inner, n }
+    }
+}
+
+impl<T> Future for NextBatchFuture<'_, T>
+where
+    T: BatchStream + ?Sized + Unpin,
+{
+    type Output = T::Batch;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        Pin::new(&mut this.reader).poll_read(cx, this.buf, this.pos)
+        Pin::new(&mut this.inner).poll_next_batch(cx, this.n)
     }
 }

@@ -22,7 +22,7 @@ pub use self::storage::Storage;
 
 #[cfg(test)]
 mod tests {
-    use engula_runtime::io::{RandomReadExt, SequentialWriteExt};
+    use engula_futures::io::{RandomReadExt, SequentialWriteExt};
 
     use crate::*;
 
