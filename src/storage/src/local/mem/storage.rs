@@ -23,7 +23,7 @@ use std::{
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::{BatchStream, BoxBatchStream},
+    stream::BatchStream,
 };
 use futures::ready;
 use tokio::sync::Mutex;
@@ -53,19 +53,16 @@ impl Storage {
     }
 }
 
-pub type ListStream = BoxBatchStream<Result<Vec<String>>>;
-
 #[async_trait]
 impl crate::Storage for Storage {
-    type BucketLister = ListStream;
-    type ObjectLister = ListStream;
+    type BucketLister = NameStream;
+    type ObjectLister = NameStream;
     type RandomReader = RandomReader;
     type SequentialWriter = SequentialWriter;
 
     async fn list_buckets(&self) -> Result<Self::BucketLister> {
         let buckets = self.buckets.lock().await;
-        let stream = NameStream::new(buckets.keys().cloned().collect());
-        Ok(Box::pin(stream))
+        Ok(NameStream::new(buckets.keys().cloned().collect()))
     }
 
     async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
@@ -93,8 +90,7 @@ impl crate::Storage for Storage {
     async fn list_objects(&self, bucket_name: &str) -> Result<Self::ObjectLister> {
         if let Some(bucket) = self.bucket(bucket_name).await {
             let bucket = bucket.lock().await;
-            let stream = NameStream::new(bucket.keys().cloned().collect());
-            Ok(Box::pin(stream))
+            Ok(NameStream::new(bucket.keys().cloned().collect()))
         } else {
             Err(Error::NotFound(format!("bucket '{}'", bucket_name)))
         }
@@ -139,7 +135,7 @@ impl crate::Storage for Storage {
     }
 }
 
-struct NameStream {
+pub struct NameStream {
     names: Vec<String>,
 }
 
@@ -158,10 +154,14 @@ impl BatchStream for NameStream {
         n: usize,
     ) -> Poll<Self::Batch> {
         let mut batch = std::mem::take(&mut self.names);
-        if n < self.names.len() {
+        if n < batch.len() {
             self.names = batch.split_off(n);
         }
         Poll::Ready(Ok(batch))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.names.len(), Some(self.names.len()))
     }
 }
 
