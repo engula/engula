@@ -26,6 +26,15 @@ pub trait BatchStream {
 
     /// Returns the next `n` items.
     fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Batch>;
+
+    /// Returns the bounds on the remaining length of the stream.
+    ///
+    /// The returned tuple represents the lower bound (first element) and the
+    /// upper bound (second element) of the length. If the second element is
+    /// [`None`], it means that the upper bound is unknown.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
 }
 
 macro_rules! impl_batch_stream {
