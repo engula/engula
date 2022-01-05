@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use tokio::sync::{broadcast, Mutex};
 
 use crate::{async_trait, Error, Journal, KernelUpdate, Result, Sequence, Storage, Timestamp};
 
-#[derive(Clone)]
 pub struct Kernel<J, S> {
-    inner: Arc<Mutex<Inner>>,
+    inner: Mutex<Inner>,
     journal: J,
     storage: S,
 }
@@ -38,7 +35,7 @@ impl<J, S> Kernel<J, S> {
             update_tx,
         };
         Ok(Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Mutex::new(inner),
             journal,
             storage,
         })

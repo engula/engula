@@ -18,14 +18,17 @@ use std::{
     task::{Context, Poll},
 };
 
-pub type BoxBatchStream<T> = Pin<Box<dyn BatchStream<Batch = T>>>;
+/// A stream that returns a batch of elements at a time.
+pub trait BatchResultStream {
+    type Elem;
+    type Error;
 
-/// A stream that returns a batch of items at a time.
-pub trait BatchStream {
-    type Batch;
-
-    /// Returns the next `n` items.
-    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Batch>;
+    /// Returns the next `batch_size` elements.
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        batch_size: usize,
+    ) -> Poll<Result<Vec<Self::Elem>, Self::Error>>;
 
     /// Returns the bounds on the remaining length of the stream.
     ///
@@ -37,36 +40,42 @@ pub trait BatchStream {
     }
 }
 
-macro_rules! impl_batch_stream {
+macro_rules! impl_stream {
     () => {
-        type Batch = T::Batch;
+        type Elem = T::Elem;
+        type Error = T::Error;
 
-        fn poll_next_batch(
+        fn poll_next(
             mut self: Pin<&mut Self>,
             cx: &mut Context<'_>,
-            len: usize,
-        ) -> Poll<Self::Batch> {
-            Pin::new(&mut **self).poll_next_batch(cx, len)
+            batch_size: usize,
+        ) -> Poll<Result<Vec<Self::Elem>, Self::Error>> {
+            Pin::new(&mut **self).poll_next(cx, batch_size)
         }
     };
 }
 
-impl<T: BatchStream + ?Sized + Unpin> BatchStream for Box<T> {
-    impl_batch_stream!();
+impl<T: BatchResultStream + ?Sized + Unpin> BatchResultStream for Box<T> {
+    impl_stream!();
 }
 
-impl<T: BatchStream + ?Sized + Unpin> BatchStream for &mut T {
-    impl_batch_stream!();
+impl<T: BatchResultStream + ?Sized + Unpin> BatchResultStream for &mut T {
+    impl_stream!();
 }
 
-impl<T> BatchStream for Pin<T>
+impl<T> BatchResultStream for Pin<T>
 where
     T: DerefMut + Unpin,
-    T::Target: BatchStream,
+    T::Target: BatchResultStream,
 {
-    type Batch = <<T as Deref>::Target as BatchStream>::Batch;
+    type Elem = <<T as Deref>::Target as BatchResultStream>::Elem;
+    type Error = <<T as Deref>::Target as BatchResultStream>::Error;
 
-    fn poll_next_batch(self: Pin<&mut Self>, cx: &mut Context<'_>, n: usize) -> Poll<Self::Batch> {
-        self.get_mut().as_mut().poll_next_batch(cx, n)
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        batch_size: usize,
+    ) -> Poll<Result<Vec<Self::Elem>, Self::Error>> {
+        self.get_mut().as_mut().poll_next(cx, batch_size)
     }
 }

@@ -23,7 +23,7 @@ use std::{
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::BatchStream,
+    stream::BatchResultStream,
 };
 use futures::ready;
 use tokio::sync::Mutex;
@@ -33,15 +33,14 @@ use crate::{async_trait, Error, Result};
 type Object = Arc<Vec<u8>>;
 type Bucket = Arc<Mutex<HashMap<String, Object>>>;
 
-#[derive(Clone)]
 pub struct Storage {
-    buckets: Arc<Mutex<HashMap<String, Bucket>>>,
+    buckets: Mutex<HashMap<String, Bucket>>,
 }
 
 impl Default for Storage {
     fn default() -> Self {
         Self {
-            buckets: Arc::new(Mutex::new(HashMap::new())),
+            buckets: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -145,17 +144,18 @@ impl NameStream {
     }
 }
 
-impl BatchStream for NameStream {
-    type Batch = Result<Vec<String>>;
+impl BatchResultStream for NameStream {
+    type Elem = String;
+    type Error = Error;
 
-    fn poll_next_batch(
+    fn poll_next(
         mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
-        n: usize,
-    ) -> Poll<Self::Batch> {
+        batch_size: usize,
+    ) -> Poll<Result<Vec<Self::Elem>>> {
         let mut batch = std::mem::take(&mut self.names);
-        if n < batch.len() {
-            self.names = batch.split_off(n);
+        if batch_size < batch.len() {
+            self.names = batch.split_off(batch_size);
         }
         Poll::Ready(Ok(batch))
     }
