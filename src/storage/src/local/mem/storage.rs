@@ -33,15 +33,14 @@ use crate::{async_trait, Error, Result};
 type Object = Arc<Vec<u8>>;
 type Bucket = Arc<Mutex<HashMap<String, Object>>>;
 
-#[derive(Clone)]
 pub struct Storage {
-    buckets: Arc<Mutex<HashMap<String, Bucket>>>,
+    buckets: Mutex<HashMap<String, Bucket>>,
 }
 
 impl Default for Storage {
     fn default() -> Self {
         Self {
-            buckets: Arc::new(Mutex::new(HashMap::new())),
+            buckets: Mutex::new(HashMap::new()),
         }
     }
 }
