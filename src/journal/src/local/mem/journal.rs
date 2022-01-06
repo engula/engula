@@ -119,11 +119,7 @@ impl crate::StreamReader for StreamReader {
         let stream = self.stream.lock().await;
         let next_sequence = stream.last_sequence + 1;
         if let Some(offset) = next_sequence.checked_sub(sequence) {
-            let index = stream
-                .events
-                .len()
-                .checked_sub(offset as usize)
-                .unwrap_or(0);
+            let index = stream.events.len().saturating_sub(offset as usize);
             self.events = stream.events.range(index..).cloned().collect();
         } else {
             self.events.clear();
@@ -159,9 +155,8 @@ impl crate::StreamWriter for StreamWriter {
         let mut stream = self.stream.lock().await;
         let next_sequence = stream.last_sequence + 1;
         if let Some(offset) = next_sequence.checked_sub(sequence) {
-            if let Some(index) = stream.events.len().checked_sub(offset as usize) {
-                stream.events.drain(..index);
-            }
+            let index = stream.events.len().saturating_sub(offset as usize);
+            stream.events.drain(..index);
         } else {
             stream.events.clear();
         }
