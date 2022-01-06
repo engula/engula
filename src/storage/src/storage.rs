@@ -14,18 +14,18 @@
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::BatchStream,
+    stream::BatchResultStream,
 };
 
-use crate::{async_trait, Result};
+use crate::{async_trait, Error, Result};
 
 /// An object storage abstraction.
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
-    type BucketLister: BatchStream<Batch = Result<Vec<String>>>;
-    type ObjectLister: BatchStream<Batch = Result<Vec<String>>>;
-    type RandomReader: RandomRead;
-    type SequentialWriter: SequentialWrite;
+    type BucketLister: BatchResultStream<Elem = String, Error = Error>;
+    type ObjectLister: BatchResultStream<Elem = String, Error = Error>;
+    type RandomReader: RandomRead + Send + Unpin;
+    type SequentialWriter: SequentialWrite + Send + Unpin;
 
     /// Lists buckets.
     async fn list_buckets(&self) -> Result<Self::BucketLister>;
