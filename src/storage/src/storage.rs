@@ -19,9 +19,9 @@ use engula_futures::{
 
 use crate::{async_trait, Result};
 
-/// An interface to manipulate a storage.
+/// An object storage abstraction.
 #[async_trait]
-pub trait Storage: Clone + Send + Sync + 'static {
+pub trait Storage: Send + Sync + 'static {
     type BucketLister: BatchStream<Batch = Result<Vec<String>>>;
     type ObjectLister: BatchStream<Batch = Result<Vec<String>>>;
     type RandomReader: RandomRead;
