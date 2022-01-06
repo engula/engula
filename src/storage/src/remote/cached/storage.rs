@@ -15,7 +15,7 @@
 use engula_futures::stream::BatchResultStreamExt;
 
 use super::{random_reader::RandomReader, Orchestrator};
-use crate::{Result, Storage};
+use crate::{async_trait, Result, Storage};
 
 pub struct CachedStorage<B, O>
 where
@@ -49,7 +49,7 @@ where
     }
 }
 
-#[crate::async_trait]
+#[async_trait]
 impl<B, O> Storage for CachedStorage<B, O>
 where
     B: Storage,
