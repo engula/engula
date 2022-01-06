@@ -19,7 +19,7 @@ use engula_futures::{
 
 use crate::{async_trait, Error, Result};
 
-/// An interface to manipulate a storage.
+/// An object storage abstraction.
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
     type BucketLister: BatchResultStream<Elem = String, Error = Error>;

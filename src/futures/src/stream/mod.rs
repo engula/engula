@@ -14,7 +14,9 @@
 
 mod batch_result_stream;
 mod batch_result_stream_ext;
+mod vec_result_stream;
 
 pub use self::{
     batch_result_stream::BatchResultStream, batch_result_stream_ext::BatchResultStreamExt,
+    vec_result_stream::VecResultStream,
 };
