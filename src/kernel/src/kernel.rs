@@ -19,7 +19,7 @@ use crate::{async_trait, KernelUpdate, KernelUpdateReader, Result};
 
 /// An interface to interact with a kernel.
 #[async_trait]
-pub trait Kernel<T>: Send + Sync + 'static {
+pub trait Kernel<T>: Clone + Send + Sync + 'static {
     type KernelUpdateReader: KernelUpdateReader;
     type StreamReader: StreamReader<T>;
     type StreamWriter: StreamWriter<T>;
