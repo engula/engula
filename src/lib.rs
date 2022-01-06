@@ -16,10 +16,6 @@ pub mod luna {
     pub use luna_engine::*;
 }
 
-pub mod kernel {
-    pub use engula_kernel::*;
-}
-
 pub mod journal {
     pub use engula_journal::*;
 }
