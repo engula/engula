@@ -8,11 +8,11 @@ repository = "https://github.com/engula/engula"
 description = "An Engula engine that provides simple key-value storage."
 
 [dependencies]
-engula-kernel = { version = "0.3.0", path = "../../kernel" }
 engula-journal = { version = "0.3.0", path = "../../journal" }
+engula-kernel = { version = "0.3.0", path = "../../kernel" }
 engula-storage = { version = "0.3.0", path = "../../storage" }
 
-thiserror = "1.0"
-tokio = { version = "1.14", features = ["full"] }
 bytes = "1.1"
 futures = "0.3"
+thiserror = "1.0"
+tokio = { version = "1.14", features = ["full"] }

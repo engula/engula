@@ -1,0 +1,13 @@
+include = ["**/Cargo.toml"]
+
+[formatting]
+array_auto_collapse = true
+array_auto_expand = true
+reorder_keys = true
+
+# Do not sort key names within [package] section.
+[[rule]]
+keys = ["package"]
+
+[rule.formatting]
+reorder_keys = false
