@@ -27,20 +27,15 @@ mod tests {
     #[tokio::test]
     async fn test() -> Result<()> {
         let stream_name = "stream";
-        let j = mem::Journal::default();
+
+        let j = super::Journal::default();
         j.create_stream(stream_name).await?;
 
+        let event1 = vec![1];
+        let event2 = vec![2];
         let mut writer = j.new_stream_writer(stream_name).await?;
-        let event1 = Event {
-            ts: 1,
-            data: vec![1],
-        };
-        writer.append(event1.clone()).await?;
-        let event2 = Event {
-            ts: 2,
-            data: vec![2],
-        };
-        writer.append(event2.clone()).await?;
+        assert_eq!(writer.append(event1.clone()).await?, 1);
+        assert_eq!(writer.append(event2.clone()).await?, 2);
 
         let mut reader = j.new_stream_reader(stream_name).await?;
         reader.seek(1).await?;

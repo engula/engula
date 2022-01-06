@@ -17,42 +17,54 @@ use std::{
     sync::Arc,
 };
 
+use engula_futures::stream::VecResultStream;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Event, Result, Timestamp};
+use crate::{async_trait, Error, Result, Sequence};
 
-type Stream<T> = Arc<Mutex<VecDeque<Event<T>>>>;
-
-#[derive(Clone)]
-pub struct Journal<T> {
-    streams: Arc<Mutex<HashMap<String, Stream<T>>>>,
+#[derive(Default)]
+struct Events {
+    events: VecDeque<Vec<u8>>,
+    last_sequence: Sequence,
 }
 
-impl<T> Default for Journal<T> {
+type Stream = Arc<Mutex<Events>>;
+
+pub struct Journal {
+    streams: Mutex<HashMap<String, Stream>>,
+}
+
+impl Default for Journal {
     fn default() -> Self {
         Self {
-            streams: Arc::new(Mutex::new(HashMap::new())),
+            streams: Mutex::new(HashMap::new()),
         }
     }
 }
 
-impl<T> Journal<T> {
-    async fn stream(&self, name: &str) -> Option<Stream<T>> {
+impl Journal {
+    async fn stream(&self, name: &str) -> Option<Stream> {
         let streams = self.streams.lock().await;
         streams.get(name).cloned()
     }
 }
 
 #[async_trait]
-impl<T: Timestamp> crate::Journal<T> for Journal<T> {
-    type StreamReader = StreamReader<T>;
-    type StreamWriter = StreamWriter<T>;
+impl crate::Journal for Journal {
+    type StreamLister = VecResultStream<String, Error>;
+    type StreamReader = StreamReader;
+    type StreamWriter = StreamWriter;
+
+    async fn list_streams(&self) -> Result<Self::StreamLister> {
+        let streams = self.streams.lock().await;
+        Ok(VecResultStream::new(streams.keys().cloned().collect()))
+    }
 
     async fn create_stream(&self, name: &str) -> Result<()> {
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
-                let stream = Arc::new(Mutex::new(VecDeque::new()));
+                let stream = Arc::new(Mutex::new(Events::default()));
                 ent.insert(stream);
                 Ok(())
             }
@@ -87,13 +99,13 @@ impl<T: Timestamp> crate::Journal<T> for Journal<T> {
     }
 }
 
-pub struct StreamReader<T> {
-    stream: Stream<T>,
-    events: VecDeque<Event<T>>,
+pub struct StreamReader {
+    stream: Stream,
+    events: VecDeque<Vec<u8>>,
 }
 
-impl<T> StreamReader<T> {
-    fn new(stream: Stream<T>) -> Self {
+impl StreamReader {
+    fn new(stream: Stream) -> Self {
         Self {
             stream,
             events: VecDeque::new(),
@@ -102,49 +114,57 @@ impl<T> StreamReader<T> {
 }
 
 #[async_trait]
-impl<T: Timestamp> crate::StreamReader<T> for StreamReader<T> {
-    async fn seek(&mut self, ts: T) -> Result<()> {
+impl crate::StreamReader for StreamReader {
+    async fn seek(&mut self, sequence: Sequence) -> Result<()> {
         let stream = self.stream.lock().await;
-        let offset = stream.partition_point(|x| x.ts < ts);
-        self.events = stream.range(offset..).cloned().collect();
+        let next_sequence = stream.last_sequence + 1;
+        if let Some(offset) = next_sequence.checked_sub(sequence) {
+            let index = stream
+                .events
+                .len()
+                .checked_sub(offset as usize)
+                .unwrap_or(0);
+            self.events = stream.events.range(index..).cloned().collect();
+        } else {
+            self.events.clear();
+        }
         Ok(())
     }
 
-    async fn next(&mut self) -> Result<Option<Event<T>>> {
+    async fn next(&mut self) -> Result<Option<Vec<u8>>> {
         Ok(self.events.pop_front())
     }
 }
 
-pub struct StreamWriter<T> {
-    stream: Stream<T>,
+pub struct StreamWriter {
+    stream: Stream,
 }
 
-impl<T> StreamWriter<T> {
-    fn new(stream: Stream<T>) -> Self {
+impl StreamWriter {
+    fn new(stream: Stream) -> Self {
         Self { stream }
     }
 }
 
 #[async_trait]
-impl<T: Timestamp> crate::StreamWriter<T> for StreamWriter<T> {
-    async fn append(&mut self, event: Event<T>) -> Result<()> {
+impl crate::StreamWriter for StreamWriter {
+    async fn append(&mut self, event: Vec<u8>) -> Result<Sequence> {
         let mut stream = self.stream.lock().await;
-        if let Some(last_ts) = stream.back().map(|x| x.ts.clone()) {
-            if event.ts <= last_ts {
-                return Err(Error::InvalidArgument(format!(
-                    "timestamp {:?} <= last timestamp {:?}",
-                    event.ts, last_ts
-                )));
-            }
-        }
-        stream.push_back(event);
-        Ok(())
+        stream.events.push_back(event);
+        stream.last_sequence += 1;
+        Ok(stream.last_sequence)
     }
 
-    async fn release(&mut self, ts: T) -> Result<()> {
+    async fn truncate(&mut self, sequence: Sequence) -> Result<()> {
         let mut stream = self.stream.lock().await;
-        let index = stream.partition_point(|x| x.ts < ts);
-        stream.drain(..index);
+        let next_sequence = stream.last_sequence + 1;
+        if let Some(offset) = next_sequence.checked_sub(sequence) {
+            if let Some(index) = stream.events.len().checked_sub(offset as usize) {
+                stream.events.drain(..index);
+            }
+        } else {
+            stream.events.clear();
+        }
         Ok(())
     }
 }
