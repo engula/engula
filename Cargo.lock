@@ -82,6 +82,7 @@ name = "engula-journal"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "engula-futures",
  "prost",
  "tempfile",
  "thiserror",

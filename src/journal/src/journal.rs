@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{async_trait, Result, StreamReader, StreamWriter};
+use engula_futures::stream::BatchResultStream;
+
+use crate::{async_trait, Error, Result, StreamReader, StreamWriter};
 
 /// An interface to manipulate a journal.
 #[async_trait]
-pub trait Journal<T>: Clone + Send + Sync + 'static {
-    type StreamReader: StreamReader<T>;
-    type StreamWriter: StreamWriter<T>;
+pub trait Journal: Send + Sync + 'static {
+    type StreamLister: BatchResultStream<Elem = String, Error = Error>;
+    type StreamReader: StreamReader;
+    type StreamWriter: StreamWriter;
+
+    /// Lists streams.
+    async fn list_streams(&self) -> Result<Self::StreamLister>;
 
     /// Creates a stream.
     ///
@@ -36,7 +42,9 @@ pub trait Journal<T>: Clone + Send + Sync + 'static {
     /// Returns `Error::NotFound` if the stream doesn't exist.
     async fn delete_stream(&self, name: &str) -> Result<()>;
 
+    /// Returns a stream reader.
     async fn new_stream_reader(&self, name: &str) -> Result<Self::StreamReader>;
 
+    /// Returns a stream writer.
     async fn new_stream_writer(&self, name: &str) -> Result<Self::StreamWriter>;
 }
