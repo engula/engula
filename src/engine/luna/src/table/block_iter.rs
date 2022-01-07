@@ -62,7 +62,7 @@ fn next_entry_offset(data: &[u8], offset: usize) -> usize {
 }
 
 pub struct BlockIter {
-    data: Arc<Vec<u8>>,
+    data: Arc<[u8]>,
     num_restarts: usize,
     restart_offset: usize,
     current_offset: usize,
@@ -84,7 +84,7 @@ impl BlockIter {
         while l < r {
             let mid = (r - l) / 2 + l;
             let offset = read_restart(&self.data[self.restart_offset..], mid) as usize;
-            let key = read_key(self.data.as_slice(), offset);
+            let key = read_key(&self.data, offset);
             if key <= target {
                 l = mid + 1;
             } else {
@@ -97,8 +97,8 @@ impl BlockIter {
 
 #[allow(dead_code)]
 impl BlockIter {
-    pub fn new(data: Arc<Vec<u8>>) -> Self {
-        let num_restarts = read_num_restarts(data.as_slice()) as usize;
+    pub fn new(data: Arc<[u8]>) -> Self {
+        let num_restarts = read_num_restarts(&data) as usize;
         let tail_len = (num_restarts + 1) * core::mem::size_of::<u32>();
         debug_assert!(num_restarts >= 1);
         debug_assert!(data.len() >= tail_len);
@@ -158,7 +158,7 @@ mod tests {
     use super::*;
     use crate::table::block_builder::BlockBuilder;
 
-    fn build_block(size: u8) -> Vec<u8> {
+    fn build_block(size: u8) -> Arc<[u8]> {
         let mut builder = BlockBuilder::new(2);
         for id in 1u8..size {
             builder.add(&[id], &[id]);
@@ -175,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn seek_to_first() {
-        let data = Arc::new(build_block(128));
+        let data = build_block(128);
         let mut it = BlockIter::new(data);
         it.seek_to_first();
         assert!(it.valid());
@@ -184,8 +184,6 @@ mod tests {
 
     #[tokio::test]
     async fn seek() {
-        let data = Arc::new(build_block(129));
-
         struct Test {
             target: Vec<u8>,
             expect: Option<Vec<u8>>,
@@ -224,6 +222,7 @@ mod tests {
             },
         ];
 
+        let data = build_block(129);
         let mut it = BlockIter::new(data);
         for t in tests {
             it.seek(&t.target);
@@ -238,8 +237,6 @@ mod tests {
 
     #[tokio::test]
     async fn next() {
-        let data = Arc::new(build_block(129));
-
         struct Test {
             target: Vec<u8>,
             expect: Option<Vec<u8>>,
@@ -282,6 +279,7 @@ mod tests {
             },
         ];
 
+        let data = build_block(129);
         let mut it = BlockIter::new(data);
         for t in tests {
             it.seek(&t.target);
