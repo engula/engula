@@ -146,7 +146,7 @@ impl RandomReader {
 
 impl RandomRead for RandomReader {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         _: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,
