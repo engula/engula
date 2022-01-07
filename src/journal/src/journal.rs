@@ -16,9 +16,9 @@ use engula_futures::stream::BatchResultStream;
 
 use crate::{async_trait, Error, Result, StreamReader, StreamWriter};
 
-/// An interface to manipulate a journal.
+/// A stream storage abstraction.
 #[async_trait]
-pub trait Journal: Send + Sync + 'static {
+pub trait Journal {
     type StreamLister: BatchResultStream<Elem = String, Error = Error>;
     type StreamReader: StreamReader;
     type StreamWriter: StreamWriter;

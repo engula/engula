@@ -14,6 +14,7 @@
 
 use crate::{async_trait, Result};
 
+/// An increasing number to order events.
 pub type Sequence = u64;
 
 #[async_trait]
