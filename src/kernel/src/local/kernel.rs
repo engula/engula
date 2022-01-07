@@ -12,64 +12,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 
-use tokio::sync::{broadcast, Mutex};
+use engula_journal::Journal;
+use engula_storage::Storage;
+use tokio::sync::broadcast;
 
-use crate::{async_trait, Error, Journal, KernelUpdate, Result, Sequence, Storage, Timestamp};
+use super::{update_reader::UpdateReader, update_writer::UpdateWriter};
+use crate::{async_trait, KernelUpdate, Result, Sequence};
 
-#[derive(Clone)]
 pub struct Kernel<J, S> {
-    inner: Arc<Mutex<Inner>>,
     journal: J,
     storage: S,
-}
-
-struct Inner {
-    sequence: Sequence,
-    update_tx: broadcast::Sender<KernelUpdate>,
+    sequence: Arc<AtomicU64>,
+    update_tx: broadcast::Sender<(Sequence, KernelUpdate)>,
 }
 
 impl<J, S> Kernel<J, S> {
     pub async fn init(journal: J, storage: S) -> Result<Self> {
         let (update_tx, _) = broadcast::channel(1024);
-        let inner = Inner {
-            sequence: 0,
-            update_tx,
-        };
         Ok(Self {
-            inner: Arc::new(Mutex::new(inner)),
             journal,
             storage,
+            sequence: Arc::new(AtomicU64::new(0)),
+            update_tx,
         })
     }
 }
 
 #[async_trait]
-impl<T, J, S> crate::Kernel<T> for Kernel<J, S>
+impl<J, S> crate::Kernel for Kernel<J, S>
 where
-    T: Timestamp,
-    J: Journal<T>,
-    S: Storage,
+    J: Journal + Send + Sync,
+    S: Storage + Send + Sync,
 {
-    type KernelUpdateReader = KernelUpdateReader;
-    type RandomObjectReader = S::RandomReader;
-    type SequentialObjectWriter = S::SequentialWriter;
+    type RandomReader = S::RandomReader;
+    type SequentialWriter = S::SequentialWriter;
     type StreamReader = J::StreamReader;
     type StreamWriter = J::StreamWriter;
+    type UpdateReader = UpdateReader;
+    type UpdateWriter = UpdateWriter;
 
-    async fn apply_update(&self, mut update: KernelUpdate) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        inner.sequence += 1;
-        update.sequence = inner.sequence;
-        inner.update_tx.send(update).map_err(Error::unknown)?;
-        Ok(())
+    async fn new_update_reader(&self) -> Result<Self::UpdateReader> {
+        let reader = UpdateReader::new(self.update_tx.subscribe());
+        Ok(reader)
     }
 
-    async fn new_update_reader(&self) -> Result<Self::KernelUpdateReader> {
-        let inner = self.inner.lock().await;
-        let reader = KernelUpdateReader::new(inner.update_tx.subscribe());
-        Ok(reader)
+    async fn new_update_writer(&self) -> Result<Self::UpdateWriter> {
+        let writer = UpdateWriter::new(self.sequence.clone(), self.update_tx.clone());
+        Ok(writer)
     }
 
     async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader> {
@@ -82,11 +73,11 @@ where
         Ok(writer)
     }
 
-    async fn new_random_object_reader(
+    async fn new_random_reader(
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::RandomObjectReader> {
+    ) -> Result<Self::RandomReader> {
         let reader = self
             .storage
             .new_random_reader(bucket_name, object_name)
@@ -94,40 +85,15 @@ where
         Ok(reader)
     }
 
-    async fn new_sequential_object_writer(
+    async fn new_sequential_writer(
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::SequentialObjectWriter> {
+    ) -> Result<Self::SequentialWriter> {
         let writer = self
             .storage
             .new_sequential_writer(bucket_name, object_name)
             .await?;
         Ok(writer)
-    }
-}
-
-pub struct KernelUpdateReader {
-    rx: broadcast::Receiver<KernelUpdate>,
-}
-
-impl KernelUpdateReader {
-    fn new(rx: broadcast::Receiver<KernelUpdate>) -> Self {
-        Self { rx }
-    }
-}
-
-#[async_trait]
-impl crate::KernelUpdateReader for KernelUpdateReader {
-    async fn try_next(&mut self) -> Result<Option<KernelUpdate>> {
-        match self.rx.try_recv() {
-            Ok(v) => Ok(Some(v)),
-            Err(broadcast::error::TryRecvError::Empty) => Ok(None),
-            Err(err) => Err(Error::unknown(err)),
-        }
-    }
-
-    async fn wait_next(&mut self) -> Result<KernelUpdate> {
-        self.rx.recv().await.map_err(Error::unknown)
     }
 }
