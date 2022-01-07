@@ -24,18 +24,19 @@ use crate::{
 };
 
 pub(crate) struct TableReader<R> {
+    // For simplicity, the R is used here instead of its reference.
     reader: R,
     index_block: BlockReader,
 }
 
 #[allow(dead_code)]
 impl<R: RandomRead + Unpin> TableReader<R> {
-    pub async fn open(mut reader: R, size: usize) -> Result<Self> {
+    pub async fn open(reader: R, size: usize) -> Result<Self> {
         let mut footer = [0; core::mem::size_of::<BlockHandle>()];
         let offset = size - core::mem::size_of::<BlockHandle>();
         reader.read_exact(&mut footer, offset).await?;
         let index_block_handler = BlockHandle::decode_from(&mut footer.as_slice());
-        let block_content = read_block(&mut reader, &index_block_handler).await?;
+        let block_content = read_block(&reader, &index_block_handler).await?;
 
         Ok(TableReader {
             reader,

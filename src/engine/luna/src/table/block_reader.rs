@@ -35,7 +35,7 @@ impl BlockReader {
     }
 }
 
-pub async fn read_block<R>(reader: &mut R, block_handle: &BlockHandle) -> Result<Vec<u8>>
+pub async fn read_block<R>(reader: &R, block_handle: &BlockHandle) -> Result<Vec<u8>>
 where
     R: RandomRead + Unpin,
 {
