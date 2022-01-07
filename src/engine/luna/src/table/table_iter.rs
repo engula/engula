@@ -23,10 +23,7 @@ use crate::{
     Result,
 };
 
-async fn read_block_iter<R: RandomRead + Unpin>(
-    reader: &mut R,
-    mut value: &[u8],
-) -> Result<BlockIter> {
+async fn read_block_iter<R: RandomRead + Unpin>(reader: &R, mut value: &[u8]) -> Result<BlockIter> {
     let handle = BlockHandle::decode_from(&mut value);
     let block_content = read_block(reader, &handle).await?;
     let block = BlockReader::new(block_content);
@@ -34,13 +31,13 @@ async fn read_block_iter<R: RandomRead + Unpin>(
 }
 
 pub(crate) struct TableIter<'a, R> {
-    reader: &'a mut R,
+    reader: &'a R,
     index_iter: BlockIter,
     block_iter: Option<BlockIter>,
 }
 
 impl<'a, R: RandomRead + Unpin> TableIter<'a, R> {
-    pub fn new(index_iter: BlockIter, reader: &'a mut R) -> Self {
+    pub fn new(index_iter: BlockIter, reader: &'a R) -> Self {
         TableIter {
             reader,
             index_iter,
@@ -52,7 +49,7 @@ impl<'a, R: RandomRead + Unpin> TableIter<'a, R> {
     pub async fn seek_to_first(&mut self) -> Result<()> {
         self.index_iter.seek_to_first();
         self.block_iter = if self.index_iter.valid() {
-            let mut iter = read_block_iter(&mut self.reader, self.index_iter.value()).await?;
+            let mut iter = read_block_iter(self.reader, self.index_iter.value()).await?;
             iter.seek_to_first();
             Some(iter)
         } else {
@@ -64,7 +61,7 @@ impl<'a, R: RandomRead + Unpin> TableIter<'a, R> {
     pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
         self.index_iter.seek(target);
         self.block_iter = if self.index_iter.valid() {
-            let mut iter = read_block_iter(&mut self.reader, self.index_iter.value()).await?;
+            let mut iter = read_block_iter(self.reader, self.index_iter.value()).await?;
             iter.seek(target);
             Some(iter)
         } else {
@@ -85,7 +82,7 @@ impl<'a, R: RandomRead + Unpin> TableIter<'a, R> {
         if !valid {
             self.index_iter.next();
             if self.index_iter.valid() {
-                let mut iter = read_block_iter(&mut self.reader, self.index_iter.value()).await?;
+                let mut iter = read_block_iter(self.reader, self.index_iter.value()).await?;
                 iter.seek_to_first();
                 self.block_iter = Some(iter);
             } else {

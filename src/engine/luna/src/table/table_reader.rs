@@ -44,12 +44,12 @@ impl<R: RandomRead + Unpin> TableReader<R> {
         })
     }
 
-    pub fn iter(&mut self) -> TableIter<R> {
+    pub fn iter(&self) -> TableIter<R> {
         let index_iter = self.index_block.iter();
-        TableIter::new(index_iter, &mut self.reader)
+        TableIter::new(index_iter, &self.reader)
     }
 
-    pub async fn get(&mut self, target: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub async fn get(&self, target: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut iter = self.iter();
         iter.seek(target).await?;
         if iter.valid() && iter.key() == target {
@@ -92,7 +92,7 @@ mod tests {
     #[tokio::test]
     async fn seek_to_first() {
         let data = build_table(128).await;
-        let mut reader = TableReader::open(&*data, data.len()).await.unwrap();
+        let reader = TableReader::open(&*data, data.len()).await.unwrap();
         let mut it = reader.iter();
         it.seek_to_first().await.unwrap();
         assert!(it.valid());
@@ -140,7 +140,7 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let mut reader = TableReader::open(&*data, data.len()).await.unwrap();
+        let reader = TableReader::open(&*data, data.len()).await.unwrap();
         let mut it = reader.iter();
         for t in tests {
             it.seek(&t.target).await.unwrap();
@@ -198,7 +198,7 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let mut reader = TableReader::open(&*data, data.len()).await.unwrap();
+        let reader = TableReader::open(&*data, data.len()).await.unwrap();
         let mut it = reader.iter();
         for t in tests {
             it.seek(&t.target).await.unwrap();
@@ -244,7 +244,7 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let mut reader = TableReader::open(&*data, data.len()).await.unwrap();
+        let reader = TableReader::open(&*data, data.len()).await.unwrap();
         for t in tests {
             let key_opt = reader.get(&t.target).await.unwrap();
             match_key(&key_opt, &t.expect);
