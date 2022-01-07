@@ -42,7 +42,7 @@ mod tests {
         writer.write_all(&data).await?;
         writer.close().await?;
 
-        let mut reader = s.new_random_reader(bucket_name, object_name).await?;
+        let reader = s.new_random_reader(bucket_name, object_name).await?;
         let mut buf = vec![0; 2];
         let pos = 1;
         reader.read_exact(&mut buf, pos).await?;

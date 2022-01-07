@@ -21,7 +21,7 @@ use std::{
 
 pub trait Read {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,
@@ -31,12 +31,12 @@ pub trait Read {
 macro_rules! impl_read {
     () => {
         fn poll_read(
-            mut self: Pin<&mut Self>,
+            self: Pin<&Self>,
             cx: &mut Context<'_>,
             buf: &mut [u8],
             pos: usize,
         ) -> Poll<io::Result<usize>> {
-            Pin::new(&mut **self).poll_read(cx, buf, pos)
+            Pin::new(&**self).poll_read(cx, buf, pos)
         }
     };
 }
@@ -55,18 +55,18 @@ where
     T::Target: Read,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,
     ) -> Poll<io::Result<usize>> {
-        self.get_mut().as_mut().poll_read(cx, buf, pos)
+        self.get_ref().as_ref().poll_read(cx, buf, pos)
     }
 }
 
 impl Read for &[u8] {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         _: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,

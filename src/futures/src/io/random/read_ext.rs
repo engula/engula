@@ -24,14 +24,14 @@ use futures::ready;
 use super::Read;
 
 pub trait ReadExt: Read {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> ReadFuture<'a, Self>
+    fn read<'a>(&'a self, buf: &'a mut [u8], pos: usize) -> ReadFuture<'a, Self>
     where
         Self: Unpin,
     {
         ReadFuture::new(self, buf, pos)
     }
 
-    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8], pos: usize) -> ReadExactFuture<'a, Self>
+    fn read_exact<'a>(&'a self, buf: &'a mut [u8], pos: usize) -> ReadExactFuture<'a, Self>
     where
         Self: Unpin,
     {
@@ -44,7 +44,7 @@ impl<R: Read + ?Sized> ReadExt for R {}
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadFuture<'a, T: ?Sized> {
-    inner: &'a mut T,
+    inner: &'a T,
     buf: &'a mut [u8],
     pos: usize,
 }
@@ -52,7 +52,7 @@ pub struct ReadFuture<'a, T: ?Sized> {
 impl<T: ?Sized + Unpin> Unpin for ReadFuture<'_, T> {}
 
 impl<'a, T: Read + ?Sized + Unpin> ReadFuture<'a, T> {
-    pub(super) fn new(inner: &'a mut T, buf: &'a mut [u8], pos: usize) -> Self {
+    pub(super) fn new(inner: &'a T, buf: &'a mut [u8], pos: usize) -> Self {
         Self { inner, buf, pos }
     }
 }
@@ -62,14 +62,14 @@ impl<T: Read + ?Sized + Unpin> Future for ReadFuture<'_, T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        Pin::new(&mut this.inner).poll_read(cx, this.buf, this.pos)
+        Pin::new(this.inner).poll_read(cx, this.buf, this.pos)
     }
 }
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadExactFuture<'a, T: ?Sized> {
-    inner: &'a mut T,
+    inner: &'a T,
     buf: &'a mut [u8],
     pos: usize,
 }
@@ -80,7 +80,7 @@ impl<'a, T> ReadExactFuture<'a, T>
 where
     T: Read + ?Sized + Unpin,
 {
-    pub(super) fn new(inner: &'a mut T, buf: &'a mut [u8], pos: usize) -> Self {
+    pub(super) fn new(inner: &'a T, buf: &'a mut [u8], pos: usize) -> Self {
         Self { inner, buf, pos }
     }
 }
@@ -94,7 +94,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         while !this.buf.is_empty() {
-            let n = ready!(Pin::new(&mut this.inner).poll_read(cx, this.buf, this.pos))?;
+            let n = ready!(Pin::new(this.inner).poll_read(cx, this.buf, this.pos))?;
             if n == 0 {
                 return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
             }
