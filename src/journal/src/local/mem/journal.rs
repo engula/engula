@@ -17,7 +17,7 @@ use std::{
     sync::Arc,
 };
 
-use engula_futures::stream::VecResultStream;
+use engula_futures::stream::batch::VecResultStream;
 use tokio::sync::Mutex;
 
 use crate::{async_trait, Error, Result, Sequence};

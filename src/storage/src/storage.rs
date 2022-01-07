@@ -14,7 +14,7 @@
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::BatchResultStream,
+    stream::batch::ResultStream,
 };
 
 use crate::{async_trait, Error, Result};
@@ -22,8 +22,8 @@ use crate::{async_trait, Error, Result};
 /// An object storage abstraction.
 #[async_trait]
 pub trait Storage {
-    type BucketLister: BatchResultStream<Elem = String, Error = Error>;
-    type ObjectLister: BatchResultStream<Elem = String, Error = Error>;
+    type BucketLister: ResultStream<Elem = String, Error = Error>;
+    type ObjectLister: ResultStream<Elem = String, Error = Error>;
     type RandomReader: RandomRead;
     type SequentialWriter: SequentialWrite;
 
