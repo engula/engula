@@ -15,26 +15,20 @@
 use std::{
     cell::RefCell,
     future::Future,
-    io,
+    io::{self, ErrorKind},
     pin::Pin,
     task::{Context, Poll},
 };
 
 use aws_config::Config;
 use aws_sdk_s3::{
-    error::{
-        CompleteMultipartUploadError, CreateMultipartUploadError, GetObjectError,
-        ListObjectsV2Error, UploadPartError,
-    },
+    error::{GetObjectError, ListObjectsV2Error, UploadPartError},
     model::{
         BucketLifecycleConfiguration, BucketLocationConstraint, CompletedMultipartUpload,
         CompletedPart, CreateBucketConfiguration, ExpirationStatus, LifecycleExpiration,
         LifecycleRule, LifecycleRuleFilter, NoncurrentVersionExpiration, Object,
     },
-    output::{
-        CompleteMultipartUploadOutput, CreateMultipartUploadOutput, GetObjectOutput,
-        ListObjectsV2Output, UploadPartOutput,
-    },
+    output::{GetObjectOutput, ListObjectsV2Output},
     ByteStream, Client, DateTime, SdkError,
 };
 use aws_smithy_http::byte_stream::{self, AggregatedBytes};
@@ -438,29 +432,7 @@ pub struct SequentialWriter {
     key: String,
 
     write_buf: Vec<u8>,
-    state: WriterState,
-}
-
-enum WriterState {
-    Creating,
-    WaitCreate(PinnedFuture<CreateMultipartUploadOutput, SdkError<CreateMultipartUploadError>>),
-    UploadingParts(String),
-    WaitPartUpload {
-        parts: Vec<UploadPartState>,
-        upload_id: String,
-    },
-    Completing {
-        parts: Vec<CompletedPart>,
-        upload_id: String,
-    },
-    WaitComplete(
-        PinnedFuture<CompleteMultipartUploadOutput, SdkError<CompleteMultipartUploadError>>,
-    ),
-}
-
-enum UploadPartState {
-    Pending(PinnedFuture<UploadPartOutput, SdkError<UploadPartError>>),
-    Done(CompletedPart),
+    upload_fut: Option<PinnedFuture<(), io::Error>>,
 }
 
 impl SequentialWriter {
@@ -469,64 +441,115 @@ impl SequentialWriter {
             client,
             bucket: bucket.into(),
             key: key.into(),
-            state: WriterState::Creating,
             write_buf: vec![],
+            upload_fut: None,
         }
     }
 
-    fn start_upload(
-        client: Client,
-        bucket: impl Into<String>,
-        key: impl Into<String>,
-    ) -> PinnedFuture<CreateMultipartUploadOutput, SdkError<CreateMultipartUploadError>> {
-        Box::pin(
-            client
-                .create_multipart_upload()
-                .bucket(bucket)
-                .key(key)
-                .send(),
-        )
-    }
-
-    fn upload_part(
+    async fn async_upload_part(
         client: Client,
         bucket: impl Into<String>,
         key: impl Into<String>,
         upload_id: impl Into<String>,
         part_num: i32,
         data: Bytes,
-    ) -> PinnedFuture<UploadPartOutput, SdkError<UploadPartError>> {
-        Box::pin(
-            client
-                .upload_part()
-                .bucket(bucket)
-                .key(key)
-                .upload_id(upload_id)
-                .part_number(part_num)
-                .body(ByteStream::from(data))
-                .send(),
-        )
+    ) -> std::result::Result<CompletedPart, SdkError<UploadPartError>> {
+        let output = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_num)
+            .body(ByteStream::from(data))
+            .send()
+            .await?;
+
+        Ok(CompletedPart::builder()
+            .e_tag(output.e_tag.unwrap())
+            .part_number(part_num)
+            .build())
     }
 
-    fn finish_upload(
+    async fn upload(
         client: Client,
         bucket: impl Into<String>,
         key: impl Into<String>,
-        upload_id: impl Into<String>,
-        parts: Vec<CompletedPart>,
-    ) -> PinnedFuture<CompleteMultipartUploadOutput, SdkError<CompleteMultipartUploadError>> {
+        mut write_buf: Vec<u8>,
+    ) -> io::Result<()> {
+        let bucket = bucket.into();
+        let key = key.into();
+        let create_result = client
+            .clone()
+            .create_multipart_upload()
+            .bucket(&bucket)
+            .key(&key)
+            .send()
+            .await
+            .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+        let upload_id = create_result.upload_id.unwrap();
+
+        let mut completeds = Vec::new();
+        if write_buf.len() < UPLOAD_PART_SIZE * 2 {
+            let part_num = (completeds.len() + 1) as i32;
+            completeds.push(
+                Self::async_upload_part(
+                    client.clone(),
+                    &bucket,
+                    &key,
+                    &upload_id,
+                    part_num,
+                    Bytes::from(write_buf.clone()),
+                )
+                .await
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
+            );
+        } else {
+            while write_buf.len() >= UPLOAD_PART_SIZE * 2 {
+                let remain = write_buf.split_off(UPLOAD_PART_SIZE);
+                let part_num = (completeds.len() + 1) as i32;
+                completeds.push(
+                    Self::async_upload_part(
+                        client.clone(),
+                        &bucket,
+                        &key,
+                        &upload_id,
+                        part_num,
+                        Bytes::from(write_buf.clone()),
+                    )
+                    .await
+                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
+                );
+                write_buf = remain;
+            }
+            let part_num = (completeds.len() + 1) as i32;
+            completeds.push(
+                Self::async_upload_part(
+                    client.clone(),
+                    &bucket,
+                    &key,
+                    &upload_id,
+                    part_num,
+                    Bytes::from(write_buf.clone()),
+                )
+                .await
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
+            );
+        }
+
         let upload = CompletedMultipartUpload::builder()
-            .set_parts(Some(parts))
+            .set_parts(Some(completeds))
             .build();
-        Box::pin(
-            client
-                .complete_multipart_upload()
-                .bucket(bucket)
-                .key(key)
-                .upload_id(upload_id)
-                .multipart_upload(upload)
-                .send(),
-        )
+        client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .multipart_upload(upload)
+            .send()
+            .await
+            .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+
+        Ok(())
     }
 }
 
@@ -549,148 +572,21 @@ impl SequentialWrite for SequentialWriter {
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
-        loop {
-            match this.state {
-                WriterState::Creating => {
-                    this.state = WriterState::WaitCreate(Self::start_upload(
-                        this.client.clone(),
-                        this.bucket.to_owned(),
-                        this.key.to_owned(),
-                    ))
-                }
-                WriterState::WaitCreate(ref mut fut) => match fut.as_mut().poll(cx) {
-                    Poll::Ready(Ok(ref mut output)) => {
-                        this.state = WriterState::UploadingParts(output.upload_id.take().unwrap());
-                    }
-                    Poll::Ready(Err(err)) => {
-                        let e = io::Error::new(io::ErrorKind::Other, err);
-                        return Poll::Ready(Err(e));
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                },
-                WriterState::UploadingParts(ref upload_id) => {
-                    let mut futs: Vec<UploadPartState> = Vec::new();
+        let mut fut = this.upload_fut.take().unwrap_or_else(|| {
+            Box::pin(Self::upload(
+                this.client.clone(),
+                this.bucket.to_owned(),
+                this.key.to_owned(),
+                this.write_buf.clone(),
+            ))
+        });
 
-                    if this.write_buf.len() < UPLOAD_PART_SIZE * 2 {
-                        let part_num = (futs.len() + 1) as i32;
-                        futs.push(UploadPartState::Pending(Self::upload_part(
-                            this.client.clone(),
-                            this.bucket.to_owned(),
-                            this.key.to_owned(),
-                            upload_id.to_owned(),
-                            part_num,
-                            Bytes::from(this.write_buf.clone()),
-                        )));
-                        this.state = WriterState::WaitPartUpload {
-                            parts: futs,
-                            upload_id: upload_id.to_owned(),
-                        };
-                        continue;
-                    }
-
-                    while this.write_buf.len() >= UPLOAD_PART_SIZE * 2 {
-                        let part_num = (futs.len() + 1) as i32;
-                        let remain = this.write_buf.split_off(UPLOAD_PART_SIZE);
-                        futs.push(UploadPartState::Pending(Self::upload_part(
-                            this.client.clone(),
-                            this.bucket.to_owned(),
-                            this.key.to_owned(),
-                            upload_id.to_owned(),
-                            part_num,
-                            Bytes::from(this.write_buf.clone()),
-                        )));
-                        this.write_buf = remain;
-                    }
-                    let part_num = (futs.len() + 1) as i32;
-                    futs.push(UploadPartState::Pending(Self::upload_part(
-                        this.client.clone(),
-                        this.bucket.to_owned(),
-                        this.key.to_owned(),
-                        upload_id.to_owned(),
-                        part_num,
-                        Bytes::from(this.write_buf.clone()),
-                    )));
-                    this.state = WriterState::WaitPartUpload {
-                        parts: futs,
-                        upload_id: upload_id.to_owned(),
-                    };
-                }
-                WriterState::WaitPartUpload {
-                    ref mut parts,
-                    ref upload_id,
-                } => {
-                    let mut all_done = true;
-                    for idx in 0..parts.len() {
-                        let part_num = idx as i32 + 1;
-                        let part_done = match parts[idx] {
-                            UploadPartState::Pending(ref mut fut) => match fut.as_mut().poll(cx) {
-                                Poll::Ready(Ok(output)) => Ok(output),
-                                Poll::Ready(Err(err)) => Err(err),
-                                Poll::Pending => {
-                                    all_done = false;
-                                    continue;
-                                }
-                            },
-                            UploadPartState::Done(ref mut _r) => continue,
-                        };
-
-                        match part_done {
-                            Ok(output) => {
-                                let completed = CompletedPart::builder()
-                                    .e_tag(output.e_tag.unwrap())
-                                    .part_number(part_num)
-                                    .build();
-                                parts[(part_num - 1) as usize] = UploadPartState::Done(completed)
-                            }
-                            Err(err) => {
-                                let e = io::Error::new(io::ErrorKind::Other, err);
-                                return Poll::Ready(Err(e));
-                            }
-                        }
-                    }
-
-                    if all_done {
-                        let elems = std::mem::take(parts);
-                        let completed_parts: Vec<CompletedPart> = elems
-                            .into_iter()
-                            .map(|e| match e {
-                                UploadPartState::Done(t) => t,
-                                _ => unreachable!(),
-                            })
-                            .collect();
-                        this.state = WriterState::Completing {
-                            parts: completed_parts,
-                            upload_id: upload_id.to_owned(),
-                        };
-                    } else {
-                        return Poll::Pending;
-                    }
-                }
-                WriterState::Completing {
-                    ref parts,
-                    ref upload_id,
-                } => {
-                    this.state = WriterState::WaitComplete(Self::finish_upload(
-                        this.client.clone(),
-                        this.bucket.clone(),
-                        this.key.clone(),
-                        upload_id.clone(),
-                        parts.clone(),
-                    ));
-                }
-                WriterState::WaitComplete(ref mut fut) => match fut.as_mut().poll(cx) {
-                    Poll::Ready(Ok(_)) => return Poll::Ready(Ok(())),
-                    Poll::Ready(Err(err)) => {
-                        let e = io::Error::new(io::ErrorKind::Other, err);
-                        return Poll::Ready(Err(e));
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                },
+        match fut.as_mut().poll(cx) {
+            Poll::Pending => {
+                this.upload_fut = Some(fut);
+                Poll::Pending
             }
+            r @ Poll::Ready(_) => r,
         }
     }
 }
