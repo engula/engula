@@ -15,36 +15,66 @@
 use engula_futures::io::{RandomRead, SequentialWrite};
 use engula_journal::{StreamReader, StreamWriter};
 
-use crate::{async_trait, KernelUpdate, KernelUpdateReader, Result};
+use crate::{async_trait, KernelUpdate, Result, Sequence};
 
-/// An interface to interact with a kernel.
+/// A stateful environment for storage engines.
 #[async_trait]
-pub trait Kernel<T>: Clone + Send + Sync + 'static {
-    type KernelUpdateReader: KernelUpdateReader;
-    type StreamReader: StreamReader<T>;
-    type StreamWriter: StreamWriter<T>;
-    type RandomObjectReader: RandomRead;
-    type SequentialObjectWriter: SequentialWrite;
+pub trait Kernel {
+    type UpdateReader: UpdateReader;
+    type UpdateWriter: UpdateWriter;
+    type StreamReader: StreamReader;
+    type StreamWriter: StreamWriter;
+    type RandomReader: RandomRead;
+    type SequentialWriter: SequentialWrite;
 
-    /// Applies a kernel update.
-    async fn apply_update(&self, update: KernelUpdate) -> Result<()>;
+    /// Returns a reader to read updates.
+    async fn new_update_reader(&self) -> Result<Self::UpdateReader>;
 
-    /// Returns a reader to receive kernel updates.
-    async fn new_update_reader(&self) -> Result<Self::KernelUpdateReader>;
+    /// Returns a writer to update the kernel.
+    async fn new_update_writer(&self) -> Result<Self::UpdateWriter>;
 
     async fn new_stream_reader(&self, stream_name: &str) -> Result<Self::StreamReader>;
 
     async fn new_stream_writer(&self, stream_name: &str) -> Result<Self::StreamWriter>;
 
-    async fn new_random_object_reader(
+    async fn new_random_reader(
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::RandomObjectReader>;
+    ) -> Result<Self::RandomReader>;
 
-    async fn new_sequential_object_writer(
+    async fn new_sequential_writer(
         &self,
         bucket_name: &str,
         object_name: &str,
-    ) -> Result<Self::SequentialObjectWriter>;
+    ) -> Result<Self::SequentialWriter>;
+}
+
+pub type UpdateEvent = (Sequence, KernelUpdate);
+
+#[async_trait]
+pub trait UpdateReader {
+    /// Returns the next update event if it is available.
+    async fn try_next(&mut self) -> Result<Option<UpdateEvent>>;
+
+    /// Returns the next update event or waits until it is available.
+    async fn wait_next(&mut self) -> Result<UpdateEvent>;
+}
+
+#[async_trait]
+pub trait UpdateWriter {
+    /// Appends an update.
+    async fn append(&mut self, update: KernelUpdate) -> Result<Sequence>;
+
+    /// Releases updates up to a sequence (exclusive).
+    ///
+    /// Some operations of an update are not executed until the update is
+    /// released. For example, if an update that deletes an object is appended,
+    /// the object will be marked as deleted but it will still be valid for
+    /// reads until the update is released. This allows users to finish
+    /// ongoing requests even if some objects are marked as deleted. However,
+    /// this is not a guarantee but a best-effort optimization. The
+    /// implementation can still delete the objects in some cases, for example,
+    /// if the user fails to keep alive with the kernel.
+    async fn release(&mut self, sequence: Sequence) -> Result<()>;
 }

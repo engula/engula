@@ -24,21 +24,20 @@
 
 mod error;
 mod kernel;
-mod kernel_update;
 mod metadata;
+mod update_builder;
 
 mod local;
 
 pub use async_trait::async_trait;
-pub use engula_journal::{Event, Journal, StreamReader, StreamWriter, Timestamp};
-pub use engula_storage::Storage;
+pub use engula_journal::Sequence;
 
 pub use self::{
     error::{Error, Result},
-    kernel::Kernel,
-    kernel_update::{BucketUpdateBuilder, KernelUpdateBuilder, KernelUpdateReader},
+    kernel::{Kernel, UpdateEvent, UpdateReader, UpdateWriter},
     local::MemKernel,
-    metadata::{BucketUpdate, KernelUpdate, Sequence},
+    metadata::{BucketUpdate, KernelUpdate},
+    update_builder::{BucketUpdateBuilder, KernelUpdateBuilder},
 };
 
 #[cfg(test)]
@@ -52,23 +51,27 @@ mod tests {
         Ok(())
     }
 
-    async fn test_kernel(kernel: impl Kernel<u64>) -> Result<()> {
+    async fn test_kernel<K>(kernel: K) -> Result<()>
+    where
+        K: Kernel,
+        K::UpdateReader: Send + 'static,
+    {
         let update = KernelUpdateBuilder::default()
             .put_meta("a", "b")
             .remove_meta("b")
             .build();
 
         let handle = {
-            let mut expect = update.clone();
-            expect.sequence = 1;
-            let mut update_reader = kernel.new_update_reader().await?;
+            let expect = update.clone();
+            let mut reader = kernel.new_update_reader().await?;
             tokio::spawn(async move {
-                let update = update_reader.wait_next().await.unwrap();
-                assert_eq!(update, expect);
+                let update = reader.wait_next().await.unwrap();
+                assert_eq!(update, (1, expect));
             })
         };
 
-        kernel.apply_update(update).await?;
+        let mut writer = kernel.new_update_writer().await?;
+        writer.append(update).await?;
         handle.await.unwrap();
         Ok(())
     }
