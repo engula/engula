@@ -22,16 +22,16 @@ use std::{
 
 use aws_config::Config;
 use aws_sdk_s3::{
-    error::{GetObjectError, ListObjectsV2Error, UploadPartError},
+    error::{ListObjectsV2Error, UploadPartError},
     model::{
         BucketLifecycleConfiguration, BucketLocationConstraint, CompletedMultipartUpload,
         CompletedPart, CreateBucketConfiguration, ExpirationStatus, LifecycleExpiration,
         LifecycleRule, LifecycleRuleFilter, NoncurrentVersionExpiration, Object,
     },
-    output::{GetObjectOutput, ListObjectsV2Output},
+    output::ListObjectsV2Output,
     ByteStream, Client, DateTime, SdkError,
 };
-use aws_smithy_http::byte_stream::{self, AggregatedBytes};
+use aws_smithy_http::byte_stream::AggregatedBytes;
 use bytes::{Buf, Bytes};
 use chrono::Duration;
 use engula_futures::{
@@ -342,13 +342,7 @@ pub struct RandomReader {
 }
 
 pub struct ReaderInner {
-    state: ReadState,
-}
-
-enum ReadState {
-    Sending,
-    WaitHead(PinnedFuture<GetObjectOutput, SdkError<GetObjectError>>),
-    WaitBody(PinnedFuture<AggregatedBytes, byte_stream::Error>),
+    get_obj_fut: Option<PinnedFuture<AggregatedBytes, io::Error>>,
 }
 
 impl RandomReader {
@@ -357,10 +351,31 @@ impl RandomReader {
             client,
             bucket: bucket.into(),
             key: key.into(),
-            inner: RefCell::new(ReaderInner {
-                state: ReadState::Sending,
-            }),
+            inner: RefCell::new(ReaderInner { get_obj_fut: None }),
         }
+    }
+
+    async fn get_object(
+        client: Client,
+        bucket: impl Into<String>,
+        key: impl Into<String>,
+        pos: usize,
+        len: usize,
+    ) -> io::Result<AggregatedBytes> {
+        let range = format!("bytes={}-{}", pos, pos + len - 1);
+        let output = client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .range(range)
+            .send()
+            .await
+            .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+        output
+            .body
+            .collect()
+            .await
+            .map_err(|e| io::Error::new(ErrorKind::Other, e))
     }
 }
 
@@ -373,55 +388,27 @@ impl RandomRead for RandomReader {
     ) -> Poll<io::Result<usize>> {
         let this = self.get_ref();
         let mut inner = this.inner.borrow_mut();
-        loop {
-            match inner.state {
-                ReadState::Sending => {
-                    let range = format!("bytes={}-{}", pos, pos + buf.len() - 1);
-                    let f = Box::pin(
-                        this.client
-                            .clone()
-                            .get_object()
-                            .bucket(&this.bucket)
-                            .key(&this.key)
-                            .range(range)
-                            .send(),
-                    );
-                    inner.state = ReadState::WaitHead(f);
-                }
-                ReadState::WaitHead(ref mut fut) => match fut.as_mut().poll(cx) {
-                    Poll::Ready(r) => match r {
-                        Ok(output) => {
-                            let body: ByteStream = output.body;
-                            let f = Box::pin(body.collect());
-                            inner.state = ReadState::WaitBody(f);
-                        }
-                        Err(e) => {
-                            let e = io::Error::new(io::ErrorKind::Other, e);
-                            return Poll::Ready(Err(e));
-                        }
-                    },
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                },
-                ReadState::WaitBody(ref mut fut) => match fut.as_mut().poll(cx) {
-                    Poll::Ready(r) => match r {
-                        Ok(mut bytes) => {
-                            let size = bytes.remaining();
-                            bytes.copy_to_slice(buf);
-                            inner.state = ReadState::Sending;
-                            return Poll::Ready(Ok(size));
-                        }
-                        Err(e) => {
-                            let e = io::Error::new(io::ErrorKind::Other, e);
-                            return Poll::Ready(Err(e));
-                        }
-                    },
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                },
+        let mut fut = inner.get_obj_fut.take().unwrap_or_else(|| {
+            Box::pin(Self::get_object(
+                this.client.clone(),
+                this.bucket.to_owned(),
+                this.key.to_owned(),
+                pos,
+                buf.len(),
+            ))
+        });
+
+        match fut.as_mut().poll(cx) {
+            Poll::Pending => {
+                inner.get_obj_fut = Some(fut);
+                Poll::Pending
             }
+            Poll::Ready(Ok(mut bytes)) => {
+                let size = bytes.remaining();
+                bytes.copy_to_slice(buf);
+                Poll::Ready(Ok(size))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
         }
     }
 }
@@ -446,7 +433,7 @@ impl SequentialWriter {
         }
     }
 
-    async fn async_upload_part(
+    async fn upload_part(
         client: Client,
         bucket: impl Into<String>,
         key: impl Into<String>,
@@ -492,7 +479,7 @@ impl SequentialWriter {
         if write_buf.len() < UPLOAD_PART_SIZE * 2 {
             let part_num = (completeds.len() + 1) as i32;
             completeds.push(
-                Self::async_upload_part(
+                Self::upload_part(
                     client.clone(),
                     &bucket,
                     &key,
@@ -508,7 +495,7 @@ impl SequentialWriter {
                 let remain = write_buf.split_off(UPLOAD_PART_SIZE);
                 let part_num = (completeds.len() + 1) as i32;
                 completeds.push(
-                    Self::async_upload_part(
+                    Self::upload_part(
                         client.clone(),
                         &bucket,
                         &key,
@@ -523,7 +510,7 @@ impl SequentialWriter {
             }
             let part_num = (completeds.len() + 1) as i32;
             completeds.push(
-                Self::async_upload_part(
+                Self::upload_part(
                     client.clone(),
                     &bucket,
                     &key,
