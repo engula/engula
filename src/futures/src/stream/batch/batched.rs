@@ -14,12 +14,13 @@
 
 use super::{ResultStream, ResultStreamExt};
 
-pub struct BatchSize<T> {
+/// A stream adapator that yields a fixed-size batch of elements.
+pub struct Batched<T> {
     inner: T,
     batch_size: usize,
 }
 
-impl<T> BatchSize<T>
+impl<T> Batched<T>
 where
     T: ResultStream + Unpin,
     T::Elem: Unpin,
@@ -28,17 +29,20 @@ where
         Self { inner, batch_size }
     }
 
-    pub fn batch_size(self, batch_size: usize) -> Self {
+    /// Binds the stream with a new `batch_size`.
+    pub fn batched(self, batch_size: usize) -> Self {
         Self {
             inner: self.inner,
             batch_size,
         }
     }
 
+    /// Yields the next batch in the stream.
     pub async fn next(&mut self) -> Result<Vec<T::Elem>, T::Error> {
         self.inner.next(self.batch_size).await
     }
 
+    /// Consumes the stream and transforms remaining batches into a collection.
     pub async fn collect(mut self) -> Result<Vec<T::Elem>, T::Error> {
         let mut collection = Vec::new();
         loop {

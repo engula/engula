@@ -18,9 +18,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::{batch_size::BatchSize, ResultStream};
+use super::{batched::Batched, ResultStream};
 
 pub trait ResultStreamExt: ResultStream {
+    /// Returns a future that resolves to the next `batch_size` elements.
     fn next(&mut self, batch_size: usize) -> NextFuture<'_, Self>
     where
         Self: Unpin,
@@ -28,12 +29,13 @@ pub trait ResultStreamExt: ResultStream {
         NextFuture::new(self, batch_size)
     }
 
-    fn batch_size(self, batch_size: usize) -> BatchSize<Self>
+    /// Returns an adaptor that binds the stream with a fixed `batch_size`.
+    fn batched(self, batch_size: usize) -> Batched<Self>
     where
         Self: Sized + Unpin,
         Self::Elem: Unpin,
     {
-        BatchSize::new(self, batch_size)
+        Batched::new(self, batch_size)
     }
 }
 

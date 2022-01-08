@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod batch_size;
+mod batched;
 mod result_stream;
 mod result_stream_ext;
 mod vec_result_stream;
