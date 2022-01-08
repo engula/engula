@@ -33,7 +33,6 @@ use aws_sdk_s3::{
 };
 use aws_smithy_http::byte_stream::AggregatedBytes;
 use bytes::{Buf, Bytes};
-use chrono::Duration;
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
     stream::batch::ResultStream,
@@ -165,9 +164,13 @@ impl crate::Storage for Storage {
             .send()
             .await?;
 
-        let expire_ts = (chrono::Utc::today() - Duration::days(1))
-            .and_hms(0, 0, 0)
-            .timestamp();
+        let expire_ts = time::OffsetDateTime::now_utc()
+            .date()
+            .previous_day()
+            .expect("invalid date")
+            .midnight()
+            .assume_utc()
+            .unix_timestamp();
         let rule = LifecycleRule::builder()
             .status(ExpirationStatus::Enabled)
             .filter(LifecycleRuleFilter::Prefix(self.object_root(bucket_name)))
