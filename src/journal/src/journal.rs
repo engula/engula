@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::stream::BatchResultStream;
+use engula_futures::stream::batch::ResultStream;
 
 use crate::{async_trait, Error, Result, StreamReader, StreamWriter};
 
 /// A stream storage abstraction.
 #[async_trait]
 pub trait Journal {
-    type StreamLister: BatchResultStream<Elem = String, Error = Error>;
+    type StreamLister: ResultStream<Elem = String, Error = Error>;
     type StreamReader: StreamReader;
     type StreamWriter: StreamWriter;
 

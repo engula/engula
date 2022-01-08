@@ -23,7 +23,7 @@ use std::{
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::VecResultStream,
+    stream::batch::VecResultStream,
 };
 use futures::ready;
 use tokio::sync::Mutex;
