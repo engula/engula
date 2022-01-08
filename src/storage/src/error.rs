@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::{self, Debug};
+
+use aws_sdk_s3::SdkError;
 use thiserror::Error;
 
 /// Errors for all storage operations.
@@ -30,3 +33,37 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl<E, R> From<SdkError<E, R>> for Error
+where
+    R: Debug,
+    E: std::error::Error,
+{
+    fn from(e: SdkError<E, R>) -> Self {
+        let e = Box::new(StrError::new(e.to_string()));
+        Self::Unknown(e)
+    }
+}
+
+#[derive(Debug)]
+struct StrError {
+    details: String,
+}
+
+impl StrError {
+    fn new(msg: String) -> Self {
+        Self { details: msg }
+    }
+}
+
+impl fmt::Display for StrError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl std::error::Error for StrError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}

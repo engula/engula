@@ -1,4 +1,4 @@
-// Copyright 2021 The Engula Authors.
+// Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,30 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Object storage abstractions and implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an object storage abstraction.
-//!
-//! # Implementation
-//!
-//! Built-in implementations of [`Storage`]:
-//!
-//! - [`MemStorage`](crate::MemStorage)
-//!
-//! [`Storage`]: crate::Storage
+mod s3;
 
-mod error;
-mod external;
-mod local;
-mod storage;
-
-pub use async_trait::async_trait;
-
-pub use self::{
-    error::{Error, Result},
-    external::S3Storage,
-    local::MemStorage,
-    storage::Storage,
-};
+pub use self::s3::Storage as S3Storage;
