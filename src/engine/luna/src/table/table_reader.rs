@@ -23,7 +23,7 @@ use crate::{
     Result,
 };
 
-pub(crate) struct TableReader<R> {
+pub struct TableReader<R> {
     // For simplicity, the R is used here instead of its reference.
     reader: R,
     index_block: BlockReader,

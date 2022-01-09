@@ -30,7 +30,7 @@ async fn read_block_iter<R: RandomRead + Unpin>(reader: &R, mut value: &[u8]) ->
     Ok(block.iter())
 }
 
-pub(crate) struct TableIter<'a, R> {
+pub struct TableIter<'a, R> {
     reader: &'a R,
     index_iter: BlockIter,
     block_iter: Option<BlockIter>,
