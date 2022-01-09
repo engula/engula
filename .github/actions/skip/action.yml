@@ -106,7 +106,7 @@ runs:
         done
 
         echo "ALL_IGNORE: $ALL_IGNORE, NONE_MATCH: $NONE_MATCH"
-        if [[ "$ALL_IGNORE" == "1" && NONE_MATCH == "1" ]]; then
+        if [[ "$ALL_IGNORE" == "1" && "$NONE_MATCH" == "1" ]]; then
           echo "Set skip to true because all changed files are in paths-ignore and all changed files are not in paths."
           echo '::set-output name=SKIP_CI::true'
           exit 0
