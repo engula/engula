@@ -37,8 +37,6 @@ runs:
     - name: Check Changed Files And Set Env Var
       shell: bash
       run: |
-        echo '::set-output name=SKIP_CI::false'
-
         if [[ "${{ github.event_name }}" != "pull_request" ]]; then
           exit 0
         fi
