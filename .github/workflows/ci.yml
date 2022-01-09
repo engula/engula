@@ -64,8 +64,8 @@ jobs:
         id: skip-ci
         uses: ./.github/actions/skip
         with:
-          paths: >-
-            "*.toml"
+          paths-ignore: "*"
+          paths: "*.toml"
       - name: Install taplo-cli
         if: ${{ steps.skip-ci.outputs.SKIP_CI }} != "true"
         uses: actions-rs/cargo@v1
@@ -87,8 +87,8 @@ jobs:
         id: skip-ci
         uses: ./.github/actions/skip
         with:
-          paths: >-
-            "Cargo.lock"
+          paths-ignore: "*"
+          paths: "Cargo.lock"
       - name: Install cargo-udeps
         if: ${{ steps.skip-ci.outputs.SKIP_CI }} != "true"
         uses: actions-rs/cargo@v1
@@ -113,8 +113,8 @@ jobs:
         id: skip-ci
         uses: ./.github/actions/skip
         with:
-          paths: >-
-            "Cargo.lock"
+          paths-ignore: "*"
+          paths: "Cargo.lock"
       - name: Install cargo-aduit
         if: ${{ steps.skip-ci.outputs.SKIP_CI }} != "true"
         uses: actions-rs/cargo@v1
