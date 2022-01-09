@@ -27,7 +27,7 @@ concurrency:
 jobs:
   license:
     if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
-    name: Audit License
+    name: Check license header
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -37,7 +37,7 @@ jobs:
 
   editorconfig:
     if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
-    name: Check EditorConfig
+    name: Check editorconfig
     needs: [license]
     runs-on: ubuntu-latest
     steps:
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Check SKIP_CI
+      - name: Check Skip CI
         id: skip-ci
         uses: ./.github/actions/skip
         with:
@@ -69,23 +69,23 @@ jobs:
           paths: >-
             "*.toml"
       - name: Install taplo-cli
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: install
           args: taplo-cli
       - name: Check TOML
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         run: taplo format --check
 
   dependency:
     if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
-    name: Check Dependency
+    name: Check dependency
     needs: [editorconfig]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Check SKIP_CI
+      - name: Check Skip CI
         id: skip-ci
         uses: ./.github/actions/skip
         with:
@@ -94,13 +94,13 @@ jobs:
           paths: >-
             "Cargo.lock"
       - name: Install cargo-udeps
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-udeps --locked
       - name: Check udeps
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: udeps
@@ -108,12 +108,12 @@ jobs:
 
   security:
     if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
-    name: Audit Security
+    name: Audit security
     needs: [editorconfig]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Check SKIP_CI
+      - name: Check Skip CI
         id: skip-ci
         uses: ./.github/actions/skip
         with:
@@ -122,13 +122,13 @@ jobs:
           paths: >-
             "Cargo.lock"
       - name: Install cargo-aduit
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-audit
       - name: Audit dependencies
-        if: steps.skip-ci.outputs.SKIP_CI != 'true'
+        if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
         with:
           command: audit
@@ -148,12 +148,12 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
-    - name: Check SKIP_CI
+    - name: Check Skip CI
       id: skip-ci
       uses: ./.github/actions/skip
 
     - name: Install Rust toolchain
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
@@ -162,34 +162,34 @@ jobs:
         override: true
 
     - uses: Swatinem/rust-cache@v1
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
 
     - name: Cargo build
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       uses: actions-rs/cargo@v1
       with:
         command: build
 
     - name: Verify tidy
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       run: git diff --exit-code
 
     - name: Check clippy
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       uses: actions-rs/cargo@v1
       with:
         command: clippy
         args: --workspace --tests --all-features -- -D warnings
 
     - name: Check format
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: --all -- --check
 
     - name: Cargo test
-      if: steps.skip-ci.outputs.SKIP_CI != 'true'
+      if: steps.skip-ci.outputs.skip != 'true'
       uses: actions-rs/cargo@v1
       with:
         command: test
