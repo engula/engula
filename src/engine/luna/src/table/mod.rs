@@ -20,7 +20,11 @@ mod table_builder;
 mod table_iter;
 mod table_reader;
 
-pub use self::table_builder::{TableBuilder, TableBuilderOptions};
+pub use self::{
+    table_builder::{TableBuilder, TableBuilderOptions},
+    table_iter::TableIter,
+    table_reader::TableReader,
+};
 
 #[cfg(test)]
 mod tests {
