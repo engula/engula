@@ -18,7 +18,7 @@ use std::{
 };
 
 use engula_futures::stream::batch::VecResultStream;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use crate::{async_trait, Error, Result, Sequence};
 
@@ -26,9 +26,22 @@ use crate::{async_trait, Error, Result, Sequence};
 struct Events {
     events: VecDeque<Vec<u8>>,
     last_sequence: Sequence,
+    waiters: Vec<Arc<Notify>>,
 }
 
 type Stream = Arc<Mutex<Events>>;
+
+impl Events {
+    fn read_all_events(&self, sequence: Sequence) -> Option<VecDeque<Vec<u8>>> {
+        let next_sequence = self.last_sequence + 1;
+        if let Some(offset) = next_sequence.checked_sub(sequence) {
+            let index = self.events.len().saturating_sub(offset as usize);
+            Some(self.events.range(index..).cloned().collect())
+        } else {
+            None
+        }
+    }
+}
 
 pub struct Journal {
     streams: Mutex<HashMap<String, Stream>>,
@@ -100,6 +113,7 @@ impl crate::Journal for Journal {
 }
 
 pub struct StreamReader {
+    next_sequence: Sequence,
     stream: Stream,
     events: VecDeque<Vec<u8>>,
 }
@@ -107,8 +121,29 @@ pub struct StreamReader {
 impl StreamReader {
     fn new(stream: Stream) -> Self {
         Self {
+            next_sequence: 1,
             stream,
             events: VecDeque::new(),
+        }
+    }
+
+    async fn advance(&mut self, wait: bool) -> bool {
+        let mut stream = self.stream.lock().await;
+        match stream.read_all_events(self.next_sequence) {
+            Some(events) if !events.is_empty() => {
+                self.events = events;
+                self.next_sequence = stream.last_sequence + 1;
+                true
+            }
+            _ => {
+                if wait {
+                    let n = Arc::new(Notify::new());
+                    stream.waiters.push(n.clone());
+                    drop(stream);
+                    n.notified().await;
+                }
+                false
+            }
         }
     }
 }
@@ -116,19 +151,29 @@ impl StreamReader {
 #[async_trait]
 impl crate::StreamReader for StreamReader {
     async fn seek(&mut self, sequence: Sequence) -> Result<()> {
-        let stream = self.stream.lock().await;
-        let next_sequence = stream.last_sequence + 1;
-        if let Some(offset) = next_sequence.checked_sub(sequence) {
-            let index = stream.events.len().saturating_sub(offset as usize);
-            self.events = stream.events.range(index..).cloned().collect();
-        } else {
-            self.events.clear();
-        }
+        self.next_sequence = sequence;
+        self.events.clear();
         Ok(())
     }
 
-    async fn next(&mut self) -> Result<Option<Vec<u8>>> {
-        Ok(self.events.pop_front())
+    async fn try_next(&mut self) -> Result<Option<Vec<u8>>> {
+        if let Some(event) = self.events.pop_front() {
+            Ok(Some(event))
+        } else if self.advance(false).await {
+            Ok(self.events.pop_front())
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn wait_next(&mut self) -> Result<Vec<u8>> {
+        loop {
+            if let Some(event) = self.events.pop_front() {
+                return Ok(event);
+            } else if self.advance(true).await {
+                return Ok(self.events.pop_front().unwrap());
+            }
+        }
     }
 }
 
@@ -148,6 +193,10 @@ impl crate::StreamWriter for StreamWriter {
         let mut stream = self.stream.lock().await;
         stream.events.push_back(event);
         stream.last_sequence += 1;
+        for waiter in &stream.waiters {
+            waiter.notify_one();
+        }
+        stream.waiters.clear();
         Ok(stream.last_sequence)
     }
 
