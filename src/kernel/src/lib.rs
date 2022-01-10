@@ -56,9 +56,15 @@ mod tests {
         K: Kernel,
         K::UpdateReader: Send + 'static,
     {
+        let stream_name = "stream";
+        let bucket_name = "bucket";
+        let object_name = "object";
+
         let update = KernelUpdateBuilder::default()
             .put_meta("a", "b")
             .remove_meta("b")
+            .add_stream(stream_name)
+            .add_bucket(bucket_name)
             .build();
 
         let handle = {
@@ -73,6 +79,13 @@ mod tests {
         let mut writer = kernel.new_update_writer().await?;
         writer.append(update).await?;
         handle.await.unwrap();
+
+        // Checks if the stream and bucket have been created.
+        kernel.new_stream_writer(stream_name).await.unwrap();
+        kernel
+            .new_sequential_writer(bucket_name, object_name)
+            .await
+            .unwrap();
         Ok(())
     }
 }

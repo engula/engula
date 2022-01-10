@@ -22,8 +22,8 @@ use super::{update_reader::UpdateReader, update_writer::UpdateWriter};
 use crate::{async_trait, KernelUpdate, Result, Sequence};
 
 pub struct Kernel<J, S> {
-    journal: J,
-    storage: S,
+    journal: Arc<J>,
+    storage: Arc<S>,
     sequence: Arc<AtomicU64>,
     update_tx: broadcast::Sender<(Sequence, KernelUpdate)>,
 }
@@ -32,8 +32,8 @@ impl<J, S> Kernel<J, S> {
     pub async fn init(journal: J, storage: S) -> Result<Self> {
         let (update_tx, _) = broadcast::channel(1024);
         Ok(Self {
-            journal,
-            storage,
+            journal: Arc::new(journal),
+            storage: Arc::new(storage),
             sequence: Arc::new(AtomicU64::new(0)),
             update_tx,
         })
@@ -51,7 +51,7 @@ where
     type StreamReader = J::StreamReader;
     type StreamWriter = J::StreamWriter;
     type UpdateReader = UpdateReader;
-    type UpdateWriter = UpdateWriter;
+    type UpdateWriter = UpdateWriter<J, S>;
 
     async fn new_update_reader(&self) -> Result<Self::UpdateReader> {
         let reader = UpdateReader::new(self.update_tx.subscribe());
@@ -59,7 +59,12 @@ where
     }
 
     async fn new_update_writer(&self) -> Result<Self::UpdateWriter> {
-        let writer = UpdateWriter::new(self.sequence.clone(), self.update_tx.clone());
+        let writer = UpdateWriter::new(
+            self.journal.clone(),
+            self.storage.clone(),
+            self.sequence.clone(),
+            self.update_tx.clone(),
+        );
         Ok(writer)
     }
 
