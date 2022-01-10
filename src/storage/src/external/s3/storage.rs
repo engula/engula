@@ -28,7 +28,7 @@ use aws_sdk_s3::{
         CompletedPart, CreateBucketConfiguration, ExpirationStatus, LifecycleExpiration,
         LifecycleRule, LifecycleRuleFilter, NoncurrentVersionExpiration, Object,
     },
-    output::ListObjectsV2Output,
+    output::{ListObjectsV2Output, UploadPartOutput},
     ByteStream, Client, DateTime, SdkError,
 };
 use aws_smithy_http::byte_stream::AggregatedBytes;
@@ -37,6 +37,7 @@ use engula_futures::{
     io::{RandomRead, SequentialWrite},
     stream::batch::ResultStream,
 };
+use futures::future::{join_all, BoxFuture};
 
 use crate::{async_trait, Error, Result};
 
@@ -436,28 +437,24 @@ impl SequentialWriter {
         }
     }
 
-    async fn upload_part(
+    fn upload_part(
         client: Client,
         bucket: impl Into<String>,
         key: impl Into<String>,
         upload_id: impl Into<String>,
         part_num: i32,
         data: Bytes,
-    ) -> std::result::Result<CompletedPart, SdkError<UploadPartError>> {
-        let output = client
-            .upload_part()
-            .bucket(bucket)
-            .key(key)
-            .upload_id(upload_id)
-            .part_number(part_num)
-            .body(ByteStream::from(data))
-            .send()
-            .await?;
-
-        Ok(CompletedPart::builder()
-            .e_tag(output.e_tag.unwrap())
-            .part_number(part_num)
-            .build())
+    ) -> BoxFuture<'static, std::result::Result<UploadPartOutput, SdkError<UploadPartError>>> {
+        Box::pin(
+            client
+                .upload_part()
+                .bucket(bucket)
+                .key(key)
+                .upload_id(upload_id)
+                .part_number(part_num)
+                .body(ByteStream::from(data))
+                .send(),
+        )
     }
 
     async fn upload(
@@ -478,56 +475,60 @@ impl SequentialWriter {
             .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
         let upload_id = create_result.upload_id.unwrap();
 
-        let mut completeds = Vec::new();
+        let mut upload_part_futs = Vec::new();
         if write_buf.len() < UPLOAD_PART_SIZE * 2 {
-            let part_num = (completeds.len() + 1) as i32;
-            completeds.push(
-                Self::upload_part(
-                    client.clone(),
-                    &bucket,
-                    &key,
-                    &upload_id,
-                    part_num,
-                    Bytes::from(write_buf.clone()),
-                )
-                .await
-                .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
-            );
+            let part_num = (upload_part_futs.len() + 1) as i32;
+            upload_part_futs.push(Self::upload_part(
+                client.clone(),
+                &bucket,
+                &key,
+                &upload_id,
+                part_num,
+                Bytes::from(write_buf.clone()),
+            ));
         } else {
             while write_buf.len() >= UPLOAD_PART_SIZE * 2 {
                 let remain = write_buf.split_off(UPLOAD_PART_SIZE);
-                let part_num = (completeds.len() + 1) as i32;
-                completeds.push(
-                    Self::upload_part(
-                        client.clone(),
-                        &bucket,
-                        &key,
-                        &upload_id,
-                        part_num,
-                        Bytes::from(write_buf.clone()),
-                    )
-                    .await
-                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
-                );
-                write_buf = remain;
-            }
-            let part_num = (completeds.len() + 1) as i32;
-            completeds.push(
-                Self::upload_part(
+                let part_num = (upload_part_futs.len() + 1) as i32;
+                upload_part_futs.push(Self::upload_part(
                     client.clone(),
                     &bucket,
                     &key,
                     &upload_id,
                     part_num,
                     Bytes::from(write_buf.clone()),
-                )
-                .await
-                .map_err(|e| io::Error::new(ErrorKind::Other, e))?,
-            );
+                ));
+                write_buf = remain;
+            }
+            let part_num = (upload_part_futs.len() + 1) as i32;
+            upload_part_futs.push(Self::upload_part(
+                client.clone(),
+                &bucket,
+                &key,
+                &upload_id,
+                part_num,
+                Bytes::from(write_buf.clone()),
+            ));
+        }
+
+        let upload_part_result = join_all(upload_part_futs).await;
+        let mut completed_parts = Vec::new();
+        let mut part_num = 0;
+        for r in upload_part_result {
+            part_num += 1;
+            match r {
+                Ok(output) => completed_parts.push(
+                    CompletedPart::builder()
+                        .e_tag(output.clone().e_tag.unwrap())
+                        .part_number(part_num)
+                        .build(),
+                ),
+                Err(err) => return Err(io::Error::new(ErrorKind::Other, err)),
+            }
         }
 
         let upload = CompletedMultipartUpload::builder()
-            .set_parts(Some(completeds))
+            .set_parts(Some(completed_parts))
             .build();
         client
             .complete_multipart_upload()
