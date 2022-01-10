@@ -1,4 +1,4 @@
-// Copyright 2021 The Engula Authors.
+// Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
+mod s3;
 
-use thiserror::Error;
-
-/// Errors for all storage operations.
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0} is not found")]
-    NotFound(String),
-    #[error("{0} already exists")]
-    AlreadyExists(String),
-    #[error("{0}")]
-    InvalidArgument(String),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Unknown(Box<dyn std::error::Error>),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub use self::s3::Storage as S3Storage;

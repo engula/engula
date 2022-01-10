@@ -27,7 +27,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Unknown(Box<dyn std::error::Error + Send>),
+    Unknown(Box<dyn std::error::Error>),
 }
 
 impl Error {
