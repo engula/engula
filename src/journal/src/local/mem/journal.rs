@@ -22,41 +22,36 @@ use tokio::sync::{Mutex, Notify};
 
 use crate::{async_trait, Error, Result, Sequence};
 
+type SeekableEventStream = Arc<Mutex<SeekableEventStreamInner>>;
+
 #[derive(Default)]
-struct Events {
+struct SeekableEventStreamInner {
     events: VecDeque<Vec<u8>>,
-    last_sequence: Sequence,
-    waiters: Vec<Arc<Notify>>,
+    start: Sequence,
+    end: Sequence,
+    waiter: Arc<Notify>,
 }
 
-type Stream = Arc<Mutex<Events>>;
-
-impl Events {
-    fn read_all_events(&self, sequence: Sequence) -> Option<VecDeque<Vec<u8>>> {
-        let next_sequence = self.last_sequence + 1;
-        if let Some(offset) = next_sequence.checked_sub(sequence) {
-            let index = self.events.len().saturating_sub(offset as usize);
-            Some(self.events.range(index..).cloned().collect())
+impl SeekableEventStreamInner {
+    fn read_all(&self, from: Sequence) -> VecDeque<Vec<u8>> {
+        if self.end.checked_sub(from).is_some() {
+            self.events
+                .range(from.saturating_sub(self.start) as usize..)
+                .cloned()
+                .collect()
         } else {
-            None
+            VecDeque::default()
         }
     }
 }
 
+#[derive(Default)]
 pub struct Journal {
-    streams: Mutex<HashMap<String, Stream>>,
-}
-
-impl Default for Journal {
-    fn default() -> Self {
-        Self {
-            streams: Mutex::new(HashMap::new()),
-        }
-    }
+    streams: Mutex<HashMap<String, SeekableEventStream>>,
 }
 
 impl Journal {
-    async fn stream(&self, name: &str) -> Option<Stream> {
+    async fn stream(&self, name: &str) -> Option<SeekableEventStream> {
         let streams = self.streams.lock().await;
         streams.get(name).cloned()
     }
@@ -77,8 +72,7 @@ impl crate::Journal for Journal {
         let mut streams = self.streams.lock().await;
         match streams.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
-                let stream = Arc::new(Mutex::new(Events::default()));
-                ent.insert(stream);
+                ent.insert(SeekableEventStream::default());
                 Ok(())
             }
             hash_map::Entry::Occupied(ent) => {
@@ -113,37 +107,39 @@ impl crate::Journal for Journal {
 }
 
 pub struct StreamReader {
-    next_sequence: Sequence,
-    stream: Stream,
+    cursor: Sequence,
+    stream: SeekableEventStream,
     events: VecDeque<Vec<u8>>,
 }
 
 impl StreamReader {
-    fn new(stream: Stream) -> Self {
+    fn new(stream: SeekableEventStream) -> Self {
         Self {
-            next_sequence: 1,
+            cursor: 0,
             stream,
             events: VecDeque::new(),
         }
     }
 
-    async fn advance(&mut self, wait: bool) -> bool {
-        let mut stream = self.stream.lock().await;
-        match stream.read_all_events(self.next_sequence) {
-            Some(events) if !events.is_empty() => {
-                self.events = events;
-                self.next_sequence = stream.last_sequence + 1;
-                true
+    async fn next(&mut self, wait: bool) -> Result<Option<Vec<u8>>> {
+        if let Some(event) = self.events.pop_front() {
+            return Ok(Some(event));
+        }
+
+        let stream = self.stream.lock().await;
+        let events = stream.read_all(self.cursor);
+        if events.is_empty() {
+            if wait {
+                let waiter = stream.waiter.clone();
+                let notified = waiter.notified();
+                drop(stream);
+                notified.await;
             }
-            _ => {
-                if wait {
-                    let n = Arc::new(Notify::new());
-                    stream.waiters.push(n.clone());
-                    drop(stream);
-                    n.notified().await;
-                }
-                false
-            }
+            Ok(None)
+        } else {
+            self.events = events;
+            self.cursor = stream.end;
+            Ok(self.events.pop_front())
         }
     }
 }
@@ -151,38 +147,38 @@ impl StreamReader {
 #[async_trait]
 impl crate::StreamReader for StreamReader {
     async fn seek(&mut self, sequence: Sequence) -> Result<()> {
-        self.next_sequence = sequence;
-        self.events.clear();
-        Ok(())
+        let stream = self.stream.lock().await;
+        if sequence < stream.start {
+            Err(Error::InvalidArgument(format!(
+                "seek sequence (is {}) should be >= start (is {})",
+                sequence, stream.start
+            )))
+        } else {
+            self.cursor = sequence;
+            self.events.clear();
+            Ok(())
+        }
     }
 
     async fn try_next(&mut self) -> Result<Option<Vec<u8>>> {
-        if let Some(event) = self.events.pop_front() {
-            Ok(Some(event))
-        } else if self.advance(false).await {
-            Ok(self.events.pop_front())
-        } else {
-            Ok(None)
-        }
+        self.next(false).await
     }
 
     async fn wait_next(&mut self) -> Result<Vec<u8>> {
         loop {
-            if let Some(event) = self.events.pop_front() {
-                return Ok(event);
-            } else if self.advance(true).await {
-                return Ok(self.events.pop_front().unwrap());
+            if let Some(next) = self.next(true).await? {
+                return Ok(next);
             }
         }
     }
 }
 
 pub struct StreamWriter {
-    stream: Stream,
+    stream: SeekableEventStream,
 }
 
 impl StreamWriter {
-    fn new(stream: Stream) -> Self {
+    fn new(stream: SeekableEventStream) -> Self {
         Self { stream }
     }
 }
@@ -192,23 +188,23 @@ impl crate::StreamWriter for StreamWriter {
     async fn append(&mut self, event: Vec<u8>) -> Result<Sequence> {
         let mut stream = self.stream.lock().await;
         stream.events.push_back(event);
-        stream.last_sequence += 1;
-        for waiter in &stream.waiters {
-            waiter.notify_one();
-        }
-        stream.waiters.clear();
-        Ok(stream.last_sequence)
+        stream.end += 1;
+        stream.waiter.notify_waiters();
+        Ok(stream.end)
     }
 
     async fn truncate(&mut self, sequence: Sequence) -> Result<()> {
         let mut stream = self.stream.lock().await;
-        let next_sequence = stream.last_sequence + 1;
-        if let Some(offset) = next_sequence.checked_sub(sequence) {
-            let index = stream.events.len().saturating_sub(offset as usize);
-            stream.events.drain(..index);
+        if stream.end.checked_sub(sequence).is_some() {
+            let offset = sequence.saturating_sub(stream.start);
+            stream.events.drain(..offset as usize);
+            stream.start += offset;
+            Ok(())
         } else {
-            stream.events.clear();
+            Err(Error::InvalidArgument(format!(
+                "truncate sequence (is {}) should be <= end (is {})",
+                sequence, stream.end
+            )))
         }
-        Ok(())
     }
 }

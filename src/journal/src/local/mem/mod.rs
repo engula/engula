@@ -27,7 +27,7 @@ mod tests {
     use crate::*;
 
     #[tokio::test]
-    async fn test() -> Result<()> {
+    async fn try_next() -> Result<()> {
         let stream_name = "stream";
 
         let j = super::Journal::default();
@@ -40,10 +40,10 @@ mod tests {
         assert_eq!(writer.append(event2.clone()).await?, 2);
 
         let mut reader = j.new_stream_reader(stream_name).await?;
-        reader.seek(1).await?;
+        reader.seek(0).await?;
         assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
         assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
-        reader.seek(2).await?;
+        reader.seek(1).await?;
         assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
         Ok(())
     }
@@ -59,7 +59,7 @@ mod tests {
         let mut reader = j.new_stream_reader(stream_name).await?;
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             let event2 = vec![2];
-            reader.seek(2).await?;
+            reader.seek(1).await?;
             assert_eq!(&reader.wait_next().await?, &event2);
             Ok(())
         });
@@ -77,12 +77,99 @@ mod tests {
 
         // 2. wait available event
         let mut reader = j.new_stream_reader(stream_name).await?;
-        reader.seek(1).await?;
+        reader.seek(0).await?;
         assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
         assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
 
         assert_eq!(writer.append(event3.clone()).await?, 3);
         assert_eq!(&reader.wait_next().await?, &event3);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn seek() -> Result<()> {
+        let stream_name = "stream";
+
+        let j = super::Journal::default();
+        j.create_stream(stream_name).await?;
+
+        let mut reader = j.new_stream_reader(stream_name).await?;
+
+        // seek future sequence
+        reader.seek(1).await?;
+
+        let event1 = vec![1];
+        let event2 = vec![2];
+        let mut writer = j.new_stream_writer(stream_name).await?;
+        assert_eq!(writer.append(event1.clone()).await?, 1);
+        assert_eq!(writer.append(event2.clone()).await?, 2);
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+
+        // normal
+        reader.seek(0).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        reader.seek(1).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+
+        // cannot seek truncated sequence
+        writer.truncate(2).await?;
+        let got = reader.seek(1).await;
+        assert!(got.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn truncate() -> Result<()> {
+        let stream_name = "stream";
+
+        let j = super::Journal::default();
+        j.create_stream(stream_name).await?;
+
+        let event1 = vec![1];
+        let event2 = vec![2];
+        let event3 = vec![3];
+        let mut writer = j.new_stream_writer(stream_name).await?;
+        assert_eq!(writer.append(event1.clone()).await?, 1);
+        assert_eq!(writer.append(event2.clone()).await?, 2);
+        assert_eq!(writer.append(event3.clone()).await?, 3);
+
+        // normal
+        let mut reader = j.new_stream_reader(stream_name).await?;
+        reader.seek(0).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        reader.seek(1).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+
+        // truncate
+        writer.truncate(1).await?;
+        reader.seek(1).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        reader.seek(2).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+
+        // truncate more
+        writer.truncate(2).await?;
+        reader.seek(2).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+
+        // truncate truncated sequence is valid as noop
+        writer.truncate(1).await?;
+        reader.seek(2).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        writer.truncate(2).await?;
+        reader.seek(2).await?;
+        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+
+        // cannot truncate future sequence
+        let got = writer.truncate(4).await;
+        assert!(got.is_err());
 
         Ok(())
     }
