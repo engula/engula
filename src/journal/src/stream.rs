@@ -23,7 +23,10 @@ pub trait StreamReader {
     async fn seek(&mut self, sequence: Sequence) -> Result<()>;
 
     /// Returns the next event.
-    async fn next(&mut self) -> Result<Option<Vec<u8>>>;
+    async fn try_next(&mut self) -> Result<Option<Vec<u8>>>;
+
+    /// Returns the next event or waits until it is available.
+    async fn wait_next(&mut self) -> Result<Vec<u8>>;
 }
 
 #[async_trait]
