@@ -190,7 +190,7 @@ impl crate::StreamWriter for StreamWriter {
         stream.events.push_back(event);
         stream.end += 1;
         stream.waiter.notify_waiters();
-        Ok(stream.end)
+        Ok(stream.end - 1)
     }
 
     async fn truncate(&mut self, sequence: Sequence) -> Result<()> {

@@ -31,7 +31,7 @@ pub trait StreamReader {
 
 #[async_trait]
 pub trait StreamWriter {
-    /// Appends an event.
+    /// Appends an event, returns the sequence of the event just append.
     async fn append(&mut self, event: Vec<u8>) -> Result<Sequence>;
 
     /// Truncates events up to a sequence (exclusive).
