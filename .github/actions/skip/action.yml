@@ -28,8 +28,7 @@ inputs:
       Output skip=true when and only when none of the changed files located in one of the path,
       the paths is shell-style pattern.
     required: false
-    default: >-
-      "*"
+    default: ''
 outputs:
   skip:
     description: "whether we should skip CI jobs"
