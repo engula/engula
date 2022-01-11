@@ -63,7 +63,7 @@ pub trait UpdateReader {
 
 #[async_trait]
 pub trait UpdateWriter {
-    /// Appends an update.
+    /// Appends an update, returns the sequence of the update just append.
     async fn append(&mut self, update: KernelUpdate) -> Result<Sequence>;
 
     /// Releases updates up to a sequence (exclusive).

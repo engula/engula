@@ -72,7 +72,7 @@ mod tests {
             let mut reader = kernel.new_update_reader().await?;
             tokio::spawn(async move {
                 let update = reader.wait_next().await.unwrap();
-                assert_eq!(update, (1, expect));
+                assert_eq!(update, (0, expect));
             })
         };
 

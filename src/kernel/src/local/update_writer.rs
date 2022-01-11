@@ -69,7 +69,7 @@ where
         for bucket in &update.remove_buckets {
             self.storage.delete_bucket(bucket).await?;
         }
-        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst);
         self.tx.send((sequence, update)).map_err(Error::unknown)?;
         Ok(sequence)
     }
