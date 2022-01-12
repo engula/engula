@@ -11,6 +11,7 @@ description = "An Engula module that provides stream storage abstractions and im
 engula-futures = { version = "0.3.0", path = "../futures" }
 
 async-trait = "0.1"
+futures = "0.3"
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.13", features = ["full"] }
