@@ -14,6 +14,7 @@
 
 use crate::{async_trait, Result};
 
+/// An increasing number to order events.
 pub type Sequence = u64;
 
 #[async_trait]
@@ -22,12 +23,15 @@ pub trait StreamReader {
     async fn seek(&mut self, sequence: Sequence) -> Result<()>;
 
     /// Returns the next event.
-    async fn next(&mut self) -> Result<Option<Vec<u8>>>;
+    async fn try_next(&mut self) -> Result<Option<Vec<u8>>>;
+
+    /// Returns the next event or waits until it is available.
+    async fn wait_next(&mut self) -> Result<Vec<u8>>;
 }
 
 #[async_trait]
 pub trait StreamWriter {
-    /// Appends an event.
+    /// Appends an event, returns the sequence of the event just append.
     async fn append(&mut self, event: Vec<u8>) -> Result<Sequence>;
 
     /// Truncates events up to a sequence (exclusive).

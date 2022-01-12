@@ -23,7 +23,7 @@ use std::{
 
 use engula_futures::{
     io::{RandomRead, SequentialWrite},
-    stream::VecResultStream,
+    stream::batch::VecResultStream,
 };
 use futures::ready;
 use tokio::sync::Mutex;
@@ -146,7 +146,7 @@ impl RandomReader {
 
 impl RandomRead for RandomReader {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         _: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,

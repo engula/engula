@@ -22,12 +22,11 @@ message BucketUpdate {
 }
 
 message KernelUpdate {
-  uint64 sequence = 1;
-  map<string, bytes> put_meta = 2;
-  repeated string remove_meta = 3;
-  map<string, bytes> add_streams = 4;
-  repeated string remove_streams = 5;
-  map<string, bytes> add_buckets = 6;
-  repeated string remove_buckets = 7;
-  map<string, BucketUpdate> update_buckets = 8;
+  map<string, bytes> put_meta = 1;
+  repeated string remove_meta = 2;
+  repeated string add_streams = 3;
+  repeated string remove_streams = 4;
+  repeated string add_buckets = 5;
+  repeated string remove_buckets = 6;
+  map<string, BucketUpdate> update_buckets = 7;
 }

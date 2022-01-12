@@ -18,7 +18,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::BatchResultStream;
+use super::ResultStream;
 
 pub struct VecResultStream<T, E> {
     elems: Vec<T>,
@@ -34,7 +34,7 @@ impl<T, E> VecResultStream<T, E> {
     }
 }
 
-impl<T, E> BatchResultStream for VecResultStream<T, E>
+impl<T, E> ResultStream for VecResultStream<T, E>
 where
     T: Unpin,
     E: Unpin,
@@ -53,5 +53,9 @@ where
             this.elems = batch.split_off(batch_size);
         }
         Poll::Ready(Ok(batch))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.elems.len(), Some(self.elems.len()))
     }
 }

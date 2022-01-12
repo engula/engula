@@ -12,11 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod batch_result_stream;
-mod batch_result_stream_ext;
-mod vec_result_stream;
-
-pub use self::{
-    batch_result_stream::BatchResultStream, batch_result_stream_ext::BatchResultStreamExt,
-    vec_result_stream::VecResultStream,
-};
+pub mod batch;

@@ -15,12 +15,19 @@ categories = [
 description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
 
 [workspace]
-members = ["src/engine/luna", "src/journal", "src/storage", "src/futures"]
+members = [
+  "src/engine/luna",
+  "src/kernel",
+  "src/journal",
+  "src/storage",
+  "src/futures",
+]
 
 [dependencies]
-luna-engine = { version = "0.3.0", path = "src/engine/luna" }
-engula-journal = { version = "0.3.0", path = "src/journal" }
-engula-storage = { version = "0.3.0", path = "src/storage" }
 engula-futures = { version = "0.3.0", path = "src/futures" }
+engula-journal = { version = "0.3.0", path = "src/journal" }
+engula-kernel = { version = "0.3.0", path = "src/kernel" }
+engula-storage = { version = "0.3.0", path = "src/storage" }
+luna-engine = { version = "0.3.0", path = "src/engine/luna" }
 
 tokio = { version = "1", features = ["full"] }

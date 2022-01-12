@@ -15,7 +15,11 @@
 mod collection;
 mod database;
 mod error;
+mod mem_table;
+mod merging_scanner;
+mod scan;
 mod table;
+mod version;
 
 pub use self::{
     collection::Collection,

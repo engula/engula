@@ -27,15 +27,16 @@
 //! [`Storage`]: crate::Storage
 
 mod error;
-mod storage;
-
+mod external;
 mod local;
 mod remote;
+mod storage;
 
 pub use async_trait::async_trait;
 
 pub use self::{
     error::{Error, Result},
+    external::S3Storage,
     local::MemStorage,
     remote::CachedStorage,
     storage::Storage,

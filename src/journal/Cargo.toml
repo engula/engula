@@ -10,10 +10,10 @@ description = "An Engula module that provides stream storage abstractions and im
 [dependencies]
 engula-futures = { version = "0.3.0", path = "../futures" }
 
-thiserror = "1.0"
 async-trait = "0.1"
-tokio = { version = "1.13", features = ["full"] }
 prost = "0.9"
+thiserror = "1.0"
+tokio = { version = "1.13", features = ["full"] }
 
 [dev-dependencies]
 tempfile = "3"

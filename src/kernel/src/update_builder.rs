@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    async_trait,
-    metadata::{BucketUpdate, KernelUpdate},
-    Result,
-};
+use crate::metadata::{BucketUpdate, KernelUpdate};
 
 #[derive(Default)]
 pub struct BucketUpdateBuilder {
@@ -45,6 +41,12 @@ impl BucketUpdateBuilder {
     }
 }
 
+impl From<BucketUpdateBuilder> for BucketUpdate {
+    fn from(mut b: BucketUpdateBuilder) -> Self {
+        b.build()
+    }
+}
+
 #[derive(Default)]
 pub struct KernelUpdateBuilder {
     update: KernelUpdate,
@@ -61,8 +63,8 @@ impl KernelUpdateBuilder {
         self
     }
 
-    pub fn add_stream(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
-        self.update.add_streams.insert(name.into(), meta.into());
+    pub fn add_stream(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.add_streams.push(name.into());
         self
     }
 
@@ -71,13 +73,19 @@ impl KernelUpdateBuilder {
         self
     }
 
-    pub fn add_bucket(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
-        self.update.add_buckets.insert(name.into(), meta.into());
+    pub fn add_bucket(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.add_buckets.push(name.into());
         self
     }
 
-    pub fn update_bucket(&mut self, name: impl Into<String>, update: BucketUpdate) -> &mut Self {
-        self.update.update_buckets.insert(name.into(), update);
+    pub fn update_bucket(
+        &mut self,
+        name: impl Into<String>,
+        update: impl Into<BucketUpdate>,
+    ) -> &mut Self {
+        self.update
+            .update_buckets
+            .insert(name.into(), update.into());
         self
     }
 
@@ -91,11 +99,8 @@ impl KernelUpdateBuilder {
     }
 }
 
-#[async_trait]
-pub trait KernelUpdateReader: Send + 'static {
-    /// Returns the next update if it is available.
-    async fn try_next(&mut self) -> Result<Option<KernelUpdate>>;
-
-    /// Returns the next update or waits until it is available.
-    async fn wait_next(&mut self) -> Result<KernelUpdate>;
+impl From<KernelUpdateBuilder> for KernelUpdate {
+    fn from(mut b: KernelUpdateBuilder) -> Self {
+        b.build()
+    }
 }

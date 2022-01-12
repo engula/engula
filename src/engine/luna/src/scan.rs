@@ -12,23 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
+pub trait Scan {
+    fn seek_to_first(&mut self);
 
-use thiserror::Error;
+    fn seek(&mut self);
 
-/// Errors for all storage operations.
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0} is not found")]
-    NotFound(String),
-    #[error("{0} already exists")]
-    AlreadyExists(String),
-    #[error("{0}")]
-    InvalidArgument(String),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Unknown(Box<dyn std::error::Error>),
+    fn next(&mut self);
+
+    fn valid(&self) -> bool;
+
+    fn key(&self) -> &[u8];
+
+    fn value(&self) -> &[u8];
 }
-
-pub type Result<T> = std::result::Result<T, Error>;

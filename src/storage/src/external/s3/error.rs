@@ -12,23 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
+use aws_sdk_s3::SdkError;
 
-use thiserror::Error;
+use crate::Error;
 
-/// Errors for all storage operations.
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0} is not found")]
-    NotFound(String),
-    #[error("{0} already exists")]
-    AlreadyExists(String),
-    #[error("{0}")]
-    InvalidArgument(String),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Unknown(Box<dyn std::error::Error>),
+impl<E, R> From<SdkError<E, R>> for Error
+where
+    R: std::fmt::Debug + 'static,
+    E: std::error::Error + 'static,
+{
+    fn from(e: SdkError<E, R>) -> Self {
+        Self::Unknown(Box::new(e))
+    }
 }
-
-pub type Result<T> = std::result::Result<T, Error>;

@@ -18,8 +18,8 @@ use std::{
     task::{Context, Poll},
 };
 
-/// A stream that returns a batch of elements at a time.
-pub trait BatchResultStream {
+/// A stream that yields a batch of elements at a time.
+pub trait ResultStream {
     type Elem;
     type Error;
 
@@ -52,24 +52,28 @@ macro_rules! impl_stream {
         ) -> Poll<Result<Vec<Self::Elem>, Self::Error>> {
             Pin::new(&mut **self).poll_next(cx, batch_size)
         }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (**self).size_hint()
+        }
     };
 }
 
-impl<T: BatchResultStream + ?Sized + Unpin> BatchResultStream for Box<T> {
+impl<T: ResultStream + ?Sized + Unpin> ResultStream for Box<T> {
     impl_stream!();
 }
 
-impl<T: BatchResultStream + ?Sized + Unpin> BatchResultStream for &mut T {
+impl<T: ResultStream + ?Sized + Unpin> ResultStream for &mut T {
     impl_stream!();
 }
 
-impl<T> BatchResultStream for Pin<T>
+impl<T> ResultStream for Pin<T>
 where
     T: DerefMut + Unpin,
-    T::Target: BatchResultStream,
+    T::Target: ResultStream,
 {
-    type Elem = <<T as Deref>::Target as BatchResultStream>::Elem;
-    type Error = <<T as Deref>::Target as BatchResultStream>::Error;
+    type Elem = <<T as Deref>::Target as ResultStream>::Elem;
+    type Error = <<T as Deref>::Target as ResultStream>::Error;
 
     fn poll_next(
         self: Pin<&mut Self>,
@@ -77,5 +81,9 @@ where
         batch_size: usize,
     ) -> Poll<Result<Vec<Self::Elem>, Self::Error>> {
         self.get_mut().as_mut().poll_next(cx, batch_size)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.as_ref().get_ref().size_hint()
     }
 }

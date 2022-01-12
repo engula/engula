@@ -12,25 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod kernel;
-mod update_reader;
-mod update_writer;
+use crate::scan::Scan;
 
-pub use self::{kernel::Kernel, mem::Kernel as MemKernel};
+pub struct MergingScanner<S> {
+    _children: Vec<S>,
+}
 
-mod mem {
-    use engula_journal::MemJournal;
-    use engula_storage::MemStorage;
+impl<S> MergingScanner<S> {
+    pub fn new(_children: Vec<S>) -> Self {
+        Self { _children }
+    }
+}
 
-    use crate::Result;
+impl<S> Scan for MergingScanner<S>
+where
+    S: Scan,
+{
+    fn seek_to_first(&mut self) {
+        unimplemented!();
+    }
 
-    pub type Kernel = super::Kernel<MemJournal, MemStorage>;
+    fn seek(&mut self) {
+        unimplemented!();
+    }
 
-    impl Kernel {
-        pub async fn open() -> Result<Self> {
-            let journal = MemJournal::default();
-            let storage = MemStorage::default();
-            Self::init(journal, storage).await
-        }
+    fn next(&mut self) {
+        unimplemented!();
+    }
+
+    fn valid(&self) -> bool {
+        unimplemented!();
+    }
+
+    fn key(&self) -> &[u8] {
+        unimplemented!();
+    }
+
+    fn value(&self) -> &[u8] {
+        unimplemented!();
     }
 }

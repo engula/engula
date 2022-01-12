@@ -27,8 +27,8 @@ use crate::Result;
 //   index block handle : BlockHandle
 
 pub struct TableBuilderOptions {
-    block_size: u32,
-    block_restart_interval: u32,
+    pub block_size: u32,
+    pub block_restart_interval: u32,
 }
 
 impl Default for TableBuilderOptions {

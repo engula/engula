@@ -24,7 +24,7 @@ pub use self::storage::Storage;
 mod tests {
     use engula_futures::{
         io::{RandomReadExt, SequentialWriteExt},
-        stream::BatchResultStreamExt,
+        stream::batch::ResultStreamExt,
     };
 
     use crate::*;
@@ -42,23 +42,17 @@ mod tests {
         writer.write_all(&data).await?;
         writer.close().await?;
 
-        let mut reader = s.new_random_reader(bucket_name, object_name).await?;
+        let reader = s.new_random_reader(bucket_name, object_name).await?;
         let mut buf = vec![0; 2];
         let pos = 1;
         reader.read_exact(&mut buf, pos).await?;
         assert_eq!(buf, data[pos..(pos + buf.len())]);
 
-        let mut bucket_stream = s.list_buckets().await?;
-        assert_eq!(
-            bucket_stream.collect(10).await?,
-            vec![bucket_name.to_owned()]
-        );
+        let bucket_stream = s.list_buckets().await?.batched(10);
+        assert_eq!(bucket_stream.collect().await?, vec![bucket_name.to_owned()]);
 
-        let mut object_stream = s.list_objects(bucket_name).await?;
-        assert_eq!(
-            object_stream.collect(10).await?,
-            vec![object_name.to_owned()]
-        );
+        let object_stream = s.list_objects(bucket_name).await?.batched(10);
+        assert_eq!(object_stream.collect().await?, vec![object_name.to_owned()]);
         Ok(())
     }
 }
