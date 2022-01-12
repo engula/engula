@@ -18,9 +18,9 @@ use engula_futures::stream::batch::ResultStream;
 use crate::{Error, Result};
 
 #[async_trait]
-pub trait Orchestrator: Send + Sync + 'static {
+pub trait Orchestrator {
     type Instance;
-    type InstanceLister: ResultStream<Elem = Self::Instance, Error = Error> + Unpin;
+    type InstanceLister: ResultStream<Elem = Self::Instance, Error = Error>;
 
     async fn list_instances(&self) -> Result<Self::InstanceLister>;
 
