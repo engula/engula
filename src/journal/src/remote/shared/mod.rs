@@ -17,8 +17,18 @@ use futures::stream::Stream;
 
 use crate::Result;
 
+mod journal;
+mod master;
+mod orchestrator;
+mod stream_reader;
+mod stream_writer;
+
+pub use master::Master;
+pub use stream_reader::Reader as StreamReader;
+pub use stream_writer::Writer as StreamWriter;
+
 /// The role of a stream.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub enum Role {
     /// A leader manipulate a stream.
