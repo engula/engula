@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::stream::BatchResultStreamExt;
+use engula_futures::stream::batch::ResultStreamExt;
 
 use super::{random_reader::RandomReader, Orchestrator};
 use crate::{async_trait, Result, Storage};
@@ -40,8 +40,8 @@ where
     O: Orchestrator,
 {
     pub async fn open(base: B, orch: O) -> Result<Self> {
-        let mut list = orch.list_instances().await?;
-        let mut caches = list.collect(10).await?;
+        let list = orch.list_instances().await?.batched(10);
+        let mut caches = list.collect().await?;
         for cache in &mut caches {
             cache.create_bucket(CACHE_BUCKET_NAME).await?;
         }
@@ -52,8 +52,11 @@ where
 #[async_trait]
 impl<B, O> Storage for CachedStorage<B, O>
 where
-    B: Storage,
-    O: Orchestrator,
+    B: Storage + Send + Sync,
+    B::RandomReader: Send + Sync + Unpin,
+    O: Orchestrator + Send + Sync,
+    O::Instance: Send + Sync,
+    <O::Instance as Storage>::RandomReader: Send + Sync + Unpin,
 {
     type BucketLister = B::BucketLister;
     type ObjectLister = B::ObjectLister;

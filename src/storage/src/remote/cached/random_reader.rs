@@ -37,16 +37,16 @@ where
     C: RandomRead + Unpin,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: Pin<&Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
         pos: usize,
     ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        if let Some(r) = this.cache.as_mut() {
+        let this = self.get_ref();
+        if let Some(r) = this.cache.as_ref() {
             Pin::new(r).poll_read(cx, buf, pos)
         } else {
-            Pin::new(&mut this.base).poll_read(cx, buf, pos)
+            Pin::new(&this.base).poll_read(cx, buf, pos)
         }
     }
 }

@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::stream::BatchResultStream;
+use engula_futures::stream::batch::ResultStream;
 
 use crate::{async_trait, Error, Result, Storage};
 
 #[async_trait]
 pub trait Orchestrator: Send + Sync + 'static {
     type Instance: Storage + Unpin;
-    type InstanceLister: BatchResultStream<Elem = Self::Instance, Error = Error> + Unpin;
+    type InstanceLister: ResultStream<Elem = Self::Instance, Error = Error> + Unpin;
 
     async fn list_instances(&self) -> Result<Self::InstanceLister>;
 

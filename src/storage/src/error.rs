@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
-
 use thiserror::Error;
 
 /// Errors for all storage operations.
