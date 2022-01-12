@@ -31,6 +31,7 @@ mod journal;
 mod stream;
 
 mod local;
+mod remote;
 
 pub use async_trait::async_trait;
 
