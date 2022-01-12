@@ -12,32 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Object storage abstractions and implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an object storage abstraction.
-//!
-//! # Implementation
-//!
-//! Built-in implementations of [`Storage`]:
-//!
-//! - [`MemStorage`](crate::MemStorage)
-//!
-//! [`Storage`]: crate::Storage
+use engula_futures::stream::batch::ResultStream;
 
-mod error;
-mod external;
-mod local;
-mod remote;
-mod storage;
+use crate::{async_trait, Error, Result, Storage};
 
-pub use async_trait::async_trait;
+#[async_trait]
+pub trait Orchestrator: Send + Sync + 'static {
+    type Instance: Storage + Unpin;
+    type InstanceLister: ResultStream<Elem = Self::Instance, Error = Error> + Unpin;
 
-pub use self::{
-    error::{Error, Result},
-    external::S3Storage,
-    local::MemStorage,
-    remote::CachedStorage,
-    storage::Storage,
-};
+    async fn list_instances(&self) -> Result<Self::InstanceLister>;
+
+    async fn provision_instance(&self) -> Result<Self::Instance>;
+
+    async fn deprovision_instance(&self, instance: Self::Instance) -> Result<()>;
+}

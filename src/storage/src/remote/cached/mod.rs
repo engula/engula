@@ -12,32 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Object storage abstractions and implementations.
-//!
-//! # Abstraction
-//!
-//! [`Storage`] is an object storage abstraction.
-//!
-//! # Implementation
-//!
-//! Built-in implementations of [`Storage`]:
-//!
-//! - [`MemStorage`](crate::MemStorage)
-//!
-//! [`Storage`]: crate::Storage
-
-mod error;
-mod external;
-mod local;
-mod remote;
+mod orchestrator;
+mod random_reader;
 mod storage;
 
-pub use async_trait::async_trait;
-
-pub use self::{
-    error::{Error, Result},
-    external::S3Storage,
-    local::MemStorage,
-    remote::CachedStorage,
-    storage::Storage,
-};
+pub use self::{orchestrator::Orchestrator, storage::CachedStorage};
