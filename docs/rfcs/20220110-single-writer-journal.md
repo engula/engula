@@ -1,7 +1,8 @@
 # Single write journal
 
-- Status: draft
-- Pull Request:
+- Status: accepted
+- Pull Request: https://github.com/engula/engula/pull/280
+- Tracking Issue: https://github.com/engula/engula/pull/284
 
 ## Abstraction
 
