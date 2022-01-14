@@ -12,39 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::{hash_map, BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::collections::{hash_map, HashMap};
 
+use engula_futures::io::RandomRead;
 use tokio::sync::Mutex;
 
-use crate::{
-    collection::{Collection, CollectionId},
-    Error, Result,
-};
-
-type Memtable = BTreeMap<Vec<u8>, Vec<u8>>;
+use crate::{scan::Scan, version::Scanner, Collection, Error, Result, WriteBatch};
 
 pub struct Database {
-    inner: Arc<Mutex<Inner>>,
+    inner: Mutex<Inner>,
 }
 
-struct Inner {
-    next_collection_id: CollectionId,
+pub struct Inner {
     collections: HashMap<String, Collection>,
-    memtable: HashMap<CollectionId, Memtable>,
+    next_collection_id: u64,
 }
 
 impl Database {
     pub async fn open() -> Result<Self> {
         let inner = Inner {
-            next_collection_id: 0,
             collections: HashMap::new(),
-            memtable: HashMap::new(),
+            next_collection_id: 0,
         };
-        Ok(Self {
-            inner: Arc::new(Mutex::new(inner)),
+        Ok(Database {
+            inner: Mutex::new(inner),
         })
     }
 
@@ -53,15 +44,18 @@ impl Database {
         Ok(inner.collections.get(name).cloned())
     }
 
+    pub async fn list_collections(&self) -> Result<HashMap<String, Collection>> {
+        let inner = self.inner.lock().await;
+        Ok(inner.collections.clone())
+    }
+
     pub async fn create_collection(&self, name: &str) -> Result<Collection> {
         let mut inner = self.inner.lock().await;
-        let id = inner.next_collection_id;
+        let co = Collection::new(inner.next_collection_id);
+        inner.next_collection_id += 1;
         match inner.collections.entry(name.to_owned()) {
             hash_map::Entry::Vacant(ent) => {
-                let co = Collection::new(id);
                 ent.insert(co.clone());
-                inner.memtable.insert(id, BTreeMap::new());
-                inner.next_collection_id += 1;
                 Ok(co)
             }
             hash_map::Entry::Occupied(ent) => {
@@ -70,69 +64,46 @@ impl Database {
         }
     }
 
-    pub async fn txn(&self) -> Result<Txn> {
-        Ok(Txn::new(self.inner.clone()))
-    }
-}
-
-pub struct Txn {
-    inner: Arc<Mutex<Inner>>,
-    mutations: Vec<(CollectionId, Op)>,
-}
-
-enum Op {
-    Put((Vec<u8>, Vec<u8>)),
-    Delete(Vec<u8>),
-}
-
-impl Txn {
-    fn new(inner: Arc<Mutex<Inner>>) -> Self {
-        Self {
-            inner,
-            mutations: Vec::new(),
-        }
-    }
-
-    pub async fn get(&self, co: &Collection, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let inner = self.inner.lock().await;
-        match inner.memtable.get(&co.id()) {
-            Some(table) => Ok(table.get(key).cloned()),
-            None => Err(Error::InvalidArgument(format!(
-                "collection id {} doesn't exist",
-                co.id()
-            ))),
-        }
-    }
-
-    pub fn put(&mut self, co: &Collection, key: Vec<u8>, value: Vec<u8>) {
-        let op = Op::Put((key, value));
-        self.mutations.push((co.id(), op));
-    }
-
-    pub fn delete(&mut self, co: &Collection, key: Vec<u8>) {
-        let op = Op::Delete(key);
-        self.mutations.push((co.id(), op));
-    }
-
-    pub async fn commit(self) -> Result<()> {
+    pub async fn delete_collection(&self, name: &str) -> Result<()> {
         let mut inner = self.inner.lock().await;
-        for mu in self.mutations {
-            if let Some(table) = inner.memtable.get_mut(&mu.0) {
-                match mu.1 {
-                    Op::Put(ent) => {
-                        table.insert(ent.0, ent.1);
-                    }
-                    Op::Delete(ent) => {
-                        table.remove(&ent);
-                    }
-                }
-            } else {
-                return Err(Error::InvalidArgument(format!(
-                    "collection id {} doesn't exist",
-                    mu.0
-                )));
-            }
-        }
+        inner.collections.remove(name);
         Ok(())
     }
+
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {}
+    }
+
+    pub async fn get(
+        &self,
+        _options: &ReadOptions,
+        _co: &Collection,
+        _key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        todo!();
+    }
+
+    pub async fn scan<'a, S, R>(
+        &'a self,
+        _options: &ReadOptions,
+        _co: &Collection,
+    ) -> Scanner<'a, S, R>
+    where
+        S: Scan,
+        R: RandomRead + 'a,
+    {
+        todo!();
+    }
+
+    pub async fn write(&self, _options: &WriteOptions, _batch: WriteBatch) -> Result<()> {
+        todo!();
+    }
 }
+
+pub struct Snapshot {}
+
+pub struct ReadOptions {
+    _snapshot: Snapshot,
+}
+
+pub struct WriteOptions {}

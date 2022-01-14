@@ -12,19 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod mem_table;
-mod merging_scanner;
-mod scan;
-mod table;
-mod version;
-mod write_batch;
+use super::collection::{Collection, CollectionId};
 
-pub use self::{
-    collection::Collection,
-    database::Database,
-    error::{Error, Result},
-    write_batch::WriteBatch,
-};
+enum Op {
+    Put(Vec<u8>, Vec<u8>),
+    Delete(Vec<u8>),
+}
+pub struct WriteBatch {
+    mutations: Vec<(CollectionId, Op)>,
+}
+
+impl WriteBatch {
+    pub fn put(&mut self, co: &Collection, key: &[u8], value: &[u8]) {
+        let op = Op::Put(key.to_owned(), value.to_owned());
+        self.mutations.push((co.id(), op));
+    }
+
+    pub fn delete(&mut self, co: &Collection, key: &[u8]) {
+        let op = Op::Delete(key.to_owned());
+        self.mutations.push((co.id(), op));
+    }
+}
