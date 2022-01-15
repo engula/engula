@@ -39,10 +39,9 @@ pub trait EpochState {
 }
 
 pub trait LeaderBasedJournal : Journal {
-    type EpochState: EpochState;
-    type StateStream: Stream<Item = Self::EpochState>;
+    type StateStream: Stream<Item = Box<dyn EpochState>>;
 
-    fn state(&self, name: &str) -> Result<Self::EpochState>;
+    fn state(&self, name: &str) -> Result<Box<dyn EpochState>>;
 
     async fn observe_state(&self, name: &str) -> Result<Self::StateStream>;
 }
