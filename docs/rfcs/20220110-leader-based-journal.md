@@ -8,7 +8,7 @@
 
 In this RPC, we present a trait `LeaderBasedJournal`, which divides the users of `Journal` into two roles: a leader who could write, and followers, who only have read permission. In the same time, this trait provides a means of observing role transition.
 
-## Motivation 
+## Motivation
 
 The luna engine requires a leader to execute mutations, such as journal writing, flushing memory tables into persisted storage, as well as a group of followers who subscribe journal streams and reply mutations, to remain consistent with the engine leader.
 
@@ -23,19 +23,28 @@ Furthermore, the new abstraction must be compatible with the existing journal ab
 Here is the API design of leader-based journal.
 
 ```rust
-pub enum RoleState {
+pub enum Role {
     Leader,
     Follower,
 }
 
+pub trait EpochState {
+    fn epoch(&self) -> u64;
+
+    // The role of associated stream.
+    fn role(&self) -> Role;
+
+    // The leader of the associated stream.
+    fn leader(&self) -> Option<String>;
+}
+
 pub trait LeaderBasedJournal : Journal {
-    type Role;
-    type Peer;
-    type StateStream: Stream<Item = RoleState>;
+    type EpochState: EpochState;
+    type StateStream: Stream<Item = Self::EpochState>;
 
-    fn state(&self, name: &str) -> (Self::Role, Option<Self::Peer>);
+    fn state(&self, name: &str) -> Result<Self::EpochState>;
 
-    async fn observe_state(&self, name: &str) -> Self::StateStream;
+    async fn observe_state(&self, name: &str) -> Result<Self::StateStream>;
 }
 ```
 
@@ -43,7 +52,7 @@ The `LeaderJournal` doesn't affects the semantics of `Journal`, so `Journal::ope
 
 The `LeaderBasedJournal` will forwards the electing progress automatically, which the engine won't have to recognize it. However, the engine must initiate that automatic progress manually, because a journal might contains multiple streams, which could exceeds the hardware limitation if we monitors all stream's electing progress. As a result, just streams that the engine is interested in will be watched.
 
-When the engine calls `LeaderBasedJournal::observe_state`, the `LeaderBasedJournal` starts monitoring and subscribing to the electing state transition. It will yield a `Stream` that will be fired whenever one of the electing states changes.
+When the engine calls `LeaderBasedJournal::observe_state`, the `LeaderBasedJournal` starts monitoring and subscribing to the electing state transition. It will yield a `Stream` that will be fired whenever one of the electing states changes. We utilize the epoch to track state changes. Time is divided into epochs of arbitrary length, the `LeaderBasedJournal` must ensure that each epoch has only one leader.
 
 When a leader engine crashes, another machine's `LeaderBasedJournal` instance is elected as the new leader and begins to recover, eventually providing service.
 
