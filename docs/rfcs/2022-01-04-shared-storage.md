@@ -10,7 +10,7 @@ This RFC proposes `SharedStorage`, a `Storage` implementation that caches object
 
 ## Motivation
 
-Most object storage services provide high durability and high throughput. But the latency is about tens or hundreds of milliseconds. It is not a problem for background writes, but it is unacceptable for foreground reads of a read-time database. To reduce the read latency, we can add a cache tier on top of an object storage.
+Most object storage services provide high durability and high throughput. But the latency is about tens or hundreds of milliseconds. It is not a problem for background writes, but it is unacceptable for foreground reads of a real-time database. To reduce the read latency, we can add a cache tier on top of an object storage.
 
 ## Detailed design
 
@@ -28,7 +28,7 @@ To read an object, a client contacts the master to get a list of locations that 
 
 ### Write path
 
-To write an object, a client contacts the master to get a list of locations to store the object. The client must ensure that the object has been persisted in the base storage before claiming a successful write. The client can further ensure that the object has been cached to avoid reading from the base storage later.
+To write an object, a client contacts the master to get a list of locations to store the object. The client must ensure that the object persisted in the base storage before claiming a successful write. The client can further ensure that the object has been cached to avoid reading from the base storage later.
 
 ### Implementation
 
