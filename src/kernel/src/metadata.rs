@@ -17,6 +17,3 @@ pub mod v1 {
 }
 
 pub use v1::{BucketUpdate, KernelUpdate};
-
-/// An increasing number to order kernel updates.
-pub type Sequence = u64;

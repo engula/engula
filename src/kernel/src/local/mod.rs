@@ -13,21 +13,23 @@
 // limitations under the License.
 
 mod kernel;
+mod update_reader;
+mod update_writer;
 
 pub use self::{kernel::Kernel, mem::Kernel as MemKernel};
 
 mod mem {
-    use engula_journal::mem::Journal;
-    use engula_storage::mem::Storage;
+    use engula_journal::MemJournal;
+    use engula_storage::MemStorage;
 
     use crate::Result;
 
-    pub type Kernel<T> = super::Kernel<Journal<T>, Storage>;
+    pub type Kernel = super::Kernel<MemJournal, MemStorage>;
 
-    impl<T> Kernel<T> {
+    impl Kernel {
         pub async fn open() -> Result<Self> {
-            let journal = Journal::default();
-            let storage = Storage::default();
+            let journal = MemJournal::default();
+            let storage = MemStorage::default();
             Self::init(journal, storage).await
         }
     }

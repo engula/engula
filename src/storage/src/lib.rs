@@ -12,35 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides object storage abstractions and
-//! implementations.
+//! Object storage abstractions and implementations.
 //!
 //! # Abstraction
 //!
-//! [`Storage`] is an abstraction to store data objects.
+//! [`Storage`] is an object storage abstraction.
 //!
 //! # Implementation
 //!
-//! Some built-in implementations of [`Storage`]:
+//! Built-in implementations of [`Storage`]:
 //!
-//! - [`mem`](crate::mem)
-//! - [`file`](crate::file)
-//! - [`grpc`](crate::grpc)
+//! - [`MemStorage`](crate::MemStorage)
 //!
 //! [`Storage`]: crate::Storage
 
-#![feature(type_alias_impl_trait)]
-
 mod error;
+mod external;
+mod local;
+mod remote;
 mod storage;
-
-// pub mod file;
-// pub mod grpc;
-pub mod mem;
 
 pub use async_trait::async_trait;
 
 pub use self::{
     error::{Error, Result},
+    external::S3Storage,
+    local::MemStorage,
+    remote::CachedStorage,
     storage::Storage,
 };

@@ -8,13 +8,19 @@ repository = "https://github.com/engula/engula"
 description = "An Engula module that provides object storage abstractions and implementations."
 
 [dependencies]
-engula-runtime = { version = "0.3.0", path = "../runtime" }
-thiserror = "1.0"
+engula-futures = { version = "0.3.0", path = "../futures" }
+
 async-trait = "0.1"
 bytes = "1.1.0"
-tokio = { version = "1.13", features = ["full"] }
-prost = "0.9"
 futures = "0.3"
+prost = "0.9"
+thiserror = "1.0"
+tokio = { version = "1.13", features = ["full"] }
+
+aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-config" }
+aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-sdk-s3" }
+aws-smithy-http = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-smithy-http" }
+time = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

@@ -20,14 +20,14 @@ members = [
   "src/kernel",
   "src/journal",
   "src/storage",
-  "src/runtime",
+  "src/futures",
 ]
 
 [dependencies]
-luna-engine = { version = "0.3.0", path = "src/engine/luna" }
-engula-kernel = { version = "0.3.0", path = "src/kernel" }
+engula-futures = { version = "0.3.0", path = "src/futures" }
 engula-journal = { version = "0.3.0", path = "src/journal" }
+engula-kernel = { version = "0.3.0", path = "src/kernel" }
 engula-storage = { version = "0.3.0", path = "src/storage" }
-engula-runtime = { version = "0.3.0", path = "src/runtime" }
+luna-engine = { version = "0.3.0", path = "src/engine/luna" }
 
 tokio = { version = "1", features = ["full"] }

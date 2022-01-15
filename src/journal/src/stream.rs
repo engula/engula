@@ -12,33 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
-
 use crate::{async_trait, Result};
 
-/// A generic timestamp to order events.
-pub trait Timestamp: Eq + Ord + PartialEq + PartialOrd + Clone + Debug + Send + 'static {}
+/// An increasing number to order events.
+pub type Sequence = u64;
 
-impl Timestamp for u64 {}
+#[async_trait]
+pub trait StreamReader {
+    /// Seeks to the given sequence.
+    async fn seek(&mut self, sequence: Sequence) -> Result<()>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Event<T> {
-    pub ts: T,
-    pub data: Vec<u8>,
+    /// Returns the next event.
+    async fn try_next(&mut self) -> Result<Option<Vec<u8>>>;
+
+    /// Returns the next event or waits until it is available.
+    async fn wait_next(&mut self) -> Result<Vec<u8>>;
 }
 
 #[async_trait]
-pub trait StreamReader<T> {
-    async fn seek(&mut self, ts: T) -> Result<()>;
+pub trait StreamWriter {
+    /// Appends an event, returns the sequence of the event just append.
+    async fn append(&mut self, event: Vec<u8>) -> Result<Sequence>;
 
-    async fn next(&mut self) -> Result<Option<Event<T>>>;
-}
-
-#[async_trait]
-pub trait StreamWriter<T> {
-    /// Appends an event.
-    async fn append(&mut self, event: Event<T>) -> Result<()>;
-
-    /// Releases events up to a timestamp (exclusive).
-    async fn release(&mut self, ts: T) -> Result<()>;
+    /// Truncates events up to a sequence (exclusive).
+    async fn truncate(&mut self, sequence: Sequence) -> Result<()>;
 }

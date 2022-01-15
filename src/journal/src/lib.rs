@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An Engula module that provides stream storage abstractions and
-//! implementations.
+//! Stream storage abstractions and implementations.
 //!
 //! # Abstraction
 //!
-//! [`Journal`] is an abstraction to store data streams.
+//! [`Journal`] is a stream storage abstraction.
 //!
 //! # Implementation
 //!
-//! Some built-in implementations of [`Journal`]:
+//! Built-in implementations of [`Journal`]:
 //!
-//! - [`mem`](crate::mem)
-//! - [`file`](crate::file)
-//! - [`grpc`](crate::grpc)
+//! - [`MemJournal`](crate::MemJournal)
 //!
 //! [`Journal`]: crate::Journal
 
@@ -33,14 +30,14 @@ mod error;
 mod journal;
 mod stream;
 
-// pub mod file;
-// pub mod grpc;
-pub mod mem;
+mod local;
+mod remote;
 
 pub use async_trait::async_trait;
 
 pub use self::{
     error::{Error, Result},
     journal::Journal,
-    stream::{Event, StreamReader, StreamWriter, Timestamp},
+    local::MemJournal,
+    stream::{Sequence, StreamReader, StreamWriter},
 };
