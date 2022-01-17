@@ -61,7 +61,7 @@ The `LeaderBasedJournal` allows the user to open multiple `StreamWriter`, while 
 
 ### Electing & States
 
-The `LeaderBasedJournal` will forwards the electing progress automatically, which the engine won't have to recognize it. Once we start the cluster, an instance of `LeaderBasedJournal` will be selected as the leader of a stream, and provides service. When a leader engine crashes, another machine's `LeaderBasedJournal` instance is elected as the new leader and begins to recover, eventually providing service.
+The `LeaderBasedJournal` will forwards the electing progress automatically, which the engine won't have to recognize it. Once we start the cluster, an instance of `LeaderBasedJournal` will be selected as the leader of a stream, and provides service. When a leader engine crashes, another machine's `LeaderBasedJournal` instance is elected as the new leader and begins to recover, eventually providing service. The steps must to do in electing and recovering is defined by the implementation.
 
 We referred to the leadership and other elected-related facts as `state`. When a new leader is elected or other facts is updated, the `state` changes(in some implementation, it could indicate configuration or copy-set is changed). To track `state` changes, we use the term `epoch`, which is a monotonically growing number. Time is divided into `epoch`s of arbitrary length, and the `LeaderBasedJournal` must ensure that each `epoch` has only one leader. The trait `EpochState` is used to provide both `state` and `epoch`. The current `state` and `epoch` could be obtained by invoking `LeaderBasedJournal::state`.
 
