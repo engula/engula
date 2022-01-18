@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
 mod database;
 mod error;
 mod mem_table;
@@ -23,7 +22,6 @@ mod version;
 mod write_batch;
 
 pub use self::{
-    collection::Collection,
     database::Database,
     error::{Error, Result},
     write_batch::WriteBatch,

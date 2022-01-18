@@ -12,24 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::collection::{Collection, CollectionId};
-
 enum Op {
     Put(Vec<u8>, Vec<u8>),
     Delete(Vec<u8>),
 }
 pub struct WriteBatch {
-    mutations: Vec<(CollectionId, Op)>,
+    mutations: Vec<Op>,
 }
 
 impl WriteBatch {
-    pub fn put(&mut self, co: &Collection, key: &[u8], value: &[u8]) {
+    pub fn put(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
         let op = Op::Put(key.to_owned(), value.to_owned());
-        self.mutations.push((co.id(), op));
+        self.mutations.push(op);
+        self
     }
 
-    pub fn delete(&mut self, co: &Collection, key: &[u8]) {
+    pub fn delete(&mut self, key: &[u8]) -> &mut Self {
         let op = Op::Delete(key.to_owned());
-        self.mutations.push((co.id(), op));
+        self.mutations.push(op);
+        self
     }
 }
