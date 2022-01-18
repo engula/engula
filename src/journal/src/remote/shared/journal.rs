@@ -21,35 +21,14 @@ use async_trait::async_trait;
 use engula_futures::stream::batch::VecResultStream;
 use futures::Stream;
 
-use super::{Master, Role, StreamReader, StreamWriter};
+use super::{Master, StreamReader, StreamWriter};
 use crate::{Error, Result};
-
-#[derive(Debug)]
-pub struct EpochState {
-    epoch: u64,
-    role: Role,
-    leader: Option<String>,
-}
-
-impl super::EpochState for EpochState {
-    fn epoch(&self) -> u64 {
-        self.epoch
-    }
-
-    fn role(&self) -> Role {
-        self.role
-    }
-
-    fn leader(&self) -> Option<String> {
-        self.leader.clone()
-    }
-}
 
 #[derive(Debug)]
 pub struct EpochStateStream {}
 
 impl Stream for EpochStateStream {
-    type Item = Result<EpochState>;
+    type Item = super::EpochState;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!();
@@ -91,19 +70,17 @@ where
     }
 }
 
-#[async_trait]
-impl<M> super::Journal for Client<M>
+impl<M> super::LeaderBasedJournal for Client<M>
 where
     M: Master + Send + Sync,
 {
-    type EpochState = EpochState;
     type StateStream = EpochStateStream;
 
-    async fn current_state(&self, _stream_name: &str) -> Result<Self::EpochState> {
+    fn current_state(&self, _stream_name: &str) -> Result<super::EpochState> {
         todo!();
     }
 
-    async fn subscribe_status(&self, _stream_name: &str) -> Self::StateStream {
+    fn subscribe_state(&self, _stream_name: &str) -> Result<Self::StateStream> {
         todo!();
     }
 }
