@@ -12,29 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_journal::{StreamReader, StreamWriter};
 use engula_kernel::{Kernel, KernelUpdateBuilder, UpdateWriter};
 use tokio::sync::Mutex;
 
-use crate::{codec::Timestamp, mem_table::MemTable, version::Scanner, Result, WriteBatch};
+use crate::{
+    codec::Timestamp, store::Store, version::Scanner, Options, ReadOptions, Result, Snapshot,
+    WriteBatch, WriteOptions,
+};
 
 pub struct Database<K: Kernel> {
     inner: Mutex<Inner<K>>,
 }
 
 struct Inner<K: Kernel> {
-    kernel: K,
+    kernel: Arc<K>,
     stream_writer: K::StreamWriter,
     _update_reader: K::UpdateReader,
     _update_writer: K::UpdateWriter,
     last_ts: Timestamp,
-    mem: MemTable,
+    store: Store<K>,
 }
 
 const DEFAULT_NAME: &str = "default";
 
 impl<K: Kernel> Database<K> {
-    pub async fn open(kernel: K) -> Result<Self> {
+    pub async fn open(options: Options, kernel: K) -> Result<Self> {
         let update_reader = kernel.new_update_reader().await?;
         let mut update_writer = kernel.new_update_writer().await?;
         let stream_writer = match kernel.new_stream_writer(DEFAULT_NAME).await {
@@ -50,13 +55,15 @@ impl<K: Kernel> Database<K> {
             }
             Err(err) => return Err(err.into()),
         };
+        let kernel = Arc::new(kernel);
+        let store = Store::new(options, kernel.clone());
         let inner = Inner {
             kernel,
             stream_writer,
             _update_reader: update_reader,
             _update_writer: update_writer,
             last_ts: 0,
-            mem: MemTable::new(0),
+            store,
         };
         let db = Database {
             inner: Mutex::new(inner),
@@ -82,22 +89,18 @@ impl<K: Kernel> Database<K> {
         batch.set_timestamp(inner.last_ts);
         let data = batch.encode_to_vec();
         inner.stream_writer.append(data).await?;
-        inner.mem.write(batch);
+        inner.store.write(batch);
         Ok(())
     }
 
     pub async fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let inner = self.inner.lock().await;
-        let ts = if let Some(snapshot) = options.snapshot.as_ref() {
-            snapshot.ts
-        } else {
-            inner.last_ts
-        };
-        Ok(inner.mem.get(ts, key))
+        inner.store.get(options, key)
     }
 
-    pub async fn scan(&self, _options: &ReadOptions) -> Scanner {
-        todo!();
+    pub async fn scan(&self, options: &ReadOptions) -> Scanner {
+        let inner = self.inner.lock().await;
+        inner.store.scan(options)
     }
 
     pub async fn snapshot(&self) -> Snapshot {
@@ -105,15 +108,3 @@ impl<K: Kernel> Database<K> {
         Snapshot { ts: inner.last_ts }
     }
 }
-
-pub struct Snapshot {
-    ts: Timestamp,
-}
-
-#[derive(Default)]
-pub struct ReadOptions {
-    pub snapshot: Option<Snapshot>,
-}
-
-#[derive(Default)]
-pub struct WriteOptions {}

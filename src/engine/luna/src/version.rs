@@ -15,18 +15,17 @@
 use std::sync::Arc;
 
 use crate::{
-    mem_table::{MemTable, MemTableScanner},
+    memtable::{Memtable, MemtableScanner},
     merging_scanner::MergingScanner,
     table::{TableReader, TableScanner},
 };
 
-#[allow(dead_code)]
+#[derive(Clone, Default)]
 pub struct Version {
-    mem: MemVersion,
-    base: BaseVersion,
+    pub mem: MemVersion,
+    pub base: BaseVersion,
 }
 
-#[allow(dead_code)]
 impl Version {
     pub fn scan(&self) -> Scanner {
         let mem = self.mem.scan();
@@ -47,12 +46,13 @@ impl Scanner {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct MemVersion {
-    tables: Vec<Arc<MemTable>>,
+    pub tables: Vec<Arc<Memtable>>,
 }
 
 /// Scans all tables in a [`MemVersion`].
-type MemScanner = MergingScanner<MemTableScanner>;
+type MemScanner = MergingScanner<MemtableScanner>;
 
 impl MemVersion {
     pub fn scan(&self) -> MemScanner {
@@ -61,6 +61,7 @@ impl MemVersion {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct BaseVersion {
     levels: Vec<LevelState>,
 }
@@ -83,8 +84,9 @@ impl BaseScanner {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct LevelState {
-    tables: Vec<TableReader>,
+    tables: Vec<Arc<TableReader>>,
 }
 
 impl LevelState {

@@ -15,16 +15,19 @@
 mod codec;
 mod database;
 mod error;
-mod mem_table;
+mod memtable;
 mod merging_scanner;
+mod options;
 mod scan;
+mod store;
 mod table;
 mod version;
 mod write_batch;
 
 pub use self::{
-    database::{Database, ReadOptions, WriteOptions},
+    database::Database,
     error::{Error, Result},
+    options::{Options, ReadOptions, Snapshot, WriteOptions},
     write_batch::WriteBatch,
 };
 
@@ -36,8 +39,9 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
+        let opts = Options::default();
         let kernel = MemKernel::open().await.unwrap();
-        let db = Database::open(kernel).await.unwrap();
+        let db = Database::open(opts, kernel).await.unwrap();
         let ropts = ReadOptions::default();
         let wopts = WriteOptions::default();
         let snapshot = db.snapshot().await;
@@ -51,9 +55,7 @@ mod tests {
         assert_eq!(db.get(&ropts, &k1).await.unwrap(), Some(k1.clone()));
         assert_eq!(db.get(&ropts, &k2).await.unwrap(), None);
 
-        let ropts = ReadOptions {
-            snapshot: Some(snapshot),
-        };
+        let ropts = ReadOptions { snapshot };
         assert_eq!(db.get(&ropts, &k1).await.unwrap(), None);
     }
 }
