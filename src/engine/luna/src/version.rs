@@ -14,26 +14,21 @@
 
 use std::sync::Arc;
 
-use engula_futures::io::RandomRead;
-
 use crate::{
     mem_table::{MemTable, MemTableScanner},
     merging_scanner::MergingScanner,
-    table::{TableIter, TableReader},
+    table::{TableReader, TableScanner},
 };
 
 #[allow(dead_code)]
-pub struct Version<R> {
+pub struct Version {
     mem: MemVersion,
-    base: BaseVersion<R>,
+    base: BaseVersion,
 }
 
 #[allow(dead_code)]
-impl<R> Version<R>
-where
-    R: RandomRead + Unpin,
-{
-    pub fn scan(&self) -> Scanner<'_, R> {
+impl Version {
+    pub fn scan(&self) -> Scanner {
         let mem = self.mem.scan();
         let base = self.base.scan();
         Scanner::new(mem, base)
@@ -41,13 +36,13 @@ where
 }
 
 /// Scans all entries in a [`Version`].
-pub struct Scanner<'a, R> {
+pub struct Scanner {
     _mem: MemScanner,
-    _base: BaseScanner<'a, R>,
+    _base: BaseScanner,
 }
 
-impl<'a, R> Scanner<'a, R> {
-    pub fn new(_mem: MemScanner, _base: BaseScanner<'a, R>) -> Self {
+impl Scanner {
+    pub fn new(_mem: MemScanner, _base: BaseScanner) -> Self {
         Self { _mem, _base }
     }
 }
@@ -66,52 +61,46 @@ impl MemVersion {
     }
 }
 
-pub struct BaseVersion<R> {
-    levels: Vec<LevelState<R>>,
+pub struct BaseVersion {
+    levels: Vec<LevelState>,
 }
 
-impl<R> BaseVersion<R>
-where
-    R: RandomRead + Unpin,
-{
-    pub fn scan(&self) -> BaseScanner<'_, R> {
+impl BaseVersion {
+    pub fn scan(&self) -> BaseScanner {
         let children = self.levels.iter().map(|x| x.scan()).collect();
         BaseScanner::new(children)
     }
 }
 
 /// Scans all levels in a [`BaseVersion`].
-pub struct BaseScanner<'a, R> {
-    _children: Vec<LevelScanner<'a, R>>,
+pub struct BaseScanner {
+    _children: Vec<LevelScanner>,
 }
 
-impl<'a, R> BaseScanner<'a, R> {
-    pub fn new(_children: Vec<LevelScanner<'a, R>>) -> Self {
+impl BaseScanner {
+    pub fn new(_children: Vec<LevelScanner>) -> Self {
         Self { _children }
     }
 }
 
-pub struct LevelState<R> {
-    tables: Vec<TableReader<R>>,
+pub struct LevelState {
+    tables: Vec<TableReader>,
 }
 
-impl<R> LevelState<R>
-where
-    R: RandomRead + Unpin,
-{
-    pub fn scan(&self) -> LevelScanner<'_, R> {
-        let children = self.tables.iter().map(|x| x.iter()).collect();
+impl LevelState {
+    pub fn scan(&self) -> LevelScanner {
+        let children = self.tables.iter().map(|x| x.scan()).collect();
         LevelScanner::new(children)
     }
 }
 
 /// Scans all tables in a level.
-pub struct LevelScanner<'a, R> {
-    _children: Vec<TableIter<'a, R>>,
+pub struct LevelScanner {
+    _children: Vec<TableScanner>,
 }
 
-impl<'a, R> LevelScanner<'a, R> {
-    pub fn new(_children: Vec<TableIter<'a, R>>) -> Self {
+impl LevelScanner {
+    pub fn new(_children: Vec<TableScanner>) -> Self {
         Self { _children }
     }
 }

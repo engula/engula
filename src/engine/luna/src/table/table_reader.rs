@@ -12,26 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::io::{RandomRead, RandomReadExt};
+use engula_futures::io::RandomReadExt;
 
 use crate::{
     table::{
         block_handle::BlockHandle,
         block_reader::{read_block, BlockReader},
-        table_iter::TableIter,
+        table_scanner::TableScanner,
+        RandomReader,
     },
     Result,
 };
 
-pub struct TableReader<R> {
-    // For simplicity, the R is used here instead of its reference.
-    reader: R,
+pub struct TableReader {
+    reader: RandomReader,
     index_block: BlockReader,
 }
 
 #[allow(dead_code)]
-impl<R: RandomRead + Unpin> TableReader<R> {
-    pub async fn open(reader: R, size: usize) -> Result<Self> {
+impl TableReader {
+    pub async fn open(reader: RandomReader, size: usize) -> Result<Self> {
         let mut footer = [0; core::mem::size_of::<BlockHandle>()];
         let offset = size - core::mem::size_of::<BlockHandle>();
         reader.read_exact(&mut footer, offset).await?;
@@ -44,16 +44,16 @@ impl<R: RandomRead + Unpin> TableReader<R> {
         })
     }
 
-    pub fn iter(&self) -> TableIter<R> {
-        let index_iter = self.index_block.iter();
-        TableIter::new(index_iter, &self.reader)
+    pub fn scan(&self) -> TableScanner {
+        let index_scanner = self.index_block.scan();
+        TableScanner::new(self.reader.clone(), index_scanner)
     }
 
     pub async fn get(&self, target: &[u8]) -> Result<Option<Vec<u8>>> {
-        let mut iter = self.iter();
-        iter.seek(target).await?;
-        if iter.valid() && iter.key() == target {
-            Ok(Some(iter.value().into()))
+        let mut scanner = self.scan();
+        scanner.seek(target).await?;
+        if scanner.valid() && scanner.key() == target {
+            Ok(Some(scanner.value().into()))
         } else {
             Ok(None)
         }
@@ -67,7 +67,7 @@ mod tests {
     use super::*;
     use crate::table::table_builder::{TableBuilder, TableBuilderOptions};
 
-    async fn build_table(size: u8) -> Arc<[u8]> {
+    async fn build_table(size: u8) -> Arc<Vec<u8>> {
         let opt = TableBuilderOptions {
             block_restart_interval: 2,
             ..Default::default()
@@ -92,8 +92,8 @@ mod tests {
     #[tokio::test]
     async fn seek_to_first() {
         let data = build_table(128).await;
-        let reader = TableReader::open(&*data, data.len()).await.unwrap();
-        let mut it = reader.iter();
+        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let mut it = reader.scan();
         it.seek_to_first().await.unwrap();
         assert!(it.valid());
         assert_eq!(it.key(), vec![1u8]);
@@ -140,8 +140,8 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let reader = TableReader::open(&*data, data.len()).await.unwrap();
-        let mut it = reader.iter();
+        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let mut it = reader.scan();
         for t in tests {
             it.seek(&t.target).await.unwrap();
             let key_opt = if it.valid() {
@@ -198,8 +198,8 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let reader = TableReader::open(&*data, data.len()).await.unwrap();
-        let mut it = reader.iter();
+        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let mut it = reader.scan();
         for t in tests {
             it.seek(&t.target).await.unwrap();
             let key_opt = if it.valid() {
@@ -244,7 +244,7 @@ mod tests {
         ];
 
         let data = build_table(129).await;
-        let reader = TableReader::open(&*data, data.len()).await.unwrap();
+        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
         for t in tests {
             let key_opt = reader.get(&t.target).await.unwrap();
             match_key(&key_opt, &t.expect);

@@ -28,27 +28,6 @@ pub trait Read {
     ) -> Poll<io::Result<usize>>;
 }
 
-macro_rules! impl_read {
-    () => {
-        fn poll_read(
-            self: Pin<&Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-            pos: usize,
-        ) -> Poll<io::Result<usize>> {
-            Pin::new(&**self).poll_read(cx, buf, pos)
-        }
-    };
-}
-
-impl<T: Read + ?Sized + Unpin> Read for Box<T> {
-    impl_read!();
-}
-
-impl<T: Read + ?Sized + Unpin> Read for &mut T {
-    impl_read!();
-}
-
 impl<T> Read for Pin<T>
 where
     T: DerefMut + Unpin,
@@ -64,22 +43,49 @@ where
     }
 }
 
-impl Read for &[u8] {
-    fn poll_read(
-        self: Pin<&Self>,
-        _: &mut Context<'_>,
-        buf: &mut [u8],
-        pos: usize,
-    ) -> Poll<io::Result<usize>> {
-        let len = if pos < self.len() {
-            let end = std::cmp::min(self.len(), pos + buf.len());
-            let src = &self[pos..end];
-            let dst = &mut buf[0..src.len()];
-            dst.copy_from_slice(src);
-            src.len()
-        } else {
-            0
-        };
-        Poll::Ready(Ok(len))
-    }
+macro_rules! impl_read_for_ptrs {
+    ($($t:ty),+) => {
+        $(
+        impl<T: Read + ?Sized + Unpin> Read for $t {
+            fn poll_read(
+                self: Pin<&Self>,
+                cx: &mut Context<'_>,
+                buf: &mut [u8],
+                pos: usize,
+            ) -> Poll<io::Result<usize>> {
+                Pin::new(&**self).poll_read(cx, buf, pos)
+            }
+        }
+        )*
+    };
 }
+
+impl_read_for_ptrs!(&mut T, Box<T>);
+
+macro_rules! impl_read_for_slice {
+    ($($t:ty),+) => {
+        $(
+        impl Read for $t {
+            fn poll_read(
+                self: Pin<&Self>,
+                _: &mut Context<'_>,
+                buf: &mut [u8],
+                pos: usize,
+            ) -> Poll<io::Result<usize>> {
+                let len = if pos < self.len() {
+                    let end = std::cmp::min(self.len(), pos + buf.len());
+                    let src = &self[pos..end];
+                    let dst = &mut buf[0..src.len()];
+                    dst.copy_from_slice(src);
+                    src.len()
+                } else {
+                    0
+                };
+                Poll::Ready(Ok(len))
+            }
+        }
+    )*
+    };
+}
+
+impl_read_for_slice!(&[u8], Vec<u8>);

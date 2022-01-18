@@ -61,14 +61,14 @@ fn next_entry_offset(data: &[u8], offset: usize) -> usize {
     value_range(data, offset).end
 }
 
-pub struct BlockIter {
+pub struct BlockScanner {
     data: Arc<[u8]>,
     num_restarts: usize,
     restart_offset: usize,
     current_offset: usize,
 }
 
-impl BlockIter {
+impl BlockScanner {
     fn next_entry(&mut self) {
         if self.current_offset < self.restart_offset {
             let next_offset = next_entry_offset(&self.data, self.current_offset);
@@ -96,7 +96,7 @@ impl BlockIter {
 }
 
 #[allow(dead_code)]
-impl BlockIter {
+impl BlockScanner {
     pub fn new(data: Arc<[u8]>) -> Self {
         let num_restarts = read_num_restarts(&data) as usize;
         let tail_len = (num_restarts + 1) * core::mem::size_of::<u32>();
@@ -104,7 +104,7 @@ impl BlockIter {
         debug_assert!(data.len() >= tail_len);
 
         let restart_offset = data.len() - tail_len;
-        BlockIter {
+        BlockScanner {
             data,
             num_restarts,
             restart_offset,
@@ -176,7 +176,7 @@ mod tests {
     #[tokio::test]
     async fn seek_to_first() {
         let data = build_block(128);
-        let mut it = BlockIter::new(data);
+        let mut it = BlockScanner::new(data);
         it.seek_to_first();
         assert!(it.valid());
         assert_eq!(it.key(), vec![1u8]);
@@ -223,7 +223,7 @@ mod tests {
         ];
 
         let data = build_block(129);
-        let mut it = BlockIter::new(data);
+        let mut it = BlockScanner::new(data);
         for t in tests {
             it.seek(&t.target);
             let key_opt = if it.valid() {
@@ -280,7 +280,7 @@ mod tests {
         ];
 
         let data = build_block(129);
-        let mut it = BlockIter::new(data);
+        let mut it = BlockScanner::new(data);
         for t in tests {
             it.seek(&t.target);
             let key_opt = if it.valid() {

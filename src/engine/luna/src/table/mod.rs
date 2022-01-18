@@ -14,16 +14,22 @@
 
 mod block_builder;
 mod block_handle;
-mod block_iter;
 mod block_reader;
+mod block_scanner;
 mod table_builder;
-mod table_iter;
 mod table_reader;
+mod table_scanner;
+
+use std::sync::Arc;
+
+use engula_futures::io::RandomRead;
+
+pub type RandomReader = Arc<dyn RandomRead + Unpin>;
 
 pub use self::{
     table_builder::{TableBuilder, TableBuilderOptions},
-    table_iter::TableIter,
     table_reader::TableReader,
+    table_scanner::TableScanner,
 };
 
 #[cfg(test)]
