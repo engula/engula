@@ -812,6 +812,9 @@ version = "0.3.0"
 dependencies = [
  "bytes",
  "engula-futures",
+ "engula-journal",
+ "engula-kernel",
+ "engula-storage",
  "tempfile",
  "thiserror",
  "tokio",
