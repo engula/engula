@@ -49,7 +49,7 @@ impl super::EpochState for EpochState {
 pub struct EpochStateStream {}
 
 impl Stream for EpochStateStream {
-    type Item = Result<EpochState>;
+    type Item = Box<dyn super::EpochState>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!();
@@ -91,19 +91,17 @@ where
     }
 }
 
-#[async_trait]
-impl<M> super::Journal for Client<M>
+impl<M> super::LeaderBasedJournal for Client<M>
 where
     M: Master + Send + Sync,
 {
-    type EpochState = EpochState;
     type StateStream = EpochStateStream;
 
-    async fn current_state(&self, _stream_name: &str) -> Result<Self::EpochState> {
+    fn current_state(&self, _stream_name: &str) -> Result<Box<dyn super::EpochState>> {
         todo!();
     }
 
-    async fn subscribe_status(&self, _stream_name: &str) -> Self::StateStream {
+    fn subscribe_status(&self, _stream_name: &str) -> Result<Self::StateStream> {
         todo!();
     }
 }
