@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod codec;
 mod database;
 mod error;
 mod mem_table;
@@ -22,7 +23,24 @@ mod version;
 mod write_batch;
 
 pub use self::{
-    database::Database,
+    database::{Database, WriteOptions},
     error::{Error, Result},
     write_batch::WriteBatch,
 };
+
+#[cfg(test)]
+mod tests {
+    use engula_kernel::MemKernel;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        let kernel = MemKernel::open().await.unwrap();
+        let db = Database::open(kernel).await.unwrap();
+        let wopts = WriteOptions::default();
+        let mut wb = WriteBatch::default();
+        wb.put(b"a", b"b").delete(b"c");
+        db.write(&wopts, wb).await.unwrap();
+    }
+}

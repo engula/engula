@@ -9,6 +9,9 @@ description = "A transactional key-value storage engine."
 
 [dependencies]
 engula-futures = { version = "0.3.0", path = "../../futures" }
+engula-journal = { version = "0.3.0", path = "../../journal" }
+engula-kernel = { version = "0.3.0", path = "../../kernel" }
+engula-storage = { version = "0.3.0", path = "../../storage" }
 
 bytes = "1.1.0"
 thiserror = "1.0.3"

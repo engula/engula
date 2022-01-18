@@ -22,6 +22,12 @@ pub enum Error {
     InvalidArgument(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Kernel(#[from] engula_kernel::Error),
+    #[error(transparent)]
+    Journal(#[from] engula_journal::Error),
+    #[error(transparent)]
+    Storage(#[from] engula_storage::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
