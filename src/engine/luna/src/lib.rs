@@ -23,7 +23,7 @@ mod version;
 mod write_batch;
 
 pub use self::{
-    database::{Database, WriteOptions},
+    database::{Database, ReadOptions, WriteOptions},
     error::{Error, Result},
     write_batch::WriteBatch,
 };
@@ -38,9 +38,22 @@ mod tests {
     async fn test() {
         let kernel = MemKernel::open().await.unwrap();
         let db = Database::open(kernel).await.unwrap();
+        let ropts = ReadOptions::default();
         let wopts = WriteOptions::default();
+        let snapshot = db.snapshot().await;
+
         let mut wb = WriteBatch::default();
-        wb.put(b"a", b"b").delete(b"c");
+        let k1 = vec![1];
+        let k2 = vec![2];
+        wb.put(&k1, &k1).put(&k2, &k2).delete(&k2);
         db.write(&wopts, wb).await.unwrap();
+
+        assert_eq!(db.get(&ropts, &k1).await.unwrap(), Some(k1.clone()));
+        assert_eq!(db.get(&ropts, &k2).await.unwrap(), None);
+
+        let ropts = ReadOptions {
+            snapshot: Some(snapshot),
+        };
+        assert_eq!(db.get(&ropts, &k1).await.unwrap(), None);
     }
 }

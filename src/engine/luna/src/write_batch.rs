@@ -19,18 +19,21 @@ use crate::{
 
 #[derive(Default)]
 pub struct WriteBatch {
-    ts: Timestamp,
-    writes: Vec<(Vec<u8>, Value)>,
+    pub(crate) ts: Timestamp,
+    pub(crate) writes: Vec<(Vec<u8>, Value)>,
+    pub(crate) estimated_size: usize,
 }
 
 impl WriteBatch {
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
         self.writes.push((key.to_owned(), Some(value.to_owned())));
+        self.estimated_size += key.len() + value.len();
         self
     }
 
     pub fn delete(&mut self, key: &[u8]) -> &mut Self {
         self.writes.push((key.to_owned(), None));
+        self.estimated_size += key.len();
         self
     }
 

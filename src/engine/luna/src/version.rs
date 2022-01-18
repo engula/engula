@@ -17,24 +17,23 @@ use std::sync::Arc;
 use engula_futures::io::RandomRead;
 
 use crate::{
-    mem_table::MemTable,
+    mem_table::{MemTable, MemTableScanner},
     merging_scanner::MergingScanner,
     table::{TableIter, TableReader},
 };
 
 #[allow(dead_code)]
-pub struct Version<M, R> {
-    mem: MemVersion<M>,
+pub struct Version<R> {
+    mem: MemVersion,
     base: BaseVersion<R>,
 }
 
 #[allow(dead_code)]
-impl<M, R> Version<M, R>
+impl<R> Version<R>
 where
-    M: MemTable,
     R: RandomRead + Unpin,
 {
-    pub fn scan(&self) -> Scanner<'_, M::Scanner, R> {
+    pub fn scan(&self) -> Scanner<'_, R> {
         let mem = self.mem.scan();
         let base = self.base.scan();
         Scanner::new(mem, base)
@@ -42,29 +41,26 @@ where
 }
 
 /// Scans all entries in a [`Version`].
-pub struct Scanner<'a, S, R> {
-    _mem: MemScanner<S>,
+pub struct Scanner<'a, R> {
+    _mem: MemScanner,
     _base: BaseScanner<'a, R>,
 }
 
-impl<'a, S, R> Scanner<'a, S, R> {
-    pub fn new(_mem: MemScanner<S>, _base: BaseScanner<'a, R>) -> Self {
+impl<'a, R> Scanner<'a, R> {
+    pub fn new(_mem: MemScanner, _base: BaseScanner<'a, R>) -> Self {
         Self { _mem, _base }
     }
 }
 
-pub struct MemVersion<M> {
-    tables: Vec<Arc<M>>,
+pub struct MemVersion {
+    tables: Vec<Arc<MemTable>>,
 }
 
 /// Scans all tables in a [`MemVersion`].
-type MemScanner<S> = MergingScanner<S>;
+type MemScanner = MergingScanner<MemTableScanner>;
 
-impl<M> MemVersion<M>
-where
-    M: MemTable,
-{
-    pub fn scan(&self) -> MergingScanner<M::Scanner> {
+impl MemVersion {
+    pub fn scan(&self) -> MemScanner {
         let children = self.tables.iter().map(|x| x.scan()).collect();
         MergingScanner::new(children)
     }

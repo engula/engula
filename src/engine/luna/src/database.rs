@@ -17,7 +17,7 @@ use engula_journal::{StreamReader, StreamWriter};
 use engula_kernel::{Kernel, KernelUpdateBuilder, UpdateWriter};
 use tokio::sync::Mutex;
 
-use crate::{codec::Timestamp, scan::Scan, version::Scanner, Result, WriteBatch};
+use crate::{codec::Timestamp, mem_table::MemTable, version::Scanner, Result, WriteBatch};
 
 pub struct Database<K: Kernel> {
     inner: Mutex<Inner<K>>,
@@ -29,6 +29,7 @@ struct Inner<K: Kernel> {
     _update_reader: K::UpdateReader,
     _update_writer: K::UpdateWriter,
     last_ts: Timestamp,
+    mem: MemTable,
 }
 
 const DEFAULT_NAME: &str = "default";
@@ -56,6 +57,7 @@ impl<K: Kernel> Database<K> {
             _update_reader: update_reader,
             _update_writer: update_writer,
             last_ts: 0,
+            mem: MemTable::new(0),
         };
         let db = Database {
             inner: Mutex::new(inner),
@@ -81,31 +83,40 @@ impl<K: Kernel> Database<K> {
         batch.set_timestamp(inner.last_ts);
         let data = batch.encode_to_vec();
         inner.stream_writer.append(data).await?;
+        inner.mem.write(batch);
         Ok(())
     }
 
-    pub async fn get(&self, _options: &ReadOptions, _key: &[u8]) -> Result<Option<Vec<u8>>> {
-        todo!();
+    pub async fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let inner = self.inner.lock().await;
+        let ts = if let Some(snapshot) = options.snapshot.as_ref() {
+            snapshot.ts
+        } else {
+            inner.last_ts
+        };
+        Ok(inner.mem.get(ts, key))
     }
 
-    pub async fn scan<'a, S, R>(&'a self, _options: &ReadOptions) -> Scanner<'a, S, R>
+    pub async fn scan<'a, S, R>(&'a self, _options: &ReadOptions) -> Scanner<'a, R>
     where
-        S: Scan,
         R: RandomRead + 'a,
     {
         todo!();
     }
 
-    pub fn snapshot(&self) -> Snapshot {
-        todo!();
+    pub async fn snapshot(&self) -> Snapshot {
+        let inner = self.inner.lock().await;
+        Snapshot { ts: inner.last_ts }
     }
 }
 
-pub struct Snapshot {}
+pub struct Snapshot {
+    ts: Timestamp,
+}
 
 #[derive(Default)]
 pub struct ReadOptions {
-    _snapshot: Option<Snapshot>,
+    pub snapshot: Option<Snapshot>,
 }
 
 #[derive(Default)]
