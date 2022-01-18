@@ -27,24 +27,26 @@ pub enum Role {
 }
 
 /// The role and leader's address of current epoch.
-pub trait EpochState {
-    fn epoch(&self) -> u64;
+#[derive(Debug, Clone)]
+pub struct EpochState {
+    pub epoch: u64,
 
     /// The role of the associated stream.
-    fn role(&self) -> Role;
+    pub role: Role,
 
     /// The leader of the associated stream.
-    fn leader(&self) -> Option<String>;
+    pub leader: Option<String>,
 }
 
 /// A trait of shared journals. Those journal's streams divide time into epochs,
 /// and each epoch have at most one producer.
 pub trait Journal: crate::Journal {
-    type StateStream: Stream<Item = Box<dyn EpochState>>;
+    type StateStream: Stream<Item = EpochState>;
 
     /// Return the current epoch state of the specified stream.
-    fn current_state(&self, stream_name: &str) -> Result<Box<dyn EpochState>>;
+    fn current_state(&self, stream_name: &str) -> Result<EpochState>;
 
     /// Return a endless stream which returns a new epoch state once the
-    fn subscribe_status(&self, stream_name: &str) -> Result<Self::StateStream>;
+    /// associated stream enters a new epoch.
+    fn subscribe_state(&self, stream_name: &str) -> Result<Self::StateStream>;
 }

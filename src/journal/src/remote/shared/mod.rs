@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::leader_based::{EpochState, Journal as LeaderBasedJournal, Role};
+use super::leader_based::{EpochState, Journal as LeaderBasedJournal};
 
 mod journal;
 mod master;
