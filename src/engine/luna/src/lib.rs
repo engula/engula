@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
 mod database;
 mod error;
 mod mem_table;
@@ -20,47 +19,10 @@ mod merging_scanner;
 mod scan;
 mod table;
 mod version;
+mod write_batch;
 
 pub use self::{
-    collection::Collection,
-    database::{Database, Txn},
+    database::Database,
     error::{Error, Result},
+    write_batch::WriteBatch,
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn database() -> Result<()> {
-        let db = Database::open().await?;
-        let co = db.create_collection("abc").await?;
-
-        let k1 = vec![1];
-        let k2 = vec![2];
-
-        let mut txn = db.txn().await?;
-        txn.put(&co, k1.clone(), k1.clone());
-        txn.put(&co, k2.clone(), k2.clone());
-        txn.commit().await?;
-
-        let txn = db.txn().await?;
-        let got = txn.get(&co, &k1).await?;
-        assert_eq!(got.as_ref(), Some(&k1));
-        let got = txn.get(&co, &k2).await?;
-        assert_eq!(got.as_ref(), Some(&k2));
-
-        let mut txn = db.txn().await?;
-        txn.put(&co, k1.clone(), k2.clone());
-        txn.delete(&co, k2.clone());
-        txn.commit().await?;
-
-        let txn = db.txn().await?;
-        let got = txn.get(&co, &k1).await?;
-        assert_eq!(got.as_ref(), Some(&k2));
-        let got = txn.get(&co, &k2).await?;
-        assert_eq!(got.as_ref(), None);
-
-        Ok(())
-    }
-}
