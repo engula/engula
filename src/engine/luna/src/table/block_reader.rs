@@ -14,9 +14,9 @@
 
 use std::sync::Arc;
 
-use engula_futures::io::{RandomRead, RandomReadExt};
+use engula_futures::io::RandomReadExt;
 
-use super::block_iter::BlockIter;
+use super::{block_scanner::BlockScanner, RandomReader};
 use crate::{table::block_handle::BlockHandle, Result};
 
 pub struct BlockReader {
@@ -30,15 +30,12 @@ impl BlockReader {
         }
     }
 
-    pub fn iter(&self) -> BlockIter {
-        BlockIter::new(self.data.clone())
+    pub fn scan(&self) -> BlockScanner {
+        BlockScanner::new(self.data.clone())
     }
 }
 
-pub async fn read_block<R>(reader: &R, block_handle: &BlockHandle) -> Result<Vec<u8>>
-where
-    R: RandomRead + Unpin,
-{
+pub async fn read_block(reader: &RandomReader, block_handle: &BlockHandle) -> Result<Vec<u8>> {
     let mut content = vec![0u8; block_handle.length as usize];
     reader
         .read_exact(&mut content, block_handle.offset as usize)

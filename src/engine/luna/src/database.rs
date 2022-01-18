@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_futures::io::RandomRead;
 use engula_journal::{StreamReader, StreamWriter};
 use engula_kernel::{Kernel, KernelUpdateBuilder, UpdateWriter};
 use tokio::sync::Mutex;
@@ -97,10 +96,7 @@ impl<K: Kernel> Database<K> {
         Ok(inner.mem.get(ts, key))
     }
 
-    pub async fn scan<'a, S, R>(&'a self, _options: &ReadOptions) -> Scanner<'a, R>
-    where
-        R: RandomRead + 'a,
-    {
+    pub async fn scan(&self, _options: &ReadOptions) -> Scanner {
         todo!();
     }
 
