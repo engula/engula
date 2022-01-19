@@ -72,13 +72,13 @@ impl<W: SequentialWrite + Unpin> TableBuilder<W> {
         Ok(())
     }
 
-    pub async fn finish(mut self) -> Result<()> {
+    pub async fn finish(mut self) -> Result<u64> {
         self.finish_data_block().await?;
         let block = self.index_block_builder.finish();
         let handle = self.table_writer.write(block).await?;
         self.table_writer.write(&handle.encode_to_vec()).await?;
         self.table_writer.close().await?;
-        Ok(())
+        Ok(self.table_writer.offset())
     }
 
     async fn finish_data_block(&mut self) -> Result<()> {
@@ -101,6 +101,10 @@ struct TableWriter<W> {
 impl<W: SequentialWrite + Unpin> TableWriter<W> {
     fn new(writer: W) -> Self {
         Self { writer, offset: 0 }
+    }
+
+    fn offset(&self) -> u64 {
+        self.offset
     }
 
     async fn write(&mut self, data: &[u8]) -> Result<BlockHandle> {

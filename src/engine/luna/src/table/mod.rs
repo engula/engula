@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use engula_futures::io::RandomRead;
 
-pub type RandomReader = Arc<dyn RandomRead + Unpin>;
+pub type RandomReader = Arc<dyn RandomRead + Send + Sync + Unpin>;
 
 pub use self::{
     table_builder::{TableBuilder, TableBuilderOptions},
