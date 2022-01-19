@@ -12,14 +12,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::leader_based::{EpochState, Journal as LeaderBasedJournal};
+use super::leader_based::{EpochState, Journal as LeaderBasedJournal, Role};
 
 mod journal;
 mod master;
 mod orchestrator;
+
+mod segment;
 mod stream_reader;
 mod stream_writer;
 
-pub use master::Master;
 pub use stream_reader::Reader as StreamReader;
 pub use stream_writer::Writer as StreamWriter;
+
+/// `Entry` is the minimum unit of the journal system. A continuous entries
+/// compound a stream.
+#[derive(Debug)]
+#[allow(dead_code)]
+enum Entry {
+    /// A placeholder, used in recovery phase.
+    Hole,
+    Event(Box<[u8]>),
+}
+
+/// `SegmentMeta` records the metadata for locating a segment and its data.
+#[derive(Debug)]
+#[allow(dead_code)]
+struct SegmentMeta {
+    stream_name: String,
+
+    /// A monotonic value in a stream. Allowing each segment's epoch value to be
+    /// unique, it's easier to find a segment by its segment name and epoch.
+    epoch: u32,
+
+    /// Which journal server holds the segment's replica.
+    copy_set: Vec<String>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+enum ReplicaState {
+    /// This replica isn't ready, it trying to copy entries from the other
+    /// replicas.
+    Placing,
+    /// This replica is receiving entries.
+    Receiving,
+    /// This replica does not receive any entries.
+    Sealed,
+}
+
+/// `ReplicaMeta` records the state of a replica and which segment it belongs
+/// to.
+#[derive(Debug)]
+#[allow(dead_code)]
+struct ReplicaMeta {
+    stream_name: String,
+    epoch: u32,
+    state: ReplicaState,
+}
