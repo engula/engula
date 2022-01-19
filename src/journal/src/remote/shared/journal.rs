@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use engula_futures::stream::batch::VecResultStream;
 use futures::Stream;
 
-use super::{Master, StreamReader, StreamWriter};
+use super::{StreamReader, StreamWriter};
 use crate::{Error, Result};
 
 #[derive(Debug)]
@@ -36,15 +36,10 @@ impl Stream for EpochStateStream {
 }
 
 #[derive(Debug)]
-pub struct Client<M: Master> {
-    _master: M,
-}
+pub struct Client {}
 
 #[async_trait]
-impl<M> crate::Journal for Client<M>
-where
-    M: Master + Send + Sync,
-{
+impl crate::Journal for Client {
     type StreamLister = VecResultStream<String, Error>;
     type StreamReader = StreamReader;
     type StreamWriter = StreamWriter;
@@ -70,10 +65,7 @@ where
     }
 }
 
-impl<M> super::LeaderBasedJournal for Client<M>
-where
-    M: Master + Send + Sync,
-{
+impl super::LeaderBasedJournal for Client {
     type StateStream = EpochStateStream;
 
     fn current_state(&self, _stream_name: &str) -> Result<super::EpochState> {
