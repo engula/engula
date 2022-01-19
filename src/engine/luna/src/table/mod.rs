@@ -31,24 +31,3 @@ pub use self::{
     table_reader::TableReader,
     table_scanner::TableScanner,
 };
-
-#[cfg(test)]
-mod tests {
-    use tokio::fs::File;
-
-    use super::*;
-    use crate::Result;
-
-    #[tokio::test]
-    async fn table() -> Result<()> {
-        let file = tempfile::tempfile()?;
-        let options = TableBuilderOptions::default();
-        let mut builder = TableBuilder::new(options, File::from_std(file));
-        for i in 0..1024u64 {
-            let k = i.to_be_bytes();
-            builder.add(&k, &k).await?;
-        }
-        builder.finish().await?;
-        Ok(())
-    }
-}

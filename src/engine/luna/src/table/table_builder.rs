@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use engula_futures::io::{SequentialWrite, SequentialWriteExt};
 
 use super::{block_builder::BlockBuilder, block_handle::BlockHandle};
 use crate::Result;
@@ -50,7 +50,7 @@ pub struct TableBuilder<W> {
 }
 
 #[allow(dead_code)]
-impl<W: AsyncWrite + Unpin> TableBuilder<W> {
+impl<W: SequentialWrite + Unpin> TableBuilder<W> {
     pub fn new(options: TableBuilderOptions, writer: W) -> Self {
         let data_block_builder = BlockBuilder::new(options.block_restart_interval);
         let index_block_builder = BlockBuilder::new(1);
@@ -98,7 +98,7 @@ struct TableWriter<W> {
     offset: u64,
 }
 
-impl<W: AsyncWrite + Unpin> TableWriter<W> {
+impl<W: SequentialWrite + Unpin> TableWriter<W> {
     fn new(writer: W) -> Self {
         Self { writer, offset: 0 }
     }
@@ -111,7 +111,7 @@ impl<W: AsyncWrite + Unpin> TableWriter<W> {
     }
 
     async fn close(&mut self) -> Result<()> {
-        self.writer.shutdown().await?;
+        self.writer.close().await?;
         Ok(())
     }
 }

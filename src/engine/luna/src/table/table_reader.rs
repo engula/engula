@@ -73,8 +73,7 @@ mod tests {
             ..Default::default()
         };
         let mut buf = vec![];
-        let cursor = std::io::Cursor::new(&mut buf);
-        let mut builder = TableBuilder::new(opt, cursor);
+        let mut builder = TableBuilder::new(opt, &mut buf);
         for id in 1u8..size {
             builder.add(&[id], &[id]).await.unwrap();
         }
