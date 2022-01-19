@@ -15,7 +15,7 @@
 pub trait Scan {
     fn seek_to_first(&mut self);
 
-    fn seek(&mut self);
+    fn seek(&mut self, target: &[u8]);
 
     fn next(&mut self);
 

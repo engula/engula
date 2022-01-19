@@ -32,7 +32,7 @@ where
         unimplemented!();
     }
 
-    fn seek(&mut self) {
+    fn seek(&mut self, _target: &[u8]) {
         unimplemented!();
     }
 

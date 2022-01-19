@@ -12,23 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeMap, ops::Bound::*, sync::Mutex};
+use std::{
+    collections::{btree_map, BTreeMap},
+    ops::Bound::*,
+    sync::{Arc, Mutex},
+};
 
 use uuid::Uuid;
 
 use crate::{
-    codec::{Timestamp, Value},
+    codec::{InternalKey, ParsedInternalKey, Timestamp, ValueKind},
     scan::Scan,
     WriteBatch,
 };
 
 pub struct Memtable {
     id: String,
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
 }
 
-type ValueTree = BTreeMap<Timestamp, Value>;
-type Tree = BTreeMap<Vec<u8>, ValueTree>;
+type Tree = BTreeMap<InternalKey, Vec<u8>>;
+type TreeIter = btree_map::IntoIter<InternalKey, Vec<u8>>;
 
 struct Inner {
     tree: Tree,
@@ -45,32 +49,54 @@ impl Memtable {
         };
         Memtable {
             id: Uuid::new_v4().to_string(),
-            inner: Mutex::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 
     pub fn write(&self, batch: WriteBatch) {
         let mut inner = self.inner.lock().unwrap();
-        inner.last_ts = batch.ts;
+        inner.last_ts = batch.ts + batch.writes.len() as u64;
         inner.estimated_size += batch.estimated_size;
+        let mut next_ts = batch.ts;
         for w in batch.writes {
-            let vtree = inner.tree.entry(w.0).or_insert_with(BTreeMap::new);
-            vtree.insert(batch.ts, w.1);
+            if let Some(value) = w.1 {
+                let pk = ParsedInternalKey {
+                    user_key: &w.0,
+                    timestamp: next_ts,
+                    value_kind: ValueKind::Some,
+                };
+                inner.tree.insert(pk.into(), value);
+            } else {
+                let pk = ParsedInternalKey {
+                    user_key: &w.0,
+                    timestamp: next_ts,
+                    value_kind: ValueKind::None,
+                };
+                inner.tree.insert(pk.into(), Vec::new());
+            }
+            next_ts += 1;
         }
     }
 
     pub fn get(&self, ts: Timestamp, key: &[u8]) -> Option<Vec<u8>> {
         let inner = self.inner.lock().unwrap();
-        inner.tree.get(key).and_then(|vtree| {
-            vtree
-                .range((Unbounded, Included(ts)))
-                .next_back()
-                .and_then(|x| x.1.clone())
-        })
+        let lookup_key = InternalKey::for_lookup(key, ts);
+        inner
+            .tree
+            .range((Included(lookup_key), Unbounded))
+            .next()
+            .and_then(|x| {
+                let pk = x.0.parse();
+                match pk.value_kind {
+                    ValueKind::None => None,
+                    ValueKind::Some => Some(x.1.clone()),
+                    _ => panic!(),
+                }
+            })
     }
 
-    pub fn scan(&self) -> MemtableScanner {
-        todo!();
+    pub fn scan(&self, ts: Timestamp) -> MemtableScanner {
+        MemtableScanner::new(self.inner.clone(), ts)
     }
 
     pub fn id(&self) -> &str {
@@ -86,30 +112,70 @@ impl Memtable {
     }
 }
 
-pub struct MemtableScanner {}
+pub struct MemtableScanner {
+    inner: Arc<Mutex<Inner>>,
+    ts: Timestamp,
+    iter: Option<TreeIter>,
+    item: Option<(InternalKey, Vec<u8>)>,
+}
+
+impl MemtableScanner {
+    fn new(inner: Arc<Mutex<Inner>>, ts: Timestamp) -> Self {
+        Self {
+            inner,
+            ts,
+            iter: None,
+            item: None,
+        }
+    }
+}
 
 impl Scan for MemtableScanner {
     fn seek_to_first(&mut self) {
-        todo!();
+        {
+            let inner = self.inner.lock().unwrap();
+            self.iter = Some(inner.tree.clone().into_iter());
+        }
+        self.next();
     }
 
-    fn seek(&mut self) {
-        todo!();
+    fn seek(&mut self, target: &[u8]) {
+        {
+            let inner = self.inner.lock().unwrap();
+            let lookup_key = InternalKey::for_lookup(target, self.ts);
+            let tree: Tree = inner
+                .tree
+                .range((Included(lookup_key), Unbounded))
+                .map(|x| (x.0.clone(), x.1.clone()))
+                .collect();
+            self.iter = Some(tree.into_iter());
+        }
+        self.next();
     }
 
     fn next(&mut self) {
-        todo!();
+        if let Some(iter) = self.iter.as_mut() {
+            for item in iter.by_ref() {
+                let pk = item.0.parse();
+                if pk.timestamp <= self.ts {
+                    self.item = Some(item);
+                    return;
+                }
+            }
+            self.iter = None;
+        }
+        self.item = None;
     }
 
     fn valid(&self) -> bool {
-        todo!();
+        self.item.is_some()
     }
 
     fn key(&self) -> &[u8] {
-        todo!();
+        self.item.as_ref().unwrap().0.as_bytes()
     }
 
     fn value(&self) -> &[u8] {
-        todo!();
+        &self.item.as_ref().unwrap().1
     }
 }
