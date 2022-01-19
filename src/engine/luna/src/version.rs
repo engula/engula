@@ -18,6 +18,7 @@ use crate::{
     memtable::{Memtable, MemtableScanner},
     merging_scanner::MergingScanner,
     table::{TableReader, TableScanner},
+    ReadOptions,
 };
 
 #[derive(Clone, Default)]
@@ -27,9 +28,9 @@ pub struct Version {
 }
 
 impl Version {
-    pub fn scan(&self) -> Scanner {
-        let mem = self.mem.scan();
-        let base = self.base.scan();
+    pub fn scan(&self, opts: &ReadOptions) -> Scanner {
+        let mem = self.mem.scan(opts);
+        let base = self.base.scan(opts);
         Scanner::new(mem, base)
     }
 }
@@ -55,8 +56,12 @@ pub struct MemVersion {
 type MemScanner = MergingScanner<MemtableScanner>;
 
 impl MemVersion {
-    pub fn scan(&self) -> MemScanner {
-        let children = self.tables.iter().map(|x| x.scan()).collect();
+    pub fn scan(&self, opts: &ReadOptions) -> MemScanner {
+        let children = self
+            .tables
+            .iter()
+            .map(|x| x.scan(opts.snapshot.ts))
+            .collect();
         MergingScanner::new(children)
     }
 }
@@ -67,8 +72,8 @@ pub struct BaseVersion {
 }
 
 impl BaseVersion {
-    pub fn scan(&self) -> BaseScanner {
-        let children = self.levels.iter().map(|x| x.scan()).collect();
+    pub fn scan(&self, opts: &ReadOptions) -> BaseScanner {
+        let children = self.levels.iter().map(|x| x.scan(opts)).collect();
         BaseScanner::new(children)
     }
 }
@@ -90,7 +95,7 @@ pub struct LevelState {
 }
 
 impl LevelState {
-    pub fn scan(&self) -> LevelScanner {
+    pub fn scan(&self, _opts: &ReadOptions) -> LevelScanner {
         let children = self.tables.iter().map(|x| x.scan()).collect();
         LevelScanner::new(children)
     }

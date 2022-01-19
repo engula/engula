@@ -61,9 +61,9 @@ impl Store {
         Ok(inner.mem.get(options.snapshot.ts, key))
     }
 
-    pub async fn scan(&self, _options: &ReadOptions) -> Scanner {
+    pub async fn scan(&self, options: &ReadOptions) -> Scanner {
         let inner = self.inner.lock().await;
-        inner.vset.back().unwrap().scan()
+        inner.vset.back().unwrap().scan(options)
     }
 
     pub async fn write(&self, batch: WriteBatch) {

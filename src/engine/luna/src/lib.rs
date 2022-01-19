@@ -42,7 +42,9 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
-        let opts = Options::default();
+        let opts = Options {
+            memtable_size: 1024,
+        };
         let kernel = MemKernel::open().await.unwrap();
         let db = Database::open(opts, kernel).await.unwrap();
         let ropts = ReadOptions::default();
@@ -60,5 +62,13 @@ mod tests {
 
         let ropts = ReadOptions { snapshot };
         assert_eq!(db.get(&ropts, &k1).await.unwrap(), None);
+
+        // Writes more data to test flushes.
+        for i in 0..1024u64 {
+            let k = i.to_be_bytes().to_vec();
+            let mut wb = WriteBatch::default();
+            wb.put(&k, &k);
+            db.write(&wopts, wb).await.unwrap();
+        }
     }
 }
