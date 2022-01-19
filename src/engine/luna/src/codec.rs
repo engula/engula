@@ -13,6 +13,9 @@
 // limitations under the License.
 
 use bytes::BufMut;
+use serde::{Deserialize, Serialize};
+
+use crate::{Error, Result};
 
 pub type Timestamp = u64;
 pub type Value = Option<Vec<u8>>;
@@ -58,5 +61,46 @@ pub fn put_value(buf: &mut impl BufMut, value: &Value) {
         None => {
             buf.put_u8(ValueKind::None.into());
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FlushDesc {
+    pub memtable_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum UpdateDesc {
+    Flush(FlushDesc),
+}
+
+impl UpdateDesc {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let buf = serde_json::to_string(self).unwrap();
+        buf.into()
+    }
+
+    pub fn decode_from(buf: &[u8]) -> Result<Self> {
+        let desc: Self =
+            serde_json::from_slice(buf).map_err(|x| Error::Corrupted(x.to_string()))?;
+        Ok(desc)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TableDesc {
+    pub table_size: u64,
+}
+
+impl TableDesc {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let buf = serde_json::to_string(self).unwrap();
+        buf.into()
+    }
+
+    pub fn decode_from(buf: &[u8]) -> Result<Self> {
+        let desc: Self =
+            serde_json::from_slice(buf).map_err(|x| Error::Corrupted(x.to_string()))?;
+        Ok(desc)
     }
 }

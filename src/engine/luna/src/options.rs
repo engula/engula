@@ -16,14 +16,12 @@ use crate::codec::Timestamp;
 
 pub struct Options {
     pub memtable_size: usize,
-    pub sst_size: usize,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
             memtable_size: 8 * 1024 * 1024,
-            sst_size: 32 * 1024 * 1024,
         }
     }
 }

@@ -20,6 +20,8 @@ pub enum Error {
     AlreadyExists(String),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error("corrupted: {0}")]
+    Corrupted(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -28,6 +30,14 @@ pub enum Error {
     Journal(#[from] engula_journal::Error),
     #[error(transparent)]
     Storage(#[from] engula_storage::Error),
+    #[error(transparent)]
+    Unknown(Box<dyn std::error::Error>),
+}
+
+impl Error {
+    pub fn unknown(err: impl std::error::Error + 'static) -> Self {
+        Self::Unknown(Box::new(err))
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

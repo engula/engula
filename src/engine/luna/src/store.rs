@@ -12,54 +12,94 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, sync::Arc};
 
-use engula_kernel::Kernel;
+use engula_kernel::{Kernel, UpdateReader};
+use tokio::sync::Mutex;
 
 use crate::{
+    codec::{FlushDesc, TableDesc, UpdateDesc},
+    flush_scheduler::FlushScheduler,
     memtable::Memtable,
-    version::{Scanner, Version},
-    Options, ReadOptions, Result, WriteBatch,
+    table::TableReader,
+    version::{LevelState, Scanner, Version},
+    Options, ReadOptions, Result, WriteBatch, DEFAULT_NAME,
 };
 
-pub struct Store<K: Kernel> {
-    inner: Mutex<Inner>,
-    _kernel: Arc<K>,
+pub struct Store {
+    inner: Arc<Mutex<Inner>>,
     options: Options,
+    flush_scheduler: FlushScheduler,
 }
 
-impl<K: Kernel> Store<K> {
-    pub fn new(options: Options, kernel: Arc<K>) -> Self {
-        let mem = Arc::new(Memtable::new(0));
-        let current = Arc::new(Version::default());
-        let mut vset = VecDeque::new();
-        vset.push_back(current);
-        let inner = Inner { mem, vset };
+impl Store {
+    pub fn new<K>(options: Options, kernel: Arc<K>) -> Self
+    where
+        K: Kernel + Send + Sync + 'static,
+        K::UpdateReader: Send,
+        K::UpdateWriter: Send,
+        K::RandomReader: Send + Sync + Unpin,
+        K::SequentialWriter: Send + Unpin,
+    {
+        let inner = Arc::new(Mutex::new(Inner::new()));
+        {
+            let inner = inner.clone();
+            let kernel = kernel.clone();
+            tokio::spawn(async move {
+                Self::handle_updates(kernel, inner).await.unwrap();
+            });
+        }
         Self {
-            inner: Mutex::new(inner),
-            _kernel: kernel,
+            inner,
             options,
+            flush_scheduler: FlushScheduler::new(kernel),
         }
     }
 
-    pub fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let inner = self.inner.lock().unwrap();
+    pub async fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let inner = self.inner.lock().await;
         Ok(inner.mem.get(options.snapshot.ts, key))
     }
 
-    pub fn scan(&self, _options: &ReadOptions) -> Scanner {
-        let inner = self.inner.lock().unwrap();
+    pub async fn scan(&self, _options: &ReadOptions) -> Scanner {
+        let inner = self.inner.lock().await;
         inner.vset.back().unwrap().scan()
     }
 
-    pub fn write(&self, batch: WriteBatch) {
-        let mut inner = self.inner.lock().unwrap();
+    pub async fn write(&self, batch: WriteBatch) {
+        let mut inner = self.inner.lock().await;
         inner.mem.write(batch);
         if inner.mem.estimated_size() >= self.options.memtable_size {
-            inner.switch_memtable();
+            let imm = inner.switch_memtable();
+            self.flush_scheduler.submit(imm).await;
+        }
+    }
+
+    async fn handle_updates<K>(kernel: Arc<K>, inner: Arc<Mutex<Inner>>) -> Result<()>
+    where
+        K: Kernel,
+        K::RandomReader: Send + Sync + Unpin + 'static,
+    {
+        let mut update_reader = kernel.new_update_reader().await?;
+        loop {
+            let (_, update) = update_reader.wait_next().await?;
+            if let Some(meta) = update.put_meta.get("desc") {
+                let UpdateDesc::Flush(flush) = UpdateDesc::decode_from(meta)?;
+                let bucket_update = update.update_buckets.get(DEFAULT_NAME).unwrap();
+                let mut table_readers = Vec::new();
+                for (object_name, object_meta) in &bucket_update.add_objects {
+                    let table_desc = TableDesc::decode_from(object_meta)?;
+                    let reader = kernel.new_random_reader(DEFAULT_NAME, object_name).await?;
+                    let table_reader = TableReader::open(
+                        Arc::new(Box::new(reader)),
+                        table_desc.table_size as usize,
+                    )
+                    .await?;
+                    table_readers.push(Arc::new(table_reader));
+                }
+                let mut inner = inner.lock().await;
+                inner.install_flush_update(flush, table_readers);
+            }
         }
     }
 }
@@ -70,14 +110,39 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn clone_current(&self) -> Version {
+    fn new() -> Self {
+        let mem = Arc::new(Memtable::new(0));
+        let current = Arc::new(Version::default());
+        let mut vset = VecDeque::new();
+        vset.push_back(current);
+        Self { mem, vset }
+    }
+
+    fn clone_current(&self) -> Version {
         (**self.vset.back().unwrap()).clone()
     }
 
-    pub fn switch_memtable(&mut self) {
+    fn switch_memtable(&mut self) -> Arc<Memtable> {
+        let imm = self.mem.clone();
         let mut version = self.clone_current();
-        version.mem.tables.push(self.mem.clone());
+        version.mem.tables.push(imm.clone());
         let last_ts = self.mem.last_timestamp();
         self.mem = Arc::new(Memtable::new(last_ts));
+        self.vset.push_back(Arc::new(version));
+        imm
+    }
+
+    fn install_flush_update(&mut self, flush: FlushDesc, tables: Vec<Arc<TableReader>>) {
+        let mut version = self.clone_current();
+        let index = version
+            .mem
+            .tables
+            .iter()
+            .position(|x| x.id() == flush.memtable_id)
+            .unwrap();
+        version.mem.tables.remove(index);
+        let level = LevelState { tables };
+        version.base.levels.push(level);
+        self.vset.push_back(Arc::new(version));
     }
 }

@@ -14,6 +14,8 @@
 
 use std::{collections::BTreeMap, ops::Bound::*, sync::Mutex};
 
+use uuid::Uuid;
+
 use crate::{
     codec::{Timestamp, Value},
     scan::Scan,
@@ -21,6 +23,7 @@ use crate::{
 };
 
 pub struct Memtable {
+    id: String,
     inner: Mutex<Inner>,
 }
 
@@ -41,6 +44,7 @@ impl Memtable {
             estimated_size: 0,
         };
         Memtable {
+            id: Uuid::new_v4().to_string(),
             inner: Mutex::new(inner),
         }
     }
@@ -67,6 +71,10 @@ impl Memtable {
 
     pub fn scan(&self) -> MemtableScanner {
         todo!();
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     pub fn last_timestamp(&self) -> Timestamp {

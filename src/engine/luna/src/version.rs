@@ -63,7 +63,7 @@ impl MemVersion {
 
 #[derive(Clone, Default)]
 pub struct BaseVersion {
-    levels: Vec<LevelState>,
+    pub levels: Vec<LevelState>,
 }
 
 impl BaseVersion {
@@ -86,7 +86,7 @@ impl BaseScanner {
 
 #[derive(Clone, Default)]
 pub struct LevelState {
-    tables: Vec<Arc<TableReader>>,
+    pub tables: Vec<Arc<TableReader>>,
 }
 
 impl LevelState {

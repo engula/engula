@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     codec::Timestamp, store::Store, version::Scanner, Options, ReadOptions, Result, Snapshot,
-    WriteBatch, WriteOptions,
+    WriteBatch, WriteOptions, DEFAULT_NAME,
 };
 
 pub struct Database<K: Kernel> {
@@ -33,12 +33,17 @@ struct Inner<K: Kernel> {
     _update_reader: K::UpdateReader,
     _update_writer: K::UpdateWriter,
     last_ts: Timestamp,
-    store: Store<K>,
+    store: Store,
 }
 
-const DEFAULT_NAME: &str = "default";
-
-impl<K: Kernel> Database<K> {
+impl<K: Kernel> Database<K>
+where
+    K: Kernel + Send + Sync + 'static,
+    K::UpdateReader: Send,
+    K::UpdateWriter: Send,
+    K::RandomReader: Sync + Send + Unpin,
+    K::SequentialWriter: Send + Unpin,
+{
     pub async fn open(options: Options, kernel: K) -> Result<Self> {
         let update_reader = kernel.new_update_reader().await?;
         let mut update_writer = kernel.new_update_writer().await?;
@@ -79,6 +84,7 @@ impl<K: Kernel> Database<K> {
             let batch = WriteBatch::decode_from(&event)?;
             assert!(batch.timestamp() > inner.last_ts);
             inner.last_ts = batch.timestamp();
+            inner.store.write(batch).await;
         }
         Ok(())
     }
@@ -89,18 +95,18 @@ impl<K: Kernel> Database<K> {
         batch.set_timestamp(inner.last_ts);
         let data = batch.encode_to_vec();
         inner.stream_writer.append(data).await?;
-        inner.store.write(batch);
+        inner.store.write(batch).await;
         Ok(())
     }
 
     pub async fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let inner = self.inner.lock().await;
-        inner.store.get(options, key)
+        inner.store.get(options, key).await
     }
 
     pub async fn scan(&self, options: &ReadOptions) -> Scanner {
         let inner = self.inner.lock().await;
-        inner.store.scan(options)
+        inner.store.scan(options).await
     }
 
     pub async fn snapshot(&self) -> Snapshot {

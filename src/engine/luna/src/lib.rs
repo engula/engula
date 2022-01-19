@@ -15,6 +15,7 @@
 mod codec;
 mod database;
 mod error;
+mod flush_scheduler;
 mod memtable;
 mod merging_scanner;
 mod options;
@@ -23,6 +24,8 @@ mod store;
 mod table;
 mod version;
 mod write_batch;
+
+pub(crate) const DEFAULT_NAME: &str = "default";
 
 pub use self::{
     database::Database,
