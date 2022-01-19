@@ -20,7 +20,7 @@ use crate::{
     WriteBatch,
 };
 
-pub struct MemTable {
+pub struct Memtable {
     inner: Mutex<Inner>,
 }
 
@@ -33,14 +33,14 @@ struct Inner {
     estimated_size: usize,
 }
 
-impl MemTable {
+impl Memtable {
     pub fn new(ts: Timestamp) -> Self {
         let inner = Inner {
             tree: Tree::new(),
             last_ts: ts,
             estimated_size: 0,
         };
-        MemTable {
+        Memtable {
             inner: Mutex::new(inner),
         }
     }
@@ -65,14 +65,22 @@ impl MemTable {
         })
     }
 
-    pub fn scan(&self) -> MemTableScanner {
+    pub fn scan(&self) -> MemtableScanner {
         todo!();
+    }
+
+    pub fn last_timestamp(&self) -> Timestamp {
+        self.inner.lock().unwrap().last_ts
+    }
+
+    pub fn estimated_size(&self) -> usize {
+        self.inner.lock().unwrap().estimated_size
     }
 }
 
-pub struct MemTableScanner {}
+pub struct MemtableScanner {}
 
-impl Scan for MemTableScanner {
+impl Scan for MemtableScanner {
     fn seek_to_first(&mut self) {
         todo!();
     }
