@@ -12,43 +12,65 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{cmp::Reverse, collections::BinaryHeap};
+
 use crate::scan::Scan;
 
-pub struct MergingScanner<S> {
-    _children: Vec<S>,
+pub struct MergingScanner<S: Scan + Ord> {
+    heap: BinaryHeap<Reverse<S>>,
 }
 
-impl<S> MergingScanner<S> {
-    pub fn new(_children: Vec<S>) -> Self {
-        Self { _children }
+impl<S> MergingScanner<S>
+where
+    S: Scan + Ord,
+{
+    pub fn new(children: Vec<S>) -> Self {
+        let children: Vec<Reverse<S>> = children.into_iter().map(Reverse).collect();
+        Self {
+            heap: BinaryHeap::from(children),
+        }
     }
 }
 
 impl<S> Scan for MergingScanner<S>
 where
-    S: Scan,
+    S: Scan + Ord,
 {
     fn seek_to_first(&mut self) {
-        unimplemented!();
+        let mut children = std::mem::take(&mut self.heap).into_vec();
+        for child in &mut children {
+            child.0.seek_to_first();
+        }
+        self.heap = BinaryHeap::from(children);
     }
 
-    fn seek(&mut self, _target: &[u8]) {
-        unimplemented!();
+    fn seek(&mut self, target: &[u8]) {
+        let mut children = std::mem::take(&mut self.heap).into_vec();
+        for child in &mut children {
+            child.0.seek(target);
+        }
+        self.heap = BinaryHeap::from(children);
     }
 
     fn next(&mut self) {
-        unimplemented!();
+        if let Some(mut iter) = self.heap.peek_mut() {
+            iter.0.next();
+        }
     }
 
     fn valid(&self) -> bool {
-        unimplemented!();
+        if let Some(iter) = self.heap.peek() {
+            iter.0.valid()
+        } else {
+            false
+        }
     }
 
     fn key(&self) -> &[u8] {
-        unimplemented!();
+        self.heap.peek().unwrap().0.key()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!();
+        self.heap.peek().unwrap().0.value()
     }
 }
