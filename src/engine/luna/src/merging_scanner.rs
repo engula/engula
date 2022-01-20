@@ -12,34 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cmp::Reverse, collections::BinaryHeap};
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 use crate::scan::Scan;
 
-pub struct MergingScanner<S: Scan + Ord> {
-    heap: BinaryHeap<Reverse<S>>,
+pub struct MergingScanner<S: Scan> {
+    heap: BinaryHeap<OrderedScanner<S>>,
 }
 
-impl<S> MergingScanner<S>
-where
-    S: Scan + Ord,
-{
+impl<S: Scan> MergingScanner<S> {
     pub fn new(children: Vec<S>) -> Self {
-        let children: Vec<Reverse<S>> = children.into_iter().map(Reverse).collect();
+        let children: Vec<OrderedScanner<S>> = children.into_iter().map(OrderedScanner).collect();
         Self {
             heap: BinaryHeap::from(children),
         }
     }
 }
 
-impl<S> Scan for MergingScanner<S>
-where
-    S: Scan + Ord,
-{
+impl<S: Scan> Scan for MergingScanner<S> {
     fn seek_to_first(&mut self) {
         let mut children = std::mem::take(&mut self.heap).into_vec();
         for child in &mut children {
-            child.0.seek_to_first();
+            child.seek_to_first();
         }
         self.heap = BinaryHeap::from(children);
     }
@@ -47,30 +41,90 @@ where
     fn seek(&mut self, target: &[u8]) {
         let mut children = std::mem::take(&mut self.heap).into_vec();
         for child in &mut children {
-            child.0.seek(target);
+            child.seek(target);
         }
         self.heap = BinaryHeap::from(children);
     }
 
     fn next(&mut self) {
-        if let Some(mut iter) = self.heap.peek_mut() {
-            iter.0.next();
+        if let Some(mut s) = self.heap.peek_mut() {
+            s.next();
         }
     }
 
     fn valid(&self) -> bool {
-        if let Some(iter) = self.heap.peek() {
-            iter.0.valid()
+        if let Some(s) = self.heap.peek() {
+            s.valid()
         } else {
             false
         }
     }
 
     fn key(&self) -> &[u8] {
-        self.heap.peek().unwrap().0.key()
+        self.heap.peek().unwrap().key()
     }
 
     fn value(&self) -> &[u8] {
-        self.heap.peek().unwrap().0.value()
+        self.heap.peek().unwrap().value()
     }
 }
+
+struct OrderedScanner<S>(S);
+
+impl<S: Scan> Scan for OrderedScanner<S> {
+    fn seek_to_first(&mut self) {
+        self.0.seek_to_first()
+    }
+
+    fn seek(&mut self, target: &[u8]) {
+        self.0.seek(target)
+    }
+
+    fn next(&mut self) {
+        self.0.next()
+    }
+
+    fn valid(&self) -> bool {
+        self.0.valid()
+    }
+
+    fn key(&self) -> &[u8] {
+        self.0.key()
+    }
+
+    fn value(&self) -> &[u8] {
+        self.0.value()
+    }
+}
+
+impl<S: Scan> Ord for OrderedScanner<S> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.valid() && other.valid() {
+            other.key().cmp(self.key())
+        } else if self.valid() {
+            Ordering::Greater
+        } else if other.valid() {
+            Ordering::Less
+        } else {
+            Ordering::Equal
+        }
+    }
+}
+
+impl<S: Scan> PartialOrd for OrderedScanner<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<S: Scan> PartialEq for OrderedScanner<S> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.valid() && other.valid() {
+            self.key() == other.key()
+        } else {
+            !self.valid() && !self.valid()
+        }
+    }
+}
+
+impl<S: Scan> Eq for OrderedScanner<S> {}

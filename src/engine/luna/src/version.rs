@@ -15,9 +15,9 @@
 use std::sync::Arc;
 
 use crate::{
+    level::{LevelScanner, LevelState},
     memtable::{Memtable, MemtableScanner},
     merging_scanner::MergingScanner,
-    table::{TableReader, TableScanner},
     ReadOptions,
 };
 
@@ -72,8 +72,8 @@ pub struct BaseVersion {
 }
 
 impl BaseVersion {
-    pub fn scan(&self, opts: &ReadOptions) -> BaseScanner {
-        let children = self.levels.iter().map(|x| x.scan(opts)).collect();
+    pub fn scan(&self, _opts: &ReadOptions) -> BaseScanner {
+        let children = self.levels.iter().map(|x| x.scan()).collect();
         BaseScanner::new(children)
     }
 }
@@ -85,29 +85,6 @@ pub struct BaseScanner {
 
 impl BaseScanner {
     pub fn new(_children: Vec<LevelScanner>) -> Self {
-        Self { _children }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct LevelState {
-    pub tables: Vec<Arc<TableReader>>,
-}
-
-impl LevelState {
-    pub fn scan(&self, _opts: &ReadOptions) -> LevelScanner {
-        let children = self.tables.iter().map(|x| x.scan()).collect();
-        LevelScanner::new(children)
-    }
-}
-
-/// Scans all tables in a level.
-pub struct LevelScanner {
-    _children: Vec<TableScanner>,
-}
-
-impl LevelScanner {
-    pub fn new(_children: Vec<TableScanner>) -> Self {
         Self { _children }
     }
 }
