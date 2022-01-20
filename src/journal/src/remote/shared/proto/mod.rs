@@ -46,3 +46,7 @@ impl From<server::Entry> for Entry {
         }
     }
 }
+
+pub mod master {
+    tonic::include_proto!("engula.journal.v1.shared.master");
+}

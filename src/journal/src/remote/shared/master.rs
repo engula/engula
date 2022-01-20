@@ -14,8 +14,9 @@
 
 use async_trait::async_trait;
 use futures::Stream;
+use tonic::{Request, Response, Status};
 
-use super::{Role, SegmentMeta};
+use super::{proto::master as masterpb, Role, SegmentMeta};
 use crate::{Result, Sequence};
 
 /// The state of an stream's observer. The transition of states is:
@@ -85,6 +86,19 @@ pub(super) trait Master {
         range: std::ops::Range<u64>,
     ) -> Result<Self::MetaStream>;
 
-    /// Get epoch meta of the specified epoch of a stream.
+    /// Get segment meta of the specified epoch of a stream.
     async fn get_segment(&self, stream_name: &str, epoch: u32) -> Result<Option<SegmentMeta>>;
+}
+
+struct MasterServer {}
+
+#[async_trait]
+#[allow(unused)]
+impl masterpb::master_server::Master for MasterServer {
+    async fn get_segment(
+        &self,
+        input: Request<masterpb::GetSegmentRequest>,
+    ) -> std::result::Result<Response<masterpb::GetSegmentResponse>, Status> {
+        todo!()
+    }
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Engula Authors.
+// Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::compile_protos("src/remote/grpc/journal.proto")?;
-    tonic_build::compile_protos("src/remote/shared/proto/server.proto")?;
-    tonic_build::compile_protos("src/remote/shared/proto/master.proto")?;
-    Ok(())
+syntax = "proto3";
+
+package engula.journal.v1.shared.master;
+
+service Master {
+    // Get segment meta of the specified epoch of a stream.
+    rpc GetSegment(GetSegmentRequest) returns (GetSegmentResponse);
 }
+
+message GetSegmentRequest {
+    string stream_name = 1;
+    uint32 seg_epoch = 2;
+}
+
+message GetSegmentResponse {
+    uint64 stream_id = 1;
+
+    repeated string copy_set = 2;
+}
+
+
