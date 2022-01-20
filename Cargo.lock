@@ -420,6 +420,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tonic",
  "tonic-build",
 ]
 
