@@ -13,13 +13,12 @@
 // limitations under the License.
 
 use std::{
-    future::Future,
     io,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::ready;
+use futures::{ready, AsyncRead, Future};
 
 use super::Read;
 
@@ -102,6 +101,70 @@ where
             this.buf = rest;
             this.pos += n;
         }
+        Poll::Ready(Ok(()))
+    }
+}
+
+pub trait ReadFromPosExt: Read {
+    fn to_async_read(self, pos: usize) -> ReadFromPos<Self>
+    where
+        Self: Unpin + Sized,
+    {
+        ReadFromPos::new(self, pos)
+    }
+}
+
+impl<R: Read> ReadFromPosExt for R {}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct ReadFromPos<T>
+where
+    T: Read + Unpin + Sized,
+{
+    inner: T,
+    pos: usize,
+}
+
+impl<T> ReadFromPos<T>
+where
+    T: Read + Unpin + Sized,
+{
+    pub(super) fn new(inner: T, pos: usize) -> Self {
+        Self { inner, pos }
+    }
+}
+
+impl<T> AsyncRead for ReadFromPos<T>
+where
+    T: Read + Unpin + Sized,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let size = ready!(Pin::new(&this.inner).poll_read(cx, buf, this.pos))?;
+        this.pos += size;
+        Poll::Ready(Ok(size))
+    }
+}
+
+impl<T> tokio::io::AsyncRead for ReadFromPos<T>
+where
+    T: Read + Unpin + Sized,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let size =
+            ready!(Pin::new(&this.inner).poll_read(cx, buf.initialize_unfilled(), this.pos))?;
+        buf.set_filled(buf.filled().len() + size);
+        this.pos += size;
         Poll::Ready(Ok(()))
     }
 }

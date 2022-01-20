@@ -21,11 +21,11 @@ use crate::{async_trait, Error, Result};
 
 /// An object storage abstraction.
 #[async_trait]
-pub trait Storage {
-    type BucketLister: ResultStream<Elem = String, Error = Error>;
-    type ObjectLister: ResultStream<Elem = String, Error = Error>;
-    type RandomReader: RandomRead;
-    type SequentialWriter: SequentialWrite;
+pub trait Storage: Send + Sync + 'static {
+    type BucketLister: ResultStream<Elem = String, Error = Error> + Send + Unpin;
+    type ObjectLister: ResultStream<Elem = String, Error = Error> + Send + Unpin;
+    type RandomReader: RandomRead + Send + Unpin;
+    type SequentialWriter: SequentialWrite + Send + Unpin;
 
     /// Lists buckets.
     async fn list_buckets(&self) -> Result<Self::BucketLister>;
@@ -64,5 +64,21 @@ pub trait Storage {
         &self,
         bucket_name: &str,
         object_name: &str,
+        option: WriteOption,
     ) -> Result<Self::SequentialWriter>;
+}
+
+#[derive(Clone, Default)]
+pub struct WriteOption {
+    pub replica_write: bool,
+    pub replica_chain: Vec<String>,
+}
+
+impl WriteOption {
+    pub fn new(replica_write: bool, replica_chain: Vec<String>) -> Self {
+        Self {
+            replica_write,
+            replica_chain,
+        }
+    }
 }

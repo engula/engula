@@ -39,7 +39,7 @@ pub trait ResultStreamExt: ResultStream {
     }
 }
 
-impl<T: ResultStream + ?Sized> ResultStreamExt for T {}
+impl<T: ResultStream + ?Sized + Unpin> ResultStreamExt for T {}
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]

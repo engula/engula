@@ -39,7 +39,7 @@ use engula_futures::{
 };
 use futures::future::{join_all, BoxFuture};
 
-use crate::{async_trait, Error, Result};
+use crate::{async_trait, storage::WriteOption, Error, Result};
 
 const OBJECT_CATEGORY: &str = "buckets";
 const META_PREFIX: &str = "engula-meta";
@@ -237,6 +237,7 @@ impl crate::Storage for Storage {
         &self,
         bucket_name: &str,
         object_name: &str,
+        _option: WriteOption,
     ) -> Result<Self::SequentialWriter> {
         Ok(SequentialWriter::new(
             self.client.clone(),

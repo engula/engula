@@ -23,11 +23,12 @@ pub use self::storage::Storage;
 #[cfg(test)]
 mod tests {
     use engula_futures::{
-        io::{RandomReadExt, SequentialWriteExt},
+        io::{ReadFromPosExt, SequentialWriteExt},
         stream::batch::ResultStreamExt,
     };
+    use futures::AsyncReadExt;
 
-    use crate::*;
+    use crate::{error::Result, storage::WriteOption, *};
 
     #[tokio::test]
     async fn test() -> Result<()> {
@@ -38,14 +39,16 @@ mod tests {
         s.create_bucket(bucket_name).await?;
 
         let data = vec![0, 1, 2];
-        let mut writer = s.new_sequential_writer(bucket_name, object_name).await?;
+        let mut writer = s
+            .new_sequential_writer(bucket_name, object_name, WriteOption::default())
+            .await?;
         writer.write_all(&data).await?;
         writer.close().await?;
 
         let reader = s.new_random_reader(bucket_name, object_name).await?;
         let mut buf = vec![0; 2];
         let pos = 1;
-        reader.read_exact(&mut buf, pos).await?;
+        reader.to_async_read(pos).read_exact(&mut buf).await?;
         assert_eq!(buf, data[pos..(pos + buf.len())]);
 
         let bucket_stream = s.list_buckets().await?.batched(10);

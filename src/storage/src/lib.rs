@@ -26,6 +26,8 @@
 //!
 //! [`Storage`]: crate::Storage
 
+#![feature(type_alias_impl_trait)]
+
 mod error;
 mod external;
 mod local;
@@ -39,5 +41,5 @@ pub use self::{
     external::S3Storage,
     local::MemStorage,
     remote::CachedStorage,
-    storage::Storage,
+    storage::{Storage, WriteOption},
 };

@@ -13,5 +13,6 @@
 // limitations under the License.
 
 mod cached;
+mod grpc;
 
 pub use self::cached::CachedStorage;

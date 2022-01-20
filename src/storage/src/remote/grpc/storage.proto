@@ -23,11 +23,15 @@ service Storage {
 
   rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse) {}
 
+  rpc ListBuckets(ListBucketsRequest) returns (stream ListBucketsResponse) {}
+
   // APIs to manipulate a bucket.
 
   rpc UploadObject(stream UploadObjectRequest) returns (UploadObjectResponse) {}
 
   rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
+
+  rpc ListObjects(ListObjectsRequest) returns (stream ListObjectsResponse) {}
 
   // APIs to manipulate an object.
 
@@ -46,7 +50,17 @@ message UploadObjectRequest {
   string bucket = 1;
   string object = 2;
   bytes content = 3;
+  bool replica_request = 4;
+  repeated string replica_chain = 5;
 }
+
+message ListBucketsRequest {}
+
+message ListBucketsResponse { string bucket = 1; }
+
+message ListObjectsRequest { string bucket = 1; }
+
+message ListObjectsResponse { string object = 1; }
 
 message UploadObjectResponse {}
 
@@ -60,6 +74,7 @@ message DeleteObjectResponse {}
 message ReadObjectRequest {
   string bucket = 1;
   string object = 2;
+  int32 pos = 3;
 }
 
 message ReadObjectResponse { bytes content = 1; }

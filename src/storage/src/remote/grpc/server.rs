@@ -12,23 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use futures::{Stream, StreamExt, TryStreamExt};
-use tokio::io::AsyncWriteExt;
+use std::task::Poll;
+
+use engula_futures::{io::ReadFromPosExt, stream::batch::ResultStreamExt};
+use futures::{AsyncWriteExt, Stream, StreamExt, TryStreamExt};
 use tokio_util::io::ReaderStream;
 use tonic::{Request, Response, Status, Streaming};
 
-use super::proto::*;
-use crate::{Bucket, Storage};
+use super::proto::ListBucketsRequest;
+use crate::{remote::grpc::proto::*, storage::WriteOption, Storage};
 
 pub struct Server<S: Storage> {
     storage: S,
 }
 
 impl<S: Storage> Server<S> {
+    #[allow(dead_code)]
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
 
+    #[allow(dead_code)]
     pub fn into_service(self) -> storage_server::StorageServer<Server<S>> {
         storage_server::StorageServer::new(self)
     }
@@ -36,7 +40,12 @@ impl<S: Storage> Server<S> {
 
 #[tonic::async_trait]
 impl<S: Storage> storage_server::Storage for Server<S> {
-    type ReadObjectStream = impl Stream<Item = std::result::Result<ReadObjectResponse, Status>>;
+    type ListBucketsStream =
+        impl Stream<Item = std::result::Result<ListBucketsResponse, Status>> + Send;
+    type ListObjectsStream =
+        impl Stream<Item = std::result::Result<ListObjectsResponse, Status>> + Send;
+    type ReadObjectStream =
+        impl Stream<Item = std::result::Result<ReadObjectResponse, Status>> + Send;
 
     async fn create_bucket(
         &self,
@@ -64,16 +73,22 @@ impl<S: Storage> storage_server::Storage for Server<S> {
         let mut cw = None;
         while let Some(req) = stream.try_next().await? {
             if cw.is_none() {
-                let b = self.storage.bucket(&req.bucket).await?;
-                let w = b.new_sequential_writer(&req.object).await?;
+                let w = self
+                    .storage
+                    .new_sequential_writer(
+                        &req.bucket,
+                        &req.object,
+                        WriteOption::new(req.replica_request, req.replica_chain.to_owned()),
+                    )
+                    .await?;
                 cw = Some(w);
             }
             if let Some(w) = &mut cw {
                 w.write_all(&req.content).await?;
             }
         }
-        if let Some(w) = &mut cw {
-            w.shutdown().await?;
+        if let Some(mut w) = cw.take() {
+            w.close().await?;
         }
         Ok(Response::new(UploadObjectResponse {}))
     }
@@ -83,8 +98,9 @@ impl<S: Storage> storage_server::Storage for Server<S> {
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let input = request.into_inner();
-        let b = self.storage.bucket(&input.bucket).await?;
-        b.delete_object(&input.object).await?;
+        self.storage
+            .delete_object(&input.bucket, &input.object)
+            .await?;
         Ok(Response::new(DeleteObjectResponse {}))
     }
 
@@ -93,9 +109,12 @@ impl<S: Storage> storage_server::Storage for Server<S> {
         request: Request<ReadObjectRequest>,
     ) -> Result<Response<Self::ReadObjectStream>, Status> {
         let input = request.into_inner();
-        let b = self.storage.bucket(&input.bucket).await?;
-        let r = b.new_sequential_reader(&input.object).await?;
-        let byte_stream = ReaderStream::new(r);
+        let r = self
+            .storage
+            .new_random_reader(&input.bucket, &input.object)
+            .await?;
+        let reader = r.to_async_read(input.pos as usize);
+        let byte_stream = ReaderStream::new(reader);
         let resp_stream = byte_stream.map(move |res| {
             res.map(|b| ReadObjectResponse {
                 content: b.to_vec(),
@@ -103,5 +122,54 @@ impl<S: Storage> storage_server::Storage for Server<S> {
             .map_err(|e| e.into())
         });
         Ok(Response::new(resp_stream))
+    }
+
+    async fn list_buckets(
+        &self,
+        _request: Request<ListBucketsRequest>,
+    ) -> Result<Response<Self::ListBucketsStream>, Status> {
+        let buckets = self.storage.list_buckets().await?.batched(10);
+        let bucket_names: VecStrStream = buckets.collect().await?.into();
+        let stream = bucket_names.map(|name| Ok(ListBucketsResponse { bucket: name }));
+        Ok(Response::new(stream))
+    }
+
+    async fn list_objects(
+        &self,
+        request: Request<ListObjectsRequest>,
+    ) -> Result<Response<Self::ListObjectsStream>, Status> {
+        let input = request.into_inner();
+        let objects = self.storage.list_objects(&input.bucket).await?.batched(10);
+        let names: VecStrStream = objects.collect().await?.into();
+        let stream = names.map(|name| Ok(ListObjectsResponse { object: name }));
+        Ok(Response::new(stream))
+    }
+}
+
+struct VecStrStream {
+    s: Vec<String>,
+    idx: usize,
+}
+
+impl From<Vec<String>> for VecStrStream {
+    fn from(s: Vec<String>) -> Self {
+        Self { s, idx: 0 }
+    }
+}
+
+impl Stream for VecStrStream {
+    type Item = String;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut me = self.get_mut();
+        if me.idx >= me.s.len() {
+            return Poll::Ready(None);
+        }
+        let s = me.s[me.idx].to_owned();
+        me.idx += 1;
+        Poll::Ready(Some(s))
     }
 }

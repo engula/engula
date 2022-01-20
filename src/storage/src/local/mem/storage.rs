@@ -28,7 +28,7 @@ use engula_futures::{
 use futures::ready;
 use tokio::sync::Mutex;
 
-use crate::{async_trait, Error, Result};
+use crate::{async_trait, storage::WriteOption, Error, Result};
 
 type Object = Arc<Vec<u8>>;
 type Bucket = Arc<Mutex<HashMap<String, Object>>>;
@@ -125,6 +125,7 @@ impl crate::Storage for Storage {
         &self,
         bucket_name: &str,
         object_name: &str,
+        _option: WriteOption,
     ) -> Result<Self::SequentialWriter> {
         if let Some(bucket) = self.bucket(bucket_name).await {
             Ok(SequentialWriter::new(bucket, object_name.to_owned()))

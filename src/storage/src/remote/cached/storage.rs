@@ -15,7 +15,7 @@
 use engula_futures::stream::batch::ResultStreamExt;
 
 use super::{random_reader::RandomReader, Orchestrator};
-use crate::{async_trait, Result, Storage};
+use crate::{async_trait, storage::WriteOption, Result, Storage};
 
 pub struct CachedStorage<B, O>
 where
@@ -116,9 +116,10 @@ where
         &self,
         bucket_name: &str,
         object_name: &str,
+        option: WriteOption,
     ) -> Result<Self::SequentialWriter> {
         self.base
-            .new_sequential_writer(bucket_name, object_name)
+            .new_sequential_writer(bucket_name, object_name, option)
             .await
     }
 }

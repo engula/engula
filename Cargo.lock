@@ -457,6 +457,9 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
  "tonic-build",
 ]
 

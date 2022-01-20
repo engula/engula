@@ -18,8 +18,8 @@ use crate::Error;
 
 impl<E, R> From<SdkError<E, R>> for Error
 where
-    R: std::fmt::Debug + 'static,
-    E: std::error::Error + 'static,
+    R: std::fmt::Debug + 'static + Send,
+    E: std::error::Error + 'static + Send,
 {
     fn from(e: SdkError<E, R>) -> Self {
         Self::Unknown(Box::new(e))

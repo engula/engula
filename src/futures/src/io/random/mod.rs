@@ -15,19 +15,35 @@
 mod read;
 mod read_ext;
 
-pub use self::{read::Read, read_ext::ReadExt};
+pub use self::{
+    read::Read,
+    read_ext::{ReadExt, ReadFromPosExt},
+};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
+    use futures::AsyncReadExt;
+
+    use crate::io::random::read_ext::ReadFromPosExt;
 
     #[tokio::test]
     async fn read() {
         let data = vec![0u8; 4];
         let mut buf = vec![0u8; 3];
-        let n = data.as_slice().read(&mut buf, 0).await.unwrap();
+        let n = data
+            .as_slice()
+            .to_async_read(0)
+            .read(&mut buf)
+            .await
+            .unwrap();
         assert_eq!(n, 3);
-        let n = data.as_slice().read(&mut buf, 2).await.unwrap();
+        let n = data
+            .as_slice()
+            .to_async_read(2)
+            .read(&mut buf)
+            .await
+            .unwrap();
         assert_eq!(n, 2);
     }
 }

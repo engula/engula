@@ -15,7 +15,7 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
 use engula_journal::Journal;
-use engula_storage::Storage;
+use engula_storage::{Storage, WriteOption};
 use tokio::sync::broadcast;
 
 use super::{update_reader::UpdateReader, update_writer::UpdateWriter};
@@ -97,7 +97,7 @@ where
     ) -> Result<Self::SequentialWriter> {
         let writer = self
             .storage
-            .new_sequential_writer(bucket_name, object_name)
+            .new_sequential_writer(bucket_name, object_name, WriteOption::default())
             .await?;
         Ok(writer)
     }

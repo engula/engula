@@ -25,6 +25,7 @@ pub struct Client {
 }
 
 impl Client {
+    #[allow(dead_code)]
     pub async fn connect(addr: &str) -> Result<Client> {
         let client = StorageClient::connect(addr.to_owned()).await?;
         Ok(Client { client })
@@ -42,6 +43,15 @@ impl Client {
         Ok(response.into_inner())
     }
 
+    pub async fn list_buckets(
+        &self,
+        input: ListBucketsRequest,
+    ) -> Result<Streaming<ListBucketsResponse>> {
+        let mut client = self.client.clone();
+        let response = client.list_buckets(input).await?;
+        Ok(response.into_inner())
+    }
+
     pub async fn delete_object(&self, input: DeleteObjectRequest) -> Result<DeleteObjectResponse> {
         let mut client = self.client.clone();
         let response = client.delete_object(input).await?;
@@ -54,6 +64,15 @@ impl Client {
     ) -> Result<UploadObjectResponse> {
         let mut client = self.client.clone();
         let response = client.upload_object(input).await?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn list_objects(
+        &self,
+        input: ListObjectsRequest,
+    ) -> Result<Streaming<ListObjectsResponse>> {
+        let mut client = self.client.clone();
+        let response = client.list_objects(input).await?;
         Ok(response.into_inner())
     }
 

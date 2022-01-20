@@ -16,32 +16,30 @@
 //!
 //! [`Storage`]: crate::Storage
 
-mod bucket;
 mod client;
 mod error;
 mod proto;
 mod server;
 mod storage;
 
-pub use self::{bucket::Bucket, client::Client, server::Server, storage::Storage};
+pub use self::{client::Client, server::Server, storage::Storage};
 
 #[cfg(test)]
 mod tests {
 
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
-    };
+    use engula_futures::io::ReadFromPosExt;
+    use futures::AsyncWriteExt;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
     use tokio_stream::wrappers::TcpListenerStream;
 
-    use crate::*;
+    use crate::{storage::WriteOption, *};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let server = super::Server::new(mem::Storage::default());
+            let server = super::Server::new(crate::local::MemStorage::default());
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
@@ -50,15 +48,16 @@ mod tests {
         });
         let storage = super::Storage::connect(&local_addr.to_string()).await?;
         storage.create_bucket("bucket").await?;
-        let b = storage.bucket("bucket").await?;
-        let mut w = b.new_sequential_writer("object").await?;
+        let mut w = storage
+            .new_sequential_writer("bucket", "object", WriteOption::default())
+            .await?;
         let buf = vec![0, 1, 2];
-        w.write(&buf).await?;
+        let _ = w.write(&buf).await?;
         w.flush().await?;
-        w.shutdown().await?;
-        let mut r = b.new_sequential_reader("object").await?;
+        w.close().await?;
+        let r = storage.new_random_reader("bucket", "object").await?;
         let mut got = Vec::new();
-        r.read_to_end(&mut got).await?;
+        r.to_async_read(0).read_to_end(&mut got).await?;
         assert_eq!(got, buf);
         Ok(())
     }

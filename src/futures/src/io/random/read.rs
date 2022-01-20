@@ -16,6 +16,7 @@ use std::{
     io,
     ops::DerefMut,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -40,6 +41,21 @@ where
         pos: usize,
     ) -> Poll<io::Result<usize>> {
         self.get_ref().as_ref().poll_read(cx, buf, pos)
+    }
+}
+
+impl<T> Read for Arc<T>
+where
+    T: DerefMut + Unpin,
+    for<'a> &'a T: Read,
+{
+    fn poll_read(
+        self: Pin<&Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+        pos: usize,
+    ) -> Poll<io::Result<usize>> {
+        self.to_owned().poll_read(cx, buf, pos)
     }
 }
 

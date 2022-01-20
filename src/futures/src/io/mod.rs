@@ -16,4 +16,4 @@ mod random;
 
 pub use futures::io::{AsyncWrite as SequentialWrite, AsyncWriteExt as SequentialWriteExt};
 
-pub use self::random::{Read as RandomRead, ReadExt as RandomReadExt};
+pub use self::random::{Read as RandomRead, ReadExt as RandomReadExt, ReadFromPosExt};
