@@ -88,7 +88,7 @@ impl<C: Comparator> BlockScanner<C> {
             let mid = (r - l) / 2 + l;
             let offset = read_restart(&self.data[self.restart_offset..], mid) as usize;
             let key = read_key(&self.data, offset);
-            if self.cmp.cmp(key, target) == Ordering::Greater {
+            if self.cmp.cmp(key, target) != Ordering::Less {
                 r = mid;
             } else {
                 l = mid + 1;

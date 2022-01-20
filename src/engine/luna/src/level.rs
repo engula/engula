@@ -76,20 +76,14 @@ impl LevelScanner {
 
     pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
         let target_pk = ParsedInternalKey::decode_from(target);
-        match self.tables.binary_search_by(|x| {
-            let lower_bound_pk = ParsedInternalKey::decode_from(&x.desc.lower_bound);
-            target_pk.cmp(&lower_bound_pk)
-        }) {
-            Ok(index) => {
-                self.current = index;
-                self.scanners[index].seek(target).await?;
-                self.skip_forward_until_valid().await
-            }
-            Err(_) => {
-                self.current = self.scanners.len();
-                Ok(())
-            }
+        self.current = self.tables.partition_point(|x| {
+            let upper_bound_pk = ParsedInternalKey::decode_from(&x.desc.upper_bound);
+            upper_bound_pk < target_pk
+        });
+        if let Some(s) = self.scanners.get_mut(self.current) {
+            s.seek(target).await?;
         }
+        self.skip_forward_until_valid().await
     }
 
     pub async fn next(&mut self) -> Result<()> {

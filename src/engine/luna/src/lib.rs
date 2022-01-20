@@ -108,6 +108,14 @@ mod tests {
                 scanner.next().await.unwrap();
             }
             assert!(!scanner.valid());
+            scanner.seek(&(i / 2).to_be_bytes()).await.unwrap();
+            for j in (i / 2)..=i {
+                assert!(scanner.valid());
+                assert_eq!(scanner.key(), &j.to_be_bytes());
+                assert_eq!(scanner.value(), &j.to_be_bytes());
+                scanner.next().await.unwrap();
+            }
+            assert!(!scanner.valid());
         }
     }
 }
