@@ -15,6 +15,7 @@
 use engula_futures::io::RandomReadExt;
 
 use crate::{
+    codec::Comparator,
     table::{
         block_handle::BlockHandle,
         block_reader::{read_block, BlockReader},
@@ -24,14 +25,15 @@ use crate::{
     Result,
 };
 
-pub struct TableReader {
+pub struct TableReader<C> {
+    cmp: C,
     reader: RandomReader,
     index_block: BlockReader,
 }
 
 #[allow(dead_code)]
-impl TableReader {
-    pub async fn open(reader: RandomReader, size: usize) -> Result<Self> {
+impl<C: Comparator> TableReader<C> {
+    pub async fn open(cmp: C, reader: RandomReader, size: usize) -> Result<Self> {
         let mut footer = [0; core::mem::size_of::<BlockHandle>()];
         let offset = size - core::mem::size_of::<BlockHandle>();
         reader.read_exact(&mut footer, offset).await?;
@@ -39,14 +41,15 @@ impl TableReader {
         let block_content = read_block(&reader, &index_block_handler).await?;
 
         Ok(TableReader {
+            cmp,
             reader,
             index_block: BlockReader::new(block_content),
         })
     }
 
-    pub fn scan(&self) -> TableScanner {
-        let index_scanner = self.index_block.scan();
-        TableScanner::new(self.reader.clone(), index_scanner)
+    pub fn scan(&self) -> TableScanner<C> {
+        let index_scanner = self.index_block.scan(self.cmp.clone());
+        TableScanner::new(self.cmp.clone(), self.reader.clone(), index_scanner)
     }
 
     pub async fn get(&self, target: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -65,7 +68,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::table::table_builder::{TableBuilder, TableBuilderOptions};
+    use crate::{
+        codec::BytewiseComparator,
+        table::table_builder::{TableBuilder, TableBuilderOptions},
+    };
 
     async fn build_table(size: u8) -> Arc<Vec<u8>> {
         let opt = TableBuilderOptions {
@@ -90,8 +96,11 @@ mod tests {
 
     #[tokio::test]
     async fn seek_to_first() {
+        let cmp = BytewiseComparator {};
         let data = build_table(128).await;
-        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let reader = TableReader::open(cmp, data.clone(), data.len())
+            .await
+            .unwrap();
         let mut it = reader.scan();
         it.seek_to_first().await.unwrap();
         assert!(it.valid());
@@ -138,8 +147,11 @@ mod tests {
             },
         ];
 
+        let cmp = BytewiseComparator {};
         let data = build_table(129).await;
-        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let reader = TableReader::open(cmp, data.clone(), data.len())
+            .await
+            .unwrap();
         let mut it = reader.scan();
         for t in tests {
             it.seek(&t.target).await.unwrap();
@@ -196,8 +208,11 @@ mod tests {
             },
         ];
 
+        let cmp = BytewiseComparator {};
         let data = build_table(129).await;
-        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let reader = TableReader::open(cmp, data.clone(), data.len())
+            .await
+            .unwrap();
         let mut it = reader.scan();
         for t in tests {
             it.seek(&t.target).await.unwrap();
@@ -242,8 +257,11 @@ mod tests {
             },
         ];
 
+        let cmp = BytewiseComparator {};
         let data = build_table(129).await;
-        let reader = TableReader::open(data.clone(), data.len()).await.unwrap();
+        let reader = TableReader::open(cmp, data.clone(), data.len())
+            .await
+            .unwrap();
         for t in tests {
             let key_opt = reader.get(&t.target).await.unwrap();
             match_key(&key_opt, &t.expect);

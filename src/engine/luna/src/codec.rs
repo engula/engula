@@ -149,6 +149,30 @@ impl<'a> PartialEq for ParsedInternalKey<'a> {
     }
 }
 
+pub trait Comparator: Clone + Send + Sync + 'static {
+    fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering;
+}
+
+#[derive(Clone)]
+pub struct BytewiseComparator;
+
+impl Comparator for BytewiseComparator {
+    fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
+        lhs.cmp(rhs)
+    }
+}
+
+#[derive(Clone)]
+pub struct InternalComparator;
+
+impl Comparator for InternalComparator {
+    fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
+        let lpk = ParsedInternalKey::decode_from(lhs);
+        let rpk = ParsedInternalKey::decode_from(rhs);
+        lpk.cmp(&rpk)
+    }
+}
+
 pub fn put_timestamp(buf: &mut impl BufMut, ts: Timestamp) {
     buf.put_u64(ts);
 }
