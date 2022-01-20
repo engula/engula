@@ -16,6 +16,7 @@ mod codec;
 mod database;
 mod error;
 mod flush_scheduler;
+mod level;
 mod memtable;
 mod merging_scanner;
 mod options;

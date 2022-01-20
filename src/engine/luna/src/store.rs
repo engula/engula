@@ -20,9 +20,10 @@ use tokio::sync::Mutex;
 use crate::{
     codec::{FlushDesc, TableDesc, UpdateDesc},
     flush_scheduler::FlushScheduler,
+    level::{LevelState, TableState},
     memtable::Memtable,
     table::TableReader,
-    version::{LevelState, Scanner, Version},
+    version::{Scanner, Version},
     Options, ReadOptions, Result, WriteBatch, DEFAULT_NAME,
 };
 
@@ -86,7 +87,7 @@ impl Store {
             if let Some(meta) = update.put_meta.get("desc") {
                 let UpdateDesc::Flush(flush) = UpdateDesc::decode_from(meta)?;
                 let bucket_update = update.update_buckets.get(DEFAULT_NAME).unwrap();
-                let mut table_readers = Vec::new();
+                let mut table_states = Vec::new();
                 for (object_name, object_meta) in &bucket_update.add_objects {
                     let table_desc = TableDesc::decode_from(object_meta)?;
                     let reader = kernel.new_random_reader(DEFAULT_NAME, object_name).await?;
@@ -95,10 +96,14 @@ impl Store {
                         table_desc.table_size as usize,
                     )
                     .await?;
-                    table_readers.push(Arc::new(table_reader));
+                    let table_state = TableState {
+                        desc: table_desc,
+                        reader: table_reader,
+                    };
+                    table_states.push(Arc::new(table_state));
                 }
                 let mut inner = inner.lock().await;
-                inner.install_flush_update(flush, table_readers);
+                inner.install_flush_update(flush, table_states);
             }
         }
     }
@@ -132,7 +137,7 @@ impl Inner {
         imm
     }
 
-    fn install_flush_update(&mut self, flush: FlushDesc, tables: Vec<Arc<TableReader>>) {
+    fn install_flush_update(&mut self, flush: FlushDesc, tables: Vec<Arc<TableState>>) {
         let mut version = self.clone_current();
         let index = version
             .mem

@@ -15,7 +15,7 @@
 use engula_futures::io::{SequentialWrite, SequentialWriteExt};
 
 use super::{block_builder::BlockBuilder, block_handle::BlockHandle};
-use crate::Result;
+use crate::{codec::TableDesc, Result};
 
 // Table format:
 //
@@ -43,6 +43,7 @@ impl Default for TableBuilderOptions {
 #[allow(dead_code)]
 pub struct TableBuilder<W> {
     options: TableBuilderOptions,
+    first_key: Option<Vec<u8>>,
     last_key: Vec<u8>,
     table_writer: TableWriter<W>,
     data_block_builder: BlockBuilder,
@@ -56,6 +57,7 @@ impl<W: SequentialWrite + Unpin> TableBuilder<W> {
         let index_block_builder = BlockBuilder::new(1);
         Self {
             options,
+            first_key: None,
             last_key: Vec::new(),
             table_writer: TableWriter::new(writer),
             data_block_builder,
@@ -64,6 +66,9 @@ impl<W: SequentialWrite + Unpin> TableBuilder<W> {
     }
 
     pub async fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+        if self.first_key.is_none() {
+            self.first_key = Some(key.to_owned());
+        }
         self.last_key = key.to_owned();
         self.data_block_builder.add(key, value);
         if self.data_block_builder.estimated_size() >= self.options.block_size {
@@ -72,13 +77,18 @@ impl<W: SequentialWrite + Unpin> TableBuilder<W> {
         Ok(())
     }
 
-    pub async fn finish(mut self) -> Result<u64> {
+    pub async fn finish(mut self) -> Result<TableDesc> {
         self.finish_data_block().await?;
         let block = self.index_block_builder.finish();
         let handle = self.table_writer.write(block).await?;
         self.table_writer.write(&handle.encode_to_vec()).await?;
         self.table_writer.close().await?;
-        Ok(self.table_writer.offset())
+        let desc = TableDesc {
+            table_size: self.table_writer.offset(),
+            lower_bound: self.first_key.unwrap(),
+            upper_bound: self.last_key,
+        };
+        Ok(desc)
     }
 
     async fn finish_data_block(&mut self) -> Result<()> {
