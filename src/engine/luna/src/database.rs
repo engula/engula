@@ -19,7 +19,7 @@ use engula_kernel::{Kernel, KernelUpdateBuilder, UpdateWriter};
 use tokio::sync::Mutex;
 
 use crate::{
-    codec::Timestamp, store::Store, version::Scanner, Options, ReadOptions, Result, Snapshot,
+    codec::Timestamp, scanner::Scanner, store::Store, Options, ReadOptions, Result, Snapshot,
     WriteBatch, WriteOptions, DEFAULT_NAME,
 };
 

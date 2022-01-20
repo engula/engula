@@ -22,8 +22,9 @@ use crate::{
     flush_scheduler::FlushScheduler,
     level::{LevelState, TableState},
     memtable::Memtable,
+    scanner::Scanner,
     table::TableReader,
-    version::{Scanner, Version},
+    version::Version,
     Options, ReadOptions, Result, WriteBatch, DEFAULT_NAME,
 };
 
@@ -64,7 +65,8 @@ impl Store {
 
     pub async fn scan(&self, options: &ReadOptions) -> Scanner {
         let inner = self.inner.lock().await;
-        inner.vset.back().unwrap().scan(options)
+        let scanner = inner.vset.back().unwrap().scan(options);
+        Scanner::new(scanner, options.snapshot.ts)
     }
 
     pub async fn write(&self, batch: WriteBatch) {
@@ -117,9 +119,10 @@ struct Inner {
 impl Inner {
     fn new() -> Self {
         let mem = Arc::new(Memtable::new(0));
-        let current = Arc::new(Version::default());
+        let mut current = Version::default();
+        current.mem.tables.push(mem.clone());
         let mut vset = VecDeque::new();
-        vset.push_back(current);
+        vset.push_back(Arc::new(current));
         Self { mem, vset }
     }
 
@@ -129,10 +132,9 @@ impl Inner {
 
     fn switch_memtable(&mut self) -> Arc<Memtable> {
         let imm = self.mem.clone();
+        self.mem = Arc::new(Memtable::new(imm.last_timestamp()));
         let mut version = self.clone_current();
-        version.mem.tables.push(imm.clone());
-        let last_ts = self.mem.last_timestamp();
-        self.mem = Arc::new(Memtable::new(last_ts));
+        version.mem.tables.push(self.mem.clone());
         self.vset.push_back(Arc::new(version));
         imm
     }

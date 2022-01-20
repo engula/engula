@@ -142,10 +142,10 @@ impl Scan for MemtableScanner {
     fn seek(&mut self, target: &[u8]) {
         {
             let inner = self.inner.lock().unwrap();
-            let lookup_key = InternalKey::for_lookup(target, self.ts);
+            let internal_target = InternalKey::new(target.to_owned());
             let tree: Tree = inner
                 .tree
-                .range((Included(lookup_key), Unbounded))
+                .range((Included(internal_target), Unbounded))
                 .map(|x| (x.0.clone(), x.1.clone()))
                 .collect();
             self.iter = Some(tree.into_iter());
