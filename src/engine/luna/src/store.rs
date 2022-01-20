@@ -59,13 +59,13 @@ impl Store {
     }
 
     pub async fn get(&self, options: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let inner = self.inner.lock().await;
-        Ok(inner.mem.get(options.snapshot.ts, key))
+        let current = self.current().await;
+        current.get(options, key).await
     }
 
     pub async fn scan(&self, options: &ReadOptions) -> Scanner {
-        let inner = self.inner.lock().await;
-        let scanner = inner.vset.back().unwrap().scan(options);
+        let current = self.current().await;
+        let scanner = current.scan(options);
         Scanner::new(scanner, options.snapshot.ts)
     }
 
@@ -76,6 +76,11 @@ impl Store {
             let imm = inner.switch_memtable();
             self.flush_scheduler.submit(imm).await;
         }
+    }
+
+    async fn current(&self) -> Arc<Version> {
+        let inner = self.inner.lock().await;
+        inner.current()
     }
 
     async fn handle_updates<K>(kernel: Arc<K>, inner: Arc<Mutex<Inner>>) -> Result<()>
@@ -125,6 +130,10 @@ impl Inner {
         let mut vset = VecDeque::new();
         vset.push_back(Arc::new(current));
         Self { mem, vset }
+    }
+
+    fn current(&self) -> Arc<Version> {
+        self.vset.back().unwrap().clone()
     }
 
     fn clone_current(&self) -> Version {

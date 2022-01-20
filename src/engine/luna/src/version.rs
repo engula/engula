@@ -30,6 +30,14 @@ pub struct Version {
 }
 
 impl Version {
+    pub async fn get(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        if let Some(value) = self.mem.get(opts, key) {
+            Ok(Some(value))
+        } else {
+            self.base.get(opts, key).await
+        }
+    }
+
     pub fn scan(&self, opts: &ReadOptions) -> InternalScanner {
         let mem = self.mem.scan(opts);
         let base = self.base.scan(opts);
@@ -46,6 +54,15 @@ pub struct MemVersion {
 type MemScanner = MergingScanner<MemtableScanner>;
 
 impl MemVersion {
+    pub fn get(&self, opts: &ReadOptions, key: &[u8]) -> Option<Vec<u8>> {
+        for table in self.tables.iter().rev() {
+            if let Some(value) = table.get(opts.snapshot.ts, key) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
     pub fn scan(&self, opts: &ReadOptions) -> MemScanner {
         let children = self
             .tables
