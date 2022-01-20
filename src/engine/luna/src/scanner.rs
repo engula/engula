@@ -36,12 +36,12 @@ impl Scanner {
     async fn skip_to_visible_forward(&mut self) -> Result<()> {
         while self.scanner.valid() {
             let pk = ParsedInternalKey::decode_from(self.scanner.key());
-            if pk.timestamp <= self.snapshot {
-                if self.last_key.is_none() || pk.user_key != self.last_key.as_ref().unwrap() {
-                    self.last_key = Some(pk.user_key.to_owned());
-                    if pk.value_kind == ValueKind::Some {
-                        break;
-                    }
+            if pk.timestamp <= self.snapshot
+                && (self.last_key.is_none() || pk.user_key != self.last_key.as_ref().unwrap())
+            {
+                self.last_key = Some(pk.user_key.to_owned());
+                if pk.value_kind == ValueKind::Some {
+                    break;
                 }
             }
             self.scanner.next().await?;
