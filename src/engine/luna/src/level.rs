@@ -36,7 +36,6 @@ pub struct TableState {
     pub reader: TableReader,
 }
 
-#[allow(dead_code)]
 /// Scans all tables in a level.
 pub struct LevelScanner {
     tables: Vec<Arc<TableState>>,
@@ -44,7 +43,6 @@ pub struct LevelScanner {
     current: usize,
 }
 
-#[allow(dead_code)]
 impl LevelScanner {
     pub fn new(tables: Vec<Arc<TableState>>) -> Self {
         let scanners = tables.iter().map(|x| x.reader.scan()).collect();
@@ -68,7 +66,7 @@ impl LevelScanner {
         Ok(())
     }
 
-    async fn seek_to_first(&mut self) -> Result<()> {
+    pub async fn seek_to_first(&mut self) -> Result<()> {
         self.current = 0;
         if let Some(s) = self.scanners.get_mut(self.current) {
             s.seek_to_first().await?;
@@ -76,7 +74,7 @@ impl LevelScanner {
         self.skip_forward_until_valid().await
     }
 
-    async fn seek(&mut self, target: &[u8]) -> Result<()> {
+    pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
         let target_pk = ParsedInternalKey::decode_from(target);
         match self.tables.binary_search_by(|x| {
             let lower_bound_pk = ParsedInternalKey::decode_from(&x.desc.lower_bound);
@@ -94,14 +92,14 @@ impl LevelScanner {
         }
     }
 
-    async fn next(&mut self) -> Result<()> {
+    pub async fn next(&mut self) -> Result<()> {
         if let Some(s) = self.scanners.get_mut(self.current) {
             s.next().await?;
         }
         self.skip_forward_until_valid().await
     }
 
-    fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         if let Some(s) = self.scanners.get(self.current) {
             s.valid()
         } else {
@@ -109,11 +107,11 @@ impl LevelScanner {
         }
     }
 
-    fn key(&self) -> &[u8] {
+    pub fn key(&self) -> &[u8] {
         self.scanners[self.current].key()
     }
 
-    fn value(&self) -> &[u8] {
+    pub fn value(&self) -> &[u8] {
         self.scanners[self.current].value()
     }
 }
