@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::{
-    cmp::Ordering,
     collections::{btree_map, BTreeMap},
     ops::Bound::*,
     sync::{Arc, Mutex},
@@ -180,35 +179,3 @@ impl Scan for MemtableScanner {
         &self.item.as_ref().unwrap().1
     }
 }
-
-impl Ord for MemtableScanner {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if self.valid() && other.valid() {
-            self.key().cmp(other.key())
-        } else if self.valid() {
-            Ordering::Less
-        } else if other.valid() {
-            Ordering::Greater
-        } else {
-            Ordering::Equal
-        }
-    }
-}
-
-impl PartialOrd for MemtableScanner {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for MemtableScanner {
-    fn eq(&self, other: &Self) -> bool {
-        if self.valid() && other.valid() {
-            self.key() == other.key()
-        } else {
-            !self.valid() && !self.valid()
-        }
-    }
-}
-
-impl Eq for MemtableScanner {}
