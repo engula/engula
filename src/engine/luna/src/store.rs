@@ -18,7 +18,7 @@ use engula_kernel::{Kernel, UpdateReader};
 use tokio::sync::Mutex;
 
 use crate::{
-    codec::{FlushDesc, TableDesc, UpdateDesc},
+    codec::{FlushDesc, InternalComparator, TableDesc, UpdateDesc},
     flush_scheduler::FlushScheduler,
     level::{LevelState, TableState},
     memtable::Memtable,
@@ -94,6 +94,7 @@ impl Store {
                     let table_desc = TableDesc::decode_from(object_meta)?;
                     let reader = kernel.new_random_reader(DEFAULT_NAME, object_name).await?;
                     let table_reader = TableReader::open(
+                        InternalComparator {},
                         Arc::new(Box::new(reader)),
                         table_desc.table_size as usize,
                     )

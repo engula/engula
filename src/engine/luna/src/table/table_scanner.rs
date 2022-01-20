@@ -18,35 +18,42 @@ use super::{
     block_scanner::BlockScanner,
     RandomReader,
 };
-use crate::Result;
+use crate::{codec::Comparator, Result};
 
-async fn read_block_scanner(reader: &RandomReader, mut value: &[u8]) -> Result<BlockScanner> {
+async fn read_block_scanner<C: Comparator>(
+    cmp: C,
+    reader: &RandomReader,
+    mut value: &[u8],
+) -> Result<BlockScanner<C>> {
     let handle = BlockHandle::decode_from(&mut value);
     let block_content = read_block(reader, &handle).await?;
     let block = BlockReader::new(block_content);
-    Ok(block.scan())
+    Ok(block.scan(cmp))
 }
 
-pub struct TableScanner {
+pub struct TableScanner<C> {
+    cmp: C,
     reader: RandomReader,
-    index_scanner: BlockScanner,
-    block_scanner: Option<BlockScanner>,
+    index_scanner: BlockScanner<C>,
+    block_scanner: Option<BlockScanner<C>>,
 }
 
-impl TableScanner {
-    pub fn new(reader: RandomReader, index_scanner: BlockScanner) -> Self {
+impl<C: Comparator> TableScanner<C> {
+    pub fn new(cmp: C, reader: RandomReader, index_scanner: BlockScanner<C>) -> Self {
         TableScanner {
+            cmp,
             reader,
             index_scanner,
             block_scanner: None,
         }
     }
 
-    #[allow(dead_code)]
     pub async fn seek_to_first(&mut self) -> Result<()> {
         self.index_scanner.seek_to_first();
         self.block_scanner = if self.index_scanner.valid() {
-            let mut scanner = read_block_scanner(&self.reader, self.index_scanner.value()).await?;
+            let mut scanner =
+                read_block_scanner(self.cmp.clone(), &self.reader, self.index_scanner.value())
+                    .await?;
             scanner.seek_to_first();
             Some(scanner)
         } else {
@@ -58,7 +65,9 @@ impl TableScanner {
     pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
         self.index_scanner.seek(target);
         self.block_scanner = if self.index_scanner.valid() {
-            let mut scanner = read_block_scanner(&self.reader, self.index_scanner.value()).await?;
+            let mut scanner =
+                read_block_scanner(self.cmp.clone(), &self.reader, self.index_scanner.value())
+                    .await?;
             scanner.seek(target);
             Some(scanner)
         } else {
@@ -67,7 +76,6 @@ impl TableScanner {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub async fn next(&mut self) -> Result<()> {
         let valid = match &mut self.block_scanner {
             Some(scanner) => {
@@ -80,7 +88,8 @@ impl TableScanner {
             self.index_scanner.next();
             if self.index_scanner.valid() {
                 let mut scanner =
-                    read_block_scanner(&self.reader, self.index_scanner.value()).await?;
+                    read_block_scanner(self.cmp.clone(), &self.reader, self.index_scanner.value())
+                        .await?;
                 scanner.seek_to_first();
                 self.block_scanner = Some(scanner);
             } else {

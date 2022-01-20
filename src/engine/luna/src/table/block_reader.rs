@@ -17,7 +17,7 @@ use std::sync::Arc;
 use engula_futures::io::RandomReadExt;
 
 use super::{block_scanner::BlockScanner, RandomReader};
-use crate::{table::block_handle::BlockHandle, Result};
+use crate::{codec::Comparator, table::block_handle::BlockHandle, Result};
 
 pub struct BlockReader {
     data: Arc<[u8]>,
@@ -30,8 +30,8 @@ impl BlockReader {
         }
     }
 
-    pub fn scan(&self) -> BlockScanner {
-        BlockScanner::new(self.data.clone())
+    pub fn scan<C: Comparator>(&self, cmp: C) -> BlockScanner<C> {
+        BlockScanner::new(cmp, self.data.clone())
     }
 }
 

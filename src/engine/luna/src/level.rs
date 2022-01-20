@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use crate::{
-    codec::{ParsedInternalKey, TableDesc},
+    codec::{InternalComparator, ParsedInternalKey, TableDesc},
     table::{TableReader, TableScanner},
     Result,
 };
@@ -33,13 +33,13 @@ impl LevelState {
 
 pub struct TableState {
     pub desc: TableDesc,
-    pub reader: TableReader,
+    pub reader: TableReader<InternalComparator>,
 }
 
 /// Scans all tables in a level.
 pub struct LevelScanner {
     tables: Vec<Arc<TableState>>,
-    scanners: Vec<TableScanner>,
+    scanners: Vec<TableScanner<InternalComparator>>,
     current: usize,
 }
 

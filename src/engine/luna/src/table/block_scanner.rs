@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use bytes::Buf;
+
+use crate::codec::Comparator;
 
 fn read_num_restarts(data: &[u8]) -> u32 {
     debug_assert!(data.len() >= core::mem::size_of::<u32>());
@@ -61,14 +63,15 @@ fn next_entry_offset(data: &[u8], offset: usize) -> usize {
     value_range(data, offset).end
 }
 
-pub struct BlockScanner {
+pub struct BlockScanner<C> {
+    cmp: C,
     data: Arc<[u8]>,
     num_restarts: usize,
     restart_offset: usize,
     current_offset: usize,
 }
 
-impl BlockScanner {
+impl<C: Comparator> BlockScanner<C> {
     fn next_entry(&mut self) {
         if self.current_offset < self.restart_offset {
             let next_offset = next_entry_offset(&self.data, self.current_offset);
@@ -85,10 +88,10 @@ impl BlockScanner {
             let mid = (r - l) / 2 + l;
             let offset = read_restart(&self.data[self.restart_offset..], mid) as usize;
             let key = read_key(&self.data, offset);
-            if key <= target {
-                l = mid + 1;
-            } else {
+            if self.cmp.cmp(key, target) == Ordering::Greater {
                 r = mid;
+            } else {
+                l = mid + 1;
             }
         }
         r
@@ -96,8 +99,8 @@ impl BlockScanner {
 }
 
 #[allow(dead_code)]
-impl BlockScanner {
-    pub fn new(data: Arc<[u8]>) -> Self {
+impl<C: Comparator> BlockScanner<C> {
+    pub fn new(cmp: C, data: Arc<[u8]>) -> Self {
         let num_restarts = read_num_restarts(&data) as usize;
         let tail_len = (num_restarts + 1) * core::mem::size_of::<u32>();
         debug_assert!(num_restarts >= 1);
@@ -105,6 +108,7 @@ impl BlockScanner {
 
         let restart_offset = data.len() - tail_len;
         BlockScanner {
+            cmp,
             data,
             num_restarts,
             restart_offset,
@@ -124,7 +128,7 @@ impl BlockScanner {
 
         self.current_offset = read_restart(&self.data[self.restart_offset..], idx) as usize;
         while self.valid() {
-            if self.key() >= target {
+            if self.cmp.cmp(self.key(), target) != Ordering::Less {
                 break;
             }
 
@@ -156,7 +160,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::table::block_builder::BlockBuilder;
+    use crate::{codec::BytewiseComparator, table::block_builder::BlockBuilder};
 
     fn build_block(size: u8) -> Arc<[u8]> {
         let mut builder = BlockBuilder::new(2);
@@ -175,8 +179,9 @@ mod tests {
 
     #[tokio::test]
     async fn seek_to_first() {
+        let cmp = BytewiseComparator {};
         let data = build_block(128);
-        let mut it = BlockScanner::new(data);
+        let mut it = BlockScanner::new(cmp, data);
         it.seek_to_first();
         assert!(it.valid());
         assert_eq!(it.key(), vec![1u8]);
@@ -222,8 +227,9 @@ mod tests {
             },
         ];
 
+        let cmp = BytewiseComparator {};
         let data = build_block(129);
-        let mut it = BlockScanner::new(data);
+        let mut it = BlockScanner::new(cmp, data);
         for t in tests {
             it.seek(&t.target);
             let key_opt = if it.valid() {
@@ -279,8 +285,9 @@ mod tests {
             },
         ];
 
+        let cmp = BytewiseComparator {};
         let data = build_block(129);
-        let mut it = BlockScanner::new(data);
+        let mut it = BlockScanner::new(cmp, data);
         for t in tests {
             it.seek(&t.target);
             let key_opt = if it.valid() {
