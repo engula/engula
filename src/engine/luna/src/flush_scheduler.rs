@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    codec::{FlushDesc, TableDesc, UpdateDesc, MAX_TIMESTAMP},
+    codec::{FlushDesc, UpdateDesc, MAX_TIMESTAMP},
     memtable::Memtable,
     scan::Scan,
     table::{TableBuilder, TableBuilderOptions},
@@ -78,12 +78,11 @@ impl FlushScheduler {
                 builder.add(scanner.key(), scanner.value()).await?;
                 scanner.next();
             }
-            let table_size = builder.finish().await?;
+            let table_desc = builder.finish().await?;
 
             let desc = UpdateDesc::Flush(FlushDesc {
                 memtable_id: mem.id().to_owned(),
             });
-            let table_desc = TableDesc { table_size };
             let bucket_update = BucketUpdateBuilder::default()
                 .add_object(object_name, table_desc.encode_to_vec())
                 .build();

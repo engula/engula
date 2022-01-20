@@ -166,12 +166,12 @@ pub fn put_value(buf: &mut impl BufMut, value: &Value) {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FlushDesc {
     pub memtable_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum UpdateDesc {
     Flush(FlushDesc),
 }
@@ -189,9 +189,11 @@ impl UpdateDesc {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TableDesc {
     pub table_size: u64,
+    pub lower_bound: Vec<u8>,
+    pub upper_bound: Vec<u8>,
 }
 
 impl TableDesc {
