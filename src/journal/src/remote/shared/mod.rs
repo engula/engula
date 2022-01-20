@@ -17,8 +17,9 @@ use super::leader_based::{EpochState, Journal as LeaderBasedJournal, Role};
 mod journal;
 mod master;
 mod orchestrator;
-
+pub mod proto;
 mod segment;
+mod server;
 mod stream_reader;
 mod stream_writer;
 
@@ -32,7 +33,10 @@ pub use stream_writer::Writer as StreamWriter;
 enum Entry {
     /// A placeholder, used in recovery phase.
     Hole,
-    Event(Box<[u8]>),
+    Event {
+        epoch: u32,
+        event: Box<[u8]>,
+    },
 }
 
 /// `SegmentMeta` records the metadata for locating a segment and its data.
