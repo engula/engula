@@ -24,7 +24,7 @@ pub const MAX_TIMESTAMP: u64 = u64::MAX;
 
 pub type Value = Option<Vec<u8>>;
 
-#[derive(Eq, PartialEq, Clone)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 #[repr(u8)]
 pub enum ValueKind {
     None = 0,
@@ -52,6 +52,10 @@ impl From<u8> for ValueKind {
 pub struct InternalKey(Vec<u8>);
 
 impl InternalKey {
+    pub fn new(buf: Vec<u8>) -> Self {
+        Self(buf)
+    }
+
     pub fn for_lookup(user_key: &[u8], timestamp: Timestamp) -> Self {
         let pk = ParsedInternalKey {
             user_key,
@@ -90,7 +94,7 @@ impl<'a> From<ParsedInternalKey<'a>> for InternalKey {
     }
 }
 
-#[derive(Eq)]
+#[derive(Eq, Debug)]
 pub struct ParsedInternalKey<'a> {
     pub user_key: &'a [u8],
     pub timestamp: Timestamp,
