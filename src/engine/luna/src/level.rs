@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
-    codec::{InternalComparator, ParsedInternalKey, TableDesc},
+    codec::{InternalComparator, InternalKey, ParsedInternalKey, TableDesc, ValueKind},
+    options::ReadOptions,
     table::{TableReader, TableScanner},
     Result,
 };
@@ -26,6 +27,31 @@ pub struct LevelState {
 }
 
 impl LevelState {
+    pub async fn get(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        if let Ok(index) = self.tables.binary_search_by(|x| {
+            let lower_bound_pk = ParsedInternalKey::decode_from(&x.desc.lower_bound);
+            let upper_bound_pk = ParsedInternalKey::decode_from(&x.desc.upper_bound);
+            if upper_bound_pk.user_key < key {
+                Ordering::Less
+            } else if lower_bound_pk.user_key > key {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            }
+        }) {
+            let lookup_key = InternalKey::for_lookup(key, opts.snapshot.ts);
+            let mut scanner = self.tables[index].reader.scan();
+            scanner.seek(lookup_key.as_bytes()).await?;
+            if scanner.valid() {
+                let pk = ParsedInternalKey::decode_from(scanner.key());
+                if pk.user_key == key && pk.value_kind == ValueKind::Some {
+                    return Ok(Some(scanner.value().to_owned()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub fn scan(&self) -> LevelScanner {
         LevelScanner::new(self.tables.clone())
     }

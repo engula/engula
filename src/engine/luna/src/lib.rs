@@ -94,7 +94,8 @@ mod tests {
         let ropts = ReadOptions::default();
         let wopts = WriteOptions::default();
 
-        for i in 0..1024u64 {
+        let num = 256u64;
+        for i in 0..num {
             let k = i.to_be_bytes().to_vec();
             let mut wb = WriteBatch::default();
             wb.put(&k, &k);
@@ -102,9 +103,11 @@ mod tests {
             let mut scanner = db.scan(&ropts).await;
             scanner.seek_to_first().await.unwrap();
             for j in 0..=i {
+                let k = j.to_be_bytes().to_vec();
+                assert_eq!(db.get(&ropts, &k).await.unwrap().as_ref(), Some(&k));
                 assert!(scanner.valid());
-                assert_eq!(scanner.key(), &j.to_be_bytes());
-                assert_eq!(scanner.value(), &j.to_be_bytes());
+                assert_eq!(scanner.key(), &k);
+                assert_eq!(scanner.value(), &k);
                 scanner.next().await.unwrap();
             }
             assert!(!scanner.valid());

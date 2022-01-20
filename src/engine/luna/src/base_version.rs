@@ -26,6 +26,15 @@ pub struct BaseVersion {
 
 #[allow(dead_code)]
 impl BaseVersion {
+    pub async fn get(&self, opts: &ReadOptions, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        for level in self.levels.iter().rev() {
+            if let Some(value) = level.get(opts, key).await? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn scan(&self, _opts: &ReadOptions) -> BaseScanner {
         let children = self.levels.iter().map(|x| x.scan()).collect();
         BaseScanner::new(children)

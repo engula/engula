@@ -87,10 +87,10 @@ impl Memtable {
             .next()
             .and_then(|x| {
                 let pk = x.0.parse();
-                match pk.value_kind {
-                    ValueKind::None => None,
-                    ValueKind::Some => Some(x.1.clone()),
-                    _ => panic!(),
+                if pk.user_key == key && pk.value_kind == ValueKind::Some {
+                    Some(x.1.clone())
+                } else {
+                    None
                 }
             })
     }
