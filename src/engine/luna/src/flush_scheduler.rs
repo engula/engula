@@ -60,11 +60,11 @@ impl FlushScheduler {
         K::SequentialWriter: Send + Unpin,
     {
         let mut update_writer = kernel.new_update_writer().await?;
-        let mut last_ts = 0;
+        let mut last_sequence = 0;
 
         while let Some(mem) = rx.recv().await {
-            assert!(mem.last_timestamp() > last_ts);
-            last_ts = mem.last_timestamp();
+            assert!(mem.last_sequence() > last_sequence);
+            last_sequence = mem.last_sequence();
 
             let object_name = Uuid::new_v4().to_string();
             let writer = kernel
@@ -82,6 +82,7 @@ impl FlushScheduler {
 
             let desc = UpdateDesc::Flush(FlushDesc {
                 memtable_id: mem.id().to_owned(),
+                last_sequence: mem.last_sequence(),
             });
             let bucket_update = BucketUpdateBuilder::default()
                 .add_object(object_name, table_desc.encode_to_vec())

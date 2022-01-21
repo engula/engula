@@ -44,10 +44,19 @@ mod tests {
 
         let mut reader = j.new_stream_reader(stream_name).await?;
         reader.seek(expected_event1_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event1_seq, event1.clone()))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
         reader.seek(expected_event2_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2))
+        );
         Ok(())
     }
 
@@ -67,7 +76,7 @@ mod tests {
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             let event2 = vec![2];
             reader.seek(expected_event2_seq).await?;
-            assert_eq!(&reader.wait_next().await?, &event2);
+            assert_eq!(reader.wait_next().await?, (expected_event2_seq, event2));
             Ok(())
         });
 
@@ -85,11 +94,17 @@ mod tests {
         // 2. wait available event
         let mut reader = j.new_stream_reader(stream_name).await?;
         reader.seek(expected_event1_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event1_seq, event1))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2))
+        );
 
         assert_eq!(writer.append(event3.clone()).await?, expected_event3_seq);
-        assert_eq!(&reader.wait_next().await?, &event3);
+        assert_eq!(reader.wait_next().await?, (expected_event3_seq, event3));
 
         Ok(())
     }
@@ -114,14 +129,26 @@ mod tests {
         let mut writer = j.new_stream_writer(stream_name).await?;
         assert_eq!(writer.append(event1.clone()).await?, expected_event1_seq);
         assert_eq!(writer.append(event2.clone()).await?, expected_event2_seq);
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
 
         // normal
         reader.seek(expected_event1_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event1_seq, event1))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
         reader.seek(expected_event2_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
 
         // cannot seek truncated sequence
         writer.truncate(expected_event2_seq + 1).await?;
@@ -154,33 +181,66 @@ mod tests {
         // normal
         let mut reader = j.new_stream_reader(stream_name).await?;
         reader.seek(expected_event1_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event1));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event1_seq, event1.clone()))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
         reader.seek(expected_event2_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
 
         // truncate
         writer.truncate(expected_event2_seq).await?;
         reader.seek(expected_event2_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event2));
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event2_seq, event2.clone()))
+        );
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
         reader.seek(expected_event3_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
 
         // truncate more
         writer.truncate(expected_event3_seq).await?;
         reader.seek(expected_event3_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
 
         // truncate truncated sequence is valid as noop
         writer.truncate(expected_event3_seq - 1).await?;
         reader.seek(expected_event3_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
         writer.truncate(expected_event3_seq).await?;
         reader.seek(expected_event3_seq).await?;
-        assert_eq!(reader.try_next().await?.as_ref(), Some(&event3));
+        assert_eq!(
+            reader.try_next().await?,
+            Some((expected_event3_seq, event3.clone()))
+        );
 
         // cannot truncate future sequence
         let got = writer.truncate(expected_event3_seq + 2).await;

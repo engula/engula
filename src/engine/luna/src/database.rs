@@ -74,22 +74,25 @@ where
     async fn recover(&self) -> Result<()> {
         let mut inner = self.inner.lock().await;
         let mut stream_reader = inner.kernel.new_stream_reader(DEFAULT_NAME).await?;
-        while let Some(event) = stream_reader.try_next().await? {
+        while let Some((sequence, event)) = stream_reader.try_next().await? {
             let batch = WriteBatch::decode_from(&event)?;
-            assert!(batch.timestamp() > inner.last_ts);
-            inner.last_ts = batch.timestamp();
-            inner.store.write(batch).await;
+            assert!(batch.timestamp() >= inner.last_ts);
+            inner.last_ts = batch.timestamp() + batch.writes.len() as u64 - 1;
+            inner.store.write(batch, sequence).await;
         }
         Ok(())
     }
 
     pub async fn write(&self, _options: &WriteOptions, mut batch: WriteBatch) -> Result<()> {
+        if batch.writes.is_empty() {
+            return Ok(());
+        }
         let mut inner = self.inner.lock().await;
-        inner.last_ts += 1;
-        batch.set_timestamp(inner.last_ts);
+        batch.set_timestamp(inner.last_ts + 1);
+        inner.last_ts += batch.writes.len() as u64;
         let data = batch.encode_to_vec();
-        inner.stream_writer.append(data).await?;
-        inner.store.write(batch).await;
+        let sequence = inner.stream_writer.append(data).await?;
+        inner.store.write(batch, sequence).await;
         Ok(())
     }
 

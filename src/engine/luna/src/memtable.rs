@@ -18,6 +18,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use engula_kernel::Sequence;
 use uuid::Uuid;
 
 use crate::{
@@ -36,15 +37,15 @@ type TreeIter = btree_map::IntoIter<InternalKey, Vec<u8>>;
 
 struct Inner {
     tree: Tree,
-    last_ts: Timestamp,
+    last_sequence: Sequence,
     estimated_size: usize,
 }
 
 impl Memtable {
-    pub fn new(ts: Timestamp) -> Self {
+    pub fn new(sequence: Sequence) -> Self {
         let inner = Inner {
             tree: Tree::new(),
-            last_ts: ts,
+            last_sequence: sequence,
             estimated_size: 0,
         };
         Memtable {
@@ -53,9 +54,9 @@ impl Memtable {
         }
     }
 
-    pub fn write(&self, batch: WriteBatch) {
+    pub fn write(&self, batch: WriteBatch, sequence: Sequence) {
         let mut inner = self.inner.lock().unwrap();
-        inner.last_ts = batch.ts + batch.writes.len() as u64;
+        inner.last_sequence = sequence;
         inner.estimated_size += batch.estimated_size;
         let mut next_ts = batch.ts;
         for w in batch.writes {
@@ -103,8 +104,8 @@ impl Memtable {
         &self.id
     }
 
-    pub fn last_timestamp(&self) -> Timestamp {
-        self.inner.lock().unwrap().last_ts
+    pub fn last_sequence(&self) -> Sequence {
+        self.inner.lock().unwrap().last_sequence
     }
 
     pub fn estimated_size(&self) -> usize {
