@@ -15,6 +15,7 @@ futures = "0.3"
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.13", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.6"
 
 [dev-dependencies]

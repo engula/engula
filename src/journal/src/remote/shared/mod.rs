@@ -28,7 +28,7 @@ pub use stream_writer::Writer as StreamWriter;
 
 /// `Entry` is the minimum unit of the journal system. A continuous entries
 /// compound a stream.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 enum Entry {
     /// A placeholder, used in recovery phase.
@@ -36,6 +36,10 @@ enum Entry {
     Event {
         epoch: u32,
         event: Box<[u8]>,
+    },
+    /// A bridge record, which identify the end of a segment.
+    Bridge {
+        epoch: u32,
     },
 }
 

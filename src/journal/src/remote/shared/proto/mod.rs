@@ -27,9 +27,14 @@ impl From<Entry> for server::Entry {
                 event: vec![],
             },
             Entry::Event { epoch, event } => server::Entry {
-                entry_type: server::EntryType::Hole as i32,
+                entry_type: server::EntryType::Event as i32,
                 epoch,
                 event: event.into(),
+            },
+            Entry::Bridge { epoch } => server::Entry {
+                entry_type: server::EntryType::Bridge as i32,
+                epoch,
+                event: vec![],
             },
         }
     }
@@ -42,6 +47,7 @@ impl From<server::Entry> for Entry {
                 event: e.event.into(),
                 epoch: e.epoch,
             },
+            Some(server::EntryType::Bridge) => Entry::Bridge { epoch: e.epoch },
             _ => Entry::Hole,
         }
     }
