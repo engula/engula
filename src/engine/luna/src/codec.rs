@@ -14,7 +14,7 @@
 
 use std::cmp::Ordering;
 
-use bytes::BufMut;
+use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
@@ -177,21 +177,55 @@ pub fn put_timestamp(buf: &mut impl BufMut, ts: Timestamp) {
     buf.put_u64(ts);
 }
 
+pub fn decode_timestamp(mut buf: &[u8]) -> Result<(Timestamp, &[u8])> {
+    if buf.len() >= std::mem::size_of::<u64>() {
+        let ts = buf.get_u64();
+        Ok((ts, buf))
+    } else {
+        Err(Error::Corrupted("invalid buffer".to_owned()))
+    }
+}
+
 pub fn put_length_prefixed_slice(buf: &mut impl BufMut, s: &[u8]) {
     buf.put_u64(s.len() as u64);
     buf.put_slice(s);
+}
+
+pub fn decode_length_prefixed_slice(mut buf: &[u8]) -> Result<(&[u8], &[u8])> {
+    if buf.len() >= std::mem::size_of::<u64>() {
+        let len = buf.get_u64() as usize;
+        if buf.len() >= len {
+            return Ok(buf.split_at(len));
+        }
+    }
+    Err(Error::Corrupted("invalid buffer".to_owned()))
 }
 
 pub fn put_value(buf: &mut impl BufMut, value: &Value) {
     match value {
         Some(value) => {
             buf.put_u8(ValueKind::Some.into());
-            buf.put_slice(value);
+            put_length_prefixed_slice(buf, value);
         }
         None => {
             buf.put_u8(ValueKind::None.into());
         }
     }
+}
+
+pub fn decode_value(mut buf: &[u8]) -> Result<(Value, &[u8])> {
+    if !buf.is_empty() {
+        let kind = ValueKind::from(buf.get_u8());
+        match kind {
+            ValueKind::Some => {
+                let (value, buf) = decode_length_prefixed_slice(buf)?;
+                return Ok((Some(value.to_owned()), buf));
+            }
+            ValueKind::None => return Ok((None, buf)),
+            _ => {}
+        }
+    }
+    Err(Error::Corrupted("invalid buffer".to_owned()))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -39,6 +39,8 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use engula_kernel::MemKernel;
 
     use super::*;
@@ -46,7 +48,7 @@ mod tests {
     #[tokio::test]
     async fn test() {
         let opts = Options::default();
-        let kernel = MemKernel::open().await.unwrap();
+        let kernel = Arc::new(MemKernel::open().await.unwrap());
         let db = Database::open(opts, kernel).await.unwrap();
         let ropts = ReadOptions::default();
         let wopts = WriteOptions::default();
@@ -89,7 +91,7 @@ mod tests {
         let opts = Options {
             memtable_size: 1024,
         };
-        let kernel = MemKernel::open().await.unwrap();
+        let kernel = Arc::new(MemKernel::open().await.unwrap());
         let db = Database::open(opts, kernel).await.unwrap();
         let ropts = ReadOptions::default();
         let wopts = WriteOptions::default();
@@ -119,6 +121,33 @@ mod tests {
                 scanner.next().await.unwrap();
             }
             assert!(!scanner.valid());
+        }
+    }
+
+    #[tokio::test]
+    async fn reopen() {
+        let opts = Options {
+            memtable_size: 1024,
+        };
+        let kernel = Arc::new(MemKernel::open().await.unwrap());
+        let db = Database::open(opts.clone(), kernel.clone()).await.unwrap();
+        let ropts = ReadOptions::default();
+        let wopts = WriteOptions::default();
+
+        let num = 256u64;
+        for i in 0..num {
+            let k = i.to_be_bytes().to_vec();
+            let mut wb = WriteBatch::default();
+            wb.put(&k, &k);
+            db.write(&wopts, wb).await.unwrap();
+            assert_eq!(db.get(&ropts, &k).await.unwrap().as_ref(), Some(&k));
+        }
+
+        // Re-open
+        let db = Database::open(opts.clone(), kernel.clone()).await.unwrap();
+        for i in 0..num {
+            let k = i.to_be_bytes().to_vec();
+            assert_eq!(db.get(&ropts, &k).await.unwrap().as_ref(), Some(&k));
         }
     }
 }
