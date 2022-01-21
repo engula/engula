@@ -14,6 +14,7 @@
 
 use crate::codec::Timestamp;
 
+#[derive(Clone, Debug)]
 pub struct Options {
     pub memtable_size: usize,
 }

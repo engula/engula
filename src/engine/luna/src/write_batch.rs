@@ -17,7 +17,7 @@ use crate::{
     Result,
 };
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct WriteBatch {
     pub(crate) ts: Timestamp,
     pub(crate) writes: Vec<(Vec<u8>, Value)>,
@@ -55,7 +55,17 @@ impl WriteBatch {
         buf
     }
 
-    pub(crate) fn decode_from(_buf: &[u8]) -> Result<WriteBatch> {
-        todo!();
+    pub(crate) fn decode_from(buf: &[u8]) -> Result<WriteBatch> {
+        let mut wb = WriteBatch::default();
+        let (ts, mut remain) = codec::decode_timestamp(buf)?;
+        wb.ts = ts;
+        while !remain.is_empty() {
+            let buf = remain;
+            let (key, buf) = codec::decode_length_prefixed_slice(buf)?;
+            let (value, buf) = codec::decode_value(buf)?;
+            wb.writes.push((key.to_owned(), value));
+            remain = buf;
+        }
+        Ok(wb)
     }
 }

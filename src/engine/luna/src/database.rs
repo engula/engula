@@ -30,8 +30,6 @@ pub struct Database<K: Kernel> {
 struct Inner<K: Kernel> {
     kernel: Arc<K>,
     stream_writer: K::StreamWriter,
-    _update_reader: K::UpdateReader,
-    _update_writer: K::UpdateWriter,
     last_ts: Timestamp,
     store: Store,
 }
@@ -44,8 +42,7 @@ where
     K::RandomReader: Sync + Send + Unpin,
     K::SequentialWriter: Send + Unpin,
 {
-    pub async fn open(options: Options, kernel: K) -> Result<Self> {
-        let update_reader = kernel.new_update_reader().await?;
+    pub async fn open(options: Options, kernel: Arc<K>) -> Result<Self> {
         let mut update_writer = kernel.new_update_writer().await?;
         let stream_writer = match kernel.new_stream_writer(DEFAULT_NAME).await {
             Ok(stream) => stream,
@@ -60,13 +57,10 @@ where
             }
             Err(err) => return Err(err.into()),
         };
-        let kernel = Arc::new(kernel);
         let store = Store::new(options, kernel.clone());
         let inner = Inner {
             kernel,
             stream_writer,
-            _update_reader: update_reader,
-            _update_writer: update_writer,
             last_ts: 0,
             store,
         };

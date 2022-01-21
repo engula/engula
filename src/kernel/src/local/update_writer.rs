@@ -21,7 +21,7 @@ use engula_journal::Journal;
 use engula_storage::Storage;
 use tokio::sync::broadcast::Sender;
 
-use crate::{async_trait, Error, KernelUpdate, Result, Sequence, UpdateEvent};
+use crate::{async_trait, KernelUpdate, Result, Sequence, UpdateEvent};
 
 pub struct UpdateWriter<J, S> {
     journal: Arc<J>,
@@ -70,7 +70,8 @@ where
             self.storage.delete_bucket(bucket).await?;
         }
         let sequence = self.sequence.fetch_add(1, Ordering::SeqCst);
-        self.tx.send((sequence, update)).map_err(Error::unknown)?;
+        // This can fail if there are no receivers.
+        let _ = self.tx.send((sequence, update));
         Ok(sequence)
     }
 
