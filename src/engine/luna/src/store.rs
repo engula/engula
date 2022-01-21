@@ -14,7 +14,7 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use engula_kernel::{Kernel, UpdateReader};
+use engula_kernel::{Kernel, Sequence, UpdateReader};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -69,9 +69,9 @@ impl Store {
         Scanner::new(scanner, options.snapshot.ts)
     }
 
-    pub async fn write(&self, batch: WriteBatch) {
+    pub async fn write(&self, batch: WriteBatch, sequence: Sequence) {
         let mut inner = self.inner.lock().await;
-        inner.mem.write(batch);
+        inner.mem.write(batch, sequence);
         if inner.mem.estimated_size() >= self.options.memtable_size {
             let imm = inner.switch_memtable();
             self.flush_scheduler.submit(imm).await;
@@ -142,7 +142,7 @@ impl Inner {
 
     fn switch_memtable(&mut self) -> Arc<Memtable> {
         let imm = self.mem.clone();
-        self.mem = Arc::new(Memtable::new(imm.last_timestamp()));
+        self.mem = Arc::new(Memtable::new(imm.last_sequence()));
         let mut version = self.clone_current();
         version.mem.tables.push(self.mem.clone());
         self.vset.push_back(Arc::new(version));

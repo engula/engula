@@ -15,6 +15,7 @@
 use std::cmp::Ordering;
 
 use bytes::{Buf, BufMut};
+use engula_kernel::Sequence;
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
@@ -231,6 +232,7 @@ pub fn decode_value(mut buf: &[u8]) -> Result<(Value, &[u8])> {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FlushDesc {
     pub memtable_id: String,
+    pub last_sequence: Sequence,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -121,9 +121,11 @@ impl StreamReader {
         }
     }
 
-    async fn next(&mut self, wait: bool) -> Result<Option<Vec<u8>>> {
+    async fn next(&mut self, wait: bool) -> Result<Option<(Sequence, Vec<u8>)>> {
         if let Some(event) = self.events.pop_front() {
-            return Ok(Some(event));
+            let sequence = self.cursor;
+            self.cursor += 1;
+            return Ok(Some((sequence, event)));
         }
 
         let stream = self.stream.lock().await;
@@ -138,8 +140,9 @@ impl StreamReader {
             Ok(None)
         } else {
             self.events = events;
-            self.cursor = stream.end;
-            Ok(self.events.pop_front())
+            let sequence = self.cursor;
+            self.cursor += 1;
+            Ok(self.events.pop_front().map(|x| (sequence, x)))
         }
     }
 }
@@ -160,11 +163,11 @@ impl crate::StreamReader for StreamReader {
         }
     }
 
-    async fn try_next(&mut self) -> Result<Option<Vec<u8>>> {
+    async fn try_next(&mut self) -> Result<Option<(Sequence, Vec<u8>)>> {
         self.next(false).await
     }
 
-    async fn wait_next(&mut self) -> Result<Vec<u8>> {
+    async fn wait_next(&mut self) -> Result<(Sequence, Vec<u8>)> {
         loop {
             if let Some(next) = self.next(true).await? {
                 return Ok(next);
