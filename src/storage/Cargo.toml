@@ -17,9 +17,9 @@ prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.13", features = ["full"] }
 
-aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-config" }
-aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-sdk-s3" }
-aws-smithy-http = { git = "https://github.com/awslabs/aws-sdk-rust", tag = "v0.3.0", package = "aws-smithy-http" }
+aws-config = "0.5.2"
+aws-sdk-s3 = "0.5.2"
+aws-smithy-http = "0.35.2"
 time = "0.3"
 
 [dev-dependencies]
