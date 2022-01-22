@@ -152,15 +152,6 @@ jobs:
       id: skip-ci
       uses: ./.github/actions/skip
 
-    - name: Install Rust toolchain
-      if: steps.skip-ci.outputs.skip != 'true'
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: ${{ matrix.rust }}
-        components: clippy, rustfmt
-        override: true
-
     - uses: Swatinem/rust-cache@v1
       if: steps.skip-ci.outputs.skip != 'true'
 
