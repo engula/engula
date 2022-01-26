@@ -1,4 +1,4 @@
-// Copyright 2021 The Engula Authors.
+// Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,4 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-tonic::include_proto!("engula.storage.v1");
+pub mod luna {
+    pub use luna_engine::*;
+}
+
+pub mod kernel {
+    pub use engula_kernel::*;
+}
+
+pub mod journal {
+    pub use engula_journal::*;
+}
+
+pub mod storage {
+    pub use engula_storage::*;
+}
+
+pub mod futures {
+    pub use engula_futures::*;
+}

@@ -68,6 +68,8 @@ jobs:
             "*"
           paths: >-
             "*.toml"
+      - uses: Swatinem/rust-cache@v1
+        if: steps.skip-ci.outputs.skip != 'true'
       - name: Install taplo-cli
         if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
@@ -93,6 +95,8 @@ jobs:
             "*"
           paths: >-
             "Cargo.lock"
+      - uses: Swatinem/rust-cache@v1
+        if: steps.skip-ci.outputs.skip != 'true'
       - name: Install cargo-udeps
         if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
@@ -121,6 +125,8 @@ jobs:
             "*"
           paths: >-
             "Cargo.lock"
+      - uses: Swatinem/rust-cache@v1
+        if: steps.skip-ci.outputs.skip != 'true'
       - name: Install cargo-aduit
         if: steps.skip-ci.outputs.skip != 'true'
         uses: actions-rs/cargo@v1
