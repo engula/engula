@@ -1,33 +1,9 @@
-[package]
-name = "engula"
-version = "0.3.0"
-edition = "2021"
-license = "Apache-2.0"
-homepage = "https://engula.io"
-repository = "https://github.com/engula/engula"
-keywords = ["database", "serverless", "storage-engine"]
-categories = [
-  "asynchronous",
-  "data-structures",
-  "database",
-  "database-implementations",
-]
-description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
-
 [workspace]
 members = [
   "src/engine/luna",
+  "src/engula",
   "src/kernel",
   "src/journal",
   "src/storage",
   "src/futures",
 ]
-
-[dependencies]
-engula-futures = { version = "0.3.0", path = "src/futures" }
-engula-journal = { version = "0.3.0", path = "src/journal" }
-engula-kernel = { version = "0.3.0", path = "src/kernel" }
-engula-storage = { version = "0.3.0", path = "src/storage" }
-luna-engine = { version = "0.3.0", path = "src/engine/luna" }
-
-tokio = { version = "1", features = ["full"] }
