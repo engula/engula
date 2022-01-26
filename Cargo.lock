@@ -501,12 +501,10 @@ dependencies = [
  "bytes",
  "engula-futures",
  "futures",
- "prost",
  "tempfile",
  "thiserror",
  "time",
  "tokio",
- "tonic-build",
 ]
 
 [[package]]

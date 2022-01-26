@@ -13,7 +13,6 @@
 // limitations under the License.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::compile_protos("src/remote/grpc/journal.proto")?;
     tonic_build::compile_protos("src/remote/shared/proto/server.proto")?;
     tonic_build::compile_protos("src/remote/shared/proto/master.proto")?;
     Ok(())
