@@ -7,10 +7,10 @@ homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
 keywords = ["database", "serverless", "storage-engine"]
 categories = [
-    "asynchronous",
-    "data-structures",
-    "database",
-    "database-implementations",
+  "asynchronous",
+  "data-structures",
+  "database",
+  "database-implementations",
 ]
 description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
 
