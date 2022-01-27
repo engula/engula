@@ -463,12 +463,9 @@ dependencies = [
  "async-trait",
  "engula-futures",
  "futures",
- "prost",
  "tempfile",
  "thiserror",
  "tokio",
- "tonic",
- "tonic-build",
 ]
 
 [[package]]
