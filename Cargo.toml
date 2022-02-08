@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/apis"]
+members = ["src/apis", "src/client"]
