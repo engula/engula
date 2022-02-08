@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/proto"]
+members = ["src/apis"]
