@@ -8,33 +8,27 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a serverless storage engine that empowers engineers to build reliable and cost-effective databases.
+Engula is a persistent data structure store, used as a database and storage engine.
 
-Engula's design goals are as follows:
+The features of Engula include:
 
-- **Elastic**: takes advantage of elastic resources on the cloud
-- **Adaptive**: adapts to dynamic workloads and diverse applications
-- **Extensible**: provides pluggable APIs and modules for customization
-- **Platform independent**: allows flexible deployments on local hosts, on-premise servers, and cloud platforms
+- Provide a set of persistent data structures for different kinds of applications.
+- Support ACID transactions.
+- Implement a built-in cache tier to speed up reads, resist hotspots and burst traffic.
+- Implement a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service on the cloud.
 
 ## Status
 
 We are working on v0.3. Please check the [roadmap][roadmap] for more details.
 
-[roadmap]: https://github.com/engula/engula/issues/203
+[roadmap]: https://github.com/engula/engula/issues/359
 
-We have released demo 1 in Oct 2021 and v0.2 in Dec 2021. You can check the [demo 1 report](https://engula.com/posts/demo-1/) and [v0.2 release post](https://engula.io/posts/release-0.2/) for more details.
+We released demo 1 in Oct 2021 and v0.2 in Dec 2021. You can check the [demo 1 report](https://engula.com/posts/demo-1/) and [v0.2 release post](https://engula.io/posts/release-0.2/) for more details.
 
-## Design
+## Information
 
-![Architecture](docs/images/architecture.drawio.svg)
-
-For internal designs of Engula, please see the [docs](docs).
-
-## Discussion
-
-For discussions about ideas, designs, and roadmaps, please see the [discussions](https://github.com/engula/engula/discussions).
+For internal designs, please see the [docs](docs). For informal discussions about plans, ideas, and designs, please go to the [discussion forum](https://github.com/engula/engula/discussions).
 
 ## Contributing
 
-Thanks for your help improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
+Thanks for your help in improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
