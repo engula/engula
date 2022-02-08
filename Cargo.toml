@@ -1,9 +1,2 @@
 [workspace]
-members = [
-  "src/engine/luna",
-  "src/engula",
-  "src/kernel",
-  "src/journal",
-  "src/storage",
-  "src/futures",
-]
+members = ["src/apis"]
