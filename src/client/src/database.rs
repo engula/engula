@@ -44,7 +44,7 @@ impl Database {
             .collections_union(self.desc.id, req)
             .await?;
         if let collections_response_union::Response::CreateCollection(res) = res {
-            let desc = res.desc.ok_or_else(|| Error::InvalidResponse)?;
+            let desc = res.desc.ok_or(Error::InvalidResponse)?;
             Ok(Collection::new(self.client.clone(), desc))
         } else {
             Err(Error::InvalidResponse)
@@ -76,7 +76,7 @@ impl Database {
             .collections_union(self.desc.id, req)
             .await?;
         if let collections_response_union::Response::DescribeCollection(res) = res {
-            res.desc.ok_or_else(|| Error::InvalidResponse)
+            res.desc.ok_or(Error::InvalidResponse)
         } else {
             Err(Error::InvalidResponse)
         }

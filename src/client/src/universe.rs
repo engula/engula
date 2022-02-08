@@ -37,7 +37,7 @@ impl Universe {
         let req = databases_request_union::Request::CreateDatabase(req);
         let res = self.client.clone().databases_union(req).await?;
         if let databases_response_union::Response::CreateDatabase(res) = res {
-            let desc = res.desc.ok_or_else(|| Error::InvalidResponse)?;
+            let desc = res.desc.ok_or(Error::InvalidResponse)?;
             Ok(Database::new(self.client.clone(), desc))
         } else {
             Err(Error::InvalidResponse)
@@ -62,7 +62,7 @@ impl Universe {
         let req = databases_request_union::Request::DescribeDatabase(req);
         let res = self.client.clone().databases_union(req).await?;
         if let databases_response_union::Response::DescribeDatabase(res) = res {
-            res.desc.ok_or_else(|| Error::InvalidResponse)
+            res.desc.ok_or(Error::InvalidResponse)
         } else {
             Err(Error::InvalidResponse)
         }

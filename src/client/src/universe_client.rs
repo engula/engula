@@ -45,7 +45,7 @@ impl UniverseClient {
         let res = self.databases(req).await?;
         res.response
             .and_then(|x| x.response)
-            .ok_or_else(|| Error::InvalidResponse)
+            .ok_or(Error::InvalidResponse)
     }
 
     pub async fn collections(&mut self, req: CollectionsRequest) -> Result<CollectionsResponse> {
@@ -65,6 +65,6 @@ impl UniverseClient {
         let res = self.collections(req).await?;
         res.response
             .and_then(|x| x.response)
-            .ok_or_else(|| Error::InvalidResponse)
+            .ok_or(Error::InvalidResponse)
     }
 }
