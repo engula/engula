@@ -1,162 +1,73 @@
-# About
+# Engula
 
-This document describes the top-level design of Engula.
+Engula is a persistent data structure store, used as a database and storage engine. Engula aims to use one system to serve different kinds of applications well. To achieve this goal, Engula provides a collection of persistent data structures that optimize for specific scenarios. When a new kind of scenario comes up, which doesn't fit into existing data structures, a new data structure can be added to extend Engula's capabilities, leveraging a solid foundation instead of reinventing the wheel from scratch.
 
-**The current design is still in progress.** You can also check [the previous design][demo-design] for more information.
+Engula provides clients for different programming languages. Applications use a client to convert data operations into requests. Then the client uses RPC to communicate with an Engula service to accomplish the operations. The most important client interfaces are a set of typed collections. A typed collection contains a set of objects of the same type. Each type provides a set of APIs to manipulate objects of that type.
 
-[demo-design]: https://github.com/engula/engula/blob/demo-1/docs/design.md
+Engula supports ACID transactions to extend its range of applications further. The default isolation is causal snapshot isolation (CSI). To implement CSI, Engula uses hybrid logical clocks (HLC) to order events throughout the system. Engula opts for CSI because it meets the essential requirements of most applications while providing high performance. However, more strict isolations can also be supported by doing more checks on transaction commit.
 
-# Overview
+Engula implements a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service on the cloud. Engula disaggregates compute and storage to allow scaling different kinds of resources on-demand. The compute tier consists of a set of cooperators, each of which serves a portion of data. The storage tier consists of a stream store and an engine store. Cooperators use the stream store to elect leaders and store transaction logs. Committed transactions are first accumulated in cooperators and then flushed to the engine store in batches for persistence. On failures, cooperators read logs from the stream store to recover unflushed transactions. Since all cooperators share the same stream store and engine store, scaling cooperators is lightweight and doesn't induce data movement. Cooperators also cache results of read requests to speed up future reads. This built-in cache, combines with the lightweight scaling, enables Engula to resist hotspots and bursts of traffic.
 
-Engula is a serverless storage engine that empowers engineers to build reliable and cost-effective databases.
+## Data model
 
-Engula's design goals are as follows:
+An Engula deployment is called a universe. A universe consists of multiple databases, each of which consists of multiple collections. A collection is a set of objects of the same type. Each object has an object identifier, which is a sequence of bytes and is unique within a collection. Each object provides a set of methods associated with its type to manipulate its state.
 
-- Elastic: takes advantage of elastic resources on the cloud
-- Adaptive: adapts to dynamic workloads and diverse applications
-- Extensible: provides pluggable module interfaces and implementations for customization
-- Platform independent: allows flexible deployments on local hosts, on-premise servers, and cloud platforms
+A collection can be partitioned (hash or range) into a lot of shards, each of which contains a portion of objects in the collection. Objects are the unit of partitioning, and shards are the unit of data movement.
 
-It is important to note that Engula is not a full-functional database. Engula is more like a framework that allows users to build their databases or storage engines. However, for users that don't need customization, Engula can also be used as an out-of-the-box data service for typical applications.
+Engula supports transactions across collections of the same database. However, different databases are independent, which means that transactions across databases are not supported.
 
-# Architecture
+## Architecture
 
 ![Architecture](images/architecture.drawio.svg)
 
-Engula employs *a modular and serverless architecture*.
+Engula implements a tiered architecture. A universe has four tiers: control, service, compute, and storage. The control tier consists of a supervisor and an orchestrator, the service tier consists of a set of transactors, the compute tier consists of a set of cooperators, and the storage tier consists of a stream store and an engine store.
 
-Engula unbundles the storage engine into the following modules:
+The supervisor assigns data to cooperators and handles automated data movement among them, either to meet replication constraints or to balance load. The supervisor is also responsible for scaling transactors and cooperators through the orchestrator.
 
-- **Engine** provides storage engines for different database workloads.
-- **Kernel** provides stateful environments to implement upper-level storage engines.
-- **Journal** provides abstractions and implementations to store data streams. For example, transaction logs.
-- **Storage** provides abstractions and implementations to store data objects. For example, SSTables or Parquet tables.
-- **Background** provides abstractions and implementations to run background jobs. For example, compactions or garbage collections.
+Transactors are stateless. Each transactor retrieves and caches location information from the supervisor. Applications use a client to send transactions to one of the transactors. The transactor inspects the transaction and coordinates one or more cooperators to complete the transaction.
 
-These modules have varied resource requirements, which allows Engula to take advantage of different kinds of resources. Engula intends to shift most foreground computation to `Engine`, background computation to `Background`, and then make the cost of stateful modules (`Kernel`, `Journal`, and `Storage`) as low as possible.
+![Cooperator Architecture](images/cooperator-architecture.drawio.svg)
 
-Engula modules also expose extensible interfaces that allow different implementations. Engula provides some built-in implementations for common use cases. For example, `Storage` offers a local implementation based on the local file system and a remote implementation based on gRPC services. For a specific application, users can choose the appropriate implementations or build their own ones.
+Cooperators are divided into groups. Each group serves one or more shards from different collections of the same database. One of the cooperators in a group is elected as a leader, and the others are followers. A group has at least one leader and zero or more followers. Followers can be added on-demand for failover or load balance. For each group, the leader cooperator handles all writes, while all cooperators with up-to-date data can handle reads to share traffic. All cooperators in the same universe use the same stream store and engine store for data persistence.
+Moreover, all cooperators also form a built-in cache tier. Each cooperator has two cache components: a read cache and a write cache. The read cache contains data read from the engine store. The write cache contains changes that are not flushed to the engine store.
 
-As for deployment, unlike traditional databases and storage engines, Engula modules are not aware of nodes or servers. From the perspective of Engula, all modules run on a unified resource pool with unlimited resources. The resource pool divided resources into resource groups, each of which consists of multiple resource units that can be scaled on-demand. Each kernel instance runs on a dedicated resource group to provide an isolated stateful environment for upper-level storage engines.
+The stream store and the engine store are two independent storage systems. The stream store manages a lot of single-producer, multi-consumer (SPMC) streams. A stream stores a sequence of events and supports leader election to choose a single producer. The engine store provides functionalities for point gets, range scans, and batch updates.
 
-# Engine
+Each cooperator group uses a dedicated stream in the stream store to elect a leader and store transaction logs. On writes, the leader cooperator append logs to the stream first and then accumulate the changes to the write cache. When the write cache size reaches a threshold, the leader cooperator flushes the changes to the engine store. The engine store applies the changes to update its state. Once the leader cooperator confirms that the changes have been persisted to the engine store, it truncates the corresponding logs in the stream. On reads, a cooperator reads from the read cache first. On cache misses, the cooperator reads the required data from the engine store and fills the read cache. To get the newest data, the cooperator merges data from the read cache or the engine store with the write cache.
 
-A well-optimized storage engine needs to make a lot of assumptions about its applications. While these assumptions allow targeted optimizations, they also limit the range of applications. That's why we need different kinds of storage engines. However, despite the varied assumptions, the storage requirements of these engines are surprisingly similar. This observation motivates Engula to be a ubiquitous framework that empowers all kinds of storage engines.
+## Orchestrator
 
-In Engula, `Engine` interacts with `Kernel` to accomplish various kinds of storage operations. The interaction between `Engine` and `Kernel` can be generalized as follows:
+Engula uses the orchestrator pattern in multiple places. Orchestrator provides an abstraction on the running platform to manage a set of service instances and allows users to provision and de-provision instances on-demand.
 
-For writes:
+Orchestrator makes Engula autonomous. From this point of view, the architecture of Engula can be regarded as the composition of three autonomous systems. The control, service, and compute tiers form one autonomous system, while the stream store and the engine store are the other two autonomous systems.
 
-- `Engine` converts client requests into transaction logs
-- `Engine` persists the logs in `Kernel` and then applies them to a memory table
-- `Engine` flushes the memory table to `Kernel` and then deletes the obsoleted logs
-- `Engine` submits some background jobs to `Kernel` periodically to re-organize persisted data
+## Storage
 
-For queries:
+The storage of Engula consists of a stream store and an engine store. The stream store and the engine store are multi-tenant, strongly consistent, highly scalable, and highly available storage systems. Both of them can serve a lot of tenants in one deployment. A stream store tenant manages multiple streams, and an engine store tenant manages multiple buckets. Cooperators of the same database use different streams in a dedicated stream store tenant to store transaction logs. Collections of the same database use different buckets in a dedicated engine store tenant to store objects.
 
-- `Engine` converts client requests into low-level data queries
-- `Engine` merges data in the memory table and data from `Kernel` to serve these queries
-- `Engine` optionally caches data from `Kernel` to optimize read performance
+### Stream store
 
-# Kernel
+TODO: the previous design of shared journal can be adapted here.
 
-![Kernel Implementation](images/kernel-implementation.drawio.svg)
+### Engine store
 
-`Kernel` is a stateful and pluggable environment for storage engines. A `Kernel` implementation integrates different modules to provide a specific set of storage capabilities. For example, a memory kernel stores everything in memory, and a file kernel stores everything in local files.
+![EngineStore Architecture](images/engine-store-architecture.drawio.svg)
 
-Specifically, `Kernel` stores streams in `Journal`, objects in `Storage`, metadata in `Manifest`, and runs background jobs in `Background`. In addition, `Kernel` supports versioned metadata and atomic metadata operations to meet the following requirements:
+An engine store deployment consists of a manifest, an orchestrator, a scheduler, a blob store, and a set of cache stores. The engine store organizes data into blobs. Blobs are stored in the blob store, which serves as the single point of truth for data. The manifest organizes blobs in each bucket as an LSM-Tree. The manifest is also responsible for managing the set of cache stores and assigning data to them. Each cache store serves a portion of data from one or more buckets. It is possible for multiple cache stores to serve overlapped data to share traffic. It is also important to note that the partitioning of data among cache stores has nothing to do with the partitioning of collections described above. Each cache store loads the portion of data assigned to it from the blob store and serves reads of the corresponding data. In addition, the manifest monitors the load of cache stores to decide the distribution of data and scale cache stores using the orchestrator.
 
-- Commit metadata across objects and modules atomically
-- Access consistent metadata snapshots of the storage engine
-- Make sure that the required data remains valid during requests processing
+An engine store provides an interface for users to ingest updates. An ingestion can generate one or more blobs to multiple buckets of the same tenant. The manifest decides the layout of blobs in each bucket on ingestion. Since buckets are organized as LSM-Trees, their read and space amplification increase along with ingestions. So the manifest needs to use the scheduler to run background jobs for compaction, compression, and garbage collection.
 
-To achieve that, `Kernel` maintains multiple versions of metadata. Each version represents the state of `Kernel` at a specific time. Each metadata transaction creates a version update that transforms the last version into a new one. When an engine connects to `Kernel`, it gets the last version from `Kernel` as its base version and subscribes to future version updates. When a version update arrives, the engine applies it to its base version to catch up with `Kernel`. The engine maintains a list of live versions for ongoing queries and releases a version once it is no longer used. `Kernel` needs to guarantee that objects in all engine versions remain valid until the corresponding versions are released.
+## Transaction
 
-`Manifest` provides a single point of truth for `Kernel`. To add objects, `Kernel` uploads objects to `Storage` first and then commits the uploaded objects to `Manifest`. To delete objects, `Kernel` commits the to be deleted objects to `Manifest` before deleting those objects. It is possible that `Kernel` fails to upload or delete some objects. In this case, the corresponding objects are obsoleted and left in `Storage`. So `Kernel` implements garbage collection to purge deleted and obsoleted objects eventually.
+Ordering: HLC
 
-# Journal
+Isolation: Snapshot Isolation
 
-`Journal` divides data into streams. A stream stores a sequence of events. Each stream has a unique identifier called the stream name. Events within a stream are ordered by timestamps. Users are responsible for assigning increasing timestamps to events when appending to a stream. However, timestamps within a stream are not required to be continuous, which allows users to dispatch events to multiple streams.
+## Sharding
 
-## Semantic
+Split / merge
+Load balance, data movement
 
-`Journal` provides the following interfaces to manipulate streams:
+## Deployment
 
-- List streams
-- Create a stream with a unique name
-- Delete a stream
-
-`Journal` provides the following interfaces to manipulate events in a stream:
-
-- Read events since a timestamp
-- Append events with a timestamp
-- Release events up to a timestamp
-
-It is also possible to support stream subscriptions. We leave the exploration of this feature to future work.
-
-Released events can be archived or garbage collected. Whether released events are accessible depends on the implementation. For example, if events are archived, it should allow users to recover data from archives. Nevertheless, implementations should guarantee to return continuous events. That is, the returned events must be a sub-sequence of a stream.
-
-## Implementation
-
-![Journal Implementation](images/journal-implementation.drawio.svg)
-
-`Journal` can be implemented in the following forms:
-
-- `Local Journal`: stores data in memory or local file system.
-- `Remote Journal`: stores data in multiple remote services with some kind of consensus.
-- `External Journal`: stores data in various third-party services like Kafka or LogDevice.
-
-`Journal` doesn't assume how data should be persisted. It is up to the implementer to decide what guarantees it provides.
-
-# Storage
-
-`Storage` divides data into buckets. A bucket stores a set of data objects. Each bucket has a unique identifier called the bucket name. Each object has an object name that is unique within a bucket. Objects are immutable once created.
-
-## Semantic
-
-`Storage` provides the following interfaces to manipulate buckets:
-
-- List buckets
-- Create a bucket with a unique name
-- Delete a bucket
-
-`Storage` provides the following interfaces to manipulate objects in a bucket:
-
-- List objects
-- Upload an object
-- Delete an object
-- Read some bytes from an object at a specific position
-
-It is also possible to support object-level expression evaluation for some object formats (e.g., JSON, Parquet), which is important to analytical workloads. We leave the exploration of this feature to future work.
-
-`Storage` is a low-level abstraction to manipulate individual objects. It doesn't support atomic operations across multiple objects. See [`Kernel`](#kernel) for more advanced semantics.
-
-## Implementation
-
-![Storage Implementation](images/storage-implementation.drawio.svg)
-
-`Storage` can be implemented in the following forms:
-
-- `Local Storage`: stores data in memory or local file system.
-- `Remote Storage`: stores data in multiple remote services with some kind of replication or load balance.
-- `External Storage`: stores data in various third-party services, for example, S3 or MinIO.
-
-It is a good idea to combine different implementations into a more powerful one. For example, we can create a hybrid storage that persists data to a slow but highly-durable storage and then reads data from a fast and highly-available storage.
-
-`Storage` doesn't assume how data should be persisted. It is up to the implementer to decide what guarantees it provides.
-
-# Discussions
-
-Casual discussions about the design can proceed in the following discussions:
-
-- [Architecture][architecture-discussion]
-- [Engine][engine-discussion]
-- [Journal][journal-discussion]
-- [Storage][storage-discussion]
-
-[architecture-discussion]: https://github.com/engula/engula/discussions/41
-[engine-discussion]: https://github.com/engula/engula/discussions/55
-[journal-discussion]: https://github.com/engula/engula/discussions/70
-[storage-discussion]: https://github.com/engula/engula/discussions/79
-
-Formal discussions about the design of a specific implementation should proceed with an [RFC](rfcs).
+While the architecture introduces a lot of components, it doesn't mean that each component needs to be deployed as an independent node. For example, it is possible to put all components into a single server for convenience, which works similarly to a traditional, standalone DBMS. However, to maximize the power of the cloud-native architecture, we should separate components with different resource requirements apart.
