@@ -19,11 +19,12 @@ header:
   paths-ignore:
     - 'docs'
     - '**/*.md'
+    - '.cargo/audit.toml'
     - '.gitignore'
+    - '.gitmodules'
     - 'Cargo.lock'
     - 'Cargo.toml'
     - 'LICENSE'
     - 'rust-toolchain.toml'
     - 'rustfmt.toml'
-    - '.cargo/audit.toml'
     - 'taplo.toml'
