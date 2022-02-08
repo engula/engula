@@ -1,0 +1,3 @@
+[submodule "src/proto"]
+	path = src/proto
+	url = https://github.com/engula/engula-proto
