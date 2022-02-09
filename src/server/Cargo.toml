@@ -1,0 +1,15 @@
+[package]
+name = "server"
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "The server components of Engula."
+
+[dependencies]
+engula-apis = { version = "0.3", path = "../apis" }
+prost = "0.9"
+thiserror = "1.0"
+tokio = { version = "1.15", features = ["full"] }
+tonic = "0.6"
