@@ -5,18 +5,18 @@ edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
-keywords = ["database", "serverless", "storage-engine"]
+keywords = ["database", "storage-engine"]
 categories = [
   "asynchronous",
   "data-structures",
   "database",
   "database-implementations",
 ]
-description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
+description = "The Engula command line tool."
 
 [dependencies]
-engula-futures = { version = "0.3.0", path = "../futures" }
-engula-journal = { version = "0.3.0", path = "../journal" }
-engula-kernel = { version = "0.3.0", path = "../kernel" }
-engula-storage = { version = "0.3.0", path = "../storage" }
-luna-engine = { version = "0.3.0", path = "../engine/luna" }
+engula-server = { version = "0.3.0", path = "../server" }
+
+anyhow = "1.0.52"
+clap = { version = "3.0.12", features = ["derive"] }
+tokio = { version = "1.15.0", features = ["full"] }

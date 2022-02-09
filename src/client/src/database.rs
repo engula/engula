@@ -26,6 +26,20 @@ impl Database {
         Self { client, desc }
     }
 
+    pub async fn desc(&self) -> Result<DatabaseDesc> {
+        let req = DescribeDatabaseRequest {
+            id: self.desc.id,
+            ..Default::default()
+        };
+        let req = databases_request_union::Request::DescribeDatabase(req);
+        let res = self.client.clone().databases_union(req).await?;
+        if let databases_response_union::Response::DescribeDatabase(res) = res {
+            res.desc.ok_or(Error::InvalidResponse)
+        } else {
+            Err(Error::InvalidResponse)
+        }
+    }
+
     pub async fn collection(&self, name: impl Into<String>) -> Result<Collection> {
         let desc = self.describe_collection(name).await?;
         Ok(Collection::new(self.client.clone(), desc))

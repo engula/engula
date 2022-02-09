@@ -20,6 +20,8 @@ async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.create_database("db").await?;
-    let _ = db.create_collection("co").await?;
+    println!("created {:?}", db.desc().await?);
+    let co = db.create_collection("co").await?;
+    println!("created {:?}", co.desc().await?);
     Ok(())
 }
