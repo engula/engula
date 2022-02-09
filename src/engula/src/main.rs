@@ -12,22 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod luna {
-    pub use luna_engine::*;
+use anyhow::Result;
+use clap::Parser;
+
+mod server;
+
+#[derive(Parser)]
+struct Command {
+    #[clap(subcommand)]
+    subcmd: SubCommand,
 }
 
-pub mod kernel {
-    pub use engula_kernel::*;
+impl Command {
+    async fn run(self) -> Result<()> {
+        self.subcmd.run().await?;
+        Ok(())
+    }
 }
 
-pub mod journal {
-    pub use engula_journal::*;
+#[derive(Parser)]
+enum SubCommand {
+    Server(server::Command),
 }
 
-pub mod storage {
-    pub use engula_storage::*;
+impl SubCommand {
+    async fn run(self) -> Result<()> {
+        match self {
+            SubCommand::Server(cmd) => cmd.run().await,
+        }
+    }
 }
 
-pub mod futures {
-    pub use engula_futures::*;
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cmd: Command = Command::parse();
+    cmd.run().await?;
+    Ok(())
 }
