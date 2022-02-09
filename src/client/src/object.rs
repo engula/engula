@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod object;
-mod universe;
-mod universe_client;
+use crate::Result;
 
-pub mod types;
+#[allow(dead_code)]
+pub struct Object {
+    pub(crate) object_id: Vec<u8>,
+    pub(crate) database_id: u64,
+    pub(crate) collection_id: u64,
+}
 
-pub use self::{
-    collection::{Collection, CollectionTxn},
-    database::{Database, DatabaseTxn},
-    error::{Error, Result},
-    object::Object,
-    universe::Universe,
-};
+impl Object {
+    pub async fn delete(self) -> Result<()> {
+        todo!();
+    }
+}

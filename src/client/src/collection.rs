@@ -14,7 +14,7 @@
 
 use engula_apis::*;
 
-use crate::{universe_client::UniverseClient, Error, Result};
+use crate::{universe_client::UniverseClient, DatabaseTxn, Error, Object, Result};
 
 pub struct Collection {
     client: UniverseClient,
@@ -43,4 +43,22 @@ impl Collection {
             Err(Error::InvalidResponse)
         }
     }
+
+    pub fn begin(&self) -> CollectionTxn {
+        todo!();
+    }
+
+    pub fn begin_with(&self, _txn: DatabaseTxn) -> CollectionTxn {
+        todo!();
+    }
+
+    pub fn object(&self, object_id: impl Into<Vec<u8>>) -> Object {
+        Object {
+            object_id: object_id.into(),
+            database_id: self.desc.parent_id,
+            collection_id: self.desc.id,
+        }
+    }
 }
+
+pub struct CollectionTxn {}

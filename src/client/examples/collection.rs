@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod object;
-mod universe;
-mod universe_client;
+use anyhow::Result;
+use engula_client::{types::Int64Collection, Universe};
 
-pub mod types;
-
-pub use self::{
-    collection::{Collection, CollectionTxn},
-    database::{Database, DatabaseTxn},
-    error::{Error, Result},
-    object::Object,
-    universe::Universe,
-};
+#[tokio::main]
+async fn main() -> Result<()> {
+    let url = "http://localhost:21716";
+    let uv = Universe::connect(url).await?;
+    let db = uv.database("db").await?;
+    let co = db.collection("co").await?;
+    let co = Int64Collection::from(co);
+    co.object("ob").set(1).await?;
+    println!("ob = {}", co.object("ob").get().await?);
+    Ok(())
+}

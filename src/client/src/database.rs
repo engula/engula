@@ -40,6 +40,10 @@ impl Database {
         }
     }
 
+    pub fn begin(&self) -> DatabaseTxn {
+        todo!();
+    }
+
     pub async fn collection(&self, name: impl Into<String>) -> Result<Collection> {
         let desc = self.describe_collection(name).await?;
         Ok(Collection::new(self.client.clone(), desc))
@@ -96,3 +100,5 @@ impl Database {
         }
     }
 }
+
+pub struct DatabaseTxn {}

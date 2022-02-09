@@ -12,19 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod object;
-mod universe;
-mod universe_client;
+mod int64;
 
-pub mod types;
-
-pub use self::{
-    collection::{Collection, CollectionTxn},
-    database::{Database, DatabaseTxn},
-    error::{Error, Result},
-    object::Object,
-    universe::Universe,
-};
+pub use self::int64::{Int64Collection, Int64Object};
