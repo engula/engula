@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cooperator;
 mod database;
 mod error;
 mod supervisor;
+mod transactor;
 mod universe;
 
 pub mod standalone;
 
 pub use self::{
+    cooperator::Cooperator,
     error::{Error, Result},
     supervisor::Supervisor,
+    transactor::Transactor,
 };
