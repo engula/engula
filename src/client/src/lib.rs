@@ -21,8 +21,6 @@ mod txn_client;
 mod universe;
 mod universe_client;
 
-pub mod types;
-
 pub use self::{
     collection::{Collection, CollectionTxn},
     database::{Database, DatabaseTxn},
