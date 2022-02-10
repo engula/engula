@@ -59,9 +59,9 @@ impl From<Option<GenericValue>> for Value {
     }
 }
 
-impl Into<GenericValue> for Value {
-    fn into(self) -> GenericValue {
-        let value = match self {
+impl From<Value> for GenericValue {
+    fn from(v: Value) -> GenericValue {
+        let value = match v {
             Value::None => None,
             Value::Int64(v) => Some(generic_value::Value::Int64Value(v)),
         };
