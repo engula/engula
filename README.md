@@ -34,6 +34,7 @@ To run the examples:
 ```
 cargo run -p engula -- server start
 cargo run -p engula-client --example universe
+cargo run -p engula-client --example collection
 ```
 
 ## Information

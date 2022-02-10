@@ -23,5 +23,9 @@ async fn main() -> Result<()> {
     let co = db.collection("co").await?;
     co.object("ob").set(1).await?;
     println!("{:?}", co.object("ob").get().await?);
+    co.object("ob").add(2).await?;
+    println!("{:?}", co.object("ob").get().await?);
+    co.object("ob").delete().await?;
+    println!("{:?}", co.object("ob").get().await?);
     Ok(())
 }

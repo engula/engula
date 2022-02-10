@@ -34,3 +34,10 @@ pub fn delete() -> CallExpr {
         ..Default::default()
     }
 }
+
+pub fn add(v: impl Into<GenericValue>) -> CallExpr {
+    CallExpr {
+        function: Some(call_expr::Function::Numeric(NumericFunction::Add as i32)),
+        arguments: vec![v.into()],
+    }
+}

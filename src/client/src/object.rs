@@ -50,4 +50,9 @@ impl Object {
         self.call(call_expr::delete()).await?;
         Ok(())
     }
+
+    pub async fn add(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::add(value.into())).await?;
+        Ok(())
+    }
 }
