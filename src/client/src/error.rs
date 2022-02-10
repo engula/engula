@@ -21,10 +21,12 @@ pub enum Error {
     NotFound(String),
     #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid argument")]
+    #[error("invalid argument: {0}")]
     InvalidArgument(String),
     #[error("invalid response")]
     InvalidResponse,
+    #[error("invalid operation: {0}")]
+    InvalidOperation(String),
     #[error("unknown error: {0}")]
     Unknown(String),
 }

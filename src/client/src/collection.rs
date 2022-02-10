@@ -57,11 +57,21 @@ impl Collection {
     }
 
     pub fn begin(&self) -> CollectionTxn {
-        CollectionTxn::new(self.txn_client.clone(), self.desc.database_id, self.desc.id)
+        CollectionTxn::new(
+            None,
+            self.txn_client.clone(),
+            self.desc.database_id,
+            self.desc.id,
+        )
     }
 
-    pub fn begin_with(&self, _txn: DatabaseTxn) -> CollectionTxn {
-        todo!();
+    pub fn begin_with(&self, txn: DatabaseTxn) -> CollectionTxn {
+        CollectionTxn::new(
+            Some(txn),
+            self.txn_client.clone(),
+            self.desc.database_id,
+            self.desc.id,
+        )
     }
 
     pub fn object(&self, object_id: impl Into<Vec<u8>>) -> Object {
@@ -75,6 +85,7 @@ impl Collection {
 }
 
 pub struct CollectionTxn {
+    parent: Option<DatabaseTxn>,
     client: TxnClient,
     database_id: u64,
     collection_id: u64,
@@ -82,8 +93,14 @@ pub struct CollectionTxn {
 }
 
 impl CollectionTxn {
-    fn new(client: TxnClient, database_id: u64, collection_id: u64) -> Self {
+    fn new(
+        parent: Option<DatabaseTxn>,
+        client: TxnClient,
+        database_id: u64,
+        collection_id: u64,
+    ) -> Self {
         Self {
+            parent,
             client,
             database_id,
             collection_id,
@@ -104,7 +121,11 @@ impl CollectionTxn {
             collection_id: self.collection_id,
             exprs: self.exprs,
         };
-        self.client.collection_call(self.database_id, req).await?;
+        if let Some(parent) = self.parent {
+            parent.add(req).await;
+        } else {
+            self.client.collection_call(self.database_id, req).await?;
+        }
         Ok(())
     }
 }

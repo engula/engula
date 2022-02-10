@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_apis::*;
+use tokio::sync::Mutex;
 
 use crate::{txn_client::TxnClient, universe_client::UniverseClient, Collection, Error, Result};
 
@@ -46,7 +49,7 @@ impl Database {
     }
 
     pub fn begin(&self) -> DatabaseTxn {
-        todo!();
+        DatabaseTxn::new(self.txn_client.clone(), self.desc.id)
     }
 
     pub async fn collection(&self, name: impl Into<String>) -> Result<Collection> {
@@ -114,4 +117,35 @@ impl Database {
     }
 }
 
-pub struct DatabaseTxn {}
+#[derive(Clone)]
+pub struct DatabaseTxn {
+    client: TxnClient,
+    database_id: u64,
+    collections: Arc<Mutex<Vec<CollectionTxnRequest>>>,
+}
+
+impl DatabaseTxn {
+    fn new(client: TxnClient, database_id: u64) -> Self {
+        Self {
+            client,
+            database_id,
+            collections: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub(crate) async fn add(&self, co: CollectionTxnRequest) {
+        self.collections.lock().await.push(co);
+    }
+
+    pub async fn commit(mut self) -> Result<()> {
+        let collections = Arc::try_unwrap(self.collections)
+            .map(|x| x.into_inner())
+            .map_err(|_| Error::InvalidOperation("pending transactions".to_owned()))?;
+        let req = DatabaseTxnRequest {
+            database_id: self.database_id,
+            collections,
+        };
+        self.client.database_call(req).await?;
+        Ok(())
+    }
+}
