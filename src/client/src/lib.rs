@@ -28,6 +28,6 @@ pub use self::{
     database::{Database, DatabaseTxn},
     error::{Error, Result},
     expr::Value,
-    object::Object,
+    object::{Object, ObjectTxn},
     universe::Universe,
 };

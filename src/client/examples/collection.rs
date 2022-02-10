@@ -21,11 +21,27 @@ async fn main() -> Result<()> {
     let uv = Universe::connect(url).await?;
     let db = uv.database("db").await?;
     let co = db.collection("co").await?;
+
     co.object("ob").set(1).await?;
     println!("{:?}", co.object("ob").get().await?);
     co.object("ob").add(2).await?;
     println!("{:?}", co.object("ob").get().await?);
     co.object("ob").delete().await?;
     println!("{:?}", co.object("ob").get().await?);
+
+    let mut txn = co.begin();
+    txn.object("a").set(1);
+    txn.object("b").add(2);
+    txn.commit().await?;
+    println!("a = {:?}", co.object("a").get().await?);
+    println!("b = {:?}", co.object("b").get().await?);
+
+    let mut txn = co.begin();
+    txn.object("a").add(2);
+    txn.object("b").delete();
+    txn.commit().await?;
+    println!("a = {:?}", co.object("a").get().await?);
+    println!("b = {:?}", co.object("b").get().await?);
+
     Ok(())
 }

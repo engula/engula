@@ -15,7 +15,8 @@
 use engula_apis::*;
 
 use crate::{
-    txn_client::TxnClient, universe_client::UniverseClient, DatabaseTxn, Error, Object, Result,
+    txn_client::TxnClient, universe_client::UniverseClient, DatabaseTxn, Error, Object, ObjectTxn,
+    Result,
 };
 
 pub struct Collection {
@@ -56,7 +57,7 @@ impl Collection {
     }
 
     pub fn begin(&self) -> CollectionTxn {
-        todo!();
+        CollectionTxn::new(self.txn_client.clone(), self.desc.database_id, self.desc.id)
     }
 
     pub fn begin_with(&self, _txn: DatabaseTxn) -> CollectionTxn {
@@ -73,4 +74,37 @@ impl Collection {
     }
 }
 
-pub struct CollectionTxn {}
+pub struct CollectionTxn {
+    client: TxnClient,
+    database_id: u64,
+    collection_id: u64,
+    exprs: Vec<MethodCallExpr>,
+}
+
+impl CollectionTxn {
+    fn new(client: TxnClient, database_id: u64, collection_id: u64) -> Self {
+        Self {
+            client,
+            database_id,
+            collection_id,
+            exprs: Vec::new(),
+        }
+    }
+
+    pub(crate) fn add(&mut self, expr: MethodCallExpr) {
+        self.exprs.push(expr);
+    }
+
+    pub fn object(&mut self, object_id: impl Into<Vec<u8>>) -> ObjectTxn {
+        ObjectTxn::new(self, object_id)
+    }
+
+    pub async fn commit(mut self) -> Result<()> {
+        let req = CollectionTxnRequest {
+            collection_id: self.collection_id,
+            exprs: self.exprs,
+        };
+        self.client.collection_call(self.database_id, req).await?;
+        Ok(())
+    }
+}
