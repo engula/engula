@@ -23,11 +23,9 @@ pub struct UniverseClient {
 }
 
 impl UniverseClient {
-    pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let client = universe_client::UniverseClient::connect(url.into())
-            .await
-            .map_err(Error::unknown)?;
-        Ok(Self { client })
+    pub fn new(chan: Channel) -> Self {
+        let client = universe_client::UniverseClient::new(chan);
+        Self { client }
     }
 
     pub async fn databases(&mut self, req: DatabasesRequest) -> Result<DatabasesResponse> {

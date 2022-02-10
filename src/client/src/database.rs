@@ -14,16 +14,21 @@
 
 use engula_apis::*;
 
-use crate::{universe_client::UniverseClient, Collection, Error, Result};
+use crate::{txn_client::TxnClient, universe_client::UniverseClient, Collection, Error, Result};
 
 pub struct Database {
-    client: UniverseClient,
     desc: DatabaseDesc,
+    txn_client: TxnClient,
+    universe_client: UniverseClient,
 }
 
 impl Database {
-    pub fn new(client: UniverseClient, desc: DatabaseDesc) -> Self {
-        Self { client, desc }
+    pub fn new(desc: DatabaseDesc, txn_client: TxnClient, universe_client: UniverseClient) -> Self {
+        Self {
+            desc,
+            txn_client,
+            universe_client,
+        }
     }
 
     pub async fn desc(&self) -> Result<DatabaseDesc> {
@@ -32,7 +37,7 @@ impl Database {
             ..Default::default()
         };
         let req = databases_request_union::Request::DescribeDatabase(req);
-        let res = self.client.clone().databases_union(req).await?;
+        let res = self.universe_client.clone().databases_union(req).await?;
         if let databases_response_union::Response::DescribeDatabase(res) = res {
             res.desc.ok_or(Error::InvalidResponse)
         } else {
@@ -46,7 +51,11 @@ impl Database {
 
     pub async fn collection(&self, name: impl Into<String>) -> Result<Collection> {
         let desc = self.describe_collection(name).await?;
-        Ok(Collection::new(self.client.clone(), desc))
+        Ok(Collection::new(
+            desc,
+            self.txn_client.clone(),
+            self.universe_client.clone(),
+        ))
     }
 
     pub async fn create_collection(&self, name: impl Into<String>) -> Result<Collection> {
@@ -57,13 +66,17 @@ impl Database {
         let req = CreateCollectionRequest { spec: Some(spec) };
         let req = collections_request_union::Request::CreateCollection(req);
         let res = self
-            .client
+            .universe_client
             .clone()
             .collections_union(self.desc.id, req)
             .await?;
         if let collections_response_union::Response::CreateCollection(res) = res {
             let desc = res.desc.ok_or(Error::InvalidResponse)?;
-            Ok(Collection::new(self.client.clone(), desc))
+            Ok(Collection::new(
+                desc,
+                self.txn_client.clone(),
+                self.universe_client.clone(),
+            ))
         } else {
             Err(Error::InvalidResponse)
         }
@@ -75,7 +88,7 @@ impl Database {
             ..Default::default()
         };
         let req = collections_request_union::Request::DeleteCollection(req);
-        self.client
+        self.universe_client
             .clone()
             .collections_union(self.desc.id, req)
             .await?;
@@ -89,7 +102,7 @@ impl Database {
         };
         let req = collections_request_union::Request::DescribeCollection(req);
         let res = self
-            .client
+            .universe_client
             .clone()
             .collections_union(self.desc.id, req)
             .await?;

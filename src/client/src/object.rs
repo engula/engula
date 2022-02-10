@@ -12,17 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Result;
+use engula_apis::{CallExpr, MethodCallExpr};
+
+use crate::{expr::call_expr, txn_client::TxnClient, Result, Value};
 
 #[allow(dead_code)]
 pub struct Object {
+    pub(crate) client: TxnClient,
     pub(crate) object_id: Vec<u8>,
     pub(crate) database_id: u64,
     pub(crate) collection_id: u64,
 }
 
 impl Object {
+    async fn call(mut self, call_expr: CallExpr) -> Result<Value> {
+        let method_expr = MethodCallExpr {
+            id: self.object_id,
+            call: Some(call_expr),
+        };
+        let value = self
+            .client
+            .method_call(self.database_id, self.collection_id, method_expr)
+            .await?;
+        Ok(value.into())
+    }
+
+    pub async fn get(self) -> Result<Value> {
+        self.call(call_expr::get()).await
+    }
+
+    pub async fn set(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::set(value.into())).await?;
+        Ok(())
+    }
+
     pub async fn delete(self) -> Result<()> {
-        todo!();
+        self.call(call_expr::delete()).await?;
+        Ok(())
     }
 }

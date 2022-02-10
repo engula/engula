@@ -12,16 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use engula_client::Universe;
+use engula_apis::*;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let url = "http://localhost:21716";
-    let uv = Universe::connect(url).await?;
-    let db = uv.database("db").await?;
-    let co = db.collection("co").await?;
-    co.object("ob").set(1).await?;
-    println!("{:?}", co.object("ob").get().await?);
-    Ok(())
+pub fn get() -> CallExpr {
+    CallExpr {
+        function: Some(call_expr::Function::Generic(GenericFunction::Get as i32)),
+        ..Default::default()
+    }
+}
+
+pub fn set(v: impl Into<GenericValue>) -> CallExpr {
+    CallExpr {
+        function: Some(call_expr::Function::Generic(GenericFunction::Set as i32)),
+        arguments: vec![v.into()],
+    }
+}
+
+pub fn delete() -> CallExpr {
+    CallExpr {
+        function: Some(call_expr::Function::Generic(GenericFunction::Delete as i32)),
+        ..Default::default()
+    }
 }

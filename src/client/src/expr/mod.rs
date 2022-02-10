@@ -12,16 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use engula_client::Universe;
+mod value;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let url = "http://localhost:21716";
-    let uv = Universe::connect(url).await?;
-    let db = uv.database("db").await?;
-    let co = db.collection("co").await?;
-    co.object("ob").set(1).await?;
-    println!("{:?}", co.object("ob").get().await?);
-    Ok(())
-}
+pub mod call_expr;
+
+pub use self::value::Value;

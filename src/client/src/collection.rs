@@ -14,16 +14,27 @@
 
 use engula_apis::*;
 
-use crate::{universe_client::UniverseClient, DatabaseTxn, Error, Object, Result};
+use crate::{
+    txn_client::TxnClient, universe_client::UniverseClient, DatabaseTxn, Error, Object, Result,
+};
 
 pub struct Collection {
-    client: UniverseClient,
     desc: CollectionDesc,
+    txn_client: TxnClient,
+    universe_client: UniverseClient,
 }
 
 impl Collection {
-    pub fn new(client: UniverseClient, desc: CollectionDesc) -> Self {
-        Self { client, desc }
+    pub fn new(
+        desc: CollectionDesc,
+        txn_client: TxnClient,
+        universe_client: UniverseClient,
+    ) -> Self {
+        Self {
+            desc,
+            txn_client,
+            universe_client,
+        }
     }
 
     pub async fn desc(&self) -> Result<CollectionDesc> {
@@ -33,9 +44,9 @@ impl Collection {
         };
         let req = collections_request_union::Request::DescribeCollection(req);
         let res = self
-            .client
+            .universe_client
             .clone()
-            .collections_union(self.desc.parent_id, req)
+            .collections_union(self.desc.database_id, req)
             .await?;
         if let collections_response_union::Response::DescribeCollection(res) = res {
             res.desc.ok_or(Error::InvalidResponse)
@@ -54,8 +65,9 @@ impl Collection {
 
     pub fn object(&self, object_id: impl Into<Vec<u8>>) -> Object {
         Object {
+            client: self.txn_client.clone(),
             object_id: object_id.into(),
-            database_id: self.desc.parent_id,
+            database_id: self.desc.database_id,
             collection_id: self.desc.id,
         }
     }
