@@ -14,7 +14,7 @@
 
 use engula_apis::{CallExpr, MethodCallExpr};
 
-use crate::{expr::call_expr, txn_client::TxnClient, Result, Value};
+use crate::{expr::call_expr, txn_client::TxnClient, CollectionTxn, Result, Value};
 
 #[allow(dead_code)]
 pub struct Object {
@@ -54,5 +54,38 @@ impl Object {
     pub async fn add(self, value: impl Into<Value>) -> Result<()> {
         self.call(call_expr::add(value.into())).await?;
         Ok(())
+    }
+}
+
+pub struct ObjectTxn<'a> {
+    txn: &'a mut CollectionTxn,
+    expr: MethodCallExpr,
+}
+
+impl<'a> ObjectTxn<'a> {
+    pub(crate) fn new(txn: &'a mut CollectionTxn, object_id: impl Into<Vec<u8>>) -> Self {
+        let expr = MethodCallExpr {
+            id: object_id.into(),
+            ..Default::default()
+        };
+        Self { txn, expr }
+    }
+
+    pub fn set(mut self, value: impl Into<Value>) {
+        self.expr.call = Some(call_expr::set(value.into()));
+    }
+
+    pub fn delete(mut self) {
+        self.expr.call = Some(call_expr::delete());
+    }
+
+    pub fn add(mut self, value: impl Into<Value>) {
+        self.expr.call = Some(call_expr::add(value.into()));
+    }
+}
+
+impl<'a> Drop for ObjectTxn<'a> {
+    fn drop(&mut self) {
+        self.txn.add(std::mem::take(&mut self.expr))
     }
 }
