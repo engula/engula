@@ -93,7 +93,7 @@ impl Inner {
         let name = spec.name.clone();
         let desc = CollectionDesc {
             id,
-            parent_id: self.desc.id,
+            database_id: self.desc.id,
             spec: Some(spec),
         };
         self.collections.insert(id, desc.clone());

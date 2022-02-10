@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{types::Int64Collection, Universe};
+use engula_client::Universe;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,8 +21,7 @@ async fn main() -> Result<()> {
     let uv = Universe::connect(url).await?;
     let db = uv.database("db").await?;
     let co = db.collection("co").await?;
-    let co = Int64Collection::from(co);
     co.object("ob").set(1).await?;
-    println!("ob = {}", co.object("ob").get().await?);
+    println!("{:?}", co.object("ob").get().await?);
     Ok(())
 }

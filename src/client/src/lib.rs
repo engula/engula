@@ -15,7 +15,9 @@
 mod collection;
 mod database;
 mod error;
+mod expr;
 mod object;
+mod txn_client;
 mod universe;
 mod universe_client;
 
@@ -25,6 +27,7 @@ pub use self::{
     collection::{Collection, CollectionTxn},
     database::{Database, DatabaseTxn},
     error::{Error, Result},
+    expr::Value,
     object::Object,
     universe::Universe,
 };
