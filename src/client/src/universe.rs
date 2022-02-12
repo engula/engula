@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_apis::*;
 use tonic::transport::Endpoint;
 
 use crate::{txn_client::TxnClient, universe_client::UniverseClient, Database, Error, Result};
 
+#[derive(Clone)]
 pub struct Universe {
-    txn_client: TxnClient,
-    universe_client: UniverseClient,
+    inner: Arc<UniverseInner>,
 }
 
 impl Universe {
@@ -31,61 +33,54 @@ impl Universe {
             .connect()
             .await
             .map_err(Error::unknown)?;
-        let txn_client = TxnClient::new(chan.clone());
-        let universe_client = UniverseClient::new(chan);
+        let inner = UniverseInner {
+            txn_client: TxnClient::new(chan.clone()),
+            universe_client: UniverseClient::new(chan),
+        };
         Ok(Universe {
-            txn_client,
-            universe_client,
+            inner: Arc::new(inner),
         })
     }
 
-    pub async fn database(&self, name: impl Into<String>) -> Result<Database> {
-        let desc = self.describe_database(name).await?;
-        Ok(Database::new(
-            desc,
-            self.txn_client.clone(),
-            self.universe_client.clone(),
-        ))
+    pub fn database(&self, name: impl Into<String>) -> Database {
+        self.inner.new_database(name)
     }
 
     pub async fn create_database(&self, name: impl Into<String>) -> Result<Database> {
-        let spec = DatabaseSpec { name: name.into() };
+        let name = name.into();
+        let spec = DatabaseSpec { name: name.clone() };
         let req = CreateDatabaseRequest { spec: Some(spec) };
-        let req = databases_request_union::Request::CreateDatabase(req);
-        let res = self.universe_client.clone().databases_union(req).await?;
-        if let databases_response_union::Response::CreateDatabase(res) = res {
-            let desc = res.desc.ok_or(Error::InvalidResponse)?;
-            Ok(Database::new(
-                desc,
-                self.txn_client.clone(),
-                self.universe_client.clone(),
-            ))
-        } else {
-            Err(Error::InvalidResponse)
-        }
+        let req = database_request_union::Request::CreateDatabase(req);
+        self.inner.database_call(req).await?;
+        Ok(self.database(name))
     }
 
     pub async fn delete_database(&self, name: impl Into<String>) -> Result<()> {
-        let req = DeleteDatabaseRequest {
-            name: name.into(),
-            ..Default::default()
-        };
-        let req = databases_request_union::Request::DeleteDatabase(req);
-        self.universe_client.clone().databases_union(req).await?;
+        let req = DeleteDatabaseRequest { name: name.into() };
+        let req = database_request_union::Request::DeleteDatabase(req);
+        self.inner.database_call(req).await?;
         Ok(())
     }
+}
 
-    pub async fn describe_database(&self, name: impl Into<String>) -> Result<DatabaseDesc> {
-        let req = DescribeDatabaseRequest {
-            name: name.into(),
-            ..Default::default()
-        };
-        let req = databases_request_union::Request::DescribeDatabase(req);
-        let res = self.universe_client.clone().databases_union(req).await?;
-        if let databases_response_union::Response::DescribeDatabase(res) = res {
-            res.desc.ok_or(Error::InvalidResponse)
-        } else {
-            Err(Error::InvalidResponse)
-        }
+struct UniverseInner {
+    txn_client: TxnClient,
+    universe_client: UniverseClient,
+}
+
+impl UniverseInner {
+    fn new_database(&self, name: impl Into<String>) -> Database {
+        Database::new(
+            name.into(),
+            self.txn_client.clone(),
+            self.universe_client.clone(),
+        )
+    }
+
+    async fn database_call(
+        &self,
+        req: database_request_union::Request,
+    ) -> Result<database_response_union::Response> {
+        self.universe_client.clone().database(req).await
     }
 }

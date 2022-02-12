@@ -28,20 +28,37 @@ impl UniverseClient {
         Self { client }
     }
 
+    pub async fn database(
+        &mut self,
+        req: database_request_union::Request,
+    ) -> Result<database_response_union::Response> {
+        let req = DatabasesRequest {
+            requests: vec![DatabaseRequestUnion { request: Some(req) }],
+        };
+        let mut res = self.databases(req).await?;
+        res.responses
+            .pop()
+            .and_then(|x| x.response)
+            .ok_or(Error::InvalidResponse)
+    }
+
     pub async fn databases(&mut self, req: DatabasesRequest) -> Result<DatabasesResponse> {
         let res = self.client.databases(req).await?;
         Ok(res.into_inner())
     }
 
-    pub async fn databases_union(
+    pub async fn collection(
         &mut self,
-        req: databases_request_union::Request,
-    ) -> Result<databases_response_union::Response> {
-        let req = DatabasesRequest {
-            request: Some(DatabasesRequestUnion { request: Some(req) }),
+        dbname: String,
+        req: collection_request_union::Request,
+    ) -> Result<collection_response_union::Response> {
+        let req = CollectionsRequest {
+            dbname,
+            requests: vec![CollectionRequestUnion { request: Some(req) }],
         };
-        let res = self.databases(req).await?;
-        res.response
+        let mut res = self.collections(req).await?;
+        res.responses
+            .pop()
             .and_then(|x| x.response)
             .ok_or(Error::InvalidResponse)
     }
@@ -49,20 +66,5 @@ impl UniverseClient {
     pub async fn collections(&mut self, req: CollectionsRequest) -> Result<CollectionsResponse> {
         let res = self.client.collections(req).await?;
         Ok(res.into_inner())
-    }
-
-    pub async fn collections_union(
-        &mut self,
-        database_id: u64,
-        req: collections_request_union::Request,
-    ) -> Result<collections_response_union::Response> {
-        let req = CollectionsRequest {
-            database_id,
-            request: Some(CollectionsRequestUnion { request: Some(req) }),
-        };
-        let res = self.collections(req).await?;
-        res.response
-            .and_then(|x| x.response)
-            .ok_or(Error::InvalidResponse)
     }
 }

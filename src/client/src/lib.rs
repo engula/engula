@@ -17,15 +17,17 @@ mod database;
 mod error;
 mod expr;
 mod object;
+mod txn;
 mod txn_client;
 mod universe;
 mod universe_client;
 
 pub use self::{
-    collection::{Collection, CollectionTxn},
-    database::{Database, DatabaseTxn},
+    collection::Collection,
+    database::Database,
     error::{Error, Result},
     expr::Value,
-    object::{Object, ObjectTxn},
+    object::Object,
+    txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
     universe::Universe,
 };

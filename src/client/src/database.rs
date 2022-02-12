@@ -15,33 +15,35 @@
 use std::sync::Arc;
 
 use engula_apis::*;
-use tokio::sync::Mutex;
 
-use crate::{txn_client::TxnClient, universe_client::UniverseClient, Collection, Error, Result};
+use crate::{
+    txn_client::TxnClient, universe_client::UniverseClient, Collection, DatabaseTxn, Error, Result,
+};
 
+#[derive(Clone)]
 pub struct Database {
-    desc: DatabaseDesc,
-    txn_client: TxnClient,
-    universe_client: UniverseClient,
+    inner: Arc<DatabaseInner>,
 }
 
 impl Database {
-    pub fn new(desc: DatabaseDesc, txn_client: TxnClient, universe_client: UniverseClient) -> Self {
-        Self {
-            desc,
+    pub fn new(name: String, txn_client: TxnClient, universe_client: UniverseClient) -> Self {
+        let inner = DatabaseInner {
+            name,
             txn_client,
             universe_client,
+        };
+        Self {
+            inner: Arc::new(inner),
         }
     }
 
     pub async fn desc(&self) -> Result<DatabaseDesc> {
         let req = DescribeDatabaseRequest {
-            id: self.desc.id,
-            ..Default::default()
+            name: self.inner.name.clone(),
         };
-        let req = databases_request_union::Request::DescribeDatabase(req);
-        let res = self.universe_client.clone().databases_union(req).await?;
-        if let databases_response_union::Response::DescribeDatabase(res) = res {
+        let req = database_request_union::Request::DescribeDatabase(req);
+        let res = self.inner.database_call(req).await?;
+        if let database_response_union::Response::DescribeDatabase(res) = res {
             res.desc.ok_or(Error::InvalidResponse)
         } else {
             Err(Error::InvalidResponse)
@@ -49,103 +51,64 @@ impl Database {
     }
 
     pub fn begin(&self) -> DatabaseTxn {
-        DatabaseTxn::new(self.txn_client.clone(), self.desc.id)
+        self.inner.new_txn()
     }
 
-    pub async fn collection(&self, name: impl Into<String>) -> Result<Collection> {
-        let desc = self.describe_collection(name).await?;
-        Ok(Collection::new(
-            desc,
-            self.txn_client.clone(),
-            self.universe_client.clone(),
-        ))
+    pub fn collection(&self, name: impl Into<String>) -> Collection {
+        self.inner.new_collection(name.into())
     }
 
     pub async fn create_collection(&self, name: impl Into<String>) -> Result<Collection> {
-        let spec = CollectionSpec {
-            name: name.into(),
-            ..Default::default()
-        };
+        let name = name.into();
+        let spec = CollectionSpec { name: name.clone() };
         let req = CreateCollectionRequest { spec: Some(spec) };
-        let req = collections_request_union::Request::CreateCollection(req);
-        let res = self
-            .universe_client
-            .clone()
-            .collections_union(self.desc.id, req)
-            .await?;
-        if let collections_response_union::Response::CreateCollection(res) = res {
-            let desc = res.desc.ok_or(Error::InvalidResponse)?;
-            Ok(Collection::new(
-                desc,
-                self.txn_client.clone(),
-                self.universe_client.clone(),
-            ))
-        } else {
-            Err(Error::InvalidResponse)
-        }
+        let req = collection_request_union::Request::CreateCollection(req);
+        self.inner.collection_call(req).await?;
+        Ok(self.collection(name))
     }
 
     pub async fn delete_collection(&self, name: impl Into<String>) -> Result<()> {
-        let req = DeleteCollectionRequest {
-            name: name.into(),
-            ..Default::default()
-        };
-        let req = collections_request_union::Request::DeleteCollection(req);
+        let req = DeleteCollectionRequest { name: name.into() };
+        let req = collection_request_union::Request::DeleteCollection(req);
+        self.inner.collection_call(req).await?;
+        Ok(())
+    }
+}
+
+struct DatabaseInner {
+    name: String,
+    txn_client: TxnClient,
+    universe_client: UniverseClient,
+}
+
+impl DatabaseInner {
+    fn new_txn(&self) -> DatabaseTxn {
+        DatabaseTxn::new(self.name.clone(), self.txn_client.clone())
+    }
+
+    fn new_collection(&self, name: String) -> Collection {
+        Collection::new(
+            self.name.clone(),
+            name,
+            self.txn_client.clone(),
+            self.universe_client.clone(),
+        )
+    }
+
+    async fn database_call(
+        &self,
+        req: database_request_union::Request,
+    ) -> Result<database_response_union::Response> {
+        self.universe_client.clone().database(req).await
+    }
+
+    async fn collection_call(
+        &self,
+        req: collection_request_union::Request,
+    ) -> Result<collection_response_union::Response> {
         self.universe_client
             .clone()
-            .collections_union(self.desc.id, req)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn describe_collection(&self, name: impl Into<String>) -> Result<CollectionDesc> {
-        let req = DescribeCollectionRequest {
-            name: name.into(),
-            ..Default::default()
-        };
-        let req = collections_request_union::Request::DescribeCollection(req);
-        let res = self
-            .universe_client
-            .clone()
-            .collections_union(self.desc.id, req)
-            .await?;
-        if let collections_response_union::Response::DescribeCollection(res) = res {
-            res.desc.ok_or(Error::InvalidResponse)
-        } else {
-            Err(Error::InvalidResponse)
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct DatabaseTxn {
-    client: TxnClient,
-    database_id: u64,
-    collections: Arc<Mutex<Vec<CollectionTxnRequest>>>,
-}
-
-impl DatabaseTxn {
-    fn new(client: TxnClient, database_id: u64) -> Self {
-        Self {
-            client,
-            database_id,
-            collections: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub(crate) async fn add(&self, co: CollectionTxnRequest) {
-        self.collections.lock().await.push(co);
-    }
-
-    pub async fn commit(mut self) -> Result<()> {
-        let collections = Arc::try_unwrap(self.collections)
-            .map(|x| x.into_inner())
-            .map_err(|_| Error::InvalidOperation("pending transactions".to_owned()))?;
-        let req = DatabaseTxnRequest {
-            database_id: self.database_id,
-            collections,
-        };
-        self.client.database_call(req).await?;
-        Ok(())
+            .collection(self.name.clone(), req)
+            .await
     }
 }
