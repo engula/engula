@@ -19,15 +19,15 @@ use engula_client::Universe;
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("db").await?;
-    let co = db.collection("co").await?;
+    let db = uv.database("db");
+    let co = db.collection("co");
 
-    co.object("ob").set(1).await?;
-    println!("{:?}", co.object("ob").get().await?);
-    co.object("ob").add(2).await?;
-    println!("{:?}", co.object("ob").get().await?);
-    co.object("ob").delete().await?;
-    println!("{:?}", co.object("ob").get().await?);
+    co.object("o").set(1).await?;
+    println!("{:?}", co.object("o").get().await?);
+    co.object("o").add(2).await?;
+    println!("{:?}", co.object("o").get().await?);
+    co.object("o").delete().await?;
+    println!("{:?}", co.object("o").get().await?);
 
     let mut txn = co.begin();
     txn.object("a").set(1);

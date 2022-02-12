@@ -18,8 +18,8 @@ use crate::{Supervisor, Transactor};
 
 pub async fn serve(addr: SocketAddr) -> Result<(), tonic::transport::Error> {
     tonic::transport::Server::builder()
-        .add_service(Supervisor::new().into_service())
-        .add_service(Transactor::new().into_service())
+        .add_service(Supervisor::new_service())
+        .add_service(Transactor::new_service())
         .serve(addr)
         .await
 }

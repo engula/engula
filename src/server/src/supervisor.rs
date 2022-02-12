@@ -12,32 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{collections::HashMap, sync::Arc};
+
 use engula_apis::*;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
-use crate::{database::Database, universe::Universe, Error, Result};
+use crate::{Error, Result};
+
+type TonicResult<T> = std::result::Result<T, Status>;
 
 pub struct Supervisor {
     uv: Universe,
 }
 
-type TonicResult<T> = std::result::Result<T, Status>;
-
-impl Default for Supervisor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Supervisor {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             uv: Universe::new(),
         }
     }
 
-    pub fn into_service(self) -> universe_server::UniverseServer<Self> {
-        universe_server::UniverseServer::new(self)
+    pub fn new_service() -> universe_server::UniverseServer<Self> {
+        universe_server::UniverseServer::new(Self::new())
     }
 }
 
@@ -63,34 +60,43 @@ impl universe_server::Universe for Supervisor {
 }
 
 impl Supervisor {
-    async fn handle_databases(&self, req: DatabasesRequest) -> Result<DatabasesResponse> {
-        let req = req
-            .request
-            .and_then(|x| x.request)
-            .ok_or(Error::InvalidRequest)?;
+    pub(crate) async fn handle_databases(
+        &self,
+        req: DatabasesRequest,
+    ) -> Result<DatabasesResponse> {
+        let mut res = DatabasesResponse::default();
+        for sub_req in req.requests {
+            let sub_res = self.handle_database_union(sub_req).await?;
+            res.responses.push(sub_res);
+        }
+        Ok(res)
+    }
+
+    pub(crate) async fn handle_database_union(
+        &self,
+        req: DatabaseRequestUnion,
+    ) -> Result<DatabaseResponseUnion> {
+        let req = req.request.ok_or(Error::InvalidRequest)?;
         let res = match req {
-            databases_request_union::Request::ListDatabases(_req) => {
+            database_request_union::Request::ListDatabases(_req) => {
                 todo!();
             }
-            databases_request_union::Request::CreateDatabase(req) => {
+            database_request_union::Request::CreateDatabase(req) => {
                 let res = self.handle_create_database(req).await?;
-                databases_response_union::Response::CreateDatabase(res)
+                database_response_union::Response::CreateDatabase(res)
             }
-            databases_request_union::Request::UpdateDatabase(_req) => {
+            database_request_union::Request::UpdateDatabase(_req) => {
                 todo!();
             }
-            databases_request_union::Request::DeleteDatabase(_req) => {
+            database_request_union::Request::DeleteDatabase(_req) => {
                 todo!();
             }
-            databases_request_union::Request::DescribeDatabase(req) => {
+            database_request_union::Request::DescribeDatabase(req) => {
                 let res = self.handle_describe_database(req).await?;
-                databases_response_union::Response::DescribeDatabase(res)
+                database_response_union::Response::DescribeDatabase(res)
             }
         };
-        let res = DatabasesResponseUnion {
-            response: Some(res),
-        };
-        Ok(DatabasesResponse {
+        Ok(DatabaseResponseUnion {
             response: Some(res),
         })
     }
@@ -108,11 +114,7 @@ impl Supervisor {
         &self,
         req: DescribeDatabaseRequest,
     ) -> Result<DescribeDatabaseResponse> {
-        let db = if req.id > 0 {
-            self.uv.database(req.id).await?
-        } else {
-            self.uv.lookup_database(&req.name).await?
-        };
+        let db = self.uv.database(&req.name).await?;
         let desc = db.desc().await;
         Ok(DescribeDatabaseResponse { desc: Some(desc) })
     }
@@ -120,34 +122,41 @@ impl Supervisor {
 
 impl Supervisor {
     async fn handle_collections(&self, req: CollectionsRequest) -> Result<CollectionsResponse> {
-        let db = self.uv.database(req.database_id).await?;
-        let req = req
-            .request
-            .and_then(|x| x.request)
-            .ok_or(Error::InvalidRequest)?;
+        let db = self.uv.database(&req.dbname).await?;
+        let mut res = CollectionsResponse::default();
+        for sub_req in req.requests {
+            let sub_res = self.handle_collection_union(db.clone(), sub_req).await?;
+            res.responses.push(sub_res);
+        }
+        Ok(res)
+    }
+
+    async fn handle_collection_union(
+        &self,
+        db: Database,
+        req: CollectionRequestUnion,
+    ) -> Result<CollectionResponseUnion> {
+        let req = req.request.ok_or(Error::InvalidRequest)?;
         let res = match req {
-            collections_request_union::Request::ListCollections(_req) => {
+            collection_request_union::Request::ListCollections(_req) => {
                 todo!();
             }
-            collections_request_union::Request::CreateCollection(req) => {
+            collection_request_union::Request::CreateCollection(req) => {
                 let res = self.handle_create_collection(db, req).await?;
-                collections_response_union::Response::CreateCollection(res)
+                collection_response_union::Response::CreateCollection(res)
             }
-            collections_request_union::Request::UpdateCollection(_req) => {
+            collection_request_union::Request::UpdateCollection(_req) => {
                 todo!();
             }
-            collections_request_union::Request::DeleteCollection(_req) => {
+            collection_request_union::Request::DeleteCollection(_req) => {
                 todo!();
             }
-            collections_request_union::Request::DescribeCollection(req) => {
+            collection_request_union::Request::DescribeCollection(req) => {
                 let res = self.handle_describe_collection(db, req).await?;
-                collections_response_union::Response::DescribeCollection(res)
+                collection_response_union::Response::DescribeCollection(res)
             }
         };
-        let res = CollectionsResponseUnion {
-            response: Some(res),
-        };
-        Ok(CollectionsResponse {
+        Ok(CollectionResponseUnion {
             response: Some(res),
         })
     }
@@ -167,11 +176,109 @@ impl Supervisor {
         db: Database,
         req: DescribeCollectionRequest,
     ) -> Result<DescribeCollectionResponse> {
-        let desc = if req.id > 0 {
-            db.collection(req.id).await?
-        } else {
-            db.lookup_collection(&req.name).await?
-        };
+        let desc = db.collection(&req.name).await?;
         Ok(DescribeCollectionResponse { desc: Some(desc) })
+    }
+}
+
+#[derive(Clone)]
+pub struct Universe {
+    inner: Arc<Mutex<UniverseInner>>,
+}
+
+struct UniverseInner {
+    next_id: u64,
+    databases: HashMap<String, Database>,
+}
+
+impl Universe {
+    fn new() -> Self {
+        let inner = UniverseInner {
+            next_id: 1,
+            databases: HashMap::new(),
+        };
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    async fn database(&self, name: &str) -> Result<Database> {
+        let inner = self.inner.lock().await;
+        inner
+            .databases
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("database {}", name)))
+    }
+
+    async fn create_database(&self, spec: DatabaseSpec) -> Result<DatabaseDesc> {
+        let mut inner = self.inner.lock().await;
+        if inner.databases.contains_key(&spec.name) {
+            return Err(Error::AlreadyExists(format!("database {}", spec.name)));
+        }
+        let id = inner.next_id;
+        inner.next_id += 1;
+        let name = spec.name.clone();
+        let desc = DatabaseDesc {
+            id,
+            spec: Some(spec),
+        };
+        let db = Database::new(desc.clone());
+        inner.databases.insert(name, db);
+        Ok(desc)
+    }
+}
+
+#[derive(Clone)]
+pub struct Database {
+    inner: Arc<Mutex<DatabaseInner>>,
+}
+
+struct DatabaseInner {
+    desc: DatabaseDesc,
+    next_id: u64,
+    collections: HashMap<String, CollectionDesc>,
+}
+
+impl Database {
+    fn new(desc: DatabaseDesc) -> Self {
+        let inner = DatabaseInner {
+            desc,
+            next_id: 1,
+            collections: HashMap::new(),
+        };
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    async fn desc(&self) -> DatabaseDesc {
+        self.inner.lock().await.desc.clone()
+    }
+
+    async fn collection(&self, name: &str) -> Result<CollectionDesc> {
+        let inner = self.inner.lock().await;
+        inner
+            .collections
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("collection {}", name)))
+    }
+
+    async fn create_collection(&self, spec: CollectionSpec) -> Result<CollectionDesc> {
+        let mut inner = self.inner.lock().await;
+        if inner.collections.contains_key(&spec.name) {
+            return Err(Error::AlreadyExists(format!("collection {}", spec.name)));
+        }
+        let id = inner.next_id;
+        inner.next_id += 1;
+        let name = spec.name.clone();
+        let desc = CollectionDesc {
+            id,
+            database_id: inner.desc.id,
+            spec: Some(spec),
+        };
+        inner.collections.insert(name, desc.clone());
+        Ok(desc)
     }
 }

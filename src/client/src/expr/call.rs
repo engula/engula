@@ -28,16 +28,18 @@ pub fn set(v: impl Into<GenericValue>) -> CallExpr {
     }
 }
 
-pub fn delete() -> CallExpr {
-    CallExpr {
-        function: Some(call_expr::Function::Generic(GenericFunction::Delete as i32)),
-        ..Default::default()
-    }
-}
-
 pub fn add(v: impl Into<GenericValue>) -> CallExpr {
     CallExpr {
         function: Some(call_expr::Function::Numeric(NumericFunction::Add as i32)),
         arguments: vec![v.into()],
+    }
+}
+
+pub fn delete() -> CallExpr {
+    CallExpr {
+        function: Some(call_expr::Function::Container(
+            ContainerFunction::Delete as i32,
+        )),
+        ..Default::default()
     }
 }

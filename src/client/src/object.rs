@@ -12,80 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::{CallExpr, MethodCallExpr};
+use engula_apis::*;
 
-use crate::{expr::call_expr, txn_client::TxnClient, CollectionTxn, Result, Value};
+use crate::{expr::call, txn_client::TxnClient, Error, ObjectTxn, Result, Value};
 
-#[allow(dead_code)]
 pub struct Object {
-    pub(crate) client: TxnClient,
-    pub(crate) object_id: Vec<u8>,
-    pub(crate) database_id: u64,
-    pub(crate) collection_id: u64,
+    id: Vec<u8>,
+    dbname: String,
+    coname: String,
+    client: TxnClient,
 }
 
 impl Object {
-    async fn call(mut self, call_expr: CallExpr) -> Result<Value> {
-        let method_expr = MethodCallExpr {
-            id: self.object_id,
-            call: Some(call_expr),
-        };
-        let value = self
-            .client
-            .method_call(self.database_id, self.collection_id, method_expr)
-            .await?;
-        Ok(value.into())
+    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
+        Self {
+            id,
+            dbname,
+            coname,
+            client,
+        }
     }
 
-    pub async fn get(self) -> Result<Value> {
-        self.call(call_expr::get()).await
+    pub fn begin(self) -> ObjectTxn {
+        ObjectTxn::new_owned(self.id, self.dbname, self.coname, self.client)
+    }
+
+    pub async fn get(mut self) -> Result<Value> {
+        let method = MethodCallExpr {
+            index: Some(method_call_expr::Index::BlobIdent(self.id)),
+            call: Some(call::get()),
+            ..Default::default()
+        };
+        let result = self.client.method(self.dbname, self.coname, method).await?;
+        result.value.map(|x| x.into()).ok_or(Error::InvalidResponse)
     }
 
     pub async fn set(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::set(value.into())).await?;
-        Ok(())
-    }
-
-    pub async fn delete(self) -> Result<()> {
-        self.call(call_expr::delete()).await?;
-        Ok(())
+        self.begin().set(value).commit().await
     }
 
     pub async fn add(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::add(value.into())).await?;
-        Ok(())
-    }
-}
-
-pub struct ObjectTxn<'a> {
-    txn: &'a mut CollectionTxn,
-    expr: MethodCallExpr,
-}
-
-impl<'a> ObjectTxn<'a> {
-    pub(crate) fn new(txn: &'a mut CollectionTxn, object_id: impl Into<Vec<u8>>) -> Self {
-        let expr = MethodCallExpr {
-            id: object_id.into(),
-            ..Default::default()
-        };
-        Self { txn, expr }
+        self.begin().add(value).commit().await
     }
 
-    pub fn set(mut self, value: impl Into<Value>) {
-        self.expr.call = Some(call_expr::set(value.into()));
-    }
-
-    pub fn delete(mut self) {
-        self.expr.call = Some(call_expr::delete());
-    }
-
-    pub fn add(mut self, value: impl Into<Value>) {
-        self.expr.call = Some(call_expr::add(value.into()));
-    }
-}
-
-impl<'a> Drop for ObjectTxn<'a> {
-    fn drop(&mut self) {
-        self.txn.add(std::mem::take(&mut self.expr))
+    pub async fn delete(self) -> Result<()> {
+        self.begin().delete().commit().await
     }
 }

@@ -28,43 +28,62 @@ impl TxnClient {
         Self { client }
     }
 
-    pub async fn call(&mut self, req: TxnRequest) -> Result<TxnResponse> {
-        let res = self.client.call(req).await?;
+    pub async fn batch(&mut self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
+        let res = self.client.batch(req).await?;
         Ok(res.into_inner())
     }
 
-    pub async fn database_call(&mut self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
-        let req = TxnRequest {
+    pub async fn database(&mut self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+        let req = BatchTxnRequest {
             requests: vec![req],
         };
-        let mut res = self.call(req).await?;
+        let mut res = self.batch(req).await?;
         res.responses.pop().ok_or(Error::InvalidResponse)
     }
 
-    pub async fn collection_call(
+    pub async fn collection(
         &mut self,
-        database_id: u64,
-        req: CollectionTxnRequest,
+        dbname: String,
+        collection: CollectionTxnRequest,
     ) -> Result<CollectionTxnResponse> {
-        let req = DatabaseTxnRequest {
-            database_id,
-            collections: vec![req],
-        };
-        let mut res = self.database_call(req).await?;
-        res.collections.pop().ok_or(Error::InvalidResponse)
+        let mut responses = self.collections(dbname, vec![collection]).await?;
+        responses.pop().ok_or(Error::InvalidResponse)
     }
 
-    pub async fn method_call(
+    pub async fn collections(
         &mut self,
-        database_id: u64,
-        collection_id: u64,
-        expr: MethodCallExpr,
-    ) -> Result<Option<GenericValue>> {
-        let req = CollectionTxnRequest {
-            collection_id,
-            exprs: vec![expr],
+        dbname: String,
+        collections: Vec<CollectionTxnRequest>,
+    ) -> Result<Vec<CollectionTxnResponse>> {
+        let req = DatabaseTxnRequest {
+            name: dbname,
+            collections,
         };
-        let mut res = self.collection_call(database_id, req).await?;
-        Ok(res.values.pop())
+        let res = self.database(req).await?;
+        Ok(res.collections)
+    }
+
+    pub async fn method(
+        &mut self,
+        dbname: String,
+        coname: String,
+        method: MethodCallExpr,
+    ) -> Result<MethodCallResult> {
+        let mut values = self.methods(dbname, coname, vec![method]).await?;
+        values.pop().ok_or(Error::InvalidResponse)
+    }
+
+    pub async fn methods(
+        &mut self,
+        dbname: String,
+        coname: String,
+        methods: Vec<MethodCallExpr>,
+    ) -> Result<Vec<MethodCallResult>> {
+        let req = CollectionTxnRequest {
+            name: coname,
+            methods,
+        };
+        let res = self.collection(dbname, req).await?;
+        Ok(res.results)
     }
 }
