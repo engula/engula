@@ -18,6 +18,7 @@ use engula_apis::*;
 
 use crate::{
     txn_client::TxnClient, universe_client::UniverseClient, Collection, DatabaseTxn, Error, Result,
+    TypedObject,
 };
 
 #[derive(Clone)]
@@ -54,11 +55,14 @@ impl Database {
         self.inner.new_txn()
     }
 
-    pub fn collection(&self, name: impl Into<String>) -> Collection {
+    pub fn collection<T: TypedObject>(&self, name: impl Into<String>) -> Collection<T> {
         self.inner.new_collection(name.into())
     }
 
-    pub async fn create_collection(&self, name: impl Into<String>) -> Result<Collection> {
+    pub async fn create_collection<T: TypedObject>(
+        &self,
+        name: impl Into<String>,
+    ) -> Result<Collection<T>> {
         let name = name.into();
         let spec = CollectionSpec { name: name.clone() };
         let req = CreateCollectionRequest { spec: Some(spec) };
@@ -86,7 +90,7 @@ impl DatabaseInner {
         DatabaseTxn::new(self.name.clone(), self.txn_client.clone())
     }
 
-    fn new_collection(&self, name: String) -> Collection {
+    fn new_collection<T: TypedObject>(&self, name: String) -> Collection<T> {
         Collection::new(
             self.name.clone(),
             name,

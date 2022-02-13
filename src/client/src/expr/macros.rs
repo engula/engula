@@ -12,25 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod expr;
-mod object;
-mod txn;
-mod txn_client;
-mod types;
-mod universe;
-mod universe_client;
-mod value;
+macro_rules! call_expr {
+    ($func:expr, $args:expr) => {
+        Some(CallExpr {
+            func: $func as i32,
+            args: $args,
+        })
+    };
+}
 
-pub use self::{
-    collection::Collection,
-    database::Database,
-    error::{Error, Result},
-    object::{Object, TypedObject},
-    txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
-    types::Int64,
-    universe::Universe,
-    value::{TypedValue, Value},
-};
+macro_rules! simple_expr {
+    ($id:ident, $func:expr, $args:expr) => {
+        Expr {
+            id: $id.into(),
+            call: call_expr!($func, $args),
+        }
+    };
+}

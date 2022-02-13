@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod value;
+#[macro_use]
+mod macros;
 
 pub mod simple;
-
-pub use self::value::Value;

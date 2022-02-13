@@ -12,25 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod collection;
-mod database;
-mod error;
-mod expr;
-mod object;
-mod txn;
-mod txn_client;
-mod types;
-mod universe;
-mod universe_client;
-mod value;
+use crate::{Object, Result, TypedObject};
 
-pub use self::{
-    collection::Collection,
-    database::Database,
-    error::{Error, Result},
-    object::{Object, TypedObject},
-    txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
-    types::Int64,
-    universe::Universe,
-    value::{TypedValue, Value},
-};
+pub struct Int64(Object);
+
+impl TypedObject for Int64 {
+    type TypedValue = i64;
+}
+
+impl From<Object> for Int64 {
+    fn from(ob: Object) -> Self {
+        Self(ob)
+    }
+}
+
+impl Int64 {
+    pub async fn add(self, _value: i64) -> Result<()> {
+        todo!();
+    }
+}

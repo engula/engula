@@ -12,23 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use engula_apis::*;
 
 use crate::{
-    expr::{simple, Value},
-    txn_client::TxnClient,
-    universe_client::UniverseClient,
-    CollectionTxn, Error, Object, Result,
+    expr::simple, txn_client::TxnClient, universe_client::UniverseClient, CollectionTxn, Error,
+    Object, Result, TypedObject, TypedValue, Value,
 };
 
 #[derive(Clone)]
-pub struct Collection {
+pub struct Collection<T> {
     inner: Arc<CollectionInner>,
+    _marker: PhantomData<T>,
 }
 
-impl Collection {
+impl<T: TypedObject> Collection<T> {
     pub(crate) fn new(
         dbname: String,
         coname: String,
@@ -43,6 +42,7 @@ impl Collection {
         };
         Self {
             inner: Arc::new(inner),
+            _marker: PhantomData,
         }
     }
 
@@ -63,19 +63,20 @@ impl Collection {
         self.inner.new_txn()
     }
 
-    pub fn object(&self, id: impl Into<Vec<u8>>) -> Object {
+    pub fn object(&self, id: impl Into<Vec<u8>>) -> T {
         self.inner.new_object(id.into())
     }
 
-    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Value> {
+    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<T::TypedValue> {
         let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
-        result.value.map(|v| v.into()).ok_or(Error::InvalidResponse)
+        let value = result.value.ok_or(Error::InvalidResponse)?;
+        T::TypedValue::cast_from(Value::from(value))
     }
 
-    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Result<()> {
+    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::TypedValue>) -> Result<()> {
         let mut txn = self.begin();
-        txn.set(id, value);
+        txn.set(id, value.into());
         txn.commit().await
     }
 
@@ -102,13 +103,14 @@ impl CollectionInner {
         )
     }
 
-    fn new_object(&self, id: Vec<u8>) -> Object {
-        Object::new(
+    fn new_object<T: TypedObject>(&self, id: Vec<u8>) -> T {
+        let ob = Object::new(
             id,
             self.dbname.clone(),
             self.coname.clone(),
             self.txn_client.clone(),
-        )
+        );
+        ob.into()
     }
 
     async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {

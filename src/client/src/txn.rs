@@ -16,11 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use engula_apis::*;
 
-use crate::{
-    expr::{simple, Value},
-    txn_client::TxnClient,
-    Error, Result,
-};
+use crate::{expr::simple, txn_client::TxnClient, Error, Result, Value};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -102,7 +98,7 @@ impl CollectionTxn {
         }
     }
 
-    fn add_expr(&mut self, expr: Expr) {
+    pub(crate) fn add_expr(&mut self, expr: Expr) {
         self.exprs.push(expr);
     }
 
@@ -135,12 +131,12 @@ impl CollectionTxn {
 pub struct ObjectTxn<'a> {
     handle: Option<CollectionTxnHandle>,
     parent: Option<&'a mut CollectionTxn>,
-    _id: Vec<u8>,
     expr: Expr,
 }
 
+#[allow(dead_code)]
 impl<'a> ObjectTxn<'a> {
-    pub(crate) fn _new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
+    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
         let handle = CollectionTxnHandle {
             dbname,
             coname,
@@ -161,8 +157,10 @@ impl<'a> ObjectTxn<'a> {
         Self {
             handle,
             parent,
-            _id: id,
-            expr: Expr::default(),
+            expr: Expr {
+                id,
+                ..Default::default()
+            },
         }
     }
 

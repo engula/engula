@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::txn_client::TxnClient;
+use crate::{txn_client::TxnClient, TypedValue, Value};
 
 #[allow(dead_code)]
 pub struct Object {
@@ -31,4 +31,12 @@ impl Object {
             client,
         }
     }
+}
+
+pub trait TypedObject: From<Object> {
+    type TypedValue: TypedValue;
+}
+
+impl TypedObject for Object {
+    type TypedValue = Value;
 }

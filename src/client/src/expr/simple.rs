@@ -14,18 +14,6 @@
 
 use engula_apis::*;
 
-macro_rules! simple_expr {
-    ($id:ident, $func:expr, $args:expr) => {
-        Expr {
-            id: $id.into(),
-            call: Some(CallExpr {
-                func: $func as i32,
-                args: $args,
-            }),
-        }
-    };
-}
-
 pub fn get(id: impl Into<Vec<u8>>) -> Expr {
     simple_expr!(id, Function::Get, vec![])
 }

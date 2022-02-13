@@ -27,6 +27,8 @@ pub enum Error {
     InvalidResponse,
     #[error("invalid operation: {0}")]
     InvalidOperation(String),
+    #[error("type mismatch")]
+    TypeMismatch,
     #[error("unknown error: {0}")]
     Unknown(String),
 }
