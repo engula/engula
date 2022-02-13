@@ -18,7 +18,7 @@ use engula_apis::*;
 
 use crate::{
     expr::simple, txn_client::TxnClient, universe_client::UniverseClient, CollectionTxn, Error,
-    Object, Result, TypedObject, TypedValue, Value,
+    Object, Result, TypedObject, TypedValue,
 };
 
 #[derive(Clone)]
