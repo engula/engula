@@ -67,11 +67,15 @@ impl<T: TypedObject> Collection<T> {
         self.inner.new_object(id.into())
     }
 
-    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<T::TypedValue> {
+    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::TypedValue>> {
         let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
-        let value = result.value.ok_or(Error::InvalidResponse)?;
-        T::TypedValue::cast_from(Value::from(value))
+        if let Some(value) = result.value.and_then(|x| x.value) {
+            let value = T::TypedValue::cast_from(value.into())?;
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::TypedValue>) -> Result<()> {
