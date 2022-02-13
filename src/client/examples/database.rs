@@ -26,22 +26,22 @@ async fn main() -> Result<()> {
     let txn = db.begin();
     {
         let mut t = txn.collection("c1");
-        t.object("a1").set(1);
-        t.object("a2").add(2);
+        t.set("a1", 1);
+        t.set("a2", 2);
         t.commit().await?;
     }
     {
         let mut t = txn.collection("c2");
-        t.object("b1").set(3);
-        t.object("b2").add(4);
+        t.set("b1", "b1");
+        t.set("b2", "b2");
         t.commit().await?;
     }
     txn.commit().await?;
 
-    println!("a1 = {:?}", c1.object("a1").get().await?);
-    println!("a2 = {:?}", c1.object("a2").get().await?);
-    println!("b1 = {:?}", c2.object("b1").get().await?);
-    println!("b2 = {:?}", c2.object("b2").get().await?);
+    println!("a1 = {:?}", c1.get("a1").await?);
+    println!("a2 = {:?}", c1.get("a2").await?);
+    println!("b1 = {:?}", c2.get("b1").await?);
+    println!("b2 = {:?}", c2.get("b2").await?);
 
     Ok(())
 }

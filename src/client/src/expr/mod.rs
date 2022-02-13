@@ -14,6 +14,12 @@
 
 mod value;
 
-pub mod call;
+pub mod call_expr;
+
+use engula_apis::*;
 
 pub use self::value::Value;
+
+pub fn call(call: CallExpr) -> Expr {
+    Expr { call: Some(call) }
+}

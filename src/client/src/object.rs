@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::*;
+use crate::txn_client::TxnClient;
 
-use crate::{expr::call, txn_client::TxnClient, Error, ObjectTxn, Result, Value};
-
+#[allow(dead_code)]
 pub struct Object {
     id: Vec<u8>,
     dbname: String,
@@ -31,31 +30,5 @@ impl Object {
             coname,
             client,
         }
-    }
-
-    pub fn begin(self) -> ObjectTxn {
-        ObjectTxn::new_owned(self.id, self.dbname, self.coname, self.client)
-    }
-
-    pub async fn get(mut self) -> Result<Value> {
-        let method = MethodCallExpr {
-            index: Some(method_call_expr::Index::BlobIdent(self.id)),
-            call: Some(call::get()),
-            ..Default::default()
-        };
-        let result = self.client.method(self.dbname, self.coname, method).await?;
-        result.value.map(|x| x.into()).ok_or(Error::InvalidResponse)
-    }
-
-    pub async fn set(self, value: impl Into<Value>) -> Result<()> {
-        self.begin().set(value).commit().await
-    }
-
-    pub async fn add(self, value: impl Into<Value>) -> Result<()> {
-        self.begin().add(value).commit().await
-    }
-
-    pub async fn delete(self) -> Result<()> {
-        self.begin().delete().commit().await
     }
 }

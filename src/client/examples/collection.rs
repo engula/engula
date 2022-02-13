@@ -22,26 +22,17 @@ async fn main() -> Result<()> {
     let db = uv.database("db");
     let co = db.collection("co");
 
-    co.object("o").set(1).await?;
-    println!("{:?}", co.object("o").get().await?);
-    co.object("o").add(2).await?;
-    println!("{:?}", co.object("o").get().await?);
-    co.object("o").delete().await?;
-    println!("{:?}", co.object("o").get().await?);
+    co.set("o", 1).await?;
+    println!("{:?}", co.get("o").await?);
+    co.delete("o").await?;
+    println!("{:?}", co.get("o").await?);
 
     let mut txn = co.begin();
-    txn.object("a").set(1);
-    txn.object("b").add(2);
+    txn.set("a", 1);
+    txn.set("b", 2);
     txn.commit().await?;
-    println!("a = {:?}", co.object("a").get().await?);
-    println!("b = {:?}", co.object("b").get().await?);
-
-    let mut txn = co.begin();
-    txn.object("a").add(2);
-    txn.object("b").delete();
-    txn.commit().await?;
-    println!("a = {:?}", co.object("a").get().await?);
-    println!("b = {:?}", co.object("b").get().await?);
+    println!("a = {:?}", co.get("a").await?);
+    println!("b = {:?}", co.get("b").await?);
 
     Ok(())
 }

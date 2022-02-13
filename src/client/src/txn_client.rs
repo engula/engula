@@ -63,25 +63,25 @@ impl TxnClient {
         Ok(res.collections)
     }
 
-    pub async fn method(
+    pub async fn collection_expr(
         &mut self,
         dbname: String,
         coname: String,
-        method: MethodCallExpr,
-    ) -> Result<MethodCallResult> {
-        let mut values = self.methods(dbname, coname, vec![method]).await?;
-        values.pop().ok_or(Error::InvalidResponse)
+        expr: Expr,
+    ) -> Result<ExprResult> {
+        let mut results = self.collection_exprs(dbname, coname, vec![expr]).await?;
+        results.pop().ok_or(Error::InvalidResponse)
     }
 
-    pub async fn methods(
+    pub async fn collection_exprs(
         &mut self,
         dbname: String,
         coname: String,
-        methods: Vec<MethodCallExpr>,
-    ) -> Result<Vec<MethodCallResult>> {
+        exprs: Vec<Expr>,
+    ) -> Result<Vec<ExprResult>> {
         let req = CollectionTxnRequest {
             name: coname,
-            methods,
+            exprs,
         };
         let res = self.collection(dbname, req).await?;
         Ok(res.results)
