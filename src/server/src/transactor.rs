@@ -89,14 +89,14 @@ impl Database {
 
     fn execute(&mut self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
         let mut res = DatabaseTxnResponse::default();
-        for sub_req in req.collections {
+        for co_req in req.requests {
             // Assumes that all collections exist for now.
             let co = self
                 .collections
-                .entry(sub_req.name.clone())
+                .entry(co_req.name.clone())
                 .or_insert_with(Collection::new);
-            let sub_res = co.execute(sub_req)?;
-            res.collections.push(sub_res);
+            let co_res = co.execute(co_req)?;
+            res.responses.push(co_res);
         }
         Ok(res)
     }
@@ -123,23 +123,21 @@ impl Collection {
     }
 
     fn execute_expr(&mut self, expr: Expr) -> Result<ExprResult> {
+        let id = expr.id;
         let call = expr.call.ok_or(Error::InvalidRequest)?;
         let func = call.func;
         let mut args = Args::new(call.args);
         let mut result = ExprResult::default();
         match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
             Function::Get => {
-                let id = args.take_id()?;
                 let value = self.objects.get(&id).cloned();
                 result.value = Some(value.unwrap_or_default());
             }
             Function::Set => {
-                let id = args.take_id()?;
                 let value = args.take()?;
                 self.objects.insert(id, value);
             }
             Function::Delete => {
-                let id = args.take_id()?;
                 self.objects.remove(&id);
             }
         }
@@ -158,14 +156,5 @@ impl Args {
 
     fn take(&mut self) -> Result<GenericValue> {
         self.args.pop_front().ok_or(Error::InvalidRequest)
-    }
-
-    fn take_id(&mut self) -> Result<Vec<u8>> {
-        let v = self.take()?;
-        if let Some(generic_value::Value::BlobValue(v)) = v.value {
-            Ok(v)
-        } else {
-            Err(Error::InvalidRequest)
-        }
     }
 }

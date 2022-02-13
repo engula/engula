@@ -14,23 +14,26 @@
 
 use engula_apis::*;
 
-pub fn get(id: impl Into<GenericValue>) -> CallExpr {
-    CallExpr {
-        func: Function::Get as i32,
-        args: vec![id.into()],
-    }
+macro_rules! simple_expr {
+    ($id:ident, $func:expr, $args:expr) => {
+        Expr {
+            id: $id.into(),
+            call: Some(CallExpr {
+                func: $func as i32,
+                args: $args,
+            }),
+        }
+    };
 }
 
-pub fn set(id: impl Into<GenericValue>, value: impl Into<GenericValue>) -> CallExpr {
-    CallExpr {
-        func: Function::Set as i32,
-        args: vec![id.into(), value.into()],
-    }
+pub fn get(id: impl Into<Vec<u8>>) -> Expr {
+    simple_expr!(id, Function::Get, vec![])
 }
 
-pub fn delete(id: impl Into<GenericValue>) -> CallExpr {
-    CallExpr {
-        func: Function::Delete as i32,
-        args: vec![id.into()],
-    }
+pub fn set(id: impl Into<Vec<u8>>, value: impl Into<GenericValue>) -> Expr {
+    simple_expr!(id, Function::Set, vec![value.into()])
+}
+
+pub fn delete(id: impl Into<Vec<u8>>) -> Expr {
+    simple_expr!(id, Function::Delete, vec![])
 }

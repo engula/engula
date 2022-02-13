@@ -40,34 +40,31 @@ impl Supervisor {
 
 #[tonic::async_trait]
 impl universe_server::Universe for Supervisor {
-    async fn databases(
+    async fn database(
         &self,
-        req: Request<DatabasesRequest>,
-    ) -> TonicResult<Response<DatabasesResponse>> {
+        req: Request<DatabaseRequest>,
+    ) -> TonicResult<Response<DatabaseResponse>> {
         let req = req.into_inner();
-        let res = self.handle_databases(req).await?;
+        let res = self.handle_database(req).await?;
         Ok(Response::new(res))
     }
 
-    async fn collections(
+    async fn collection(
         &self,
-        req: Request<CollectionsRequest>,
-    ) -> TonicResult<Response<CollectionsResponse>> {
+        req: Request<CollectionRequest>,
+    ) -> TonicResult<Response<CollectionResponse>> {
         let req = req.into_inner();
-        let res = self.handle_collections(req).await?;
+        let res = self.handle_collection(req).await?;
         Ok(Response::new(res))
     }
 }
 
 impl Supervisor {
-    pub(crate) async fn handle_databases(
-        &self,
-        req: DatabasesRequest,
-    ) -> Result<DatabasesResponse> {
-        let mut res = DatabasesResponse::default();
-        for sub_req in req.requests {
-            let sub_res = self.handle_database_union(sub_req).await?;
-            res.responses.push(sub_res);
+    pub(crate) async fn handle_database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
+        let mut res = DatabaseResponse::default();
+        for req_union in req.requests {
+            let res_union = self.handle_database_union(req_union).await?;
+            res.responses.push(res_union);
         }
         Ok(res)
     }
@@ -121,12 +118,12 @@ impl Supervisor {
 }
 
 impl Supervisor {
-    async fn handle_collections(&self, req: CollectionsRequest) -> Result<CollectionsResponse> {
+    async fn handle_collection(&self, req: CollectionRequest) -> Result<CollectionResponse> {
         let db = self.uv.database(&req.dbname).await?;
-        let mut res = CollectionsResponse::default();
-        for sub_req in req.requests {
-            let sub_res = self.handle_collection_union(db.clone(), sub_req).await?;
-            res.responses.push(sub_res);
+        let mut res = CollectionResponse::default();
+        for req_union in req.requests {
+            let res_union = self.handle_collection_union(db.clone(), req_union).await?;
+            res.responses.push(res_union);
         }
         Ok(res)
     }

@@ -33,9 +33,9 @@ impl TxnClient {
         Ok(res.into_inner())
     }
 
-    pub async fn database(&mut self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+    pub async fn database(&mut self, request: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
         let req = BatchTxnRequest {
-            requests: vec![req],
+            requests: vec![request],
         };
         let mut res = self.batch(req).await?;
         res.responses.pop().ok_or(Error::InvalidResponse)
@@ -44,23 +44,14 @@ impl TxnClient {
     pub async fn collection(
         &mut self,
         dbname: String,
-        collection: CollectionTxnRequest,
+        request: CollectionTxnRequest,
     ) -> Result<CollectionTxnResponse> {
-        let mut responses = self.collections(dbname, vec![collection]).await?;
-        responses.pop().ok_or(Error::InvalidResponse)
-    }
-
-    pub async fn collections(
-        &mut self,
-        dbname: String,
-        collections: Vec<CollectionTxnRequest>,
-    ) -> Result<Vec<CollectionTxnResponse>> {
         let req = DatabaseTxnRequest {
             name: dbname,
-            collections,
+            requests: vec![request],
         };
-        let res = self.database(req).await?;
-        Ok(res.collections)
+        let mut res = self.database(req).await?;
+        res.responses.pop().ok_or(Error::InvalidResponse)
     }
 
     pub async fn collection_expr(

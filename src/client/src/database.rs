@@ -42,7 +42,7 @@ impl Database {
             name: self.inner.name.clone(),
         };
         let req = database_request_union::Request::DescribeDatabase(req);
-        let res = self.inner.database_call(req).await?;
+        let res = self.inner.database_union_call(req).await?;
         if let database_response_union::Response::DescribeDatabase(res) = res {
             res.desc.ok_or(Error::InvalidResponse)
         } else {
@@ -63,14 +63,14 @@ impl Database {
         let spec = CollectionSpec { name: name.clone() };
         let req = CreateCollectionRequest { spec: Some(spec) };
         let req = collection_request_union::Request::CreateCollection(req);
-        self.inner.collection_call(req).await?;
+        self.inner.collection_union_call(req).await?;
         Ok(self.collection(name))
     }
 
     pub async fn delete_collection(&self, name: impl Into<String>) -> Result<()> {
         let req = DeleteCollectionRequest { name: name.into() };
         let req = collection_request_union::Request::DeleteCollection(req);
-        self.inner.collection_call(req).await?;
+        self.inner.collection_union_call(req).await?;
         Ok(())
     }
 }
@@ -95,20 +95,20 @@ impl DatabaseInner {
         )
     }
 
-    async fn database_call(
+    async fn database_union_call(
         &self,
         req: database_request_union::Request,
     ) -> Result<database_response_union::Response> {
-        self.universe_client.clone().database(req).await
+        self.universe_client.clone().database_union(req).await
     }
 
-    async fn collection_call(
+    async fn collection_union_call(
         &self,
         req: collection_request_union::Request,
     ) -> Result<collection_response_union::Response> {
         self.universe_client
             .clone()
-            .collection(self.name.clone(), req)
+            .collection_union(self.name.clone(), req)
             .await
     }
 }

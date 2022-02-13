@@ -51,14 +51,14 @@ impl Universe {
         let spec = DatabaseSpec { name: name.clone() };
         let req = CreateDatabaseRequest { spec: Some(spec) };
         let req = database_request_union::Request::CreateDatabase(req);
-        self.inner.database_call(req).await?;
+        self.inner.database_union_call(req).await?;
         Ok(self.database(name))
     }
 
     pub async fn delete_database(&self, name: impl Into<String>) -> Result<()> {
         let req = DeleteDatabaseRequest { name: name.into() };
         let req = database_request_union::Request::DeleteDatabase(req);
-        self.inner.database_call(req).await?;
+        self.inner.database_union_call(req).await?;
         Ok(())
     }
 }
@@ -77,10 +77,10 @@ impl UniverseInner {
         )
     }
 
-    async fn database_call(
+    async fn database_union_call(
         &self,
         req: database_request_union::Request,
     ) -> Result<database_response_union::Response> {
-        self.universe_client.clone().database(req).await
+        self.universe_client.clone().database_union(req).await
     }
 }
