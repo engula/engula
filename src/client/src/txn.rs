@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use engula_apis::*;
 
 use crate::{
-    expr::{call, call_expr, Value},
+    expr::{simple, Value},
     txn_client::TxnClient,
     Error, Result,
 };
@@ -29,7 +29,7 @@ pub struct DatabaseTxn {
 
 struct DatabaseTxnInner {
     handle: DatabaseTxnHandle,
-    collections: Mutex<Vec<CollectionTxnRequest>>,
+    requests: Mutex<Vec<CollectionTxnRequest>>,
 }
 
 struct DatabaseTxnHandle {
@@ -41,15 +41,15 @@ impl DatabaseTxn {
     pub(crate) fn new(dbname: String, client: TxnClient) -> Self {
         let inner = DatabaseTxnInner {
             handle: DatabaseTxnHandle { dbname, client },
-            collections: Mutex::new(Vec::new()),
+            requests: Mutex::new(Vec::new()),
         };
         Self {
             inner: Arc::new(inner),
         }
     }
 
-    fn add_collection(&self, co: CollectionTxnRequest) {
-        self.inner.collections.lock().unwrap().push(co);
+    fn add_request(&self, req: CollectionTxnRequest) {
+        self.inner.requests.lock().unwrap().push(req);
     }
 
     pub fn collection(&self, coname: impl Into<String>) -> CollectionTxn {
@@ -60,11 +60,11 @@ impl DatabaseTxn {
         let inner = Arc::try_unwrap(self.inner)
             .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
         let mut handle = inner.handle;
-        let collections = inner.collections.into_inner().unwrap();
-        handle
-            .client
-            .collections(handle.dbname, collections)
-            .await?;
+        let req = DatabaseTxnRequest {
+            name: handle.dbname,
+            requests: inner.requests.into_inner().unwrap(),
+        };
+        handle.client.database(req).await?;
         Ok(())
     }
 }
@@ -107,11 +107,11 @@ impl CollectionTxn {
     }
 
     pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<Value>) {
-        self.add_expr(call(call_expr::set(Value::from(id.into()), value.into())))
+        self.add_expr(simple::set(id, value.into()))
     }
 
     pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
-        self.add_expr(call(call_expr::delete(Value::from(id.into()))))
+        self.add_expr(simple::delete(id))
     }
 
     pub fn object(&mut self, id: impl Into<Vec<u8>>) -> ObjectTxn {
@@ -119,14 +119,14 @@ impl CollectionTxn {
     }
 
     pub async fn commit(self) -> Result<()> {
-        let co = CollectionTxnRequest {
+        let req = CollectionTxnRequest {
             name: self.coname,
             exprs: self.exprs,
         };
         if let Some(mut handle) = self.handle {
-            handle.client.collection(handle.dbname, co).await?;
+            handle.client.collection(handle.dbname, req).await?;
         } else {
-            self.parent.unwrap().add_collection(co);
+            self.parent.unwrap().add_request(req);
         }
         Ok(())
     }

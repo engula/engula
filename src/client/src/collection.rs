@@ -17,7 +17,7 @@ use std::sync::Arc;
 use engula_apis::*;
 
 use crate::{
-    expr::{call, call_expr, Value},
+    expr::{simple, Value},
     txn_client::TxnClient,
     universe_client::UniverseClient,
     CollectionTxn, Error, Object, Result,
@@ -51,7 +51,7 @@ impl Collection {
             name: self.inner.coname.clone(),
         };
         let req = collection_request_union::Request::DescribeCollection(req);
-        let res = self.inner.collection_call(req).await?;
+        let res = self.inner.collection_union_call(req).await?;
         if let collection_response_union::Response::DescribeCollection(res) = res {
             res.desc.ok_or(Error::InvalidResponse)
         } else {
@@ -68,7 +68,7 @@ impl Collection {
     }
 
     pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Value> {
-        let expr = call(call_expr::get(Value::from(id.into())));
+        let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
         result.value.map(|v| v.into()).ok_or(Error::InvalidResponse)
     }
@@ -111,20 +111,20 @@ impl CollectionInner {
         )
     }
 
-    async fn collection_call(
+    async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {
+        self.txn_client
+            .clone()
+            .collection_expr(self.dbname.clone(), self.coname.clone(), expr)
+            .await
+    }
+
+    async fn collection_union_call(
         &self,
         req: collection_request_union::Request,
     ) -> Result<collection_response_union::Response> {
         self.universe_client
             .clone()
-            .collection(self.dbname.clone(), req)
-            .await
-    }
-
-    async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {
-        self.txn_client
-            .clone()
-            .collection_expr(self.dbname.clone(), self.coname.clone(), expr)
+            .collection_union(self.dbname.clone(), req)
             .await
     }
 }

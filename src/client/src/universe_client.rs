@@ -28,43 +28,43 @@ impl UniverseClient {
         Self { client }
     }
 
-    pub async fn database(
+    pub async fn database(&mut self, req: DatabaseRequest) -> Result<DatabaseResponse> {
+        let res = self.client.database(req).await?;
+        Ok(res.into_inner())
+    }
+
+    pub async fn database_union(
         &mut self,
         req: database_request_union::Request,
     ) -> Result<database_response_union::Response> {
-        let req = DatabasesRequest {
+        let req = DatabaseRequest {
             requests: vec![DatabaseRequestUnion { request: Some(req) }],
         };
-        let mut res = self.databases(req).await?;
+        let mut res = self.database(req).await?;
         res.responses
             .pop()
             .and_then(|x| x.response)
             .ok_or(Error::InvalidResponse)
     }
 
-    pub async fn databases(&mut self, req: DatabasesRequest) -> Result<DatabasesResponse> {
-        let res = self.client.databases(req).await?;
+    pub async fn collection(&mut self, req: CollectionRequest) -> Result<CollectionResponse> {
+        let res = self.client.collection(req).await?;
         Ok(res.into_inner())
     }
 
-    pub async fn collection(
+    pub async fn collection_union(
         &mut self,
         dbname: String,
         req: collection_request_union::Request,
     ) -> Result<collection_response_union::Response> {
-        let req = CollectionsRequest {
+        let req = CollectionRequest {
             dbname,
             requests: vec![CollectionRequestUnion { request: Some(req) }],
         };
-        let mut res = self.collections(req).await?;
+        let mut res = self.collection(req).await?;
         res.responses
             .pop()
             .and_then(|x| x.response)
             .ok_or(Error::InvalidResponse)
-    }
-
-    pub async fn collections(&mut self, req: CollectionsRequest) -> Result<CollectionsResponse> {
-        let res = self.client.collections(req).await?;
-        Ok(res.into_inner())
     }
 }
