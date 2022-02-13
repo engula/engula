@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use engula_apis::*;
 use tokio::sync::Mutex;
@@ -115,74 +115,57 @@ impl Collection {
 
     fn execute(&mut self, req: CollectionTxnRequest) -> Result<CollectionTxnResponse> {
         let mut res = CollectionTxnResponse::default();
-        for method in req.methods {
-            let id = method
-                .index
-                .and_then(|x| {
-                    if let method_call_expr::Index::BlobIdent(id) = x {
-                        Some(id)
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(Error::InvalidRequest)?;
-            let call = method.call.ok_or(Error::InvalidRequest)?;
-            let func = call.function.ok_or(Error::InvalidRequest)?;
-            let mut args = call.arguments;
-            let mut result = MethodCallResult::default();
-            match func {
-                call_expr::Function::Generic(f) => {
-                    match GenericFunction::from_i32(f).ok_or(Error::InvalidRequest)? {
-                        GenericFunction::Get => {
-                            let value = self.objects.get(&id).cloned();
-                            result.value = Some(value.unwrap_or_default());
-                        }
-                        GenericFunction::Set => {
-                            if args.is_empty() {
-                                return Err(Error::InvalidRequest);
-                            }
-                            self.objects.insert(id, args.swap_remove(0));
-                        }
-                    }
-                }
-                call_expr::Function::Numeric(f) => {
-                    match NumericFunction::from_i32(f).ok_or(Error::InvalidRequest)? {
-                        NumericFunction::Add => {
-                            if args.is_empty() {
-                                return Err(Error::InvalidRequest);
-                            }
-                            let operand = args.swap_remove(0);
-                            if let Some(value) =
-                                self.objects.get_mut(&id).and_then(|x| x.value.as_mut())
-                            {
-                                match value {
-                                    generic_value::Value::Int64Value(x) => {
-                                        match operand.value.ok_or(Error::InvalidRequest)? {
-                                            generic_value::Value::Int64Value(v) => {
-                                                *x += v;
-                                            }
-                                            _ => todo!(),
-                                        }
-                                    }
-                                    _ => todo!(),
-                                }
-                            } else {
-                                self.objects.insert(id, operand);
-                            }
-                        }
-                    }
-                }
-                call_expr::Function::Container(f) => {
-                    match ContainerFunction::from_i32(f).ok_or(Error::InvalidRequest)? {
-                        ContainerFunction::Delete => {
-                            self.objects.remove(&id);
-                        }
-                        _ => todo!(),
-                    }
-                }
-            }
+        for expr in req.exprs {
+            let result = self.execute_expr(expr)?;
             res.results.push(result);
         }
         Ok(res)
+    }
+
+    fn execute_expr(&mut self, expr: Expr) -> Result<ExprResult> {
+        let call = expr.call.ok_or(Error::InvalidRequest)?;
+        let func = call.func;
+        let mut args = Args::new(call.args);
+        let mut result = ExprResult::default();
+        match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
+            Function::Get => {
+                let id = args.take_id()?;
+                let value = self.objects.get(&id).cloned();
+                result.value = Some(value.unwrap_or_default());
+            }
+            Function::Set => {
+                let id = args.take_id()?;
+                let value = args.take()?;
+                self.objects.insert(id, value);
+            }
+            Function::Delete => {
+                let id = args.take_id()?;
+                self.objects.remove(&id);
+            }
+        }
+        Ok(result)
+    }
+}
+
+struct Args {
+    args: VecDeque<GenericValue>,
+}
+
+impl Args {
+    fn new(args: Vec<GenericValue>) -> Self {
+        Self { args: args.into() }
+    }
+
+    fn take(&mut self) -> Result<GenericValue> {
+        self.args.pop_front().ok_or(Error::InvalidRequest)
+    }
+
+    fn take_id(&mut self) -> Result<Vec<u8>> {
+        let v = self.take()?;
+        if let Some(generic_value::Value::BlobValue(v)) = v.value {
+            Ok(v)
+        } else {
+            Err(Error::InvalidRequest)
+        }
     }
 }

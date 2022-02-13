@@ -17,7 +17,10 @@ use std::sync::Arc;
 use engula_apis::*;
 
 use crate::{
-    txn_client::TxnClient, universe_client::UniverseClient, CollectionTxn, Error, Object, Result,
+    expr::{call, call_expr, Value},
+    txn_client::TxnClient,
+    universe_client::UniverseClient,
+    CollectionTxn, Error, Object, Result,
 };
 
 #[derive(Clone)]
@@ -63,6 +66,24 @@ impl Collection {
     pub fn object(&self, id: impl Into<Vec<u8>>) -> Object {
         self.inner.new_object(id.into())
     }
+
+    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Value> {
+        let expr = call(call_expr::get(Value::from(id.into())));
+        let result = self.inner.collection_expr_call(expr).await?;
+        result.value.map(|v| v.into()).ok_or(Error::InvalidResponse)
+    }
+
+    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Result<()> {
+        let mut txn = self.begin();
+        txn.set(id, value);
+        txn.commit().await
+    }
+
+    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
+        let mut txn = self.begin();
+        txn.delete(id);
+        txn.commit().await
+    }
 }
 
 pub struct CollectionInner {
@@ -74,7 +95,7 @@ pub struct CollectionInner {
 
 impl CollectionInner {
     fn new_txn(&self) -> CollectionTxn {
-        CollectionTxn::new_owned(
+        CollectionTxn::new(
             self.dbname.clone(),
             self.coname.clone(),
             self.txn_client.clone(),
@@ -97,6 +118,13 @@ impl CollectionInner {
         self.universe_client
             .clone()
             .collection(self.dbname.clone(), req)
+            .await
+    }
+
+    async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {
+        self.txn_client
+            .clone()
+            .collection_expr(self.dbname.clone(), self.coname.clone(), expr)
             .await
     }
 }

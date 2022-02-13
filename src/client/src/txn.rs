@@ -17,53 +17,19 @@ use std::sync::{Arc, Mutex};
 use engula_apis::*;
 
 use crate::{
-    expr::{call, Value},
+    expr::{call, call_expr, Value},
     txn_client::TxnClient,
     Error, Result,
 };
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
-    inner: Arc<Mutex<DatabaseTxnInner>>,
+    inner: Arc<DatabaseTxnInner>,
 }
 
 struct DatabaseTxnInner {
-    name: String,
-    client: TxnClient,
-    collections: Vec<CollectionTxnRequest>,
-}
-
-impl DatabaseTxn {
-    pub(crate) fn new(name: String, client: TxnClient) -> Self {
-        let inner = DatabaseTxnInner {
-            name,
-            client,
-            collections: Vec::new(),
-        };
-        Self {
-            inner: Arc::new(Mutex::new(inner)),
-        }
-    }
-
-    pub(crate) fn add_collection(&self, co: CollectionTxnRequest) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.collections.push(co);
-    }
-
-    pub fn collection(&self, name: impl Into<String>) -> CollectionTxn {
-        CollectionTxn::new_borrowed(name.into(), self.clone())
-    }
-
-    pub async fn commit(self) -> Result<()> {
-        let mut inner = Arc::try_unwrap(self.inner)
-            .map(|x| x.into_inner().unwrap())
-            .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
-        inner
-            .client
-            .collections(inner.name, inner.collections)
-            .await?;
-        Ok(())
-    }
+    handle: DatabaseTxnHandle,
+    collections: Mutex<Vec<CollectionTxnRequest>>,
 }
 
 struct DatabaseTxnHandle {
@@ -71,65 +37,43 @@ struct DatabaseTxnHandle {
     client: TxnClient,
 }
 
-#[derive(Clone)]
-pub struct CollectionTxn {
-    inner: Arc<Mutex<CollectionTxnInner>>,
-}
-
-struct CollectionTxnInner {
-    handle: Option<DatabaseTxnHandle>,
-    parent: Option<DatabaseTxn>,
-    request: CollectionTxnRequest,
-}
-
-impl CollectionTxn {
-    fn new(coname: String, handle: Option<DatabaseTxnHandle>, parent: Option<DatabaseTxn>) -> Self {
-        let request = CollectionTxnRequest {
-            name: coname,
-            ..Default::default()
-        };
-        let inner = CollectionTxnInner {
-            handle,
-            parent,
-            request,
+impl DatabaseTxn {
+    pub(crate) fn new(dbname: String, client: TxnClient) -> Self {
+        let inner = DatabaseTxnInner {
+            handle: DatabaseTxnHandle { dbname, client },
+            collections: Mutex::new(Vec::new()),
         };
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         }
     }
 
-    pub(crate) fn new_owned(dbname: String, coname: String, client: TxnClient) -> Self {
-        let handle = DatabaseTxnHandle { dbname, client };
-        Self::new(coname, Some(handle), None)
+    fn add_collection(&self, co: CollectionTxnRequest) {
+        self.inner.collections.lock().unwrap().push(co);
     }
 
-    pub(crate) fn new_borrowed(coname: String, parent: DatabaseTxn) -> Self {
-        Self::new(coname, None, Some(parent))
-    }
-
-    pub(crate) fn add_method(&mut self, method: MethodCallExpr) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.request.methods.push(method);
-    }
-
-    pub fn object(&mut self, id: impl Into<Vec<u8>>) -> ObjectTxn {
-        ObjectTxn::new_borrowed(id.into(), self.clone())
+    pub fn collection(&self, coname: impl Into<String>) -> CollectionTxn {
+        CollectionTxn::new_with(coname.into(), self.clone())
     }
 
     pub async fn commit(self) -> Result<()> {
         let inner = Arc::try_unwrap(self.inner)
-            .map(|x| x.into_inner().unwrap())
             .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
-        if let Some(mut handle) = inner.handle {
-            handle
-                .client
-                .collection(handle.dbname, inner.request)
-                .await?;
-        } else {
-            inner.parent.unwrap().add_collection(inner.request);
-        }
+        let mut handle = inner.handle;
+        let collections = inner.collections.into_inner().unwrap();
+        handle
+            .client
+            .collections(handle.dbname, collections)
+            .await?;
         Ok(())
     }
+}
+
+pub struct CollectionTxn {
+    coname: String,
+    handle: Option<DatabaseTxnHandle>,
+    parent: Option<DatabaseTxn>,
+    exprs: Vec<Expr>,
 }
 
 struct CollectionTxnHandle {
@@ -138,79 +82,106 @@ struct CollectionTxnHandle {
     client: TxnClient,
 }
 
-pub struct ObjectTxn {
-    handle: Option<CollectionTxnHandle>,
-    parent: Option<CollectionTxn>,
-    method: MethodCallExpr,
-}
-
-impl ObjectTxn {
-    fn new(
-        id: Vec<u8>,
-        handle: Option<CollectionTxnHandle>,
-        parent: Option<CollectionTxn>,
-    ) -> Self {
-        let method = MethodCallExpr {
-            index: Some(method_call_expr::Index::BlobIdent(id)),
-            ..Default::default()
-        };
+impl CollectionTxn {
+    pub(crate) fn new(dbname: String, coname: String, client: TxnClient) -> Self {
+        let handle = DatabaseTxnHandle { dbname, client };
         Self {
-            handle,
-            parent,
-            method,
+            coname,
+            handle: Some(handle),
+            parent: None,
+            exprs: Vec::new(),
         }
     }
 
-    pub(crate) fn new_owned(
-        id: Vec<u8>,
-        dbname: String,
-        coname: String,
-        client: TxnClient,
-    ) -> Self {
+    pub(crate) fn new_with(coname: String, parent: DatabaseTxn) -> Self {
+        Self {
+            coname,
+            handle: None,
+            parent: Some(parent),
+            exprs: Vec::new(),
+        }
+    }
+
+    fn add_expr(&mut self, expr: Expr) {
+        self.exprs.push(expr);
+    }
+
+    pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<Value>) {
+        self.add_expr(call(call_expr::set(Value::from(id.into()), value.into())))
+    }
+
+    pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
+        self.add_expr(call(call_expr::delete(Value::from(id.into()))))
+    }
+
+    pub fn object(&mut self, id: impl Into<Vec<u8>>) -> ObjectTxn {
+        ObjectTxn::new_with(id.into(), self)
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        let co = CollectionTxnRequest {
+            name: self.coname,
+            exprs: self.exprs,
+        };
+        if let Some(mut handle) = self.handle {
+            handle.client.collection(handle.dbname, co).await?;
+        } else {
+            self.parent.unwrap().add_collection(co);
+        }
+        Ok(())
+    }
+}
+
+pub struct ObjectTxn<'a> {
+    handle: Option<CollectionTxnHandle>,
+    parent: Option<&'a mut CollectionTxn>,
+    _id: Vec<u8>,
+    expr: Expr,
+}
+
+impl<'a> ObjectTxn<'a> {
+    pub(crate) fn _new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
         let handle = CollectionTxnHandle {
             dbname,
             coname,
             client,
         };
-        Self::new(id, Some(handle), None)
+        Self::new_inner(id, Some(handle), None)
     }
 
-    pub(crate) fn new_borrowed(id: Vec<u8>, parent: CollectionTxn) -> Self {
-        Self::new(id, None, Some(parent))
+    pub(crate) fn new_with(id: Vec<u8>, parent: &'a mut CollectionTxn) -> Self {
+        Self::new_inner(id, None, Some(parent))
     }
 
-    pub fn set(mut self, value: impl Into<Value>) -> Self {
-        self.method.call = Some(call::set(value.into()));
-        self
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, value: impl Into<Value>) -> Self {
-        self.method.call = Some(call::add(value.into()));
-        self
-    }
-
-    pub fn delete(mut self) -> Self {
-        self.method.call = Some(call::delete());
-        self
+    fn new_inner(
+        id: Vec<u8>,
+        handle: Option<CollectionTxnHandle>,
+        parent: Option<&'a mut CollectionTxn>,
+    ) -> Self {
+        Self {
+            handle,
+            parent,
+            _id: id,
+            expr: Expr::default(),
+        }
     }
 
     pub async fn commit(mut self) -> Result<()> {
         if let Some(mut handle) = self.handle.take() {
-            let method = std::mem::take(&mut self.method);
+            let expr = std::mem::take(&mut self.expr);
             handle
                 .client
-                .method(handle.dbname, handle.coname, method)
+                .collection_expr(handle.dbname, handle.coname, expr)
                 .await?;
         }
         Ok(())
     }
 }
 
-impl Drop for ObjectTxn {
+impl<'a> Drop for ObjectTxn<'a> {
     fn drop(&mut self) {
-        if let Some(mut parent) = self.parent.take() {
-            parent.add_method(std::mem::take(&mut self.method));
+        if let Some(parent) = self.parent.take() {
+            parent.add_expr(std::mem::take(&mut self.expr));
         }
     }
 }
