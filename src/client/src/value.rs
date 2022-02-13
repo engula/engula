@@ -14,6 +14,8 @@
 
 use engula_apis::*;
 
+use crate::{Error, Result};
+
 #[derive(Debug)]
 pub enum Value {
     None,
@@ -96,5 +98,25 @@ impl From<Value> for GenericValue {
             Value::Int64(v) => Some(generic_value::Value::Int64Value(v)),
         };
         GenericValue { value }
+    }
+}
+
+pub trait TypedValue: Into<Value> {
+    fn cast_from(v: Value) -> Result<Self>;
+}
+
+impl TypedValue for Value {
+    fn cast_from(v: Value) -> Result<Self> {
+        Ok(v)
+    }
+}
+
+impl TypedValue for i64 {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Value::Int64(v) = v {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
+        }
     }
 }
