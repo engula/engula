@@ -30,7 +30,7 @@ pub use self::{
     error::{Error, Result},
     object::{Object, TypedObject},
     txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
-    types::Int64,
+    types::{Int64, List},
     universe::Universe,
-    value::{TypedValue, Value},
+    value::{ListValue, TypedListValue, TypedValue, Value},
 };
