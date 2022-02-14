@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
     expr::{call_expr, subcall_expr},
     Error, Object, Result, TypedObject, TypedValue,
 };
 
-pub struct List<T> {
+pub struct UnorderedMap<T> {
     ob: Object,
     _marker: PhantomData<T>,
 }
 
-impl<T> From<Object> for List<T> {
+impl<T> From<Object> for UnorderedMap<T> {
     fn from(ob: Object) -> Self {
         Self {
             ob,
@@ -33,18 +33,18 @@ impl<T> From<Object> for List<T> {
     }
 }
 
-impl<T> TypedObject for List<T>
+impl<T> TypedObject for UnorderedMap<T>
 where
     T: TypedObject,
-    Vec<T::TypedValue>: TypedValue,
+    HashMap<Vec<u8>, T::TypedValue>: TypedValue,
 {
-    type TypedValue = Vec<T::TypedValue>;
+    type TypedValue = HashMap<Vec<u8>, T::TypedValue>;
 }
 
-impl<T> List<T>
+impl<T> UnorderedMap<T>
 where
     T: TypedObject,
-    Vec<T::TypedValue>: TypedValue,
+    HashMap<Vec<u8>, T::TypedValue>: TypedValue,
 {
     pub async fn len(self) -> Result<i64> {
         let value = self.ob.call(call_expr::len()).await?;
@@ -55,8 +55,8 @@ where
         }
     }
 
-    pub async fn get(self, index: i64) -> Result<Option<T::TypedValue>> {
-        let value = self.ob.subcall(subcall_expr::get(index)).await?;
+    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::TypedValue>> {
+        let value = self.ob.subcall(subcall_expr::get(key.into())).await?;
         if let Some(v) = value {
             let v = T::TypedValue::cast_from(v)?;
             Ok(Some(v))
@@ -65,25 +65,15 @@ where
         }
     }
 
-    pub async fn set(self, index: i64, value: impl Into<T::TypedValue>) -> Result<()> {
+    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::TypedValue>) -> Result<()> {
         self.ob
-            .subcall(subcall_expr::set(index, value.into()))
+            .subcall(subcall_expr::set(key.into(), value.into()))
             .await?;
         Ok(())
     }
 
-    pub async fn pop(self) -> Result<Option<T::TypedValue>> {
-        let value = self.ob.call(call_expr::pop()).await?;
-        if let Some(v) = value {
-            let v = T::TypedValue::cast_from(v)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub async fn push(self, value: impl Into<T::TypedValue>) -> Result<()> {
-        self.ob.call(call_expr::push(value.into())).await?;
+    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
+        self.ob.subcall(subcall_expr::delete(key.into())).await?;
         Ok(())
     }
 }
