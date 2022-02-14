@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use engula_apis::*;
 
 use crate::{Error, Object, Result};
@@ -34,16 +36,6 @@ impl TypedValue for Value {
     }
 }
 
-impl TypedValue for Vec<Value> {
-    fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::ListValue(v)) = v.value {
-            Ok(v.values)
-        } else {
-            Err(Error::TypeMismatch)
-        }
-    }
-}
-
 impl TypedValue for Vec<u8> {
     fn cast_from(v: Value) -> Result<Self> {
         if let Some(value::Value::BlobValue(v)) = v.value {
@@ -54,10 +46,10 @@ impl TypedValue for Vec<u8> {
     }
 }
 
-impl TypedValue for Vec<Vec<u8>> {
+impl TypedValue for String {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::ListValue(v)) = v.value {
-            v.values.into_iter().map(Vec::cast_from).collect()
+        if let Some(value::Value::TextValue(v)) = v.value {
+            Ok(v)
         } else {
             Err(Error::TypeMismatch)
         }
@@ -74,10 +66,21 @@ impl TypedValue for i64 {
     }
 }
 
-impl TypedValue for Vec<i64> {
+impl<T: TypedValue> TypedValue for Vec<T> {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::ListValue(v)) = v.value {
-            v.values.into_iter().map(i64::cast_from).collect()
+        if let Some(value::Value::SequenceValue(v)) = v.value {
+            v.values.into_iter().map(T::cast_from).collect()
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
+impl<T: TypedValue> TypedValue for HashMap<Vec<u8>, T> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::AssociativeValue(v)) = v.value {
+            let result: Result<Vec<T>> = v.values.into_iter().map(T::cast_from).collect();
+            result.map(|values| v.keys.into_iter().zip(values).collect())
         } else {
             Err(Error::TypeMismatch)
         }

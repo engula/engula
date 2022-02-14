@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Blob, Collection, Int64, List, Object, Universe};
+use engula_client::{Blob, Collection, Int64, Object, Universe, UnorderedMap};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,37 +21,40 @@ async fn main() -> Result<()> {
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
 
+    let (k1, k2) = (vec![1], vec![2]);
+
     {
-        let c: Collection<List<Blob>> = db.collection("c");
-        c.set("o", [vec![1], vec![2]]).await?;
+        let c: Collection<UnorderedMap<Blob>> = db.collection("c0");
+        c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
+            .await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
-        println!("{:?}", c.object("o").pop().await?);
-        c.object("o").push(vec![3]).await?;
-        println!("{:?}", c.object("0").get(1).await?);
+        c.object("o").set(k1.clone(), k2.clone()).await?;
+        println!("{:?}", c.object("o").get(k1.clone()).await?);
+        c.object("o").delete(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 
     {
-        let c: Collection<List<Int64>> = db.collection("c");
-        c.set("o", [1, 2]).await?;
+        let c: Collection<UnorderedMap<Int64>> = db.collection("c");
+        c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
-        println!("{:?}", c.object("o").pop().await?);
-        c.object("o").push(3).await?;
-        println!("{:?}", c.object("0").get(1).await?);
+        c.object("o").set(k1.clone(), 2).await?;
+        println!("{:?}", c.object("o").get(k1.clone()).await?);
+        c.object("o").delete(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 
     {
-        let c: Collection<List<Object>> = db.collection("c");
-        c.set("o", ["hello".into(), "world".into()]).await?;
+        let c: Collection<UnorderedMap<Object>> = db.collection("c");
+        c.set("o", [(k1.clone(), "a".into()), (k2.clone(), "b".into())])
+            .await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
-        println!("{:?}", c.object("o").pop().await?);
-        c.object("o").push("richard").await?;
-        println!("{:?}", c.object("o").get(1).await?);
-        c.object("o").set(1, "world").await?;
+        c.object("o").set(k1.clone(), "b").await?;
+        println!("{:?}", c.object("o").get(k1.clone()).await?);
+        c.object("o").delete(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 
