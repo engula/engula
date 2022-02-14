@@ -13,15 +13,26 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Collection, Int64, List, Object, Universe};
+use engula_client::{Blob, Collection, Int64, List, Object, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
+    let c0: Collection<List<Blob>> = db.collection("c0");
     let c1: Collection<List<Int64>> = db.collection("c1");
     let c2: Collection<List<Object>> = db.collection("c2");
+
+    c0.set("o", vec![vec![1, 2], vec![3, 4]]).await?;
+    println!("{:?}", c0.get("o").await?);
+    println!("{:?}", c0.object("o").len().await?);
+    println!("{:?}", c0.object("o").pop().await?);
+    c0.object("o").push(vec![5, 6]).await?;
+    c0.object("o").push(vec![7, 8]).await?;
+    println!("{:?}", c0.get("o").await?);
+    c0.delete("o").await?;
+    println!("{:?}", c0.get("o").await?);
 
     c1.set("o", vec![1]).await?;
     println!("{:?}", c1.get("o").await?);

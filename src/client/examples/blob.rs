@@ -12,8 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod blob;
-mod int64;
-mod list;
+use anyhow::Result;
+use engula_client::{Blob, Collection, Universe};
 
-pub use self::{blob::Blob, int64::Int64, list::List};
+#[tokio::main]
+async fn main() -> Result<()> {
+    let url = "http://localhost:21716";
+    let uv = Universe::connect(url).await?;
+    let db = uv.database("db");
+    let co: Collection<Blob> = db.collection("co");
+
+    co.set("o", vec![1, 2]).await?;
+    println!("{:?}", co.get("o").await?);
+    co.object("o").append(vec![3, 4, 5]).await?;
+    println!("{:?}", co.get("o").await?);
+    println!("{:?}", co.object("o").len().await?);
+
+    Ok(())
+}

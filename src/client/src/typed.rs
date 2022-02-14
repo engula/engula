@@ -44,6 +44,26 @@ impl TypedValue for Vec<Value> {
     }
 }
 
+impl TypedValue for Vec<u8> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::BlobValue(v)) = v.value {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
+impl TypedValue for Vec<Vec<u8>> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::ListValue(v)) = v.value {
+            v.values.into_iter().map(Vec::cast_from).collect()
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
 impl TypedValue for i64 {
     fn cast_from(v: Value) -> Result<Self> {
         if let Some(value::Value::Int64Value(v)) = v.value {
