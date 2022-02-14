@@ -12,6 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod call_expr;
-pub mod simple;
-pub mod subcall_expr;
+use engula_apis::*;
+
+macro_rules! call_expr {
+    ($func:expr, $args:expr) => {
+        CallExpr {
+            func: $func as i32,
+            args: $args,
+        }
+    };
+}
+
+pub fn get(index: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Get, vec![index.into()])
+}
+
+pub fn set(index: impl Into<Value>, value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Set, vec![index.into(), value.into()])
+}
+
+pub fn delete(index: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Delete, vec![index.into()])
+}

@@ -124,46 +124,180 @@ impl Collection {
 
     fn execute_expr(&mut self, expr: Expr) -> Result<ExprResult> {
         let id = expr.id;
-        let call = expr.call.ok_or(Error::InvalidRequest)?;
-        let func = call.func;
-        let mut args = Args::new(call.args);
         let mut result = ExprResult::default();
-        match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
-            Function::Get => {
-                result.value = self.objects.get(&id).cloned();
+        if let Some(call) = expr.call {
+            let func = call.func;
+            let mut args = Args::new(call.args);
+            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
+                Function::Get => {
+                    result.value = self.objects.get(&id).cloned();
+                }
+                Function::Set => {
+                    let value = args.take()?;
+                    self.objects.insert(id, value);
+                }
+                Function::Delete => {
+                    self.objects.remove(&id);
+                }
+                func => {
+                    if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
+                        match v {
+                            value::Value::Int64Value(v) => {
+                                return Self::handle_int64_call(v, func, args);
+                            }
+                            value::Value::ListValue(v) => {
+                                return Self::handle_list_call(v, func, args);
+                            }
+                            _ => return Err(Error::InvalidRequest),
+                        }
+                    } else {
+                        return self.handle_none_call(id, func, args);
+                    }
+                }
             }
+        } else if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
+            match v {
+                value::Value::ListValue(v) => {
+                    return Self::handle_list_subcalls(v, expr.subcalls);
+                }
+                _ => return Err(Error::InvalidRequest),
+            }
+        } else {
+            return self.handle_none_subcalls(id, expr.subcalls);
+        }
+        Ok(result)
+    }
+
+    fn handle_none_call(
+        &mut self,
+        id: Vec<u8>,
+        func: Function,
+        mut args: Args,
+    ) -> Result<ExprResult> {
+        let result = ExprResult::default();
+        match func {
+            Function::Get => {}
             Function::Set => {
                 let value = args.take()?;
                 self.objects.insert(id, value);
             }
-            Function::Delete => {
-                self.objects.remove(&id);
-            }
             Function::AddAssign => {
-                if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
-                    match v {
-                        value::Value::Int64Value(v) => {
-                            *v += args.take_i64()?;
-                        }
-                        _ => return Err(Error::InvalidRequest),
-                    }
-                } else {
-                    let value = args.take_numeric()?;
-                    self.objects.insert(id, value);
-                }
+                let value = args.take_numeric()?;
+                self.objects.insert(id, value);
             }
             Function::SubAssign => {
-                if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
-                    match v {
-                        value::Value::Int64Value(v) => {
-                            *v -= args.take_i64()?;
-                        }
-                        _ => return Err(Error::InvalidRequest),
-                    }
-                } else {
-                    let value = args.take_numeric()?;
-                    self.objects.insert(id, value);
+                let value = args.take_numeric()?;
+                self.objects.insert(id, value);
+            }
+            _ => return Err(Error::InvalidRequest),
+        }
+        Ok(result)
+    }
+
+    fn handle_none_subcalls(
+        &mut self,
+        _id: Vec<u8>,
+        subcalls: Vec<CallExpr>,
+    ) -> Result<ExprResult> {
+        let result = ExprResult::default();
+        for call in subcalls {
+            let func = call.func;
+            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
+                Function::Get => {}
+                _ => return Err(Error::InvalidRequest),
+            }
+        }
+        Ok(result)
+    }
+
+    fn handle_int64_call(v: &mut i64, func: Function, mut args: Args) -> Result<ExprResult> {
+        let result = ExprResult::default();
+        match func {
+            Function::AddAssign => {
+                *v += args.take_i64()?;
+            }
+            Function::SubAssign => {
+                *v -= args.take_i64()?;
+            }
+            _ => return Err(Error::InvalidRequest),
+        }
+        Ok(result)
+    }
+
+    fn handle_list_call(v: &mut ListValue, func: Function, mut args: Args) -> Result<ExprResult> {
+        let mut result = ExprResult::default();
+        match func {
+            Function::Len => {
+                result.value = Some(Value {
+                    value: Some(value::Value::Int64Value(v.values.len() as i64)),
+                });
+            }
+            Function::Pop => {
+                result.value = v.values.pop();
+            }
+            Function::Push => {
+                v.values.push(args.take()?);
+            }
+            _ => return Err(Error::InvalidRequest),
+        }
+        Ok(result)
+    }
+
+    fn handle_list_subcalls(v: &mut ListValue, subcalls: Vec<CallExpr>) -> Result<ExprResult> {
+        let mut result = ExprResult::default();
+        for call in subcalls {
+            let func = call.func;
+            let mut args = Args::new(call.args);
+            let index = args.take_i64()? as usize;
+            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
+                Function::Get => {
+                    result.value = v.values.get(index).cloned();
                 }
+                Function::Set => {
+                    if v.values.len() <= index {
+                        return Err(Error::InvalidRequest);
+                    }
+                    v.values[index] = args.take()?;
+                }
+                Function::Delete => {
+                    if v.values.len() <= index {
+                        return Err(Error::InvalidRequest);
+                    }
+                    v.values.remove(index);
+                }
+                Function::AddAssign => {
+                    if v.values.len() <= index {
+                        return Err(Error::InvalidRequest);
+                    }
+                    let operand = args.take_i64()?;
+                    if let Some(v) = v.values[index].value.as_mut() {
+                        match v {
+                            value::Value::Int64Value(v) => {
+                                *v += operand;
+                            }
+                            _ => return Err(Error::InvalidRequest),
+                        }
+                    } else {
+                        v.values[index].value = Some(value::Value::Int64Value(operand));
+                    }
+                }
+                Function::SubAssign => {
+                    if v.values.len() <= index {
+                        return Err(Error::InvalidRequest);
+                    }
+                    let operand = args.take_i64()?;
+                    if let Some(v) = v.values[index].value.as_mut() {
+                        match v {
+                            value::Value::Int64Value(v) => {
+                                *v -= operand;
+                            }
+                            _ => return Err(Error::InvalidRequest),
+                        }
+                    } else {
+                        v.values[index].value = Some(value::Value::Int64Value(operand));
+                    }
+                }
+                _ => return Err(Error::InvalidRequest),
             }
         }
         Ok(result)
