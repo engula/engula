@@ -13,13 +13,25 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Blob, Collection, Int64, List, Object, Universe};
+use engula_client::{Any, Blob, Collection, Int64, List, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
+
+    {
+        let c: Collection<List<Any>> = db.collection("c");
+        c.set("o", ["hello".into(), "world".into()]).await?;
+        println!("{:?}", c.get("o").await?);
+        println!("{:?}", c.object("o").len().await?);
+        println!("{:?}", c.object("o").pop().await?);
+        c.object("o").push("richard").await?;
+        println!("{:?}", c.object("o").get(1).await?);
+        c.object("o").set(1, "world").await?;
+        println!("{:?}", c.get("o").await?);
+    }
 
     {
         let c: Collection<List<Blob>> = db.collection("c");
@@ -40,18 +52,6 @@ async fn main() -> Result<()> {
         println!("{:?}", c.object("o").pop().await?);
         c.object("o").push(3).await?;
         println!("{:?}", c.object("0").get(1).await?);
-        println!("{:?}", c.get("o").await?);
-    }
-
-    {
-        let c: Collection<List<Object>> = db.collection("c");
-        c.set("o", ["hello".into(), "world".into()]).await?;
-        println!("{:?}", c.get("o").await?);
-        println!("{:?}", c.object("o").len().await?);
-        println!("{:?}", c.object("o").pop().await?);
-        c.object("o").push("richard").await?;
-        println!("{:?}", c.object("o").get(1).await?);
-        c.object("o").set(1, "world").await?;
         println!("{:?}", c.get("o").await?);
     }
 

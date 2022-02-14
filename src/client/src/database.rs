@@ -17,8 +17,8 @@ use std::sync::Arc;
 use engula_apis::*;
 
 use crate::{
-    txn_client::TxnClient, universe_client::UniverseClient, Collection, DatabaseTxn, Error, Result,
-    TypedObject,
+    txn_client::TxnClient, universe_client::UniverseClient, Collection, DatabaseTxn, Error, Object,
+    Result,
 };
 
 #[derive(Clone)]
@@ -55,11 +55,11 @@ impl Database {
         self.inner.new_txn()
     }
 
-    pub fn collection<T: TypedObject>(&self, name: impl Into<String>) -> Collection<T> {
+    pub fn collection<T: Object>(&self, name: impl Into<String>) -> Collection<T> {
         self.inner.new_collection(name.into())
     }
 
-    pub async fn create_collection<T: TypedObject>(
+    pub async fn create_collection<T: Object>(
         &self,
         name: impl Into<String>,
     ) -> Result<Collection<T>> {
@@ -90,7 +90,7 @@ impl DatabaseInner {
         DatabaseTxn::new(self.name.clone(), self.txn_client.clone())
     }
 
-    fn new_collection<T: TypedObject>(&self, name: String) -> Collection<T> {
+    fn new_collection<T: Object>(&self, name: String) -> Collection<T> {
         Collection::new(
             self.name.clone(),
             name,

@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{expr::call_expr, Object, Result, TypedObject};
+use crate::{expr::call_expr, Any, Object, Result};
 
-pub struct Int64(Object);
+pub struct Int64(Any);
 
-impl TypedObject for Int64 {
-    type TypedValue = i64;
+impl Object for Int64 {
+    type Value = i64;
 }
 
-impl From<Object> for Int64 {
-    fn from(ob: Object) -> Self {
+impl From<Any> for Int64 {
+    fn from(ob: Any) -> Self {
         Self(ob)
     }
 }

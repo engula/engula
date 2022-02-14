@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{expr::call_expr, Error, Object, Result, TypedObject};
+use crate::{expr::call_expr, Any, Error, Object, Result};
 
-pub struct Blob(Object);
+pub struct Blob(Any);
 
-impl TypedObject for Blob {
-    type TypedValue = Vec<u8>;
+impl Object for Blob {
+    type Value = Vec<u8>;
 }
 
-impl From<Object> for Blob {
-    fn from(ob: Object) -> Self {
+impl From<Any> for Blob {
+    fn from(ob: Any) -> Self {
         Self(ob)
     }
 }

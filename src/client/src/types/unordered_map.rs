@@ -16,16 +16,16 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
     expr::{call_expr, subcall_expr},
-    Error, Object, Result, TypedObject, TypedValue,
+    Any, Error, Object, ObjectValue, Result,
 };
 
 pub struct UnorderedMap<T> {
-    ob: Object,
+    ob: Any,
     _marker: PhantomData<T>,
 }
 
-impl<T> From<Object> for UnorderedMap<T> {
-    fn from(ob: Object) -> Self {
+impl<T> From<Any> for UnorderedMap<T> {
+    fn from(ob: Any) -> Self {
         Self {
             ob,
             _marker: PhantomData,
@@ -33,18 +33,18 @@ impl<T> From<Object> for UnorderedMap<T> {
     }
 }
 
-impl<T> TypedObject for UnorderedMap<T>
+impl<T> Object for UnorderedMap<T>
 where
-    T: TypedObject,
-    HashMap<Vec<u8>, T::TypedValue>: TypedValue,
+    T: Object,
+    HashMap<Vec<u8>, T::Value>: ObjectValue,
 {
-    type TypedValue = HashMap<Vec<u8>, T::TypedValue>;
+    type Value = HashMap<Vec<u8>, T::Value>;
 }
 
 impl<T> UnorderedMap<T>
 where
-    T: TypedObject,
-    HashMap<Vec<u8>, T::TypedValue>: TypedValue,
+    T: Object,
+    HashMap<Vec<u8>, T::Value>: ObjectValue,
 {
     pub async fn len(self) -> Result<i64> {
         let value = self.ob.call(call_expr::len()).await?;
@@ -55,17 +55,17 @@ where
         }
     }
 
-    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::TypedValue>> {
+    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
         let value = self.ob.subcall(subcall_expr::get(key.into())).await?;
         if let Some(v) = value {
-            let v = T::TypedValue::cast_from(v)?;
+            let v = T::Value::cast_from(v)?;
             Ok(Some(v))
         } else {
             Ok(None)
         }
     }
 
-    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::TypedValue>) -> Result<()> {
+    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
         self.ob
             .subcall(subcall_expr::set(key.into(), value.into()))
             .await?;

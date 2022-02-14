@@ -12,51 +12,77 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use engula_apis::*;
 
-use crate::{txn_client::TxnClient, Result};
+use crate::{Any, Error, Result};
 
-#[allow(dead_code)]
-pub struct Object {
-    id: Vec<u8>,
-    dbname: String,
-    coname: String,
-    client: TxnClient,
+pub trait Object: From<Any> {
+    type Value: ObjectValue;
 }
 
-impl Object {
-    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
-        Self {
-            id,
-            dbname,
-            coname,
-            client,
+impl Object for Any {
+    type Value = Value;
+}
+
+pub trait ObjectValue: Into<Value> {
+    fn cast_from(v: Value) -> Result<Self>;
+}
+
+impl ObjectValue for Value {
+    fn cast_from(v: Value) -> Result<Self> {
+        Ok(v)
+    }
+}
+
+impl ObjectValue for Vec<u8> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::BlobValue(v)) = v.value {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
         }
     }
+}
 
-    pub(crate) async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
-        let expr = engula_apis::Expr {
-            id: self.id,
-            call: Some(call),
-            ..Default::default()
-        };
-        let result = self
-            .client
-            .collection_expr(self.dbname, self.coname, expr)
-            .await?;
-        Ok(result.value)
+impl ObjectValue for String {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::TextValue(v)) = v.value {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
+        }
     }
+}
 
-    pub(crate) async fn subcall(mut self, call: CallExpr) -> Result<Option<Value>> {
-        let expr = engula_apis::Expr {
-            id: self.id,
-            subcalls: vec![call],
-            ..Default::default()
-        };
-        let result = self
-            .client
-            .collection_expr(self.dbname, self.coname, expr)
-            .await?;
-        Ok(result.value)
+impl ObjectValue for i64 {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::Int64Value(v)) = v.value {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
+impl<T: ObjectValue> ObjectValue for Vec<T> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::SequenceValue(v)) = v.value {
+            v.values.into_iter().map(T::cast_from).collect()
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
+impl<T: ObjectValue> ObjectValue for HashMap<Vec<u8>, T> {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Some(value::Value::AssociativeValue(v)) = v.value {
+            let result: Result<Vec<T>> = v.values.into_iter().map(T::cast_from).collect();
+            result.map(|values| v.keys.into_iter().zip(values).collect())
+        } else {
+            Err(Error::TypeMismatch)
+        }
     }
 }
