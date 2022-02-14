@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod any;
 mod collection;
 mod database;
 mod error;
@@ -19,18 +20,17 @@ mod expr;
 mod object;
 mod txn;
 mod txn_client;
-mod typed;
 mod types;
 mod universe;
 mod universe_client;
 
 pub use self::{
+    any::Any,
     collection::Collection,
     database::Database,
     error::{Error, Result},
-    object::Object,
+    object::{Object, ObjectValue},
     txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
-    typed::{TypedObject, TypedValue},
     types::{Blob, Int64, List, UnorderedMap},
     universe::Universe,
 };

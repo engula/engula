@@ -13,25 +13,25 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Collection, Object, Universe};
+use engula_client::{Any, Collection, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
-    let c1: Collection<Object> = db.collection("c1");
-    let c2: Collection<Object> = db.collection("c2");
+    let c1: Collection<Any> = db.collection("c1");
+    let c2: Collection<Any> = db.collection("c2");
 
     let txn = db.begin();
     {
-        let mut t = txn.collection("c1");
+        let mut t = c1.begin_with(txn.clone());
         t.set("a1", 1);
         t.set("a2", 2);
         t.commit().await?;
     }
     {
-        let mut t = txn.collection("c2");
+        let mut t = c2.begin_with(txn.clone());
         t.set("b1", "b1");
         t.set("b2", "b2");
         t.commit().await?;

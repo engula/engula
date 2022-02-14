@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Blob, Collection, Int64, Object, Universe, UnorderedMap};
+use engula_client::{Any, Blob, Collection, Int64, Universe, UnorderedMap};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,7 +24,19 @@ async fn main() -> Result<()> {
     let (k1, k2) = (vec![1], vec![2]);
 
     {
-        let c: Collection<UnorderedMap<Blob>> = db.collection("c0");
+        let c: Collection<UnorderedMap<Any>> = db.collection("c");
+        c.set("o", [(k1.clone(), "a".into()), (k2.clone(), "b".into())])
+            .await?;
+        println!("{:?}", c.get("o").await?);
+        println!("{:?}", c.object("o").len().await?);
+        c.object("o").set(k1.clone(), "b").await?;
+        println!("{:?}", c.object("o").get(k1.clone()).await?);
+        c.object("o").delete(k1.clone()).await?;
+        println!("{:?}", c.get("o").await?);
+    }
+
+    {
+        let c: Collection<UnorderedMap<Blob>> = db.collection("c");
         c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
             .await?;
         println!("{:?}", c.get("o").await?);
@@ -41,18 +53,6 @@ async fn main() -> Result<()> {
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), 2).await?;
-        println!("{:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
-        println!("{:?}", c.get("o").await?);
-    }
-
-    {
-        let c: Collection<UnorderedMap<Object>> = db.collection("c");
-        c.set("o", [(k1.clone(), "a".into()), (k2.clone(), "b".into())])
-            .await?;
-        println!("{:?}", c.get("o").await?);
-        println!("{:?}", c.object("o").len().await?);
-        c.object("o").set(k1.clone(), "b").await?;
         println!("{:?}", c.object("o").get(k1.clone()).await?);
         c.object("o").delete(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);

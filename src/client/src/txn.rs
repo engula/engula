@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 use engula_apis::*;
 
-use crate::{expr::simple, txn_client::TxnClient, Error, Result};
+use crate::{expr::simple, txn_client::TxnClient, Error, Object, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -44,12 +47,8 @@ impl DatabaseTxn {
         }
     }
 
-    fn add_request(&self, req: CollectionTxnRequest) {
-        self.inner.requests.lock().unwrap().push(req);
-    }
-
-    pub fn collection(&self, coname: impl Into<String>) -> CollectionTxn {
-        CollectionTxn::new_with(coname.into(), self.clone())
+    pub(crate) fn collection<T: Object>(&self, coname: String) -> CollectionTxn<T> {
+        CollectionTxn::new_with(coname, self.inner.clone())
     }
 
     pub async fn commit(self) -> Result<()> {
@@ -65,11 +64,16 @@ impl DatabaseTxn {
     }
 }
 
-pub struct CollectionTxn {
+pub struct CollectionTxn<T> {
+    inner: Arc<CollectionTxnInner>,
+    _marker: PhantomData<T>,
+}
+
+struct CollectionTxnInner {
     coname: String,
     handle: Option<DatabaseTxnHandle>,
-    parent: Option<DatabaseTxn>,
-    exprs: Vec<Expr>,
+    parent: Option<Arc<DatabaseTxnInner>>,
+    exprs: Mutex<Vec<Expr>>,
 }
 
 struct CollectionTxnHandle {
@@ -78,28 +82,35 @@ struct CollectionTxnHandle {
     client: TxnClient,
 }
 
-impl CollectionTxn {
+impl<T: Object> CollectionTxn<T> {
     pub(crate) fn new(dbname: String, coname: String, client: TxnClient) -> Self {
         let handle = DatabaseTxnHandle { dbname, client };
-        Self {
-            coname,
-            handle: Some(handle),
-            parent: None,
-            exprs: Vec::new(),
-        }
+        Self::new_inner(coname, Some(handle), None)
     }
 
-    pub(crate) fn new_with(coname: String, parent: DatabaseTxn) -> Self {
-        Self {
+    fn new_with(coname: String, parent: Arc<DatabaseTxnInner>) -> Self {
+        Self::new_inner(coname, None, Some(parent))
+    }
+
+    fn new_inner(
+        coname: String,
+        handle: Option<DatabaseTxnHandle>,
+        parent: Option<Arc<DatabaseTxnInner>>,
+    ) -> Self {
+        let inner = CollectionTxnInner {
             coname,
-            handle: None,
-            parent: Some(parent),
-            exprs: Vec::new(),
+            handle,
+            parent,
+            exprs: Mutex::new(Vec::new()),
+        };
+        Self {
+            inner: Arc::new(inner),
+            _marker: PhantomData,
         }
     }
 
     pub(crate) fn add_expr(&mut self, expr: Expr) {
-        self.exprs.push(expr);
+        self.inner.exprs.lock().unwrap().push(expr);
     }
 
     pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<Value>) {
@@ -110,32 +121,35 @@ impl CollectionTxn {
         self.add_expr(simple::delete(id))
     }
 
-    pub fn object(&mut self, id: impl Into<Vec<u8>>) -> ObjectTxn {
-        ObjectTxn::new_with(id.into(), self)
+    pub fn object(&mut self, _id: impl Into<Vec<u8>>) {
+        todo!();
     }
 
     pub async fn commit(self) -> Result<()> {
+        let inner = Arc::try_unwrap(self.inner)
+            .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
         let req = CollectionTxnRequest {
-            name: self.coname,
-            exprs: self.exprs,
+            name: inner.coname,
+            exprs: inner.exprs.into_inner().unwrap(),
         };
-        if let Some(mut handle) = self.handle {
+        if let Some(mut handle) = inner.handle {
             handle.client.collection(handle.dbname, req).await?;
         } else {
-            self.parent.unwrap().add_request(req);
+            let parent = inner.parent.unwrap();
+            parent.requests.lock().unwrap().push(req);
         }
         Ok(())
     }
 }
 
-pub struct ObjectTxn<'a> {
+pub struct ObjectTxn {
     handle: Option<CollectionTxnHandle>,
-    parent: Option<&'a mut CollectionTxn>,
+    parent: Option<Arc<CollectionTxnInner>>,
     expr: Expr,
 }
 
 #[allow(dead_code)]
-impl<'a> ObjectTxn<'a> {
+impl ObjectTxn {
     pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
         let handle = CollectionTxnHandle {
             dbname,
@@ -145,14 +159,14 @@ impl<'a> ObjectTxn<'a> {
         Self::new_inner(id, Some(handle), None)
     }
 
-    pub(crate) fn new_with(id: Vec<u8>, parent: &'a mut CollectionTxn) -> Self {
+    fn new_with(id: Vec<u8>, parent: Arc<CollectionTxnInner>) -> Self {
         Self::new_inner(id, None, Some(parent))
     }
 
     fn new_inner(
         id: Vec<u8>,
         handle: Option<CollectionTxnHandle>,
-        parent: Option<&'a mut CollectionTxn>,
+        parent: Option<Arc<CollectionTxnInner>>,
     ) -> Self {
         Self {
             handle,
@@ -176,10 +190,11 @@ impl<'a> ObjectTxn<'a> {
     }
 }
 
-impl<'a> Drop for ObjectTxn<'a> {
+impl Drop for ObjectTxn {
     fn drop(&mut self) {
         if let Some(parent) = self.parent.take() {
-            parent.add_expr(std::mem::take(&mut self.expr));
+            let expr = std::mem::take(&mut self.expr);
+            parent.exprs.lock().unwrap().push(expr);
         }
     }
 }

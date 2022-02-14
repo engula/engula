@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Collection, Object, Universe};
+use engula_client::{Any, Collection, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     let uv = Universe::connect(url).await?;
     let db = uv.create_database("db").await?;
     println!("created {:?}", db.desc().await?);
-    let co: Collection<Object> = db.create_collection("co").await?;
+    let co: Collection<Any> = db.create_collection("co").await?;
     println!("created {:?}", co.desc().await?);
     Ok(())
 }

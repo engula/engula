@@ -17,8 +17,8 @@ use std::{marker::PhantomData, sync::Arc};
 use engula_apis::*;
 
 use crate::{
-    expr::simple, txn_client::TxnClient, universe_client::UniverseClient, CollectionTxn, Error,
-    Object, Result, TypedObject, TypedValue,
+    expr::simple, txn_client::TxnClient, universe_client::UniverseClient, Any, CollectionTxn,
+    DatabaseTxn, Error, Object, ObjectValue, Result,
 };
 
 #[derive(Clone)]
@@ -27,7 +27,7 @@ pub struct Collection<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T: TypedObject> Collection<T> {
+impl<T: Object> Collection<T> {
     pub(crate) fn new(
         dbname: String,
         coname: String,
@@ -59,26 +59,30 @@ impl<T: TypedObject> Collection<T> {
         }
     }
 
-    pub fn begin(&self) -> CollectionTxn {
+    pub fn begin(&self) -> CollectionTxn<T> {
         self.inner.new_txn()
+    }
+
+    pub fn begin_with(&self, parent: DatabaseTxn) -> CollectionTxn<T> {
+        parent.collection(self.inner.coname.clone())
     }
 
     pub fn object(&self, id: impl Into<Vec<u8>>) -> T {
         self.inner.new_object(id.into())
     }
 
-    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::TypedValue>> {
+    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
         let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
         if let Some(value) = result.value {
-            let value = T::TypedValue::cast_from(value)?;
+            let value = T::Value::cast_from(value)?;
             Ok(Some(value))
         } else {
             Ok(None)
         }
     }
 
-    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::TypedValue>) -> Result<()> {
+    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
         let mut txn = self.begin();
         txn.set(id, value.into());
         txn.commit().await
@@ -99,7 +103,7 @@ pub struct CollectionInner {
 }
 
 impl CollectionInner {
-    fn new_txn(&self) -> CollectionTxn {
+    fn new_txn<T: Object>(&self) -> CollectionTxn<T> {
         CollectionTxn::new(
             self.dbname.clone(),
             self.coname.clone(),
@@ -107,14 +111,14 @@ impl CollectionInner {
         )
     }
 
-    fn new_object<T: TypedObject>(&self, id: Vec<u8>) -> T {
-        let ob = Object::new(
+    fn new_object<T: Object>(&self, id: Vec<u8>) -> T {
+        Any::new(
             id,
             self.dbname.clone(),
             self.coname.clone(),
             self.txn_client.clone(),
-        );
-        ob.into()
+        )
+        .into()
     }
 
     async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {
