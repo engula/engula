@@ -139,7 +139,32 @@ impl Collection {
             Function::Delete => {
                 self.objects.remove(&id);
             }
-            _ => return Err(Error::InvalidRequest),
+            Function::AddAssign => {
+                if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
+                    match v {
+                        value::Value::Int64Value(v) => {
+                            *v += args.take_i64()?;
+                        }
+                        _ => return Err(Error::InvalidRequest),
+                    }
+                } else {
+                    let value = args.take_numeric()?;
+                    self.objects.insert(id, value);
+                }
+            }
+            Function::SubAssign => {
+                if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
+                    match v {
+                        value::Value::Int64Value(v) => {
+                            *v -= args.take_i64()?;
+                        }
+                        _ => return Err(Error::InvalidRequest),
+                    }
+                } else {
+                    let value = args.take_numeric()?;
+                    self.objects.insert(id, value);
+                }
+            }
         }
         Ok(result)
     }
@@ -156,5 +181,20 @@ impl Args {
 
     fn take(&mut self) -> Result<Value> {
         self.args.pop_front().ok_or(Error::InvalidRequest)
+    }
+
+    fn take_i64(&mut self) -> Result<i64> {
+        match self.take()?.value {
+            Some(value::Value::Int64Value(v)) => Ok(v),
+            _ => Err(Error::InvalidRequest),
+        }
+    }
+
+    fn take_numeric(&mut self) -> Result<Value> {
+        let v = self.take()?;
+        match v.value.as_ref() {
+            Some(value::Value::Int64Value(_)) => Ok(v),
+            _ => Err(Error::InvalidRequest),
+        }
     }
 }
