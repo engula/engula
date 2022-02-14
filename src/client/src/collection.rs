@@ -70,8 +70,8 @@ impl<T: TypedObject> Collection<T> {
     pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::TypedValue>> {
         let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
-        if let Some(value) = result.value.and_then(|x| x.value) {
-            let value = T::TypedValue::cast_from(value.into())?;
+        if let Some(value) = result.value {
+            let value = T::TypedValue::cast_from(value)?;
             Ok(Some(value))
         } else {
             Ok(None)

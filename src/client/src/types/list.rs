@@ -14,7 +14,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{ListValue, Object, Result, TypedListValue, TypedObject, Value};
+use crate::{Object, Result, TypedObject, TypedValue};
 
 pub struct List<T> {
     _ob: Object,
@@ -33,7 +33,7 @@ impl<T> From<Object> for List<T> {
 impl<T> TypedObject for List<T>
 where
     T: TypedObject,
-    Vec<T::TypedValue>: TypedListValue,
+    Vec<T::TypedValue>: TypedValue,
 {
     type TypedValue = Vec<T::TypedValue>;
 }
@@ -41,7 +41,7 @@ where
 impl<T> List<T>
 where
     T: TypedObject,
-    Vec<T::TypedValue>: Into<Value> + From<ListValue>,
+    Vec<T::TypedValue>: TypedValue,
 {
     pub async fn get(&self, _index: i64) -> Result<Option<T::TypedValue>> {
         todo!();

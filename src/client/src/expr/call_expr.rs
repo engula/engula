@@ -12,20 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_apis::*;
+
 macro_rules! call_expr {
     ($func:expr, $args:expr) => {
-        Some(CallExpr {
+        CallExpr {
             func: $func as i32,
             args: $args,
-        })
+        }
     };
 }
 
-macro_rules! simple_expr {
-    ($id:ident, $func:expr, $args:expr) => {
-        Expr {
-            id: $id.into(),
-            call: call_expr!($func, $args),
-        }
-    };
+pub fn get() -> CallExpr {
+    call_expr!(Function::Get, vec![])
+}
+
+pub fn set(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Set, vec![value.into()])
+}
+
+pub fn delete() -> CallExpr {
+    call_expr!(Function::Delete, vec![])
+}
+
+pub fn add_assign(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::AddAssign, vec![value.into()])
+}
+
+pub fn sub_assign(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::SubAssign, vec![value.into()])
 }
