@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{txn_client::TxnClient, TypedValue, Value};
+use engula_apis::*;
+
+use crate::{txn_client::TxnClient, Result};
 
 #[allow(dead_code)]
 pub struct Object {
@@ -31,12 +33,16 @@ impl Object {
             client,
         }
     }
-}
 
-pub trait TypedObject: From<Object> {
-    type TypedValue: TypedValue;
-}
-
-impl TypedObject for Object {
-    type TypedValue = Value;
+    pub(crate) async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
+        let expr = engula_apis::Expr {
+            id: self.id,
+            call: Some(call),
+        };
+        let result = self
+            .client
+            .collection_expr(self.dbname, self.coname, expr)
+            .await?;
+        Ok(result.value)
+    }
 }

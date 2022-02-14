@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Object, Result, TypedObject};
+use crate::{expr::call_expr, Object, Result, TypedObject};
 
 pub struct Int64(Object);
 
@@ -27,7 +27,13 @@ impl From<Object> for Int64 {
 }
 
 impl Int64 {
-    pub async fn add(self, _value: i64) -> Result<()> {
-        todo!();
+    pub async fn add(self, value: i64) -> Result<()> {
+        self.0.call(call_expr::add_assign(value)).await?;
+        Ok(())
+    }
+
+    pub async fn sub(self, value: i64) -> Result<()> {
+        self.0.call(call_expr::sub_assign(value)).await?;
+        Ok(())
     }
 }

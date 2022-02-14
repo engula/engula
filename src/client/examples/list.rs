@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let co: Collection<List<Object>> = db.collection("co");
     let c1: Collection<List<Int64>> = db.collection("c1");
 
-    co.set("o", vec![1.into()]).await?;
+    co.set("o", vec!["o".into()]).await?;
     println!("{:?}", co.get("o").await?);
     co.delete("o").await?;
     println!("{:?}", co.get("o").await?);

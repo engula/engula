@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use engula_apis::*;
 
-use crate::{expr::simple, txn_client::TxnClient, Error, Result, Value};
+use crate::{expr::simple, txn_client::TxnClient, Error, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {

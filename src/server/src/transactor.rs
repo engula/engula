@@ -103,7 +103,7 @@ impl Database {
 }
 
 struct Collection {
-    objects: HashMap<Vec<u8>, GenericValue>,
+    objects: HashMap<Vec<u8>, Value>,
 }
 
 impl Collection {
@@ -130,8 +130,7 @@ impl Collection {
         let mut result = ExprResult::default();
         match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
             Function::Get => {
-                let value = self.objects.get(&id).cloned();
-                result.value = Some(value.unwrap_or_default());
+                result.value = self.objects.get(&id).cloned();
             }
             Function::Set => {
                 let value = args.take()?;
@@ -140,21 +139,22 @@ impl Collection {
             Function::Delete => {
                 self.objects.remove(&id);
             }
+            _ => return Err(Error::InvalidRequest),
         }
         Ok(result)
     }
 }
 
 struct Args {
-    args: VecDeque<GenericValue>,
+    args: VecDeque<Value>,
 }
 
 impl Args {
-    fn new(args: Vec<GenericValue>) -> Self {
+    fn new(args: Vec<Value>) -> Self {
         Self { args: args.into() }
     }
 
-    fn take(&mut self) -> Result<GenericValue> {
+    fn take(&mut self) -> Result<Value> {
         self.args.pop_front().ok_or(Error::InvalidRequest)
     }
 }

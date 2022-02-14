@@ -19,18 +19,18 @@ mod expr;
 mod object;
 mod txn;
 mod txn_client;
+mod typed;
 mod types;
 mod universe;
 mod universe_client;
-mod value;
 
 pub use self::{
     collection::Collection,
     database::Database,
     error::{Error, Result},
-    object::{Object, TypedObject},
+    object::Object,
     txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
+    typed::{TypedObject, TypedValue},
     types::{Int64, List},
     universe::Universe,
-    value::{ListValue, TypedListValue, TypedValue, Value},
 };
