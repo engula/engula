@@ -54,3 +54,7 @@ pub fn pop() -> CallExpr {
 pub fn push(value: impl Into<Value>) -> CallExpr {
     call_expr!(Function::Push, vec![value.into()])
 }
+
+pub fn append(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Append, vec![value.into()])
+}

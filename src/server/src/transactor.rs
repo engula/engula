@@ -142,6 +142,9 @@ impl Collection {
                 func => {
                     if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
                         match v {
+                            value::Value::BlobValue(v) => {
+                                return Self::handle_blob_call(v, func, args);
+                            }
                             value::Value::Int64Value(v) => {
                                 return Self::handle_int64_call(v, func, args);
                             }
@@ -206,6 +209,23 @@ impl Collection {
                 Function::Get => {}
                 _ => return Err(Error::InvalidRequest),
             }
+        }
+        Ok(result)
+    }
+
+    fn handle_blob_call(v: &mut Vec<u8>, func: Function, mut args: Args) -> Result<ExprResult> {
+        let mut result = ExprResult::default();
+        match func {
+            Function::Len => {
+                result.value = Some(Value {
+                    value: Some(value::Value::Int64Value(v.len() as i64)),
+                });
+            }
+            Function::Append => {
+                let mut value = args.take_blob()?;
+                v.append(&mut value);
+            }
+            _ => return Err(Error::InvalidRequest),
         }
         Ok(result)
     }
@@ -315,6 +335,13 @@ impl Args {
 
     fn take(&mut self) -> Result<Value> {
         self.args.pop_front().ok_or(Error::InvalidRequest)
+    }
+
+    fn take_blob(&mut self) -> Result<Vec<u8>> {
+        match self.take()?.value {
+            Some(value::Value::BlobValue(v)) => Ok(v),
+            _ => Err(Error::InvalidRequest),
+        }
     }
 
     fn take_i64(&mut self) -> Result<i64> {

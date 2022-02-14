@@ -31,6 +31,6 @@ pub use self::{
     object::Object,
     txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
     typed::{TypedObject, TypedValue},
-    types::{Int64, List},
+    types::{Blob, Int64, List},
     universe::Universe,
 };
