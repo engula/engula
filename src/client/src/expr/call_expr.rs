@@ -42,3 +42,15 @@ pub fn add_assign(value: impl Into<Value>) -> CallExpr {
 pub fn sub_assign(value: impl Into<Value>) -> CallExpr {
     call_expr!(Function::SubAssign, vec![value.into()])
 }
+
+pub fn len() -> CallExpr {
+    call_expr!(Function::Len, vec![])
+}
+
+pub fn pop() -> CallExpr {
+    call_expr!(Function::Pop, vec![])
+}
+
+pub fn push(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Push, vec![value.into()])
+}

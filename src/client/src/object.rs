@@ -38,6 +38,20 @@ impl Object {
         let expr = engula_apis::Expr {
             id: self.id,
             call: Some(call),
+            ..Default::default()
+        };
+        let result = self
+            .client
+            .collection_expr(self.dbname, self.coname, expr)
+            .await?;
+        Ok(result.value)
+    }
+
+    pub(crate) async fn subcall(mut self, call: CallExpr) -> Result<Option<Value>> {
+        let expr = engula_apis::Expr {
+            id: self.id,
+            subcalls: vec![call],
+            ..Default::default()
         };
         let result = self
             .client

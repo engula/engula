@@ -21,6 +21,7 @@ macro_rules! simple_expr {
         Expr {
             id: $id.into(),
             call: Some($call),
+            ..Default::default()
         }
     };
 }

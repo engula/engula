@@ -14,17 +14,20 @@
 
 use std::marker::PhantomData;
 
-use crate::{Object, Result, TypedObject, TypedValue};
+use crate::{
+    expr::{call_expr, subcall_expr},
+    Error, Object, Result, TypedObject, TypedValue,
+};
 
 pub struct List<T> {
-    _ob: Object,
+    ob: Object,
     _marker: PhantomData<T>,
 }
 
 impl<T> From<Object> for List<T> {
     fn from(ob: Object) -> Self {
         Self {
-            _ob: ob,
+            ob,
             _marker: PhantomData,
         }
     }
@@ -43,15 +46,49 @@ where
     T: TypedObject,
     Vec<T::TypedValue>: TypedValue,
 {
-    pub async fn get(&self, _index: i64) -> Result<Option<T::TypedValue>> {
-        todo!();
+    pub async fn len(self) -> Result<i64> {
+        let value = self.ob.call(call_expr::len()).await?;
+        if let Some(v) = value {
+            v.as_i64().ok_or(Error::TypeMismatch)
+        } else {
+            Ok(0)
+        }
     }
 
-    pub async fn set(&self, _index: i64, _value: impl Into<T::TypedValue>) -> Result<()> {
-        todo!();
+    pub async fn pop(self) -> Result<Option<T::TypedValue>> {
+        let value = self.ob.call(call_expr::pop()).await?;
+        if let Some(v) = value {
+            let v = T::TypedValue::cast_from(v)?;
+            Ok(Some(v))
+        } else {
+            Ok(None)
+        }
     }
 
-    pub async fn delete(&self, _index: i64) -> Result<()> {
-        todo!();
+    pub async fn push(self, value: impl Into<T::TypedValue>) -> Result<()> {
+        self.ob.call(call_expr::push(value.into())).await?;
+        Ok(())
+    }
+
+    pub async fn get(self, index: i64) -> Result<Option<T::TypedValue>> {
+        let value = self.ob.subcall(subcall_expr::get(index)).await?;
+        if let Some(v) = value {
+            let v = T::TypedValue::cast_from(v)?;
+            Ok(Some(v))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn set(self, index: i64, value: impl Into<T::TypedValue>) -> Result<()> {
+        self.ob
+            .subcall(subcall_expr::set(index, value.into()))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete(self, index: i64) -> Result<()> {
+        self.ob.subcall(subcall_expr::delete(index)).await?;
+        Ok(())
     }
 }

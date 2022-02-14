@@ -25,11 +25,19 @@ async fn main() -> Result<()> {
 
     c1.set("o", vec![1]).await?;
     println!("{:?}", c1.get("o").await?);
+    println!("{:?}", c1.object("o").len().await?);
+    println!("{:?}", c1.object("o").pop().await?);
+    c1.object("o").push(1).await?;
+    println!("{:?}", c1.get("o").await?);
     c1.delete("o").await?;
     println!("{:?}", c1.get("o").await?);
 
-    c2.set("o", vec!["v".into()]).await?;
+    c2.set("o", vec!["hello".into()]).await?;
     println!("{:?}", c2.get("o").await?);
+    c2.object("o").set(0, "world").await?;
+    println!("{:?}", c2.object("o").get(0).await?);
+    c2.object("o").delete(0).await?;
+    println!("{:?}", c2.object("o").get(0).await?);
     c2.delete("o").await?;
     println!("{:?}", c2.get("o").await?);
 

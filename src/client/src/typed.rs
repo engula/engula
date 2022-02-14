@@ -37,7 +37,6 @@ impl TypedValue for Value {
 impl TypedValue for Vec<Value> {
     fn cast_from(v: Value) -> Result<Self> {
         if let Some(value::Value::ListValue(v)) = v.value {
-            // TODO: do we need to check other values?
             Ok(v.values)
         } else {
             Err(Error::TypeMismatch)
@@ -58,7 +57,7 @@ impl TypedValue for i64 {
 impl TypedValue for Vec<i64> {
     fn cast_from(v: Value) -> Result<Self> {
         if let Some(value::Value::ListValue(v)) = v.value {
-            Ok(v.int64_values)
+            v.values.into_iter().map(i64::cast_from).collect()
         } else {
             Err(Error::TypeMismatch)
         }
