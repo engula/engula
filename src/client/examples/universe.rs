@@ -23,9 +23,5 @@ async fn main() -> Result<()> {
     println!("created {:?}", db.desc().await?);
     let co: Collection<Object> = db.create_collection("co").await?;
     println!("created {:?}", co.desc().await?);
-    let c1: Collection<Object> = db.create_collection("c1").await?;
-    println!("created {:?}", c1.desc().await?);
-    let c2: Collection<Object> = db.create_collection("c2").await?;
-    println!("created {:?}", c2.desc().await?);
     Ok(())
 }
