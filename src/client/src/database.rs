@@ -56,24 +56,24 @@ impl Database {
         self.inner.new_txn()
     }
 
-    pub fn collection<T: Object>(&self, name: impl Into<String>) -> Collection<T> {
-        self.inner.new_collection(name.into())
+    pub fn collection<T: Object>(&self, name: &str) -> Collection<T> {
+        self.inner.new_collection(name.to_owned())
     }
 
-    pub async fn create_collection<T: Object>(
-        &self,
-        name: impl Into<String>,
-    ) -> Result<Collection<T>> {
-        let name = name.into();
-        let spec = CollectionSpec { name: name.clone() };
+    pub async fn create_collection<T: Object>(&self, name: &str) -> Result<Collection<T>> {
+        let spec = CollectionSpec {
+            name: name.to_owned(),
+        };
         let req = CreateCollectionRequest { spec: Some(spec) };
         let req = collection_request_union::Request::CreateCollection(req);
         self.inner.collection_union_call(req).await?;
         Ok(self.collection(name))
     }
 
-    pub async fn delete_collection(&self, name: impl Into<String>) -> Result<()> {
-        let req = DeleteCollectionRequest { name: name.into() };
+    pub async fn delete_collection(&self, name: &str) -> Result<()> {
+        let req = DeleteCollectionRequest {
+            name: name.to_owned(),
+        };
         let req = collection_request_union::Request::DeleteCollection(req);
         self.inner.collection_union_call(req).await?;
         Ok(())
