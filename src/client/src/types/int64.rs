@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, Result};
+use crate::{Any, Object, Result, Txn};
 
 pub struct Int64(Any);
 
 impl Object for Int64 {
+    type Txn = Int64Txn;
     type Value = i64;
 }
 
@@ -33,5 +34,13 @@ impl Int64 {
 
     pub async fn sub(self, value: i64) -> Result<()> {
         self.0.sub(value).await
+    }
+}
+
+pub struct Int64Txn(Txn);
+
+impl From<Txn> for Int64Txn {
+    fn from(txn: Txn) -> Self {
+        Self(txn)
     }
 }

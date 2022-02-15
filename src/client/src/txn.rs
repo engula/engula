@@ -66,6 +66,7 @@ impl DatabaseTxn {
 
 pub struct CollectionTxn<T> {
     inner: Arc<CollectionTxnInner>,
+    subtxn: Option<Txn>,
     _marker: PhantomData<T>,
 }
 
@@ -105,6 +106,7 @@ impl<T: Object> CollectionTxn<T> {
         };
         Self {
             inner: Arc::new(inner),
+            subtxn: None,
             _marker: PhantomData,
         }
     }
@@ -121,13 +123,15 @@ impl<T: Object> CollectionTxn<T> {
         self.add_expr(simple::remove(id))
     }
 
-    pub fn object(&mut self, _id: impl Into<Vec<u8>>) {
-        todo!();
+    pub fn object(&mut self, id: impl Into<Vec<u8>>) -> &mut Txn {
+        self.subtxn = Some(Txn::new_with(id.into(), self.inner.clone()));
+        self.subtxn.as_mut().unwrap()
     }
 
-    pub async fn commit(self) -> Result<()> {
+    pub async fn commit(mut self) -> Result<()> {
         let inner = Arc::try_unwrap(self.inner)
             .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
+        self.subtxn.take();
         let req = CollectionTxnRequest {
             name: inner.coname,
             exprs: inner.exprs.into_inner().unwrap(),
@@ -142,14 +146,13 @@ impl<T: Object> CollectionTxn<T> {
     }
 }
 
-pub struct ObjectTxn {
+pub struct Txn {
     handle: Option<CollectionTxnHandle>,
     parent: Option<Arc<CollectionTxnInner>>,
     expr: Expr,
 }
 
-#[allow(dead_code)]
-impl ObjectTxn {
+impl Txn {
     pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
         let handle = CollectionTxnHandle {
             dbname,
@@ -190,7 +193,7 @@ impl ObjectTxn {
     }
 }
 
-impl Drop for ObjectTxn {
+impl Drop for Txn {
     fn drop(&mut self) {
         if let Some(parent) = self.parent.take() {
             let expr = std::mem::take(&mut self.expr);
