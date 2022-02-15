@@ -93,8 +93,8 @@ impl DatabaseInner {
 
     fn new_collection<T: Object>(&self, name: String) -> Collection<T> {
         Collection::new(
-            self.name.clone(),
             name,
+            self.name.clone(),
             self.txn_client.clone(),
             self.universe_client.clone(),
         )

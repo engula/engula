@@ -28,6 +28,10 @@ impl From<Any> for Int64 {
 }
 
 impl Int64 {
+    pub fn begin(self) -> Int64Txn {
+        self.0.begin().into()
+    }
+
     pub async fn add(self, value: i64) -> Result<()> {
         self.0.add(value).await
     }
@@ -42,5 +46,21 @@ pub struct Int64Txn(Txn);
 impl From<Txn> for Int64Txn {
     fn from(txn: Txn) -> Self {
         Self(txn)
+    }
+}
+
+impl Int64Txn {
+    pub fn add(&mut self, value: i64) -> &mut Self {
+        self.0.add(value);
+        self
+    }
+
+    pub fn sub(&mut self, value: i64) -> &mut Self {
+        self.0.sub(value);
+        self
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        self.0.commit().await
     }
 }

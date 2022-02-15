@@ -28,6 +28,10 @@ impl From<Any> for Blob {
 }
 
 impl Blob {
+    pub fn begin(self) -> BlobTxn {
+        self.0.begin().into()
+    }
+
     pub async fn len(self) -> Result<i64> {
         self.0.len().await
     }
@@ -42,5 +46,16 @@ pub struct BlobTxn(Txn);
 impl From<Txn> for BlobTxn {
     fn from(txn: Txn) -> Self {
         Self(txn)
+    }
+}
+
+impl BlobTxn {
+    pub fn append(&mut self, value: Vec<u8>) -> &mut Self {
+        self.0.append(value);
+        self
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        self.0.commit().await
     }
 }

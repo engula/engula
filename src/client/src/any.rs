@@ -14,11 +14,7 @@
 
 use engula_apis::*;
 
-use crate::{
-    expr::{call_expr, subcall_expr},
-    txn_client::TxnClient,
-    Error, Result, Txn,
-};
+use crate::{expr::call, txn_client::TxnClient, Error, Result, Txn};
 
 pub struct Any {
     id: Vec<u8>,
@@ -42,17 +38,17 @@ impl Any {
     }
 
     pub async fn add(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::add_assign(value)).await?;
+        self.call(call().add(value)).await?;
         Ok(())
     }
 
     pub async fn sub(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::sub_assign(value)).await?;
+        self.call(call().sub(value)).await?;
         Ok(())
     }
 
     pub async fn len(self) -> Result<i64> {
-        let value = self.call(call_expr::len()).await?;
+        let value = self.call(call().len()).await?;
         if let Some(v) = value {
             v.as_i64().ok_or(Error::InvalidResponse)
         } else {
@@ -60,49 +56,44 @@ impl Any {
         }
     }
 
-    pub async fn pop(self) -> Result<Option<Value>> {
-        self.call(call_expr::pop()).await
-    }
-
-    pub async fn push(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::push(value)).await?;
+    pub async fn append(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call().append(value)).await?;
         Ok(())
     }
 
-    pub async fn append(self, value: impl Into<Value>) -> Result<()> {
-        self.call(call_expr::append(value)).await?;
+    pub async fn pop_back(self) -> Result<Option<Value>> {
+        self.call(call().pop_back()).await
+    }
+
+    pub async fn pop_front(self) -> Result<Option<Value>> {
+        self.call(call().pop_front()).await
+    }
+
+    pub async fn push_back(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call().push_back(value)).await?;
+        Ok(())
+    }
+
+    pub async fn push_front(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call().push_front(value)).await?;
         Ok(())
     }
 
     pub async fn get(self, index: impl Into<Value>) -> Result<Option<Value>> {
-        self.subcall(subcall_expr::get(index.into())).await
+        self.call(call().get(index)).await
     }
 
     pub async fn set(self, index: impl Into<Value>, value: impl Into<Value>) -> Result<()> {
-        self.subcall(subcall_expr::set(index.into(), value.into()))
-            .await?;
+        self.call(call().set(index, value)).await?;
         Ok(())
     }
 
     pub async fn remove(self, index: impl Into<Value>) -> Result<()> {
-        self.subcall(subcall_expr::remove(index.into())).await?;
+        self.call(call().remove(index)).await?;
         Ok(())
     }
 
     async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
-        let expr = engula_apis::Expr {
-            id: self.id,
-            call: Some(call),
-            ..Default::default()
-        };
-        let result = self
-            .client
-            .collection_expr(self.dbname, self.coname, expr)
-            .await?;
-        Ok(result.value)
-    }
-
-    async fn subcall(mut self, call: CallExpr) -> Result<Option<Value>> {
         let expr = engula_apis::Expr {
             id: self.id,
             subcalls: vec![call],

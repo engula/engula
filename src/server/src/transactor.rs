@@ -63,14 +63,14 @@ impl Universe {
 
     async fn execute(&mut self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
         let mut res = BatchTxnResponse::default();
-        for sub_req in req.requests {
+        for db_req in req.requests {
             // Assumes that all databases exist for now.
             let db = self
                 .databases
-                .entry(sub_req.name.clone())
+                .entry(db_req.name.clone())
                 .or_insert_with(Database::new);
-            let sub_res = db.execute(sub_req)?;
-            res.responses.push(sub_res);
+            let db_res = db.execute(db_req)?;
+            res.responses.push(db_res);
         }
         Ok(res)
     }
@@ -126,9 +126,9 @@ impl Collection {
         let id = expr.id;
         let mut result = ExprResult::default();
         if let Some(call) = expr.call {
-            let func = call.func;
+            let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
             let mut args = Args::new(call.args);
-            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
+            match func {
                 Function::Get => {
                     result.value = self.objects.get(&id).cloned();
                 }
@@ -136,218 +136,89 @@ impl Collection {
                     let value = args.take()?;
                     self.objects.insert(id, value);
                 }
-                Function::Delete => {
+                Function::Remove => {
                     self.objects.remove(&id);
-                }
-                func => {
-                    if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
-                        match v {
-                            value::Value::BlobValue(v) => {
-                                return Self::handle_blob_call(v, func, args);
-                            }
-                            value::Value::Int64Value(v) => {
-                                return Self::handle_int64_call(v, func, args);
-                            }
-                            value::Value::SequenceValue(v) => {
-                                return Self::handle_sequence_call(v, func, args);
-                            }
-                            value::Value::AssociativeValue(v) => {
-                                return Self::handle_associative_call(v, func, args);
-                            }
-                            _ => return Err(Error::InvalidRequest),
-                        }
-                    } else {
-                        return self.handle_none_call(id, func, args);
-                    }
-                }
-            }
-        } else if let Some(v) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
-            match v {
-                value::Value::SequenceValue(v) => {
-                    return Self::handle_sequence_subcalls(v, expr.subcalls);
-                }
-                value::Value::AssociativeValue(v) => {
-                    return Self::handle_associative_subcalls(v, expr.subcalls);
                 }
                 _ => return Err(Error::InvalidRequest),
             }
         } else {
-            return self.handle_none_subcalls(id, expr.subcalls);
+            for call in expr.subcalls {
+                if let Some(object) = self.objects.get_mut(&id).and_then(|v| v.value.as_mut()) {
+                    match object {
+                        value::Value::BlobValue(object) => {
+                            handle_blob_call(call, object, &mut result)?;
+                        }
+                        value::Value::Int64Value(object) => {
+                            handle_int64_call(call, object, &mut result)?;
+                        }
+                        value::Value::SequenceValue(object) => {
+                            handle_sequence_call(call, object, &mut result)?;
+                        }
+                        value::Value::AssociativeValue(object) => {
+                            handle_associative_call(call, object, &mut result)?;
+                        }
+                        _ => return Err(Error::InvalidRequest),
+                    }
+                } else {
+                    self.handle_none_call(&id, call, &mut result)?;
+                }
+            }
         }
+
         Ok(result)
     }
 
     fn handle_none_call(
         &mut self,
-        id: Vec<u8>,
-        func: Function,
-        mut args: Args,
-    ) -> Result<ExprResult> {
-        let result = ExprResult::default();
+        id: &[u8],
+        call: CallExpr,
+        result: &mut ExprResult,
+    ) -> Result<()> {
+        let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
+        let mut args = Args::new(call.args);
         match func {
-            Function::Get => {}
-            Function::Set => {
-                let value = args.take()?;
-                self.objects.insert(id, value);
-            }
-            Function::AddAssign => {
+            Function::Add => {
                 let value = args.take_numeric()?;
-                self.objects.insert(id, value);
+                self.objects.insert(id.to_owned(), value);
             }
-            Function::SubAssign => {
+            Function::Sub => {
                 let value = args.take_numeric()?;
-                self.objects.insert(id, value);
+                self.objects.insert(id.to_owned(), value);
             }
-            _ => return Err(Error::InvalidRequest),
-        }
-        Ok(result)
-    }
-
-    fn handle_none_subcalls(
-        &mut self,
-        _id: Vec<u8>,
-        subcalls: Vec<CallExpr>,
-    ) -> Result<ExprResult> {
-        let result = ExprResult::default();
-        for call in subcalls {
-            let func = call.func;
-            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
-                Function::Get => {}
-                _ => return Err(Error::InvalidRequest),
-            }
-        }
-        Ok(result)
-    }
-
-    fn handle_blob_call(ob: &mut Vec<u8>, func: Function, mut args: Args) -> Result<ExprResult> {
-        let mut result = ExprResult::default();
-        match func {
             Function::Len => {
                 result.value = Some(Value {
-                    value: Some(value::Value::Int64Value(ob.len() as i64)),
+                    value: Some(value::Value::Int64Value(0)),
                 });
             }
             Function::Append => {
-                let mut value = args.take_blob()?;
-                ob.append(&mut value);
+                let value = args.take_sequence()?;
+                self.objects.insert(id.to_owned(), value);
             }
+            Function::PopBack | Function::PopFront => {}
+            Function::PushBack | Function::PushFront => {
+                let value = SequenceValue {
+                    values: vec![args.take()?],
+                };
+                let value = Value {
+                    value: Some(value::Value::SequenceValue(value)),
+                };
+                self.objects.insert(id.to_owned(), value);
+            }
+            Function::Get => {}
+            Function::Set => {
+                let value = AssociativeValue {
+                    keys: vec![args.take_blob()?],
+                    values: vec![args.take()?],
+                };
+                let value = Value {
+                    value: Some(value::Value::AssociativeValue(value)),
+                };
+                self.objects.insert(id.to_owned(), value);
+            }
+            Function::Remove => {}
             _ => return Err(Error::InvalidRequest),
         }
-        Ok(result)
-    }
-
-    fn handle_int64_call(ob: &mut i64, func: Function, mut args: Args) -> Result<ExprResult> {
-        let result = ExprResult::default();
-        match func {
-            Function::AddAssign => {
-                *ob += args.take_i64()?;
-            }
-            Function::SubAssign => {
-                *ob -= args.take_i64()?;
-            }
-            _ => return Err(Error::InvalidRequest),
-        }
-        Ok(result)
-    }
-
-    fn handle_sequence_call(
-        ob: &mut SequenceValue,
-        func: Function,
-        mut args: Args,
-    ) -> Result<ExprResult> {
-        let mut result = ExprResult::default();
-        match func {
-            Function::Len => {
-                result.value = Some(Value {
-                    value: Some(value::Value::Int64Value(ob.values.len() as i64)),
-                });
-            }
-            Function::Pop => {
-                result.value = ob.values.pop();
-            }
-            Function::Push => {
-                ob.values.push(args.take()?);
-            }
-            _ => return Err(Error::InvalidRequest),
-        }
-        Ok(result)
-    }
-
-    fn handle_sequence_subcalls(
-        ob: &mut SequenceValue,
-        subcalls: Vec<CallExpr>,
-    ) -> Result<ExprResult> {
-        let mut result = ExprResult::default();
-        for call in subcalls {
-            let func = call.func;
-            let mut args = Args::new(call.args);
-            let index = args.take_i64()? as usize;
-            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
-                Function::Get => {
-                    result.value = ob.values.get(index).cloned();
-                }
-                Function::Set => {
-                    if ob.values.len() <= index {
-                        return Err(Error::InvalidRequest);
-                    }
-                    ob.values[index] = args.take()?;
-                }
-                _ => return Err(Error::InvalidRequest),
-            }
-        }
-        Ok(result)
-    }
-
-    fn handle_associative_call(
-        ob: &mut AssociativeValue,
-        func: Function,
-        _args: Args,
-    ) -> Result<ExprResult> {
-        let mut result = ExprResult::default();
-        match func {
-            Function::Len => {
-                result.value = Some(Value {
-                    value: Some(value::Value::Int64Value(ob.keys.len() as i64)),
-                });
-            }
-            _ => return Err(Error::InvalidRequest),
-        }
-        Ok(result)
-    }
-
-    fn handle_associative_subcalls(
-        ob: &mut AssociativeValue,
-        subcalls: Vec<CallExpr>,
-    ) -> Result<ExprResult> {
-        let mut result = ExprResult::default();
-        for call in subcalls {
-            let func = call.func;
-            let mut args = Args::new(call.args);
-            let key = args.take_blob()?;
-            let index = ob.keys.iter().position(|k| k == &key);
-            match Function::from_i32(func).ok_or(Error::InvalidRequest)? {
-                Function::Get => {
-                    result.value = index.map(|i| ob.values[i].clone());
-                }
-                Function::Set => {
-                    let value = args.take()?;
-                    if let Some(i) = index {
-                        ob.values[i] = value;
-                    } else {
-                        ob.keys.push(key);
-                        ob.values.push(value);
-                    }
-                }
-                Function::Delete => {
-                    if let Some(i) = index {
-                        ob.keys.swap_remove(i);
-                        ob.values.swap_remove(i);
-                    }
-                }
-                _ => return Err(Error::InvalidRequest),
-            }
-        }
-        Ok(result)
+        Ok(())
     }
 }
 
@@ -385,4 +256,134 @@ impl Args {
             _ => Err(Error::InvalidRequest),
         }
     }
+
+    fn take_sequence(&mut self) -> Result<Value> {
+        let v = self.take()?;
+        match v.value.as_ref() {
+            Some(value::Value::BlobValue(_)) => Ok(v),
+            Some(value::Value::TextValue(_)) => Ok(v),
+            Some(value::Value::SequenceValue(_)) => Ok(v),
+            _ => Err(Error::InvalidRequest),
+        }
+    }
+}
+
+fn handle_blob_call(call: CallExpr, object: &mut Vec<u8>, result: &mut ExprResult) -> Result<()> {
+    let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
+    let mut args = Args::new(call.args);
+    match func {
+        Function::Len => {
+            result.value = Some(Value {
+                value: Some(value::Value::Int64Value(object.len() as i64)),
+            });
+        }
+        Function::Append => {
+            let mut value = args.take_blob()?;
+            object.append(&mut value);
+        }
+        _ => return Err(Error::InvalidRequest),
+    }
+    Ok(())
+}
+
+fn handle_int64_call(call: CallExpr, object: &mut i64, _: &mut ExprResult) -> Result<()> {
+    let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
+    let mut args = Args::new(call.args);
+    match func {
+        Function::Add => {
+            *object += args.take_i64()?;
+        }
+        Function::Sub => {
+            *object -= args.take_i64()?;
+        }
+        _ => return Err(Error::InvalidRequest),
+    }
+    Ok(())
+}
+
+fn handle_sequence_call(
+    call: CallExpr,
+    object: &mut SequenceValue,
+    result: &mut ExprResult,
+) -> Result<()> {
+    let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
+    let mut args = Args::new(call.args);
+    match func {
+        Function::Len => {
+            result.value = Some(Value {
+                value: Some(value::Value::Int64Value(object.values.len() as i64)),
+            });
+        }
+        Function::Get => {
+            let index = args.take_i64()? as usize;
+            result.value = object.values.get(index).cloned();
+        }
+        Function::Set => {
+            let index = args.take_i64()? as usize;
+            if object.values.len() <= index {
+                return Err(Error::InvalidRequest);
+            }
+            object.values[index] = args.take()?;
+        }
+        Function::PopBack => {
+            result.value = object.values.pop();
+        }
+        Function::PopFront => {
+            result.value = if !object.values.is_empty() {
+                Some(object.values.remove(0))
+            } else {
+                None
+            }
+        }
+        Function::PushBack => {
+            object.values.push(args.take()?);
+        }
+        Function::PushFront => {
+            object.values.insert(0, args.take()?);
+        }
+        _ => return Err(Error::InvalidRequest),
+    }
+    Ok(())
+}
+
+fn handle_associative_call(
+    call: CallExpr,
+    object: &mut AssociativeValue,
+    result: &mut ExprResult,
+) -> Result<()> {
+    let func = Function::from_i32(call.func).ok_or(Error::InvalidRequest)?;
+    let mut args = Args::new(call.args);
+    match func {
+        Function::Len => {
+            result.value = Some(Value {
+                value: Some(value::Value::Int64Value(object.keys.len() as i64)),
+            });
+        }
+        Function::Get => {
+            let key = args.take_blob()?;
+            let index = object.keys.iter().position(|k| k == &key);
+            result.value = index.map(|i| object.values[i].clone());
+        }
+        Function::Set => {
+            let key = args.take_blob()?;
+            let index = object.keys.iter().position(|k| k == &key);
+            let value = args.take()?;
+            if let Some(i) = index {
+                object.values[i] = value;
+            } else {
+                object.keys.push(key);
+                object.values.push(value);
+            }
+        }
+        Function::Remove => {
+            let key = args.take_blob()?;
+            let index = object.keys.iter().position(|k| k == &key);
+            if let Some(i) = index {
+                object.keys.swap_remove(i);
+                object.values.swap_remove(i);
+            }
+        }
+        _ => return Err(Error::InvalidRequest),
+    }
+    Ok(())
 }
