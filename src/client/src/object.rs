@@ -28,6 +28,14 @@ impl Object for Any {
 
 pub trait ObjectValue: Into<Value> {
     fn cast_from(v: Value) -> Result<Self>;
+
+    fn cast_from_option(v: Option<Value>) -> Result<Option<Self>> {
+        if let Some(v) = v {
+            Ok(Some(Self::cast_from(v)?))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 impl ObjectValue for Value {

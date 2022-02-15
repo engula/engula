@@ -31,7 +31,7 @@ pub fn set(value: impl Into<Value>) -> CallExpr {
     call_expr!(Function::Set, vec![value.into()])
 }
 
-pub fn delete() -> CallExpr {
+pub fn remove() -> CallExpr {
     call_expr!(Function::Delete, vec![])
 }
 

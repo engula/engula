@@ -14,10 +14,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{
-    expr::{call_expr, subcall_expr},
-    Any, Error, Object, ObjectValue, Result,
-};
+use crate::{Any, Object, ObjectValue, Result};
 
 pub struct List<T> {
     ob: Any,
@@ -47,43 +44,24 @@ where
     Vec<T::Value>: ObjectValue,
 {
     pub async fn len(self) -> Result<i64> {
-        let value = self.ob.call(call_expr::len()).await?;
-        if let Some(v) = value {
-            v.as_i64().ok_or(Error::TypeMismatch)
-        } else {
-            Ok(0)
-        }
+        self.ob.len().await
     }
 
     pub async fn get(self, index: i64) -> Result<Option<T::Value>> {
-        let value = self.ob.subcall(subcall_expr::get(index)).await?;
-        if let Some(v) = value {
-            let v = T::Value::cast_from(v)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
+        let value = self.ob.get(index).await?;
+        T::Value::cast_from_option(value)
     }
 
     pub async fn set(self, index: i64, value: impl Into<T::Value>) -> Result<()> {
-        self.ob
-            .subcall(subcall_expr::set(index, value.into()))
-            .await?;
-        Ok(())
+        self.ob.set(index, value.into()).await
     }
 
     pub async fn pop(self) -> Result<Option<T::Value>> {
-        let value = self.ob.call(call_expr::pop()).await?;
-        if let Some(v) = value {
-            let v = T::Value::cast_from(v)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
+        let value = self.ob.pop().await?;
+        T::Value::cast_from_option(value)
     }
 
     pub async fn push(self, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.call(call_expr::push(value.into())).await?;
-        Ok(())
+        self.ob.push(value.into()).await
     }
 }

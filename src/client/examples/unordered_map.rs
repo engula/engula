@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         println!("{:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), "b").await?;
         println!("{:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
+        c.object("o").remove(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 
@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
         println!("{:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), k2.clone()).await?;
         println!("{:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
+        c.object("o").remove(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         println!("{:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), 2).await?;
         println!("{:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
+        c.object("o").remove(k1.clone()).await?;
         println!("{:?}", c.get("o").await?);
     }
 

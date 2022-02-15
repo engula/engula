@@ -43,7 +43,7 @@ impl Universe {
     }
 
     pub fn database(&self, name: impl Into<String>) -> Database {
-        self.inner.new_database(name)
+        self.inner.new_database(name.into())
     }
 
     pub async fn create_database(&self, name: impl Into<String>) -> Result<Database> {
@@ -69,12 +69,8 @@ struct UniverseInner {
 }
 
 impl UniverseInner {
-    fn new_database(&self, name: impl Into<String>) -> Database {
-        Database::new(
-            name.into(),
-            self.txn_client.clone(),
-            self.universe_client.clone(),
-        )
+    fn new_database(&self, name: String) -> Database {
+        Database::new(name, self.txn_client.clone(), self.universe_client.clone())
     }
 
     async fn database_union_call(

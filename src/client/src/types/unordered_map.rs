@@ -14,10 +14,7 @@
 
 use std::{collections::HashMap, marker::PhantomData};
 
-use crate::{
-    expr::{call_expr, subcall_expr},
-    Any, Error, Object, ObjectValue, Result,
-};
+use crate::{Any, Object, ObjectValue, Result};
 
 pub struct UnorderedMap<T> {
     ob: Any,
@@ -47,33 +44,19 @@ where
     HashMap<Vec<u8>, T::Value>: ObjectValue,
 {
     pub async fn len(self) -> Result<i64> {
-        let value = self.ob.call(call_expr::len()).await?;
-        if let Some(v) = value {
-            v.as_i64().ok_or(Error::TypeMismatch)
-        } else {
-            Ok(0)
-        }
+        self.ob.len().await
     }
 
     pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
-        let value = self.ob.subcall(subcall_expr::get(key.into())).await?;
-        if let Some(v) = value {
-            let v = T::Value::cast_from(v)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
+        let value = self.ob.get(key.into()).await?;
+        T::Value::cast_from_option(value)
     }
 
     pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        self.ob
-            .subcall(subcall_expr::set(key.into(), value.into()))
-            .await?;
-        Ok(())
+        self.ob.set(key.into(), value.into()).await
     }
 
-    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
-        self.ob.subcall(subcall_expr::delete(key.into())).await?;
-        Ok(())
+    pub async fn remove(self, key: impl Into<Vec<u8>>) -> Result<()> {
+        self.ob.remove(key.into()).await
     }
 }
