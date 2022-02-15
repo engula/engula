@@ -29,14 +29,14 @@ pub struct Collection<T> {
 
 impl<T: Object> Collection<T> {
     pub(crate) fn new(
+        name: String,
         dbname: String,
-        coname: String,
         txn_client: TxnClient,
         universe_client: UniverseClient,
     ) -> Self {
         let inner = CollectionInner {
             dbname,
-            coname,
+            coname: name,
             txn_client,
             universe_client,
         };
@@ -44,6 +44,10 @@ impl<T: Object> Collection<T> {
             inner: Arc::new(inner),
             _marker: PhantomData,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.inner.coname
     }
 
     pub async fn desc(&self) -> Result<CollectionDesc> {
@@ -79,15 +83,15 @@ impl<T: Object> Collection<T> {
     }
 
     pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        let mut txn = self.begin();
-        txn.set(id, value.into());
-        txn.commit().await
+        let expr = simple::set(id, value.into());
+        self.inner.collection_expr_call(expr).await?;
+        Ok(())
     }
 
     pub async fn remove(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        let mut txn = self.begin();
-        txn.remove(id);
-        txn.commit().await
+        let expr = simple::remove(id);
+        self.inner.collection_expr_call(expr).await?;
+        Ok(())
     }
 }
 

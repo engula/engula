@@ -44,6 +44,10 @@ where
     T: Object,
     Vec<T::Value>: ObjectValue,
 {
+    pub fn begin(self) -> ListTxn<T> {
+        self.ob.begin().into()
+    }
+
     pub async fn len(self) -> Result<i64> {
         self.ob.len().await
     }
@@ -57,17 +61,25 @@ where
         self.ob.set(index, value.into()).await
     }
 
-    pub async fn pop(self) -> Result<Option<T::Value>> {
-        let value = self.ob.pop().await?;
+    pub async fn pop_back(self) -> Result<Option<T::Value>> {
+        let value = self.ob.pop_back().await?;
         T::Value::cast_from_option(value)
     }
 
-    pub async fn push(self, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.push(value.into()).await
+    pub async fn pop_front(self) -> Result<Option<T::Value>> {
+        let value = self.ob.pop_front().await?;
+        T::Value::cast_from_option(value)
+    }
+
+    pub async fn push_back(self, value: impl Into<T::Value>) -> Result<()> {
+        self.ob.push_back(value.into()).await
+    }
+
+    pub async fn push_front(self, value: impl Into<T::Value>) -> Result<()> {
+        self.ob.push_front(value.into()).await
     }
 }
 
-#[allow(dead_code)]
 pub struct ListTxn<T> {
     txn: Txn,
     _marker: PhantomData<T>,
@@ -79,5 +91,26 @@ impl<T> From<Txn> for ListTxn<T> {
             txn,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T: Object> ListTxn<T> {
+    pub fn set(&mut self, index: i64, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.set(index, value.into());
+        self
+    }
+
+    pub fn push_back(&mut self, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.push_back(value.into());
+        self
+    }
+
+    pub fn push_front(&mut self, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.push_front(value.into());
+        self
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        self.txn.commit().await
     }
 }

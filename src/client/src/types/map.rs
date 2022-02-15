@@ -44,6 +44,10 @@ where
     T: Object,
     HashMap<Vec<u8>, T::Value>: ObjectValue,
 {
+    pub fn begin(self) -> MapTxn<T> {
+        self.ob.begin().into()
+    }
+
     pub async fn len(self) -> Result<i64> {
         self.ob.len().await
     }
@@ -62,7 +66,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 pub struct MapTxn<T> {
     txn: Txn,
     _marker: PhantomData<T>,
@@ -74,5 +77,21 @@ impl<T> From<Txn> for MapTxn<T> {
             txn,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T: Object> MapTxn<T> {
+    pub fn set(&mut self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.set(key.into(), value.into());
+        self
+    }
+
+    pub fn remove(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
+        self.txn.remove(key.into());
+        self
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        self.txn.commit().await
     }
 }

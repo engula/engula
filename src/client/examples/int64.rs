@@ -28,8 +28,11 @@ async fn main() -> Result<()> {
     println!("{:?}", co.get("o").await?);
     co.object("o").sub(3).await?;
     println!("{:?}", co.get("o").await?);
-    co.remove("o").await?;
-    println!("{:?}", co.get("o").await?);
+
+    let mut txn = co.object("txn").begin();
+    txn.add(1).add(2).sub(1);
+    txn.commit().await?;
+    println!("txn = {:?}", co.get("txn").await?);
 
     Ok(())
 }

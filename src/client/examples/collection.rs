@@ -23,9 +23,9 @@ async fn main() -> Result<()> {
     let co = db.collection::<Any>("co");
 
     co.set("o", 1).await?;
-    println!("{:?}", co.get("o").await?);
+    println!("o = {:?}", co.get("o").await?);
     co.remove("o").await?;
-    println!("{:?}", co.get("o").await?);
+    println!("o = {:?}", co.get("o").await?);
 
     let mut txn = co.begin();
     txn.set("a", 1);
