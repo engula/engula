@@ -17,7 +17,7 @@ use engula_apis::*;
 use crate::{
     expr::{call_expr, subcall_expr},
     txn_client::TxnClient,
-    Error, Result,
+    Error, Result, Txn,
 };
 
 pub struct Any {
@@ -35,6 +35,10 @@ impl Any {
             coname,
             client,
         }
+    }
+
+    pub fn begin(self) -> Txn {
+        Txn::new(self.id, self.dbname, self.coname, self.client)
     }
 
     pub async fn add(self, value: impl Into<Value>) -> Result<()> {

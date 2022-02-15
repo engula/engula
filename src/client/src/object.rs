@@ -16,13 +16,15 @@ use std::collections::HashMap;
 
 use engula_apis::*;
 
-use crate::{Any, Error, Result};
+use crate::{Any, Error, Result, Txn};
 
 pub trait Object: From<Any> {
+    type Txn: From<Txn>;
     type Value: ObjectValue;
 }
 
 impl Object for Any {
+    type Txn = Txn;
     type Value = Value;
 }
 

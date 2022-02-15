@@ -30,7 +30,7 @@ pub use self::{
     database::Database,
     error::{Error, Result},
     object::{Object, ObjectValue},
-    txn::{CollectionTxn, DatabaseTxn, ObjectTxn},
-    types::{Blob, Int64, List, UnorderedMap},
+    txn::{CollectionTxn, DatabaseTxn, Txn},
+    types::{Blob, Int64, List, Map},
     universe::Universe,
 };

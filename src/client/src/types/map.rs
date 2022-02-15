@@ -14,14 +14,14 @@
 
 use std::{collections::HashMap, marker::PhantomData};
 
-use crate::{Any, Object, ObjectValue, Result};
+use crate::{Any, Object, ObjectValue, Result, Txn};
 
-pub struct UnorderedMap<T> {
+pub struct Map<T> {
     ob: Any,
     _marker: PhantomData<T>,
 }
 
-impl<T> From<Any> for UnorderedMap<T> {
+impl<T> From<Any> for Map<T> {
     fn from(ob: Any) -> Self {
         Self {
             ob,
@@ -30,15 +30,16 @@ impl<T> From<Any> for UnorderedMap<T> {
     }
 }
 
-impl<T> Object for UnorderedMap<T>
+impl<T> Object for Map<T>
 where
     T: Object,
     HashMap<Vec<u8>, T::Value>: ObjectValue,
 {
+    type Txn = MapTxn<T>;
     type Value = HashMap<Vec<u8>, T::Value>;
 }
 
-impl<T> UnorderedMap<T>
+impl<T> Map<T>
 where
     T: Object,
     HashMap<Vec<u8>, T::Value>: ObjectValue,
@@ -58,5 +59,20 @@ where
 
     pub async fn remove(self, key: impl Into<Vec<u8>>) -> Result<()> {
         self.ob.remove(key.into()).await
+    }
+}
+
+#[allow(dead_code)]
+pub struct MapTxn<T> {
+    txn: Txn,
+    _marker: PhantomData<T>,
+}
+
+impl<T> From<Txn> for MapTxn<T> {
+    fn from(txn: Txn) -> Self {
+        Self {
+            txn,
+            _marker: PhantomData,
+        }
     }
 }

@@ -15,6 +15,6 @@
 mod blob;
 mod int64;
 mod list;
-mod unordered_map;
+mod map;
 
-pub use self::{blob::Blob, int64::Int64, list::List, unordered_map::UnorderedMap};
+pub use self::{blob::Blob, int64::Int64, list::List, map::Map};

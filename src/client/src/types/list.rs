@@ -14,7 +14,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{Any, Object, ObjectValue, Result};
+use crate::{Any, Object, ObjectValue, Result, Txn};
 
 pub struct List<T> {
     ob: Any,
@@ -35,6 +35,7 @@ where
     T: Object,
     Vec<T::Value>: ObjectValue,
 {
+    type Txn = ListTxn<T>;
     type Value = Vec<T::Value>;
 }
 
@@ -63,5 +64,20 @@ where
 
     pub async fn push(self, value: impl Into<T::Value>) -> Result<()> {
         self.ob.push(value.into()).await
+    }
+}
+
+#[allow(dead_code)]
+pub struct ListTxn<T> {
+    txn: Txn,
+    _marker: PhantomData<T>,
+}
+
+impl<T> From<Txn> for ListTxn<T> {
+    fn from(txn: Txn) -> Self {
+        Self {
+            txn,
+            _marker: PhantomData,
+        }
     }
 }

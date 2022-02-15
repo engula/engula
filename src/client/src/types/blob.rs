@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, Result};
+use crate::{Any, Object, Result, Txn};
 
 pub struct Blob(Any);
 
 impl Object for Blob {
+    type Txn = BlobTxn;
     type Value = Vec<u8>;
 }
 
@@ -33,5 +34,13 @@ impl Blob {
 
     pub async fn append(self, value: Vec<u8>) -> Result<()> {
         self.0.append(value).await
+    }
+}
+
+pub struct BlobTxn(Txn);
+
+impl From<Txn> for BlobTxn {
+    fn from(txn: Txn) -> Self {
+        Self(txn)
     }
 }

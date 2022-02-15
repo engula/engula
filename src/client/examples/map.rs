@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Any, Blob, Int64, Universe, UnorderedMap};
+use engula_client::{Any, Blob, Int64, Map, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     let (k1, k2) = (vec![1], vec![2]);
 
     {
-        let c = db.collection::<UnorderedMap<Any>>("c");
+        let c = db.collection::<Map<Any>>("c");
         c.set("o", [(k1.clone(), "a".into()), (k2.clone(), "b".into())])
             .await?;
         println!("{:?}", c.get("o").await?);
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<UnorderedMap<Blob>>("c");
+        let c = db.collection::<Map<Blob>>("c");
         c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
             .await?;
         println!("{:?}", c.get("o").await?);
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<UnorderedMap<Int64>>("c");
+        let c = db.collection::<Map<Int64>>("c");
         c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
