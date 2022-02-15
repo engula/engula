@@ -44,11 +44,12 @@ impl Database {
         };
         let req = database_request_union::Request::DescribeDatabase(req);
         let res = self.inner.database_union_call(req).await?;
-        if let database_response_union::Response::DescribeDatabase(res) = res {
-            res.desc.ok_or(Error::InvalidResponse)
+        let desc = if let database_response_union::Response::DescribeDatabase(res) = res {
+            res.desc
         } else {
-            Err(Error::InvalidResponse)
-        }
+            None
+        };
+        desc.ok_or(Error::InvalidResponse)
     }
 
     pub fn begin(&self) -> DatabaseTxn {

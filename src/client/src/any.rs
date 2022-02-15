@@ -14,7 +14,11 @@
 
 use engula_apis::*;
 
-use crate::{txn_client::TxnClient, Result};
+use crate::{
+    expr::{call_expr, subcall_expr},
+    txn_client::TxnClient,
+    Error, Result,
+};
 
 pub struct Any {
     id: Vec<u8>,
@@ -33,7 +37,55 @@ impl Any {
         }
     }
 
-    pub(crate) async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
+    pub async fn add(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::add_assign(value)).await?;
+        Ok(())
+    }
+
+    pub async fn sub(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::sub_assign(value)).await?;
+        Ok(())
+    }
+
+    pub async fn len(self) -> Result<i64> {
+        let value = self.call(call_expr::len()).await?;
+        if let Some(v) = value {
+            v.as_i64().ok_or(Error::InvalidResponse)
+        } else {
+            Ok(0)
+        }
+    }
+
+    pub async fn pop(self) -> Result<Option<Value>> {
+        self.call(call_expr::pop()).await
+    }
+
+    pub async fn push(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::push(value)).await?;
+        Ok(())
+    }
+
+    pub async fn append(self, value: impl Into<Value>) -> Result<()> {
+        self.call(call_expr::append(value)).await?;
+        Ok(())
+    }
+
+    pub async fn get(self, index: impl Into<Value>) -> Result<Option<Value>> {
+        self.subcall(subcall_expr::get(index.into())).await
+    }
+
+    pub async fn set(self, index: impl Into<Value>, value: impl Into<Value>) -> Result<()> {
+        self.subcall(subcall_expr::set(index.into(), value.into()))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove(self, index: impl Into<Value>) -> Result<()> {
+        self.subcall(subcall_expr::remove(index.into())).await?;
+        Ok(())
+    }
+
+    async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
         let expr = engula_apis::Expr {
             id: self.id,
             call: Some(call),
@@ -46,7 +98,7 @@ impl Any {
         Ok(result.value)
     }
 
-    pub(crate) async fn subcall(mut self, call: CallExpr) -> Result<Option<Value>> {
+    async fn subcall(mut self, call: CallExpr) -> Result<Option<Value>> {
         let expr = engula_apis::Expr {
             id: self.id,
             subcalls: vec![call],

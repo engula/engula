@@ -52,11 +52,12 @@ impl<T: Object> Collection<T> {
         };
         let req = collection_request_union::Request::DescribeCollection(req);
         let res = self.inner.collection_union_call(req).await?;
-        if let collection_response_union::Response::DescribeCollection(res) = res {
-            res.desc.ok_or(Error::InvalidResponse)
+        let desc = if let collection_response_union::Response::DescribeCollection(res) = res {
+            res.desc
         } else {
-            Err(Error::InvalidResponse)
-        }
+            None
+        };
+        desc.ok_or(Error::InvalidResponse)
     }
 
     pub fn begin(&self) -> CollectionTxn<T> {
@@ -74,12 +75,7 @@ impl<T: Object> Collection<T> {
     pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
         let expr = simple::get(id);
         let result = self.inner.collection_expr_call(expr).await?;
-        if let Some(value) = result.value {
-            let value = T::Value::cast_from(value)?;
-            Ok(Some(value))
-        } else {
-            Ok(None)
-        }
+        T::Value::cast_from_option(result.value)
     }
 
     pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
@@ -88,9 +84,9 @@ impl<T: Object> Collection<T> {
         txn.commit().await
     }
 
-    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
+    pub async fn remove(&self, id: impl Into<Vec<u8>>) -> Result<()> {
         let mut txn = self.begin();
-        txn.delete(id);
+        txn.remove(id);
         txn.commit().await
     }
 }

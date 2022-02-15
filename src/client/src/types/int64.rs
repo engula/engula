@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{expr::call_expr, Any, Object, Result};
+use crate::{Any, Object, Result};
 
 pub struct Int64(Any);
 
@@ -28,12 +28,10 @@ impl From<Any> for Int64 {
 
 impl Int64 {
     pub async fn add(self, value: i64) -> Result<()> {
-        self.0.call(call_expr::add_assign(value)).await?;
-        Ok(())
+        self.0.add(value).await
     }
 
     pub async fn sub(self, value: i64) -> Result<()> {
-        self.0.call(call_expr::sub_assign(value)).await?;
-        Ok(())
+        self.0.sub(value).await
     }
 }

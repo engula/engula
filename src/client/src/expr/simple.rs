@@ -34,6 +34,6 @@ pub fn set(id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Expr {
     simple_expr!(id, call_expr::set(value))
 }
 
-pub fn delete(id: impl Into<Vec<u8>>) -> Expr {
-    simple_expr!(id, call_expr::delete())
+pub fn remove(id: impl Into<Vec<u8>>) -> Expr {
+    simple_expr!(id, call_expr::remove())
 }

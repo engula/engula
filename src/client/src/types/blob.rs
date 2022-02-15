@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{expr::call_expr, Any, Error, Object, Result};
+use crate::{Any, Object, Result};
 
 pub struct Blob(Any);
 
@@ -28,16 +28,10 @@ impl From<Any> for Blob {
 
 impl Blob {
     pub async fn len(self) -> Result<i64> {
-        let value = self.0.call(call_expr::len()).await?;
-        if let Some(v) = value {
-            v.as_i64().ok_or(Error::TypeMismatch)
-        } else {
-            Ok(0)
-        }
+        self.0.len().await
     }
 
     pub async fn append(self, value: Vec<u8>) -> Result<()> {
-        self.0.call(call_expr::append(value)).await?;
-        Ok(())
+        self.0.append(value).await
     }
 }
