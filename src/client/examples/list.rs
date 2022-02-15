@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Any, Blob, Collection, Int64, List, Universe};
+use engula_client::{Any, Blob, Int64, List, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     let db = uv.database("db");
 
     {
-        let c: Collection<List<Any>> = db.collection("c");
+        let c = db.collection::<List<Any>>("c");
         c.set("o", ["hello".into(), "world".into()]).await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c: Collection<List<Blob>> = db.collection("c");
+        let c = db.collection::<List<Blob>>("c");
         c.set("o", [vec![1], vec![2]]).await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c: Collection<List<Int64>> = db.collection("c");
+        let c = db.collection::<List<Int64>>("c");
         c.set("o", [1, 2]).await?;
         println!("{:?}", c.get("o").await?);
         println!("{:?}", c.object("o").len().await?);

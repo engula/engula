@@ -42,21 +42,24 @@ impl Universe {
         })
     }
 
-    pub fn database(&self, name: impl Into<String>) -> Database {
-        self.inner.new_database(name.into())
+    pub fn database(&self, name: &str) -> Database {
+        self.inner.new_database(name.to_owned())
     }
 
-    pub async fn create_database(&self, name: impl Into<String>) -> Result<Database> {
-        let name = name.into();
-        let spec = DatabaseSpec { name: name.clone() };
+    pub async fn create_database(&self, name: &str) -> Result<Database> {
+        let spec = DatabaseSpec {
+            name: name.to_owned(),
+        };
         let req = CreateDatabaseRequest { spec: Some(spec) };
         let req = database_request_union::Request::CreateDatabase(req);
         self.inner.database_union_call(req).await?;
         Ok(self.database(name))
     }
 
-    pub async fn delete_database(&self, name: impl Into<String>) -> Result<()> {
-        let req = DeleteDatabaseRequest { name: name.into() };
+    pub async fn delete_database(&self, name: &str) -> Result<()> {
+        let req = DeleteDatabaseRequest {
+            name: name.to_owned(),
+        };
         let req = database_request_union::Request::DeleteDatabase(req);
         self.inner.database_union_call(req).await?;
         Ok(())
