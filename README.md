@@ -13,9 +13,9 @@ Engula is a persistent data structure store, used as a database and storage engi
 The features of Engula include:
 
 - Provide a set of persistent data structures.
-- Support ACID transactions.
-- Implement a built-in cache tier to speed up reads, resist hotspots and burst traffic.
-- Implement a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service on the cloud.
+- Support ACID transactions with different isolation and consistency levels.
+- Implement a built-in cache tier to speed up reads, resist traffic bursts and hotspots.
+- Implement a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service.
 
 ## Status
 
@@ -34,12 +34,12 @@ To run the examples:
 ```
 cargo run -p engula -- server start
 cargo run -p engula-client --example universe
-cargo run -p engula-client --example collection
+cargo run -p engula-client --example {example file name}
 ```
 
 ## Information
 
-For internal designs, please see the [docs](docs). For informal discussions about plans, ideas, and designs, please go to the [discussion forum](https://github.com/engula/engula/discussions).
+For internal designs, please see the [docs](docs). For informal discussions, please go to the [discussion forum](https://github.com/engula/engula/discussions).
 
 ## Contributing
 
