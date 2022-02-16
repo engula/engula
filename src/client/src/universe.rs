@@ -47,10 +47,11 @@ impl Universe {
     }
 
     pub async fn create_database(&self, name: &str) -> Result<Database> {
-        let spec = DatabaseSpec {
+        let desc = DatabaseDesc {
             name: name.to_owned(),
+            ..Default::default()
         };
-        let req = CreateDatabaseRequest { spec: Some(spec) };
+        let req = CreateDatabaseRequest { desc: Some(desc) };
         let req = database_request_union::Request::CreateDatabase(req);
         self.inner.database_union_call(req).await?;
         Ok(self.database(name))

@@ -61,10 +61,11 @@ impl Database {
     }
 
     pub async fn create_collection<T: Object>(&self, name: &str) -> Result<Collection<T>> {
-        let spec = CollectionSpec {
+        let desc = CollectionDesc {
             name: name.to_owned(),
+            ..Default::default()
         };
-        let req = CreateCollectionRequest { spec: Some(spec) };
+        let req = CreateCollectionRequest { desc: Some(desc) };
         let req = collection_request_union::Request::CreateCollection(req);
         self.inner.collection_union_call(req).await?;
         Ok(self.collection(name))

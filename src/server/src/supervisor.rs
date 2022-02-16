@@ -102,8 +102,8 @@ impl Supervisor {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let spec = req.spec.ok_or(Error::InvalidRequest)?;
-        let desc = self.uv.create_database(spec).await?;
+        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = self.uv.create_database(desc).await?;
         Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
 
@@ -163,8 +163,8 @@ impl Supervisor {
         db: Database,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let spec = req.spec.ok_or(Error::InvalidRequest)?;
-        let desc = db.create_collection(spec).await?;
+        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = db.create_collection(desc).await?;
         Ok(CreateCollectionResponse { desc: Some(desc) })
     }
 
@@ -208,20 +208,15 @@ impl Universe {
             .ok_or_else(|| Error::NotFound(format!("database {}", name)))
     }
 
-    async fn create_database(&self, spec: DatabaseSpec) -> Result<DatabaseDesc> {
+    async fn create_database(&self, mut desc: DatabaseDesc) -> Result<DatabaseDesc> {
         let mut inner = self.inner.lock().await;
-        if inner.databases.contains_key(&spec.name) {
-            return Err(Error::AlreadyExists(format!("database {}", spec.name)));
+        if inner.databases.contains_key(&desc.name) {
+            return Err(Error::AlreadyExists(format!("database {}", desc.name)));
         }
-        let id = inner.next_id;
+        desc.id = inner.next_id;
         inner.next_id += 1;
-        let name = spec.name.clone();
-        let desc = DatabaseDesc {
-            id,
-            spec: Some(spec),
-        };
         let db = Database::new(desc.clone());
-        inner.databases.insert(name, db);
+        inner.databases.insert(desc.name.clone(), db);
         Ok(desc)
     }
 }
@@ -262,20 +257,15 @@ impl Database {
             .ok_or_else(|| Error::NotFound(format!("collection {}", name)))
     }
 
-    async fn create_collection(&self, spec: CollectionSpec) -> Result<CollectionDesc> {
+    async fn create_collection(&self, mut desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut inner = self.inner.lock().await;
-        if inner.collections.contains_key(&spec.name) {
-            return Err(Error::AlreadyExists(format!("collection {}", spec.name)));
+        if inner.collections.contains_key(&desc.name) {
+            return Err(Error::AlreadyExists(format!("collection {}", desc.name)));
         }
-        let id = inner.next_id;
+        desc.id = inner.next_id;
         inner.next_id += 1;
-        let name = spec.name.clone();
-        let desc = CollectionDesc {
-            id,
-            database_id: inner.desc.id,
-            spec: Some(spec),
-        };
-        inner.collections.insert(name, desc.clone());
+        desc.parent_id = inner.desc.id;
+        inner.collections.insert(desc.name.clone(), desc.clone());
         Ok(desc)
     }
 }
