@@ -783,7 +783,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "stream-engine-apis"
+name = "stream-engine-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "prost",
+ "stream-engine-proto",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "stream-engine-proto"
 version = "0.1.0"
 dependencies = [
  "prost",

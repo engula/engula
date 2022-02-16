@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::configure().compile(&["proto/engine.proto"], &["proto"])?;
-    Ok(())
-}
+#![allow(clippy::all)]
+
+tonic::include_proto!("streamengine.master.v1");
