@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package streamengine.v1;
+
+service Engine {
+  rpc Tenant(TenantRequest) returns (TenantResponse) {}
+
+  rpc Stream(StreamRequest) returns (StreamResponse) {}
+}
+
+message TenantRequest { repeated TenantRequestUnion requests = 1; }
+
+message TenantResponse { repeated TenantResponseUnion responses = 1; }
+
+message TenantRequestUnion {
+  oneof request {
+    ListTenantsRequest list_tenants = 1;
+    CreateTenantRequest create_tenant = 2;
+  }
+}
+
+message TenantResponseUnion {
+  oneof response {
+    ListTenantsResponse list_tenants = 1;
+    CreateTenantResponse create_tenant = 2;
+  }
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse {}
+
+message CreateTenantRequest { TenantDesc desc = 1; }
+
+message CreateTenantResponse {}
+
+message StreamRequest {
+  string tenant = 1;
+  repeated StreamRequestUnion requests = 2;
+}
+
+message StreamResponse { repeated StreamResponseUnion responses = 1; }
+
+message StreamRequestUnion {
+  oneof request {
+    ListStreamsRequest list_tenants = 1;
+    CreateStreamRequest create_tenant = 2;
+  }
+}
+
+message StreamResponseUnion {
+  oneof response {
+    ListStreamsResponse list_tenants = 1;
+    CreateStreamResponse create_tenant = 2;
+  }
+}
+
+message ListStreamsRequest {}
+
+message ListStreamsResponse {}
+
+message CreateStreamRequest { StreamDesc desc = 1; }
+
+message CreateStreamResponse {}
+
+message TenantDesc {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message StreamDesc {
+  uint64 id = 1;
+  string name = 2;
+  uint64 parent_id = 3;
+}

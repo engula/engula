@@ -1,2 +1,8 @@
 [workspace]
-members = ["src/engula", "src/apis", "src/client", "src/server"]
+members = [
+  "src/engula",
+  "src/apis",
+  "src/client",
+  "src/server",
+  "src/stream-engine/apis",
+]
