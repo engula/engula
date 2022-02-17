@@ -12,67 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use engula_apis::*;
 use tokio::sync::Mutex;
-use tonic::{Request, Response, Status};
 
-use crate::{Error, Result};
+use crate::error::{Error, Result};
 
-type TonicResult<T> = std::result::Result<T, Status>;
-
+#[derive(Clone)]
 pub struct Transactor {
-    uv: Mutex<Universe>,
+    inner: Arc<Mutex<Inner>>,
 }
 
-impl Transactor {
-    fn new() -> Self {
-        Self {
-            uv: Mutex::new(Universe::new()),
-        }
-    }
-
-    pub fn new_service() -> txn_server::TxnServer<Self> {
-        txn_server::TxnServer::new(Self::new())
-    }
-}
-
-#[tonic::async_trait]
-impl txn_server::Txn for Transactor {
-    async fn batch(
-        &self,
-        req: Request<BatchTxnRequest>,
-    ) -> TonicResult<Response<BatchTxnResponse>> {
-        let req = req.into_inner();
-        let res = self.uv.lock().await.execute(req).await?;
-        Ok(Response::new(res))
-    }
-}
-
-struct Universe {
+struct Inner {
     databases: HashMap<String, Database>,
 }
 
-impl Universe {
-    fn new() -> Self {
-        Self {
+impl Transactor {
+    pub fn new() -> Self {
+        let inner = Inner {
             databases: HashMap::new(),
+        };
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 
-    async fn execute(&mut self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
-        let mut res = BatchTxnResponse::default();
-        for db_req in req.requests {
-            // Assumes that all databases exist for now.
-            let db = self
-                .databases
-                .entry(db_req.name.clone())
-                .or_insert_with(Database::new);
-            let db_res = db.execute(db_req)?;
-            res.responses.push(db_res);
-        }
-        Ok(res)
+    pub async fn execute(&self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+        let mut inner = self.inner.lock().await;
+        // Assumes that all databases exist for now.
+        let db = inner
+            .databases
+            .entry(req.name.clone())
+            .or_insert_with(Database::new);
+        db.execute(req)
     }
 }
 

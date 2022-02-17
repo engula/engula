@@ -14,7 +14,6 @@
 
 use anyhow::Result;
 use clap::Parser;
-use engula_server::standalone;
 
 #[derive(Parser)]
 pub struct Command {
@@ -51,7 +50,13 @@ struct StartCommand {
 impl StartCommand {
     async fn run(self) -> Result<()> {
         let addr = self.addr.parse()?;
-        standalone::serve(addr).await?;
+        let supervisor = supervisor::Server::new().into_service();
+        let transactor = transactor::Server::new().into_service();
+        tonic::transport::Server::builder()
+            .add_service(supervisor)
+            .add_service(transactor)
+            .serve(addr)
+            .await?;
         Ok(())
     }
 }
