@@ -14,9 +14,10 @@
 
 use std::sync::Arc;
 
+use engula_apis::*;
 use object_engine_proto::*;
 
-use crate::{master::Master, Error, Result};
+use crate::{master::Master, BucketTxn, Error, Result};
 
 #[derive(Clone)]
 pub struct Bucket {
@@ -47,6 +48,18 @@ impl Bucket {
             None
         };
         desc.ok_or(Error::InvalidResponse)
+    }
+
+    pub async fn eval(&self, _expr: Expr) -> Result<ExprResult> {
+        todo!();
+    }
+
+    pub async fn metadata(&self, _key: &[u8]) -> Result<Option<Vec<u8>>> {
+        todo!();
+    }
+
+    pub fn begin(&self) -> BucketTxn {
+        todo!();
     }
 }
 
