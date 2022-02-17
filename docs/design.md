@@ -57,7 +57,7 @@ The storage of Engula consists of a stream engine and an object engine. The stre
 
 ### StreamEngine
 
-A StreamEngine deployment manages a lot of tenants, each of which consists of multiple streams. A stream stores a sequence of events, which proposed by users.
+A StreamEngine deployment manages a lot of tenants, each of which consists of multiple streams. A stream stores a sequence of events proposed by users.
 
 ![Stream Engine Architecture](images/stream-engine-architecture.drawio.svg)
 
