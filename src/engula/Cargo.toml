@@ -15,6 +15,7 @@ categories = [
 description = "The Engula command line tool."
 
 [dependencies]
+object-engine-master = { path = "../object-engine/master" }
 supervisor = { path = "../supervisor" }
 transactor = { path = "../transactor" }
 
