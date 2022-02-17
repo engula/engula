@@ -1,0 +1,125 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package streamengine.master.v1;
+
+service Master {
+  rpc Tenant(TenantRequest) returns (TenantResponse) {}
+
+  rpc Stream(StreamRequest) returns (StreamResponse) {}
+}
+
+message TenantRequest { repeated TenantRequestUnion requests = 1; }
+
+message TenantResponse { repeated TenantResponseUnion responses = 1; }
+
+message TenantRequestUnion {
+  oneof request {
+    ListTenantsRequest list_tenants = 1;
+    CreateTenantRequest create_tenant = 2;
+    UpdateTenantRequest update_tenant = 3;
+    DeleteTenantRequest delete_tenant = 4;
+    DescribeTenantRequest describe_tenant = 5;
+  }
+}
+
+message TenantResponseUnion {
+  oneof response {
+    ListTenantsResponse list_tenants = 1;
+    CreateTenantResponse create_tenant = 2;
+    UpdateTenantResponse update_tenant = 3;
+    DeleteTenantResponse delete_tenant = 4;
+    DescribeTenantResponse describe_tenant = 5;
+  }
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse { repeated TenantDesc descs = 1; }
+
+message CreateTenantRequest { TenantDesc desc = 1; }
+
+message CreateTenantResponse {}
+
+message UpdateTenantRequest { TenantDesc desc = 1; }
+
+message UpdateTenantResponse {}
+
+message DeleteTenantRequest { string name = 1; }
+
+message DeleteTenantResponse {}
+
+message DescribeTenantRequest { string name = 1; }
+
+message DescribeTenantResponse { TenantDesc desc = 1; }
+
+message StreamRequest {
+  string tenant = 1;
+  repeated StreamRequestUnion requests = 2;
+}
+
+message StreamResponse { repeated StreamResponseUnion responses = 1; }
+
+message StreamRequestUnion {
+  oneof request {
+    ListStreamsRequest list_streams = 1;
+    CreateStreamRequest create_stream = 2;
+    UpdateStreamRequest update_stream = 3;
+    DeleteStreamRequest delete_stream = 4;
+    DescribeStreamRequest describe_stream = 5;
+  }
+}
+
+message StreamResponseUnion {
+  oneof response {
+    ListStreamsResponse list_streams = 1;
+    CreateStreamResponse create_stream = 2;
+    UpdateStreamResponse update_stream = 3;
+    DeleteStreamResponse delete_stream = 4;
+    DescribeStreamResponse describe_stream = 5;
+  }
+}
+
+message ListStreamsRequest {}
+
+message ListStreamsResponse { repeated StreamDesc descs = 1; }
+
+message CreateStreamRequest { StreamDesc desc = 1; }
+
+message CreateStreamResponse {}
+
+message UpdateStreamRequest { StreamDesc desc = 1; }
+
+message UpdateStreamResponse {}
+
+message DeleteStreamRequest { string name = 1; }
+
+message DeleteStreamResponse {}
+
+message DescribeStreamRequest { string name = 1; }
+
+message DescribeStreamResponse { StreamDesc desc = 1; }
+
+message TenantDesc {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message StreamDesc {
+  uint64 id = 1;
+  string name = 2;
+  uint64 parent_id = 3;
+}
