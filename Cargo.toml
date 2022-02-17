@@ -8,4 +8,5 @@ members = [
   "src/stream-engine/client",
   "src/object-engine/proto",
   "src/object-engine/client",
+  "src/object-engine/master",
 ]

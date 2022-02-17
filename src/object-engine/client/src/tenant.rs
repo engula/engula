@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use object_engine_proto::*;
 
-use crate::{master::Master, Error, Result};
+use crate::{master::Master, Bucket, Error, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -45,7 +45,11 @@ impl Tenant {
         desc.ok_or(Error::InvalidResponse)
     }
 
-    pub async fn create_bucket(&self, name: &str) -> Result<()> {
+    pub fn bucket(&self, name: &str) -> Bucket {
+        self.inner.new_bucket(name.to_owned())
+    }
+
+    pub async fn create_bucket(&self, name: &str) -> Result<Bucket> {
         let desc = BucketDesc {
             name: name.to_owned(),
             ..Default::default()
@@ -53,7 +57,7 @@ impl Tenant {
         let req = CreateBucketRequest { desc: Some(desc) };
         let req = bucket_request_union::Request::CreateBucket(req);
         self.inner.bucket_union_call(req).await?;
-        Ok(())
+        Ok(self.bucket(name))
     }
 
     pub async fn delete_bucket(&self, name: &str) -> Result<()> {
@@ -72,6 +76,10 @@ struct TenantInner {
 }
 
 impl TenantInner {
+    fn new_bucket(&self, name: String) -> Bucket {
+        Bucket::new(name, self.name.clone(), self.master.clone())
+    }
+
     async fn tenant_union_call(
         &self,
         req: tenant_request_union::Request,

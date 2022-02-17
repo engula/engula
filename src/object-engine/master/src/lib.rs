@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
-mod engine;
 mod error;
 mod master;
-mod tenant;
+mod server;
 
-pub use self::{
-    bucket::Bucket,
-    engine::Engine,
-    error::{Error, Result},
-    tenant::Tenant,
-};
+pub use self::server::Server;
