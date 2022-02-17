@@ -57,11 +57,17 @@ The storage of Engula consists of a stream engine and an object engine. The stre
 
 ### StreamEngine
 
-A StreamEngine deployment manages a lot of tenants, each of which consists of multiple streams.
+A StreamEngine deployment manages a lot of tenants, each of which consists of multiple streams. A stream stores a sequence of events proposed by users.
 
-A deployment consists of a manifest, an orchestrator, and a set of segment stores.
+![Stream Engine Architecture](images/stream-engine-architecture.drawio.svg)
 
-TODO: the previous design of the shared journal can be adapted here.
+A StreamEngine deployment consists of a master, an orchestrator, and a set of segment stores.
+
+The events of a stream are divided into multiple segments, according to a certain strategy, since its capacity might exceed the hardware limitation. For fault tolerance and durability, each segment is replicated and persisted in multiple segment stores. The master records the segment placements of streams, and it assigns the segment's replica to the segment store and balances load among them.
+
+![Stream Engine Election](images/stream-engine-election.drawio.svg)
+
+Only one client as a leader can write events into a stream at the same time. For fault tolerance, multiple clients will try to elect a leader at the same time. The master is responsible for choosing one of these clients as the leader.
 
 ### ObjectEngine
 
