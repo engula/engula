@@ -123,8 +123,8 @@ impl<T: Object> CollectionTxn<T> {
         self.add_expr(simple::set(id, value.into()))
     }
 
-    pub fn remove(&mut self, id: impl Into<Vec<u8>>) {
-        self.add_expr(simple::remove(id))
+    pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
+        self.add_expr(simple::delete(id))
     }
 
     pub fn object(&mut self, id: impl Into<Vec<u8>>) -> &mut T::Txn {
@@ -221,8 +221,8 @@ impl Txn {
         self
     }
 
-    pub fn remove(&mut self, index: impl Into<Value>) -> &mut Self {
-        self.add_call(call().remove(index));
+    pub fn delete(&mut self, index: impl Into<Value>) -> &mut Self {
+        self.add_call(call().delete(index));
         self
     }
 

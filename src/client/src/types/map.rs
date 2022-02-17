@@ -61,8 +61,8 @@ where
         self.ob.set(key.into(), value.into()).await
     }
 
-    pub async fn remove(self, key: impl Into<Vec<u8>>) -> Result<()> {
-        self.ob.remove(key.into()).await
+    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
+        self.ob.delete(key.into()).await
     }
 }
 
@@ -86,8 +86,8 @@ impl<T: Object> MapTxn<T> {
         self
     }
 
-    pub fn remove(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
-        self.txn.remove(key.into());
+    pub fn delete(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
+        self.txn.delete(key.into());
         self
     }
 

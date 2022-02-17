@@ -79,8 +79,8 @@ impl Builder {
         self.0
     }
 
-    pub fn remove(mut self, index: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Remove as i32;
+    pub fn delete(mut self, index: impl Into<Value>) -> CallExpr {
+        self.0.func = Function::Delete as i32;
         self.0.args = vec![index.into()];
         self.0
     }

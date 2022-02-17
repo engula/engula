@@ -112,7 +112,7 @@ impl Collection {
                     let value = args.take()?;
                     self.objects.insert(id, value);
                 }
-                Function::Remove => {
+                Function::Delete => {
                     self.objects.remove(&id);
                 }
                 _ => return Err(Error::InvalidRequest),
@@ -191,7 +191,7 @@ impl Collection {
                 };
                 self.objects.insert(id.to_owned(), value);
             }
-            Function::Remove => {}
+            Function::Delete => {}
             _ => return Err(Error::InvalidRequest),
         }
         Ok(())
@@ -351,7 +351,7 @@ fn handle_associative_call(
                 object.values.push(value);
             }
         }
-        Function::Remove => {
+        Function::Delete => {
             let key = args.take_blob()?;
             let index = object.keys.iter().position(|k| k == &key);
             if let Some(i) = index {

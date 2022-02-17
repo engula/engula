@@ -35,6 +35,6 @@ pub fn set(id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Expr {
     object_expr!(id, Function::Set, vec![value.into()])
 }
 
-pub fn remove(id: impl Into<Vec<u8>>) -> Expr {
-    object_expr!(id, Function::Remove, vec![])
+pub fn delete(id: impl Into<Vec<u8>>) -> Expr {
+    object_expr!(id, Function::Delete, vec![])
 }
