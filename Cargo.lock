@@ -132,6 +132,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "object-engine-master",
  "prost",
  "supervisor",
  "tokio",
