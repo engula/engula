@@ -63,7 +63,7 @@ A StreamEngine deployment manages a lot of tenants, each of which consists of mu
 
 A StreamEngine deployment consists of a master, an orchestrator, and a set of segment stores.
 
-The events of a stream are divided into multiple segments, according to a certain strategy, since it's capacity might exceeds the hardware limitation. For fault tolerance and durability, each segments is replicated and persisted in multiple segment stores. The master records the segment placements of streams, and it assigns segment's replica to the segment store and balance load among them.
+The events of a stream are divided into multiple segments, according to a certain strategy, since its capacity might exceed the hardware limitation. For fault tolerance and durability, each segment is replicated and persisted in multiple segment stores. The master records the segment placements of streams, and it assigns the segment's replica to the segment store and balances load among them.
 
 ![Stream Engine Election](images/stream-engine-election.drawio.svg)
 
