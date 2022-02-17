@@ -53,7 +53,7 @@ impl StartCommand {
         let supervisor = supervisor::Server::new().into_service();
         let transactor = transactor::Server::new().into_service();
         let object_engine_master = object_engine_master::Server::new().into_service();
-        let stream_engine_master = object_engine_master::Server::new().into_service();
+        let stream_engine_master = stream_engine_master::Server::new().into_service();
         tonic::transport::Server::builder()
             .add_service(supervisor)
             .add_service(transactor)
