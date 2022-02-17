@@ -12,17 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
-mod bucket_txn;
-mod engine;
-mod error;
-mod master;
-mod tenant;
+use engula_apis::Expr;
 
-pub use self::{
-    bucket::Bucket,
-    bucket_txn::BucketTxn,
-    engine::Engine,
-    error::{Error, Result},
-    tenant::Tenant,
-};
+use crate::Result;
+
+pub struct BucketTxn {}
+
+impl BucketTxn {
+    pub fn add_expr(&mut self, _expr: Expr) {
+        todo!();
+    }
+
+    pub fn add_metadata(&mut self, _key: Vec<u8>, _value: Vec<u8>) {
+        todo!();
+    }
+
+    pub fn remove_metadata(&mut self, _key: Vec<u8>) {
+        todo!();
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        todo!();
+    }
+}

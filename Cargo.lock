@@ -480,6 +480,7 @@ name = "object-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "engula-apis",
  "object-engine-proto",
  "prost",
  "thiserror",
