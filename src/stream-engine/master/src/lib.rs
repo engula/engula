@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
 mod error;
 mod master;
-mod stream;
-mod tenant;
+mod server;
 
-pub use self::{
-    engine::Engine,
-    error::{Error, Result},
-    stream::Stream,
-    tenant::Tenant,
-};
+pub use self::server::Server;

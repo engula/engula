@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use stream_engine_proto::*;
 
-use crate::{master::Master, Error, Result};
+use crate::{master::Master, Error, Result, Stream};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -45,7 +45,11 @@ impl Tenant {
         desc.ok_or(Error::InvalidResponse)
     }
 
-    pub async fn create_stream(&self, name: &str) -> Result<()> {
+    pub fn stream(&self, name: &str) -> Stream {
+        self.inner.new_stream(name.to_owned())
+    }
+
+    pub async fn create_stream(&self, name: &str) -> Result<Stream> {
         let desc = StreamDesc {
             name: name.to_owned(),
             ..Default::default()
@@ -53,7 +57,7 @@ impl Tenant {
         let req = CreateStreamRequest { desc: Some(desc) };
         let req = stream_request_union::Request::CreateStream(req);
         self.inner.stream_union_call(req).await?;
-        Ok(())
+        Ok(self.stream(name))
     }
 
     pub async fn delete_stream(&self, name: &str) -> Result<()> {
@@ -72,6 +76,10 @@ struct TenantInner {
 }
 
 impl TenantInner {
+    fn new_stream(&self, name: String) -> Stream {
+        Stream::new(name, self.name.clone(), self.master.clone())
+    }
+
     async fn tenant_union_call(
         &self,
         req: tenant_request_union::Request,
