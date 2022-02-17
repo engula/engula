@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         println!("o.len = {:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), "b").await?;
         println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").remove(k1.clone()).await?;
+        c.object("o").delete(k1.clone()).await?;
         println!("o = {:?}", c.get("o").await?);
     }
 
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         println!("o.len = {:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), k2.clone()).await?;
         println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").remove(k1.clone()).await?;
+        c.object("o").delete(k1.clone()).await?;
         println!("o = {:?}", c.get("o").await?);
     }
 
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         println!("o.len = {:?}", c.object("o").len().await?);
         c.object("o").set(k1.clone(), 2).await?;
         println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").remove(k1.clone()).await?;
+        c.object("o").delete(k1.clone()).await?;
         println!("o = {:?}", c.get("o").await?);
     }
 
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
         txn.set(k1.clone(), 1)
             .set(k2.clone(), 2)
             .set(vec![3], 3)
-            .remove(k1.clone());
+            .delete(k1.clone());
         txn.commit().await?;
         println!("txn = {:?}", c.get("txn").await?);
     }

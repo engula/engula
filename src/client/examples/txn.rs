@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         c.object("b")
             .set(vec![3], 3)
             .set(vec![4], 4)
-            .remove(vec![3]);
+            .delete(vec![3]);
         c.commit().await?;
     }
     txn.commit().await?;
