@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use stream_engine_proto::*;
 
-use crate::{master_client::MasterClient, Error, Result};
+use crate::{master::Master, Error, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -24,11 +24,8 @@ pub struct Tenant {
 }
 
 impl Tenant {
-    pub fn new(name: String, master_client: MasterClient) -> Self {
-        let inner = TenantInner {
-            name,
-            master_client,
-        };
+    pub fn new(name: String, master: Master) -> Self {
+        let inner = TenantInner { name, master };
         Self {
             inner: Arc::new(inner),
         }
@@ -71,7 +68,7 @@ impl Tenant {
 
 struct TenantInner {
     name: String,
-    master_client: MasterClient,
+    master: Master,
 }
 
 impl TenantInner {
@@ -79,16 +76,13 @@ impl TenantInner {
         &self,
         req: tenant_request_union::Request,
     ) -> Result<tenant_response_union::Response> {
-        self.master_client.clone().tenant_union(req).await
+        self.master.tenant_union(req).await
     }
 
     async fn stream_union_call(
         &self,
         req: stream_request_union::Request,
     ) -> Result<stream_response_union::Response> {
-        self.master_client
-            .clone()
-            .stream_union(self.name.clone(), req)
-            .await
+        self.master.stream_union(self.name.clone(), req).await
     }
 }

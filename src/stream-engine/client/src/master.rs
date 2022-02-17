@@ -18,23 +18,23 @@ use tonic::transport::Channel;
 use crate::{Error, Result};
 
 #[derive(Clone)]
-pub struct MasterClient {
+pub struct Master {
     client: master_client::MasterClient<Channel>,
 }
 
-impl MasterClient {
+impl Master {
     pub fn new(chan: Channel) -> Self {
         let client = master_client::MasterClient::new(chan);
         Self { client }
     }
 
-    pub async fn tenant(&mut self, req: TenantRequest) -> Result<TenantResponse> {
-        let res = self.client.tenant(req).await?;
+    pub async fn tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
+        let res = self.client.clone().tenant(req).await?;
         Ok(res.into_inner())
     }
 
     pub async fn tenant_union(
-        &mut self,
+        &self,
         req: tenant_request_union::Request,
     ) -> Result<tenant_response_union::Response> {
         let req = TenantRequest {
@@ -47,13 +47,13 @@ impl MasterClient {
             .ok_or(Error::InvalidResponse)
     }
 
-    pub async fn stream(&mut self, req: StreamRequest) -> Result<StreamResponse> {
-        let res = self.client.stream(req).await?;
+    pub async fn stream(&self, req: StreamRequest) -> Result<StreamResponse> {
+        let res = self.client.clone().stream(req).await?;
         Ok(res.into_inner())
     }
 
     pub async fn stream_union(
-        &mut self,
+        &self,
         tenant: String,
         req: stream_request_union::Request,
     ) -> Result<stream_response_union::Response> {

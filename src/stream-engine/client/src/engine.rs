@@ -17,7 +17,7 @@ use std::sync::Arc;
 use stream_engine_proto::*;
 use tonic::transport::Endpoint;
 
-use crate::{master_client::MasterClient, Error, Result, Tenant};
+use crate::{master::Master, Error, Result, Tenant};
 
 #[derive(Clone)]
 pub struct Engine {
@@ -32,7 +32,7 @@ impl Engine {
             .await
             .map_err(Error::unknown)?;
         let inner = EngineInner {
-            master_client: MasterClient::new(chan),
+            master: Master::new(chan),
         };
         Ok(Self {
             inner: Arc::new(inner),
@@ -65,18 +65,18 @@ impl Engine {
 }
 
 struct EngineInner {
-    master_client: MasterClient,
+    master: Master,
 }
 
 impl EngineInner {
     fn new_tenant(&self, name: String) -> Tenant {
-        Tenant::new(name, self.master_client.clone())
+        Tenant::new(name, self.master.clone())
     }
 
     async fn tenant_union_call(
         &self,
         req: tenant_request_union::Request,
     ) -> Result<tenant_response_union::Response> {
-        self.master_client.clone().tenant_union(req).await
+        self.master.tenant_union(req).await
     }
 }

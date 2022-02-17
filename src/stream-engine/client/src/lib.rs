@@ -14,7 +14,7 @@
 
 mod engine;
 mod error;
-mod master_client;
+mod master;
 mod tenant;
 
 pub use self::{
