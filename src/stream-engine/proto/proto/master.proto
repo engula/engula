@@ -52,7 +52,7 @@ message ListTenantsResponse { repeated TenantDesc descs = 1; }
 
 message CreateTenantRequest { TenantDesc desc = 1; }
 
-message CreateTenantResponse {}
+message CreateTenantResponse { TenantDesc desc = 1; }
 
 message UpdateTenantRequest { TenantDesc desc = 1; }
 
@@ -99,7 +99,7 @@ message ListStreamsResponse { repeated StreamDesc descs = 1; }
 
 message CreateStreamRequest { StreamDesc desc = 1; }
 
-message CreateStreamResponse {}
+message CreateStreamResponse { StreamDesc desc = 1; }
 
 message UpdateStreamRequest { StreamDesc desc = 1; }
 

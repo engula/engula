@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
-mod error;
-mod master;
-mod stream;
-mod tenant;
+use anyhow::Result;
+use stream_engine_client::Engine;
 
-pub use self::{
-    engine::Engine,
-    error::{Error, Result},
-    stream::Stream,
-    tenant::Tenant,
-};
+#[tokio::main]
+async fn main() -> Result<()> {
+    let url = "http://localhost:21716";
+    let engine = Engine::connect(url).await?;
+    let tenant = engine.create_tenant("tenant").await?;
+    println!("created {:?}", tenant.desc().await?);
+    let stream = tenant.create_stream("stream").await?;
+    println!("created {:?}", stream.desc().await?);
+    Ok(())
+}

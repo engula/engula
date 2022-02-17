@@ -5,9 +5,10 @@ members = [
   "src/client",
   "src/supervisor",
   "src/transactor",
-  "src/stream-engine/proto",
-  "src/stream-engine/client",
   "src/object-engine/proto",
   "src/object-engine/client",
   "src/object-engine/master",
+  "src/stream-engine/proto",
+  "src/stream-engine/client",
+  "src/stream-engine/master",
 ]

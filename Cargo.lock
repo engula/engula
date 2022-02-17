@@ -134,6 +134,7 @@ dependencies = [
  "clap",
  "object-engine-master",
  "prost",
+ "stream-engine-master",
  "supervisor",
  "tokio",
  "tonic",
@@ -812,6 +813,17 @@ name = "stream-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "prost",
+ "stream-engine-proto",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "stream-engine-master"
+version = "0.1.0"
+dependencies = [
  "prost",
  "stream-engine-proto",
  "thiserror",
