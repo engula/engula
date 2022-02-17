@@ -88,8 +88,8 @@ impl<T: Object> Collection<T> {
         Ok(())
     }
 
-    pub async fn remove(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        let expr = simple::remove(id);
+    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
+        let expr = simple::delete(id);
         self.inner.collection_expr_call(expr).await?;
         Ok(())
     }

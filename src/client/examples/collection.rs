@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     co.set("o", 1).await?;
     println!("o = {:?}", co.get("o").await?);
-    co.remove("o").await?;
+    co.delete("o").await?;
     println!("o = {:?}", co.get("o").await?);
 
     let mut txn = co.begin();

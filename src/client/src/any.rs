@@ -88,8 +88,8 @@ impl Any {
         Ok(())
     }
 
-    pub async fn remove(self, index: impl Into<Value>) -> Result<()> {
-        self.call(call().remove(index)).await?;
+    pub async fn delete(self, index: impl Into<Value>) -> Result<()> {
+        self.call(call().delete(index)).await?;
         Ok(())
     }
 
