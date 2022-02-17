@@ -1,11 +1,8 @@
 [package]
-name = "engula-server"
-version = "0.3.0"
+name = "transactor"
+version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
-homepage = "https://engula.io"
-repository = "https://github.com/engula/engula"
-description = "The Engula server components."
+publish = false
 
 [dependencies]
 engula-apis = { version = "0.3", path = "../apis" }

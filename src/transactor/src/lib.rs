@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::SocketAddr;
+mod error;
+mod server;
+mod transactor;
 
-use crate::{Supervisor, Transactor};
-
-pub async fn serve(addr: SocketAddr) -> Result<(), tonic::transport::Error> {
-    tonic::transport::Server::builder()
-        .add_service(Supervisor::new_service())
-        .add_service(Transactor::new_service())
-        .serve(addr)
-        .await
-}
+pub use self::server::Server;

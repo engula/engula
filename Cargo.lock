@@ -132,8 +132,11 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
- "engula-server",
+ "prost",
+ "supervisor",
  "tokio",
+ "tonic",
+ "transactor",
 ]
 
 [[package]]
@@ -150,17 +153,6 @@ name = "engula-client"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "engula-apis",
- "prost",
- "thiserror",
- "tokio",
- "tonic",
-]
-
-[[package]]
-name = "engula-server"
-version = "0.3.0"
-dependencies = [
  "engula-apis",
  "prost",
  "thiserror",
@@ -1094,6 +1086,17 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "transactor"
+version = "0.1.0"
+dependencies = [
+ "engula-apis",
+ "prost",
+ "thiserror",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]

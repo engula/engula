@@ -15,8 +15,11 @@ categories = [
 description = "The Engula command line tool."
 
 [dependencies]
-engula-server = { version = "0.3.0", path = "../server" }
+supervisor = { path = "../supervisor" }
+transactor = { path = "../transactor" }
 
 anyhow = "1.0.52"
 clap = { version = "3.0.12", features = ["derive"] }
+prost = "0.9"
 tokio = { version = "1.15.0", features = ["full"] }
+tonic = "0.6"
