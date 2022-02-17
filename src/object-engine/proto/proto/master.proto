@@ -52,7 +52,7 @@ message ListTenantsResponse { repeated TenantDesc descs = 1; }
 
 message CreateTenantRequest { TenantDesc desc = 1; }
 
-message CreateTenantResponse {}
+message CreateTenantResponse { TenantDesc desc = 1; }
 
 message UpdateTenantRequest { TenantDesc desc = 1; }
 
@@ -99,7 +99,7 @@ message ListBucketsResponse { repeated BucketDesc descs = 1; }
 
 message CreateBucketRequest { BucketDesc desc = 1; }
 
-message CreateBucketResponse {}
+message CreateBucketResponse { BucketDesc desc = 1; }
 
 message UpdateBucketRequest { BucketDesc desc = 1; }
 
