@@ -6,4 +6,6 @@ members = [
   "src/server",
   "src/stream-engine/proto",
   "src/stream-engine/client",
+  "src/object-engine/proto",
+  "src/object-engine/client",
 ]
