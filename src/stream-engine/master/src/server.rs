@@ -57,6 +57,22 @@ impl master_server::Master for Server {
         let res = self.handle_stream(req).await?;
         Ok(Response::new(res))
     }
+
+    async fn segment(
+        &self,
+        req: Request<SegmentRequest>,
+    ) -> TonicResult<Response<SegmentResponse>> {
+        let req = req.into_inner();
+        let res = self.handle_segment(req).await?;
+        Ok(Response::new(res))
+    }
+
+    async fn heartbeat(
+        &self,
+        _req: Request<HeartbeatRequest>,
+    ) -> TonicResult<Response<HeartbeatResponse>> {
+        todo!()
+    }
 }
 
 impl Server {
@@ -172,5 +188,44 @@ impl Server {
     ) -> Result<DescribeStreamResponse> {
         let desc = tenant.stream(&req.name).await?;
         Ok(DescribeStreamResponse { desc: Some(desc) })
+    }
+}
+
+impl Server {
+    async fn handle_segment(&self, req: SegmentRequest) -> Result<SegmentResponse> {
+        let tenant = self.master.tenant(&req.tenant).await?;
+        let mut res = SegmentResponse::default();
+        for req_union in req.requests {
+            let res_union = self.handle_segment_union(tenant.clone(), req_union).await?;
+            res.responses.push(res_union);
+        }
+        Ok(res)
+    }
+
+    async fn handle_segment_union(
+        &self,
+        _tenant: Tenant,
+        req: SegmentRequestUnion,
+    ) -> Result<SegmentResponseUnion> {
+        type Request = segment_request_union::Request;
+        type Response = segment_response_union::Response;
+
+        let res = match req.request.ok_or(Error::InvalidRequest)? {
+            Request::GetSegment(req) => Response::GetSegment(self.handle_get_segment(req).await?),
+            Request::SealSegment(req) => {
+                Response::SealSegment(self.handle_seal_segment(req).await?)
+            }
+        };
+        Ok(SegmentResponseUnion {
+            response: Some(res),
+        })
+    }
+
+    async fn handle_get_segment(&self, _req: GetSegmentRequest) -> Result<GetSegmentResponse> {
+        todo!()
+    }
+
+    async fn handle_seal_segment(&self, _req: SealSegmentRequest) -> Result<SealSegmentResponse> {
+        todo!()
     }
 }
