@@ -20,6 +20,12 @@ service Master {
   rpc Tenant(TenantRequest) returns (TenantResponse) {}
 
   rpc Stream(StreamRequest) returns (StreamResponse) {}
+
+  rpc Segment(SegmentRequest) returns (SegmentResponse) {}
+
+  // Sent heartbeat to master and receives commands which must complete by
+  // stream observers
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 }
 
 message TenantRequest { repeated TenantRequestUnion requests = 1; }
@@ -122,4 +128,95 @@ message StreamDesc {
   uint64 id = 1;
   string name = 2;
   uint64 parent_id = 3;
+}
+
+enum SegmentState {
+  APPENDING = 0;
+  SEALED = 1;
+}
+
+message SegmentDesc {
+  uint64 stream_id = 1;
+  uint64 epoch = 2;
+  SegmentState state = 3;
+  repeated string copy_set = 4;
+}
+
+message SegmentRequest {
+  string tenant = 1;
+  uint64 stream_id = 2;
+  uint32 segment_epoch = 3;
+
+  repeated SegmentRequestUnion requests = 4;
+}
+
+message SegmentResponse {
+  repeated SegmentResponseUnion responses = 1;
+}
+
+message SegmentRequestUnion {
+  oneof request {
+    GetSegmentRequest get_segment = 1;
+    SealSegmentRequest seal_segment = 2;
+  }
+}
+
+message SegmentResponseUnion {
+  oneof response {
+    GetSegmentResponse get_segment = 1;
+    SealSegmentResponse seal_segment = 2;
+  }
+}
+
+message GetSegmentRequest {}
+
+message GetSegmentResponse {
+  SegmentDesc desc = 1;
+}
+
+message SealSegmentRequest {}
+
+message SealSegmentResponse {}
+
+enum Role {
+  FOLLOWER = 0;
+  LEADER = 1;
+}
+
+// Commands is supplied by master and complete by stream observers.
+enum CommandType {
+  NOP = 0;
+  PROMOTE = 1;
+}
+
+message Command {
+  CommandType command_type = 1;
+
+  uint32 epoch = 2;
+  string leader = 3;
+  Role role = 4;
+  repeated uint32 pending_epochs = 5;
+}
+
+enum ObserverState {
+  FOLLOWING = 0;
+  SEALING = 1;
+  RECOVERING = 2;
+  LEADING = 3;
+}
+
+message HeartbeatRequest {
+  string tenant = 1;
+  uint64 stream_id = 2;
+  uint32 segment_epoch = 3;
+  Role role = 4;
+
+  string observer_id = 5;
+  ObserverState observer_state = 6;
+
+  uint64 acked_seq = 7;
+}
+
+message HeartbeatResponse {
+  repeated Command commands = 1;
 }
