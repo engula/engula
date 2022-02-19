@@ -42,16 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/checkout@v2
-        with:
-          repository: editorconfig-checker/editorconfig-checker
-          path: editorconfig-checker
-      - uses: actions/setup-go@v2
-        with:
-          go-version: 1.16
-      - run: |
-          pushd editorconfig-checker && make build && popd && \
-          editorconfig-checker/bin/ec -exclude editorconfig-checker
+      - uses: editorconfig-checker/action-editorconfig-checker@v1
 
   toml:
     if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
