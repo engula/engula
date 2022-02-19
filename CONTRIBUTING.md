@@ -34,10 +34,10 @@ Build Engula from the source code:
 cargo build
 ```
 
-Run unit tests:
+Now that you have the `engula` binary, execute it for exploring:
 
 ```sh
-cargo run -p engula -- server start
+cargo run -p engula
 ```
 
 ## Contribute
