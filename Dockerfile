@@ -1,4 +1,4 @@
-# Copyright 2021 The Engula Authors.
+# Copyright 2022 The Engula Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-header:
-  license:
-    spdx-id: Apache-2.0
-    copyright-owner: The Engula Authors
-  paths-ignore:
-    - 'docs'
-    - '**/*.md'
-    - '.cargo/audit.toml'
-    - '.dockerignore'
-    - '.gitignore'
-    - '.gitmodules'
-    - 'Cargo.lock'
-    - 'Cargo.toml'
-    - 'LICENSE'
-    - 'rust-toolchain.toml'
-    - 'rustfmt.toml'
-    - 'taplo.toml'
+FROM rust:1.58 as build
+WORKDIR /build
+COPY . /build/
+RUN cargo build --locked --release --package=engula
+
+FROM gcr.io/distroless/cc
+COPY --from=build /build/target/release/engula /bin/
+ENTRYPOINT ["/bin/engula"]

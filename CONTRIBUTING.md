@@ -26,7 +26,7 @@ git clone https://github.com/engula/engula.git
 cd engula
 ```
 
-### Build and run tests
+### Build and run
 
 Build Engula from the source code:
 
@@ -37,8 +37,7 @@ cargo build
 Run unit tests:
 
 ```sh
-# Run all tests by:
-cargo test --workspace
+cargo run -p engula -- server start
 ```
 
 ## Contribute
