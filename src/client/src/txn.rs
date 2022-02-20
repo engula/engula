@@ -19,11 +19,7 @@ use std::{
 
 use engula_apis::*;
 
-use crate::{
-    expr::{call, simple},
-    txn_client::TxnClient,
-    Error, Object, Result,
-};
+use crate::{expr::call, txn_client::TxnClient, Error, Object, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -115,21 +111,8 @@ impl<T: Object> CollectionTxn<T> {
         }
     }
 
-    pub(crate) fn add_expr(&mut self, expr: Expr) {
-        self.inner.exprs.lock().unwrap().push(expr);
-    }
-
-    pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<Value>) {
-        self.add_expr(simple::set(id, value.into()))
-    }
-
-    pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
-        self.add_expr(simple::delete(id))
-    }
-
     pub fn object(&mut self, id: impl Into<Vec<u8>>) -> &mut T::Txn {
-        let txn = Txn::new_with(id.into(), self.inner.clone());
-        self.subtxn = Some(txn.into());
+        self.subtxn = Some(self.txn(id).into());
         self.subtxn.as_mut().unwrap()
     }
 
@@ -149,6 +132,21 @@ impl<T: Object> CollectionTxn<T> {
             parent.requests.lock().unwrap().push(req);
         }
         Ok(())
+    }
+}
+
+// Provides common interfaces for convenience.
+impl<T: Object> CollectionTxn<T> {
+    fn txn(&self, id: impl Into<Vec<u8>>) -> Txn {
+        Txn::new_with(id.into(), self.inner.clone())
+    }
+
+    pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) {
+        self.txn(id).store(value.into());
+    }
+
+    pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
+        self.txn(id).reset();
     }
 }
 
@@ -181,48 +179,52 @@ impl Txn {
             handle,
             parent,
             expr: Expr {
-                id,
+                from: Some(expr::From::Id(id)),
                 ..Default::default()
             },
         }
     }
 
     fn add_call(&mut self, call: CallExpr) {
-        self.expr.subcalls.push(call);
+        let expr = Expr {
+            call: Some(call),
+            ..Default::default()
+        };
+        self.expr.subexprs.push(expr);
+    }
+
+    pub fn store(&mut self, value: impl Into<Value>) -> &mut Self {
+        self.add_call(call::store(value));
+        self
+    }
+
+    pub fn reset(&mut self) -> &mut Self {
+        self.add_call(call::reset());
+        self
     }
 
     pub fn add(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().add(value));
+        self.add_call(call::add(value));
         self
     }
 
     pub fn sub(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().sub(value));
+        self.add_call(call::sub(value));
         self
     }
 
     pub fn append(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().append(value));
+        self.add_call(call::append(value));
         self
     }
 
     pub fn push_back(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().push_back(value));
+        self.add_call(call::push_back(value));
         self
     }
 
     pub fn push_front(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().push_front(value));
-        self
-    }
-
-    pub fn set(&mut self, index: impl Into<Value>, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call().set(index, value));
-        self
-    }
-
-    pub fn delete(&mut self, index: impl Into<Value>) -> &mut Self {
-        self.add_call(call().delete(index));
+        self.add_call(call::push_front(value));
         self
     }
 

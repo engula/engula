@@ -132,13 +132,13 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "engula-supervisor",
+ "engula-transactor",
  "object-engine-master",
  "prost",
  "stream-engine-master",
- "supervisor",
  "tokio",
  "tonic",
- "transactor",
 ]
 
 [[package]]
@@ -156,6 +156,40 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "engula-apis",
+ "prost",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "engula-cooperator"
+version = "0.1.0"
+dependencies = [
+ "engula-apis",
+ "prost",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "engula-supervisor"
+version = "0.1.0"
+dependencies = [
+ "engula-apis",
+ "prost",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "engula-transactor"
+version = "0.1.0"
+dependencies = [
+ "engula-apis",
+ "engula-cooperator",
  "prost",
  "thiserror",
  "tokio",
@@ -849,17 +883,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
-name = "supervisor"
-version = "0.1.0"
-dependencies = [
- "engula-apis",
- "prost",
- "thiserror",
- "tokio",
- "tonic",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1101,17 +1124,6 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
-]
-
-[[package]]
-name = "transactor"
-version = "0.1.0"
-dependencies = [
- "engula-apis",
- "prost",
- "thiserror",
- "tokio",
- "tonic",
 ]
 
 [[package]]

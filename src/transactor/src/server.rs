@@ -15,7 +15,7 @@
 use engula_apis::*;
 use tonic::{Request, Response, Status};
 
-use crate::transactor::Transactor;
+use crate::Transactor;
 
 type TonicResult<T> = std::result::Result<T, Status>;
 
@@ -48,11 +48,7 @@ impl txn_server::Txn for Server {
         req: Request<BatchTxnRequest>,
     ) -> TonicResult<Response<BatchTxnResponse>> {
         let req = req.into_inner();
-        let mut res = BatchTxnResponse::default();
-        for db_req in req.requests {
-            let db_res = self.inner.execute(db_req).await?;
-            res.responses.push(db_res);
-        }
+        let res = self.inner.execute(req).await?;
         Ok(Response::new(res))
     }
 }

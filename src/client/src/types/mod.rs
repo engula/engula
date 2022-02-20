@@ -13,8 +13,8 @@
 // limitations under the License.
 
 mod blob;
-mod int64;
+mod i64;
 mod list;
 mod map;
 
-pub use self::{blob::Blob, int64::Int64, list::List, map::Map};
+pub use self::{blob::Blob, i64::I64, list::List, map::Map};

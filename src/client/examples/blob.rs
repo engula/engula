@@ -20,18 +20,18 @@ async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
-    let co = db.collection::<Blob>("co");
+    let co = db.collection::<Blob>("blob");
 
     co.set("o", vec![1, 2]).await?;
     println!("o = {:?}", co.get("o").await?);
-    co.object("o").append(vec![3, 4, 5]).await?;
+    co.object("o").append(vec![3, 4]).await?;
     println!("o = {:?}", co.get("o").await?);
     println!("o.len = {:?}", co.object("o").len().await?);
 
-    let mut txn = co.object("txn").begin();
-    txn.append(vec![1, 2]).append(vec![3, 4]);
+    let mut txn = co.object("o").begin();
+    txn.append(vec![5, 6]).append(vec![7, 8]);
     txn.commit().await?;
-    println!("txn = {:?}", co.get("txn").await?);
+    println!("o = {:?}", co.object("o").load().await?);
 
     Ok(())
 }

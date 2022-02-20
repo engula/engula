@@ -13,26 +13,26 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Int64, Universe};
+use engula_client::{Universe, I64};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
-    let co = db.collection::<Int64>("co");
+    let co = db.collection::<I64>("i64");
 
     co.set("o", 1).await?;
-    println!("{:?}", co.get("o").await?);
+    println!("o = {:?}", co.get("o").await?);
     co.object("o").add(2).await?;
-    println!("{:?}", co.get("o").await?);
+    println!("o = {:?}", co.get("o").await?);
     co.object("o").sub(3).await?;
-    println!("{:?}", co.get("o").await?);
+    println!("o = {:?}", co.get("o").await?);
 
-    let mut txn = co.object("txn").begin();
+    let mut txn = co.object("o").begin();
     txn.add(1).add(2).sub(1);
     txn.commit().await?;
-    println!("txn = {:?}", co.get("txn").await?);
+    println!("o = {:?}", co.object("o").load().await?);
 
     Ok(())
 }

@@ -15,10 +15,10 @@ categories = [
 description = "The Engula command line tool."
 
 [dependencies]
+engula-supervisor = { path = "../supervisor" }
+engula-transactor = { path = "../transactor" }
 object-engine-master = { path = "../object-engine/master" }
 stream-engine-master = { path = "../stream-engine/master" }
-supervisor = { path = "../supervisor" }
-transactor = { path = "../transactor" }
 
 anyhow = "1.0"
 clap = { version = "3.0", features = ["derive"] }

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cooperator;
 mod error;
-mod server;
-mod supervisor;
+mod executor;
 
-pub(crate) use self::supervisor::{Database, Supervisor};
+pub(crate) use self::executor::Executor;
 pub use self::{
+    cooperator::Cooperator,
     error::{Error, Result},
-    server::Server,
 };

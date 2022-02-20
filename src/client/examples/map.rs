@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Any, Blob, Int64, Map, Universe};
+use engula_client::{Any, Blob, Map, Universe, I64};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,53 +24,31 @@ async fn main() -> Result<()> {
     let (k1, k2) = (vec![1], vec![2]);
 
     {
-        let c = db.collection::<Map<Any>>("Map<Any>");
-        println!("collection {}", c.name());
-        c.set("o", [(k1.clone(), "a".into()), (k2.clone(), "b".into())])
-            .await?;
-        println!("o = {:?}", c.get("o").await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-        c.object("o").set(k1.clone(), "b").await?;
-        println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
+        let c = db.collection::<Map<Any>>("map<any>");
+        println!("{}", c.name());
+        let mut txn = c.object("o").begin();
+        txn.store([(k1.clone(), 1.into()), (k2.clone(), "2".into())]);
+        txn.commit().await?;
         println!("o = {:?}", c.get("o").await?);
     }
 
     {
-        let c = db.collection::<Map<Blob>>("Map<Blob>");
-        println!("collection {}", c.name());
+        let c = db.collection::<Map<I64>>("map<i64>");
+        println!("{}", c.name());
+        c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
+        println!("o = {:?}", c.get("o").await?);
+        println!("o = {:?}", c.object("o").load().await?);
+        println!("o.len = {:?}", c.object("o").len().await?);
+    }
+
+    {
+        let c = db.collection::<Map<Blob>>("map<blob>");
+        println!("{}", c.name());
         c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
             .await?;
         println!("o = {:?}", c.get("o").await?);
+        println!("o = {:?}", c.object("o").load().await?);
         println!("o.len = {:?}", c.object("o").len().await?);
-        c.object("o").set(k1.clone(), k2.clone()).await?;
-        println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
-        println!("o = {:?}", c.get("o").await?);
-    }
-
-    {
-        let c = db.collection::<Map<Int64>>("Map<Int64>");
-        println!("collection {}", c.name());
-        c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
-        println!("o = {:?}", c.get("o").await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-        c.object("o").set(k1.clone(), 2).await?;
-        println!("o[[1]] = {:?}", c.object("o").get(k1.clone()).await?);
-        c.object("o").delete(k1.clone()).await?;
-        println!("o = {:?}", c.get("o").await?);
-    }
-
-    {
-        let c = db.collection::<Map<Int64>>("MapTxn<Int64>");
-        println!("collection {}", c.name());
-        let mut txn = c.object("txn").begin();
-        txn.set(k1.clone(), 1)
-            .set(k2.clone(), 2)
-            .set(vec![3], 3)
-            .delete(k1.clone());
-        txn.commit().await?;
-        println!("txn = {:?}", c.get("txn").await?);
     }
 
     Ok(())

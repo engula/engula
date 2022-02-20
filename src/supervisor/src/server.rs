@@ -15,10 +15,7 @@
 use engula_apis::*;
 use tonic::{Request, Response, Status};
 
-use crate::{
-    error::{Error, Result},
-    supervisor::{Database, Supervisor},
-};
+use crate::{Database, Error, Result, Supervisor};
 
 type TonicResult<T> = std::result::Result<T, Status>;
 

@@ -1,12 +1,11 @@
 [package]
-name = "engula-transactor"
+name = "engula-cooperator"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
 engula-apis = { version = "0.3", path = "../apis" }
-engula-cooperator = { path = "../cooperator" }
 
 prost = "0.9"
 thiserror = "1.0"

@@ -26,23 +26,13 @@ pub enum Error {
 }
 
 impl From<Error> for Status {
-    fn from(err: Error) -> Self {
+    fn from(err: Error) -> Status {
         let (code, message) = match err {
             Error::NotFound(m) => (Code::NotFound, m),
             Error::AlreadyExists(m) => (Code::AlreadyExists, m),
             Error::InvalidArgument => (Code::InvalidArgument, "".to_owned()),
         };
-        Self::new(code, message)
-    }
-}
-
-impl From<engula_cooperator::Error> for Error {
-    fn from(err: engula_cooperator::Error) -> Self {
-        match err {
-            engula_cooperator::Error::NotFound(m) => Self::NotFound(m),
-            engula_cooperator::Error::AlreadyExists(m) => Self::AlreadyExists(m),
-            engula_cooperator::Error::InvalidArgument => Self::InvalidArgument,
-        }
+        Status::new(code, message)
     }
 }
 

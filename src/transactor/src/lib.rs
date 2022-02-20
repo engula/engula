@@ -16,4 +16,8 @@ mod error;
 mod server;
 mod transactor;
 
-pub use self::server::Server;
+pub(crate) use self::transactor::Transactor;
+pub use self::{
+    error::{Error, Result},
+    server::Server,
+};

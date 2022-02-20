@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use engula_apis::*;
 
@@ -46,9 +46,19 @@ impl ObjectValue for Value {
     }
 }
 
+impl ObjectValue for i64 {
+    fn cast_from(v: Value) -> Result<Self> {
+        if let Value::I64Value(v) = v {
+            Ok(v)
+        } else {
+            Err(Error::TypeMismatch)
+        }
+    }
+}
+
 impl ObjectValue for Vec<u8> {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::BlobValue(v)) = v.value {
+        if let Value::BlobValue(v) = v {
             Ok(v)
         } else {
             Err(Error::TypeMismatch)
@@ -58,7 +68,7 @@ impl ObjectValue for Vec<u8> {
 
 impl ObjectValue for String {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::TextValue(v)) = v.value {
+        if let Value::TextValue(v) = v {
             Ok(v)
         } else {
             Err(Error::TypeMismatch)
@@ -66,10 +76,24 @@ impl ObjectValue for String {
     }
 }
 
-impl ObjectValue for i64 {
+impl<K, V> ObjectValue for HashMap<K, V>
+where
+    K: ObjectValue + Ord + Hash,
+    V: ObjectValue,
+{
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::Int64Value(v)) = v.value {
-            Ok(v)
+        if let Value::MappingValue(v) = v {
+            let keys: Result<Vec<K>> = v
+                .keys
+                .into_iter()
+                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(K::cast_from))
+                .collect();
+            let values: Result<Vec<V>> = v
+                .values
+                .into_iter()
+                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(V::cast_from))
+                .collect();
+            Ok(keys?.into_iter().zip(values?).collect())
         } else {
             Err(Error::TypeMismatch)
         }
@@ -78,19 +102,11 @@ impl ObjectValue for i64 {
 
 impl<T: ObjectValue> ObjectValue for Vec<T> {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::SequenceValue(v)) = v.value {
-            v.values.into_iter().map(T::cast_from).collect()
-        } else {
-            Err(Error::TypeMismatch)
-        }
-    }
-}
-
-impl<T: ObjectValue> ObjectValue for HashMap<Vec<u8>, T> {
-    fn cast_from(v: Value) -> Result<Self> {
-        if let Some(value::Value::AssociativeValue(v)) = v.value {
-            let result: Result<Vec<T>> = v.values.into_iter().map(T::cast_from).collect();
-            result.map(|values| v.keys.into_iter().zip(values).collect())
+        if let Value::RepeatedValue(v) = v {
+            v.values
+                .into_iter()
+                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(T::cast_from))
+                .collect()
         } else {
             Err(Error::TypeMismatch)
         }

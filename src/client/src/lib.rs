@@ -31,6 +31,6 @@ pub use self::{
     error::{Error, Result},
     object::{Object, ObjectValue},
     txn::{CollectionTxn, DatabaseTxn, Txn},
-    types::{Blob, Int64, List, Map},
+    types::{Blob, List, Map, I64},
     universe::Universe,
 };

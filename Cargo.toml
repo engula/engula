@@ -1,10 +1,11 @@
 [workspace]
 members = [
-  "src/engula",
   "src/apis",
   "src/client",
+  "src/engula",
   "src/supervisor",
   "src/transactor",
+  "src/cooperator",
   "src/object-engine/proto",
   "src/object-engine/client",
   "src/object-engine/master",

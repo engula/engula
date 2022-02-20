@@ -20,28 +20,28 @@ async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.database("db");
-    let c1 = db.collection::<Any>("c1");
-    let c2 = db.collection::<Any>("c2");
+    let ca = db.collection::<Any>("ca");
+    let cb = db.collection::<Any>("cb");
 
     let txn = db.begin();
     {
-        let mut t = c1.begin_with(txn.clone());
+        let mut t = ca.begin_with(txn.clone());
         t.set("a1", 1);
         t.set("a2", 2);
         t.commit().await?;
     }
     {
-        let mut t = c2.begin_with(txn.clone());
+        let mut t = cb.begin_with(txn.clone());
         t.set("b1", "b1");
         t.set("b2", "b2");
         t.commit().await?;
     }
     txn.commit().await?;
 
-    println!("a1 = {:?}", c1.get("a1").await?);
-    println!("a2 = {:?}", c1.get("a2").await?);
-    println!("b1 = {:?}", c2.get("b1").await?);
-    println!("b2 = {:?}", c2.get("b2").await?);
+    println!("a1 = {:?}", ca.get("a1").await?);
+    println!("a2 = {:?}", ca.get("a2").await?);
+    println!("b1 = {:?}", cb.get("b1").await?);
+    println!("b2 = {:?}", cb.get("b2").await?);
 
     Ok(())
 }
