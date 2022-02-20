@@ -24,13 +24,16 @@ async fn main() -> Result<()> {
 
     co.set("o", 1).await?;
     println!("o = {:?}", co.get("o").await?);
-    co.delete("o").await?;
+    co.set("o", "o").await?;
     println!("o = {:?}", co.get("o").await?);
 
     let mut txn = co.begin();
-    txn.set("a", 1);
-    txn.set("b", 2);
+    txn.delete("o");
+    txn.set("a", "a");
+    txn.set("b", "b");
     txn.commit().await?;
+
+    println!("o = {:?}", co.get("o").await?);
     println!("a = {:?}", co.get("a").await?);
     println!("b = {:?}", co.get("b").await?);
 

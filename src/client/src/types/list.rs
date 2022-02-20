@@ -48,27 +48,25 @@ where
         self.ob.begin().into()
     }
 
-    pub async fn len(self) -> Result<i64> {
+    pub async fn load(self) -> Result<Option<Vec<T::Value>>> {
+        let value = self.ob.load().await?;
+        Vec::cast_from_option(value)
+    }
+
+    pub async fn store(self, value: impl Into<Vec<T::Value>>) -> Result<()> {
+        self.ob.store(value.into()).await
+    }
+
+    pub async fn reset(self) -> Result<()> {
+        self.ob.reset().await
+    }
+
+    pub async fn len(self) -> Result<Option<i64>> {
         self.ob.len().await
     }
 
-    pub async fn get(self, index: i64) -> Result<Option<T::Value>> {
-        let value = self.ob.get(index).await?;
-        T::Value::cast_from_option(value)
-    }
-
-    pub async fn set(self, index: i64, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.set(index, value.into()).await
-    }
-
-    pub async fn pop_back(self) -> Result<Option<T::Value>> {
-        let value = self.ob.pop_back().await?;
-        T::Value::cast_from_option(value)
-    }
-
-    pub async fn pop_front(self) -> Result<Option<T::Value>> {
-        let value = self.ob.pop_front().await?;
-        T::Value::cast_from_option(value)
+    pub async fn append(self, value: impl Into<Vec<T::Value>>) -> Result<()> {
+        self.ob.append(value.into()).await
     }
 
     pub async fn push_back(self, value: impl Into<T::Value>) -> Result<()> {
@@ -94,9 +92,23 @@ impl<T> From<Txn> for ListTxn<T> {
     }
 }
 
-impl<T: Object> ListTxn<T> {
-    pub fn set(&mut self, index: i64, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.set(index, value.into());
+impl<T> ListTxn<T>
+where
+    T: Object,
+    Vec<T::Value>: ObjectValue,
+{
+    pub fn store(&mut self, value: impl Into<Vec<T::Value>>) -> &mut Self {
+        self.txn.store(value.into());
+        self
+    }
+
+    pub fn reset(&mut self) -> &mut Self {
+        self.txn.reset();
+        self
+    }
+
+    pub fn append(&mut self, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.append(value.into());
         self
     }
 

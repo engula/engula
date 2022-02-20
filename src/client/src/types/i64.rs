@@ -12,24 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, Result, Txn};
+use crate::{Any, Object, ObjectValue, Result, Txn};
 
-pub struct Int64(Any);
+pub struct I64(Any);
 
-impl Object for Int64 {
-    type Txn = Int64Txn;
+impl Object for I64 {
+    type Txn = I64Txn;
     type Value = i64;
 }
 
-impl From<Any> for Int64 {
+impl From<Any> for I64 {
     fn from(ob: Any) -> Self {
         Self(ob)
     }
 }
 
-impl Int64 {
-    pub fn begin(self) -> Int64Txn {
+impl I64 {
+    pub fn begin(self) -> I64Txn {
         self.0.begin().into()
+    }
+
+    pub async fn load(self) -> Result<Option<i64>> {
+        let value = self.0.load().await?;
+        i64::cast_from_option(value)
+    }
+
+    pub async fn store(self, value: i64) -> Result<()> {
+        self.0.store(value).await
+    }
+
+    pub async fn reset(self) -> Result<()> {
+        self.0.reset().await
     }
 
     pub async fn add(self, value: i64) -> Result<()> {
@@ -41,15 +54,25 @@ impl Int64 {
     }
 }
 
-pub struct Int64Txn(Txn);
+pub struct I64Txn(Txn);
 
-impl From<Txn> for Int64Txn {
+impl From<Txn> for I64Txn {
     fn from(txn: Txn) -> Self {
         Self(txn)
     }
 }
 
-impl Int64Txn {
+impl I64Txn {
+    pub fn store(&mut self, value: i64) -> &mut Self {
+        self.0.store(value);
+        self
+    }
+
+    pub fn reset(&mut self) -> &mut Self {
+        self.0.reset();
+        self
+    }
+
     pub fn add(&mut self, value: i64) -> &mut Self {
         self.0.add(value);
         self

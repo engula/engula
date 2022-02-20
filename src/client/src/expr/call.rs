@@ -14,74 +14,53 @@
 
 use engula_apis::*;
 
-pub fn call() -> Builder {
-    Builder::default()
+macro_rules! call_expr {
+    ($func:expr) => {
+        CallExpr {
+            func: $func as i32,
+            args: vec![],
+        }
+    };
+    ($func:expr, $arg0:expr) => {
+        CallExpr {
+            func: $func as i32,
+            args: vec![$arg0],
+        }
+    };
 }
 
-#[derive(Default)]
-pub struct Builder(CallExpr);
+pub fn load() -> CallExpr {
+    call_expr!(Function::Load)
+}
 
-impl Builder {
-    pub fn add(mut self, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Add as i32;
-        self.0.args = vec![value.into()];
-        self.0
-    }
+pub fn store(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Store, value.into().into())
+}
 
-    pub fn sub(mut self, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Sub as i32;
-        self.0.args = vec![value.into()];
-        self.0
-    }
+pub fn reset() -> CallExpr {
+    call_expr!(Function::Reset)
+}
 
-    pub fn len(mut self) -> CallExpr {
-        self.0.func = Function::Len as i32;
-        self.0
-    }
+pub fn add(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Add, value.into().into())
+}
 
-    pub fn append(mut self, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Append as i32;
-        self.0.args = vec![value.into()];
-        self.0
-    }
+pub fn sub(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Sub, value.into().into())
+}
 
-    pub fn pop_back(mut self) -> CallExpr {
-        self.0.func = Function::PopBack as i32;
-        self.0
-    }
+pub fn len() -> CallExpr {
+    call_expr!(Function::Len)
+}
 
-    pub fn pop_front(mut self) -> CallExpr {
-        self.0.func = Function::PopFront as i32;
-        self.0
-    }
+pub fn append(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::Append, value.into().into())
+}
 
-    pub fn push_back(mut self, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::PushBack as i32;
-        self.0.args = vec![value.into()];
-        self.0
-    }
+pub fn push_back(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::PushBack, value.into().into())
+}
 
-    pub fn push_front(mut self, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::PushFront as i32;
-        self.0.args = vec![value.into()];
-        self.0
-    }
-
-    pub fn get(mut self, index: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Get as i32;
-        self.0.args = vec![index.into()];
-        self.0
-    }
-
-    pub fn set(mut self, index: impl Into<Value>, value: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Set as i32;
-        self.0.args = vec![index.into(), value.into()];
-        self.0
-    }
-
-    pub fn delete(mut self, index: impl Into<Value>) -> CallExpr {
-        self.0.func = Function::Delete as i32;
-        self.0.args = vec![index.into()];
-        self.0
-    }
+pub fn push_front(value: impl Into<Value>) -> CallExpr {
+    call_expr!(Function::PushFront, value.into().into())
 }

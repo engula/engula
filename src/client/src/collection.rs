@@ -17,8 +17,8 @@ use std::{marker::PhantomData, sync::Arc};
 use engula_apis::*;
 
 use crate::{
-    expr::simple, txn_client::TxnClient, universe_client::UniverseClient, Any, CollectionTxn,
-    DatabaseTxn, Error, Object, ObjectValue, Result,
+    txn_client::TxnClient, universe_client::UniverseClient, Any, CollectionTxn, DatabaseTxn, Error,
+    Object, ObjectValue, Result,
 };
 
 #[derive(Clone)]
@@ -75,23 +75,25 @@ impl<T: Object> Collection<T> {
     pub fn object(&self, id: impl Into<Vec<u8>>) -> T {
         self.inner.new_object(id.into())
     }
+}
+
+// Provides common interfaces for convenience.
+impl<T: Object> Collection<T> {
+    fn any(&self, id: impl Into<Vec<u8>>) -> Any {
+        self.inner.new_object(id.into())
+    }
 
     pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
-        let expr = simple::get(id);
-        let result = self.inner.collection_expr_call(expr).await?;
-        T::Value::cast_from_option(result.value)
+        let value = self.any(id).load().await?;
+        T::Value::cast_from_option(value)
     }
 
     pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        let expr = simple::set(id, value.into());
-        self.inner.collection_expr_call(expr).await?;
-        Ok(())
+        self.any(id).store(value.into()).await
     }
 
     pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        let expr = simple::delete(id);
-        self.inner.collection_expr_call(expr).await?;
-        Ok(())
+        self.any(id).reset().await
     }
 }
 
@@ -119,13 +121,6 @@ impl CollectionInner {
             self.txn_client.clone(),
         )
         .into()
-    }
-
-    async fn collection_expr_call(&self, expr: Expr) -> Result<ExprResult> {
-        self.txn_client
-            .clone()
-            .collection_expr(self.dbname.clone(), self.coname.clone(), expr)
-            .await
     }
 
     async fn collection_union_call(

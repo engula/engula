@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, Result, Txn};
+use crate::{Any, Object, ObjectValue, Result, Txn};
 
 pub struct Blob(Any);
 
@@ -32,7 +32,20 @@ impl Blob {
         self.0.begin().into()
     }
 
-    pub async fn len(self) -> Result<i64> {
+    pub async fn load(self) -> Result<Option<Vec<u8>>> {
+        let value = self.0.load().await?;
+        Vec::cast_from_option(value)
+    }
+
+    pub async fn store(self, value: impl Into<Vec<u8>>) -> Result<()> {
+        self.0.store(value.into()).await
+    }
+
+    pub async fn reset(self) -> Result<()> {
+        self.0.reset().await
+    }
+
+    pub async fn len(self) -> Result<Option<i64>> {
         self.0.len().await
     }
 
@@ -50,8 +63,18 @@ impl From<Txn> for BlobTxn {
 }
 
 impl BlobTxn {
-    pub fn append(&mut self, value: Vec<u8>) -> &mut Self {
-        self.0.append(value);
+    pub fn store(&mut self, value: impl Into<Vec<u8>>) -> &mut Self {
+        self.0.store(value.into());
+        self
+    }
+
+    pub fn reset(&mut self) -> &mut Self {
+        self.0.reset();
+        self
+    }
+
+    pub fn append(&mut self, value: impl Into<Vec<u8>>) -> &mut Self {
+        self.0.append(value.into());
         self
     }
 

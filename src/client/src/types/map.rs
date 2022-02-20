@@ -48,21 +48,21 @@ where
         self.ob.begin().into()
     }
 
-    pub async fn len(self) -> Result<i64> {
+    pub async fn load(self) -> Result<Option<HashMap<Vec<u8>, T::Value>>> {
+        let value = self.ob.load().await?;
+        HashMap::cast_from_option(value)
+    }
+
+    pub async fn store(self, value: impl Into<HashMap<Vec<u8>, T::Value>>) -> Result<()> {
+        self.ob.store(value.into()).await
+    }
+
+    pub async fn reset(self) -> Result<()> {
+        self.ob.reset().await
+    }
+
+    pub async fn len(self) -> Result<Option<i64>> {
         self.ob.len().await
-    }
-
-    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
-        let value = self.ob.get(key.into()).await?;
-        T::Value::cast_from_option(value)
-    }
-
-    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.set(key.into(), value.into()).await
-    }
-
-    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
-        self.ob.delete(key.into()).await
     }
 }
 
@@ -81,13 +81,13 @@ impl<T> From<Txn> for MapTxn<T> {
 }
 
 impl<T: Object> MapTxn<T> {
-    pub fn set(&mut self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.set(key.into(), value.into());
+    pub fn store(&mut self, value: impl Into<HashMap<Vec<u8>, T::Value>>) -> &mut Self {
+        self.txn.store(value.into());
         self
     }
 
-    pub fn delete(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
-        self.txn.delete(key.into());
+    pub fn reset(&mut self) -> &mut Self {
+        self.txn.reset();
         self
     }
 
