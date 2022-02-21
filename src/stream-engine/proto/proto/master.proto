@@ -137,7 +137,7 @@ enum SegmentState {
 
 message SegmentDesc {
   uint64 stream_id = 1;
-  uint64 epoch = 2;
+  uint32 epoch = 2;
   SegmentState state = 3;
   repeated string copy_set = 4;
 }
@@ -208,7 +208,7 @@ enum ObserverState {
 message HeartbeatRequest {
   string tenant = 1;
   uint64 stream_id = 2;
-  uint32 segment_epoch = 3;
+  uint32 writer_epoch = 3;
   Role role = 4;
 
   string observer_id = 5;
