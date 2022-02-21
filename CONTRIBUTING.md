@@ -22,7 +22,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Clone the repository:
 
 ```sh
-git clone https://github.com/engula/engula.git
+git clone --recursive https://github.com/engula/engula.git
 cd engula
 ```
 
