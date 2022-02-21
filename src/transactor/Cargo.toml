@@ -10,6 +10,5 @@ engula-cooperator = { path = "../cooperator" }
 engula-supervisor = { path = "../supervisor" }
 
 prost = "0.9"
-thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }
 tonic = "0.6"

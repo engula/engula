@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use engula_apis::*;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
 
 use crate::{apis::*, Database, Error, Result, Universe};
 
@@ -53,7 +53,9 @@ impl Server {
         &self,
         req: DatabaseRequestUnion,
     ) -> Result<DatabaseResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidArgument)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::invalid_argument("missing database request"))?;
         let res = match req {
             database_request_union::Request::ListDatabases(_) => {
                 todo!();
@@ -82,7 +84,9 @@ impl Server {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let desc = req.desc.ok_or(Error::InvalidArgument)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::invalid_argument("missing database description"))?;
         let desc = self.uv.create_database(desc).await?;
         Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
@@ -111,7 +115,9 @@ impl Server {
         db: Database,
         req: CollectionRequestUnion,
     ) -> Result<CollectionResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidArgument)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::invalid_argument("missing collection request"))?;
         let res = match req {
             collection_request_union::Request::ListCollections(_) => {
                 todo!();
@@ -141,7 +147,9 @@ impl Server {
         db: Database,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let desc = req.desc.ok_or(Error::InvalidArgument)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::invalid_argument("missing collection description"))?;
         let desc = db.create_collection(desc).await?;
         Ok(CreateCollectionResponse { desc: Some(desc) })
     }
@@ -157,14 +165,9 @@ impl Server {
     }
 }
 
-type TonicResult<T> = std::result::Result<T, Status>;
-
 #[tonic::async_trait]
 impl supervisor_server::Supervisor for Server {
-    async fn database(
-        &self,
-        req: Request<DatabaseRequest>,
-    ) -> TonicResult<Response<DatabaseResponse>> {
+    async fn database(&self, req: Request<DatabaseRequest>) -> Result<Response<DatabaseResponse>> {
         let req = req.into_inner();
         let res = self.handle_database(req).await?;
         Ok(Response::new(res))
@@ -173,7 +176,7 @@ impl supervisor_server::Supervisor for Server {
     async fn collection(
         &self,
         req: Request<CollectionRequest>,
-    ) -> TonicResult<Response<CollectionResponse>> {
+    ) -> Result<Response<CollectionResponse>> {
         let req = req.into_inner();
         let res = self.handle_collection(req).await?;
         Ok(Response::new(res))

@@ -46,13 +46,13 @@ impl Universe {
             .databases
             .get(name)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("database {}", name)))
+            .ok_or_else(|| Error::not_found(format!("database {}", name)))
     }
 
     pub async fn create_database(&self, mut desc: DatabaseDesc) -> Result<DatabaseDesc> {
         let mut inner = self.inner.lock().await;
         if inner.databases.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("database {}", desc.name)));
+            return Err(Error::already_exists(format!("database {}", desc.name)));
         }
         desc.id = inner.next_id;
         inner.next_id += 1;
@@ -95,13 +95,13 @@ impl Database {
             .collections
             .get(name)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("collection {}", name)))
+            .ok_or_else(|| Error::not_found(format!("collection {}", name)))
     }
 
     pub async fn create_collection(&self, mut desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut inner = self.inner.lock().await;
         if inner.collections.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("collection {}", desc.name)));
+            return Err(Error::already_exists(format!("collection {}", desc.name)));
         }
         desc.id = inner.next_id;
         inner.next_id += 1;

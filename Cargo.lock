@@ -132,7 +132,6 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
- "engula-supervisor",
  "engula-transactor",
  "object-engine-master",
  "prost",
@@ -179,7 +178,6 @@ version = "0.1.0"
 dependencies = [
  "engula-apis",
  "prost",
- "thiserror",
  "tokio",
  "tonic",
  "tonic-build",
@@ -193,7 +191,6 @@ dependencies = [
  "engula-cooperator",
  "engula-supervisor",
  "prost",
- "thiserror",
  "tokio",
  "tonic",
 ]

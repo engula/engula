@@ -15,11 +15,12 @@
 mod apis;
 mod error;
 mod server;
+mod supervisor;
 mod universe;
 
 pub(crate) use self::universe::{Database, Universe};
 pub use self::{
-    apis::supervisor_server::Supervisor,
     error::{Error, Result},
     server::Server,
+    supervisor::Supervisor,
 };
