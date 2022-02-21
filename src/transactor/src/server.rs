@@ -14,26 +14,21 @@
 
 use engula_apis::*;
 use engula_cooperator::Cooperator;
-use engula_supervisor::Server as Supervisor;
+use engula_supervisor::Supervisor;
 use tonic::{Request, Response, Status};
 
-type TonicResult<T> = std::result::Result<T, Status>;
-
-pub struct Transactor {
-    supervisor: Supervisor,
+pub struct Server<S> {
+    supervisor: S,
     cooperator: Cooperator,
 }
 
-impl Default for Transactor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Transactor {
-    pub fn new() -> Self {
+impl<S> Server<S>
+where
+    S: Supervisor,
+{
+    pub fn new(supervisor: S) -> Self {
         Self {
-            supervisor: Supervisor::new(),
+            supervisor,
             cooperator: Cooperator::new(),
         }
     }
@@ -43,8 +38,13 @@ impl Transactor {
     }
 }
 
+type TonicResult<T> = std::result::Result<T, Status>;
+
 #[tonic::async_trait]
-impl engula_server::Engula for Transactor {
+impl<S> engula_server::Engula for Server<S>
+where
+    S: Supervisor,
+{
     async fn txn(&self, req: Request<TxnRequest>) -> TonicResult<Response<TxnResponse>> {
         let req = req.into_inner();
         let res = self.cooperator.execute(req).await?;

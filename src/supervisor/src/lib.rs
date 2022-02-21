@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod apis;
 mod error;
 mod server;
-mod supervisor;
+mod universe;
 
-pub(crate) use self::supervisor::{Database, Supervisor};
+pub(crate) use self::universe::{Database, Universe};
 pub use self::{
+    apis::supervisor_server::Supervisor,
     error::{Error, Result},
     server::Server,
 };

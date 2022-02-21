@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod server;
-
-pub use self::{
-    error::{Error, Result},
-    server::Server,
-};
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::configure()
+        .extern_path(".engula.v1", "::engula_apis")
+        .compile(
+            &["engula/supervisor/v1/supervisor.proto"],
+            &[".", "../apis"],
+        )?;
+    Ok(())
+}
