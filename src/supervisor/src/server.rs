@@ -36,14 +36,7 @@ impl Server {
         }
     }
 
-    pub fn into_service(self) -> universe_server::UniverseServer<Self> {
-        universe_server::UniverseServer::new(self)
-    }
-}
-
-#[tonic::async_trait]
-impl universe_server::Universe for Server {
-    async fn database(
+    pub async fn database(
         &self,
         req: Request<DatabaseRequest>,
     ) -> TonicResult<Response<DatabaseResponse>> {
@@ -52,7 +45,7 @@ impl universe_server::Universe for Server {
         Ok(Response::new(res))
     }
 
-    async fn collection(
+    pub async fn collection(
         &self,
         req: Request<CollectionRequest>,
     ) -> TonicResult<Response<CollectionResponse>> {

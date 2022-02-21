@@ -14,17 +14,17 @@
 
 use engula_apis::*;
 
-use crate::{expr::call, txn_client::TxnClient, ObjectValue, Result, Txn};
+use crate::{expr::call, Client, ObjectValue, Result, Txn};
 
 pub struct Any {
     id: Vec<u8>,
     dbname: String,
     coname: String,
-    client: TxnClient,
+    client: Client,
 }
 
 impl Any {
-    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
+    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: Client) -> Self {
         Self {
             id,
             dbname,
@@ -81,7 +81,7 @@ impl Any {
         Ok(())
     }
 
-    async fn call(mut self, call: CallExpr) -> Result<Option<Value>> {
+    async fn call(self, call: CallExpr) -> Result<Option<Value>> {
         let expr = Expr {
             from: Some(expr::From::Id(self.id)),
             call: Some(call),

@@ -37,7 +37,7 @@ impl Cooperator {
         }
     }
 
-    pub async fn execute(&self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
+    pub async fn execute(&self, req: TxnRequest) -> Result<TxnResponse> {
         self.inner.lock().await.execute(req)
     }
 }
@@ -53,8 +53,8 @@ impl Universe {
         }
     }
 
-    fn execute(&mut self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
-        let mut res = BatchTxnResponse::default();
+    fn execute(&mut self, req: TxnRequest) -> Result<TxnResponse> {
+        let mut res = TxnResponse::default();
         for dbreq in req.requests {
             // Assumes that all databases exist for now.
             let db = self

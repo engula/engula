@@ -24,7 +24,7 @@ macro_rules! call_expr {
     ($func:expr, $arg0:expr) => {
         CallExpr {
             func: $func as i32,
-            args: vec![$arg0],
+            args: vec![$arg0.into()],
         }
     };
 }
@@ -34,7 +34,7 @@ pub fn load() -> CallExpr {
 }
 
 pub fn store(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::Store, value.into().into())
+    call_expr!(Function::Store, value.into())
 }
 
 pub fn reset() -> CallExpr {
@@ -42,11 +42,11 @@ pub fn reset() -> CallExpr {
 }
 
 pub fn add(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::Add, value.into().into())
+    call_expr!(Function::Add, value.into())
 }
 
 pub fn sub(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::Sub, value.into().into())
+    call_expr!(Function::Sub, value.into())
 }
 
 pub fn len() -> CallExpr {
@@ -54,13 +54,13 @@ pub fn len() -> CallExpr {
 }
 
 pub fn append(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::Append, value.into().into())
+    call_expr!(Function::Append, value.into())
 }
 
 pub fn push_back(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::PushBack, value.into().into())
+    call_expr!(Function::PushBack, value.into())
 }
 
 pub fn push_front(value: impl Into<Value>) -> CallExpr {
-    call_expr!(Function::PushFront, value.into().into())
+    call_expr!(Function::PushFront, value.into())
 }

@@ -13,24 +13,26 @@
 // limitations under the License.
 
 mod any;
+mod client;
 mod collection;
 mod database;
 mod error;
 mod expr;
 mod object;
 mod txn;
-mod txn_client;
 mod types;
 mod universe;
-mod universe_client;
 
 pub use self::{
     any::Any,
     collection::Collection,
     database::Database,
     error::{Error, Result},
-    object::{Object, ObjectValue},
     txn::{CollectionTxn, DatabaseTxn, Txn},
     types::{Blob, List, Map, I64},
     universe::Universe,
+};
+pub(crate) use self::{
+    client::Client,
+    object::{Object, ObjectValue},
 };
