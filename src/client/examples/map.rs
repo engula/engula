@@ -19,12 +19,12 @@ use engula_client::{Any, Blob, Map, Universe, I64};
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("db");
+    let db = uv.create_database("map").await?;
 
     let (k1, k2) = (vec![1], vec![2]);
 
     {
-        let c = db.collection::<Map<Any>>("map<any>");
+        let c = db.create_collection::<Map<Any>>("map<any>").await?;
         println!("{}", c.name());
         let mut txn = c.object("o").begin();
         txn.store([(k1.clone(), 1.into()), (k2.clone(), "2".into())]);
@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<Map<I64>>("map<i64>");
+        let c = db.create_collection::<Map<I64>>("map<i64>").await?;
         println!("{}", c.name());
         c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
         println!("o = {:?}", c.get("o").await?);
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<Map<Blob>>("map<blob>");
+        let c = db.create_collection::<Map<Blob>>("map<blob>").await?;
         println!("{}", c.name());
         c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
             .await?;

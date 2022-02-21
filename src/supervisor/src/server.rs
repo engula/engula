@@ -17,6 +17,7 @@ use tonic::{Request, Response};
 
 use crate::{apis::*, Database, Error, Result, Universe};
 
+#[derive(Clone)]
 pub struct Server {
     uv: Universe,
 }

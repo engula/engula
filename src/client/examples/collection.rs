@@ -19,8 +19,8 @@ use engula_client::{Any, Universe};
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("db");
-    let co = db.collection::<Any>("co");
+    let db = uv.create_database("co").await?;
+    let co = db.create_collection::<Any>("co").await?;
 
     co.set("o", 1).await?;
     println!("o = {:?}", co.get("o").await?);

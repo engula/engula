@@ -17,6 +17,7 @@ use tonic::Request;
 
 use crate::{apis::supervisor_server::Supervisor as _, Error, Result, Server};
 
+#[derive(Clone)]
 pub struct Supervisor {
     server: Server,
 }

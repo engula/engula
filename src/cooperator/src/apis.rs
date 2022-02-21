@@ -12,18 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod apis;
-mod args;
-mod collection;
-mod cooperator;
-mod database;
-mod error;
-mod server;
-mod universe;
+#![allow(clippy::all)]
 
-pub(crate) use self::{args::Args, collection::Collection, database::Database, universe::Universe};
-pub use self::{
-    cooperator::Cooperator,
-    error::{Error, Result},
-    server::Server,
-};
+tonic::include_proto!("engula.cooperator.v1");
