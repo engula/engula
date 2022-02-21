@@ -20,18 +20,18 @@ use tokio::sync::Mutex;
 use crate::error::{Error, Result};
 
 #[derive(Clone)]
-pub struct Supervisor {
-    inner: Arc<Mutex<Inner>>,
+pub struct Universe {
+    inner: Arc<Mutex<UniverseInner>>,
 }
 
-struct Inner {
+struct UniverseInner {
     next_id: u64,
     databases: HashMap<String, Database>,
 }
 
-impl Supervisor {
+impl Universe {
     pub fn new() -> Self {
-        let inner = Inner {
+        let inner = UniverseInner {
             next_id: 1,
             databases: HashMap::new(),
         };
@@ -70,7 +70,7 @@ pub struct Database {
 struct DatabaseInner {
     desc: DatabaseDesc,
     next_id: u64,
-    collections: HashMap<String, CollectionDesc>,
+    collections: HashMap<String, Collection>,
 }
 
 impl Database {
@@ -89,7 +89,7 @@ impl Database {
         self.inner.lock().await.desc.clone()
     }
 
-    pub async fn collection(&self, name: &str) -> Result<CollectionDesc> {
+    pub async fn collection(&self, name: &str) -> Result<Collection> {
         let inner = self.inner.lock().await;
         inner
             .collections
@@ -106,7 +106,30 @@ impl Database {
         desc.id = inner.next_id;
         inner.next_id += 1;
         desc.parent_id = inner.desc.id;
-        inner.collections.insert(desc.name.clone(), desc.clone());
+        let co = Collection::new(desc.clone());
+        inner.collections.insert(desc.name.clone(), co);
         Ok(desc)
+    }
+}
+
+#[derive(Clone)]
+pub struct Collection {
+    inner: Arc<Mutex<CollectionInner>>,
+}
+
+struct CollectionInner {
+    desc: CollectionDesc,
+}
+
+impl Collection {
+    fn new(desc: CollectionDesc) -> Self {
+        let inner = CollectionInner { desc };
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    pub async fn desc(&self) -> CollectionDesc {
+        self.inner.lock().await.desc.clone()
     }
 }

@@ -15,6 +15,7 @@ categories = [
 description = "The Engula command line tool."
 
 [dependencies]
+engula-supervisor = { path = "../supervisor" }
 engula-transactor = { path = "../transactor" }
 object-engine-master = { path = "../object-engine/master" }
 stream-engine-master = { path = "../stream-engine/master" }

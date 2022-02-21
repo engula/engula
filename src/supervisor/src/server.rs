@@ -15,12 +15,10 @@
 use engula_apis::*;
 use tonic::{Request, Response, Status};
 
-use crate::{Database, Error, Result, Supervisor};
-
-type TonicResult<T> = std::result::Result<T, Status>;
+use crate::{apis::*, Database, Error, Result, Universe};
 
 pub struct Server {
-    inner: Supervisor,
+    uv: Universe,
 }
 
 impl Default for Server {
@@ -32,31 +30,17 @@ impl Default for Server {
 impl Server {
     pub fn new() -> Self {
         Self {
-            inner: Supervisor::new(),
+            uv: Universe::new(),
         }
     }
 
-    pub async fn database(
-        &self,
-        req: Request<DatabaseRequest>,
-    ) -> TonicResult<Response<DatabaseResponse>> {
-        let req = req.into_inner();
-        let res = self.handle_database(req).await?;
-        Ok(Response::new(res))
-    }
-
-    pub async fn collection(
-        &self,
-        req: Request<CollectionRequest>,
-    ) -> TonicResult<Response<CollectionResponse>> {
-        let req = req.into_inner();
-        let res = self.handle_collection(req).await?;
-        Ok(Response::new(res))
+    pub fn into_service(self) -> supervisor_server::SupervisorServer<Self> {
+        supervisor_server::SupervisorServer::new(self)
     }
 }
 
 impl Server {
-    pub(crate) async fn handle_database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
+    async fn handle_database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
         let mut res = DatabaseResponse::default();
         for req_union in req.requests {
             let res_union = self.handle_database_union(req_union).await?;
@@ -65,23 +49,23 @@ impl Server {
         Ok(res)
     }
 
-    pub(crate) async fn handle_database_union(
+    async fn handle_database_union(
         &self,
         req: DatabaseRequestUnion,
     ) -> Result<DatabaseResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req.request.ok_or(Error::InvalidArgument)?;
         let res = match req {
-            database_request_union::Request::ListDatabases(_req) => {
+            database_request_union::Request::ListDatabases(_) => {
                 todo!();
             }
             database_request_union::Request::CreateDatabase(req) => {
                 let res = self.handle_create_database(req).await?;
                 database_response_union::Response::CreateDatabase(res)
             }
-            database_request_union::Request::UpdateDatabase(_req) => {
+            database_request_union::Request::UpdateDatabase(_) => {
                 todo!();
             }
-            database_request_union::Request::DeleteDatabase(_req) => {
+            database_request_union::Request::DeleteDatabase(_) => {
                 todo!();
             }
             database_request_union::Request::DescribeDatabase(req) => {
@@ -98,8 +82,8 @@ impl Server {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
-        let desc = self.inner.create_database(desc).await?;
+        let desc = req.desc.ok_or(Error::InvalidArgument)?;
+        let desc = self.uv.create_database(desc).await?;
         Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
 
@@ -107,15 +91,13 @@ impl Server {
         &self,
         req: DescribeDatabaseRequest,
     ) -> Result<DescribeDatabaseResponse> {
-        let db = self.inner.database(&req.name).await?;
+        let db = self.uv.database(&req.name).await?;
         let desc = db.desc().await;
         Ok(DescribeDatabaseResponse { desc: Some(desc) })
     }
-}
 
-impl Server {
     async fn handle_collection(&self, req: CollectionRequest) -> Result<CollectionResponse> {
-        let db = self.inner.database(&req.dbname).await?;
+        let db = self.uv.database(&req.dbname).await?;
         let mut res = CollectionResponse::default();
         for req_union in req.requests {
             let res_union = self.handle_collection_union(db.clone(), req_union).await?;
@@ -129,19 +111,19 @@ impl Server {
         db: Database,
         req: CollectionRequestUnion,
     ) -> Result<CollectionResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req.request.ok_or(Error::InvalidArgument)?;
         let res = match req {
-            collection_request_union::Request::ListCollections(_req) => {
+            collection_request_union::Request::ListCollections(_) => {
                 todo!();
             }
             collection_request_union::Request::CreateCollection(req) => {
                 let res = self.handle_create_collection(db, req).await?;
                 collection_response_union::Response::CreateCollection(res)
             }
-            collection_request_union::Request::UpdateCollection(_req) => {
+            collection_request_union::Request::UpdateCollection(_) => {
                 todo!();
             }
-            collection_request_union::Request::DeleteCollection(_req) => {
+            collection_request_union::Request::DeleteCollection(_) => {
                 todo!();
             }
             collection_request_union::Request::DescribeCollection(req) => {
@@ -159,7 +141,7 @@ impl Server {
         db: Database,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = req.desc.ok_or(Error::InvalidArgument)?;
         let desc = db.create_collection(desc).await?;
         Ok(CreateCollectionResponse { desc: Some(desc) })
     }
@@ -169,7 +151,31 @@ impl Server {
         db: Database,
         req: DescribeCollectionRequest,
     ) -> Result<DescribeCollectionResponse> {
-        let desc = db.collection(&req.name).await?;
+        let co = db.collection(&req.name).await?;
+        let desc = co.desc().await;
         Ok(DescribeCollectionResponse { desc: Some(desc) })
+    }
+}
+
+type TonicResult<T> = std::result::Result<T, Status>;
+
+#[tonic::async_trait]
+impl supervisor_server::Supervisor for Server {
+    async fn database(
+        &self,
+        req: Request<DatabaseRequest>,
+    ) -> TonicResult<Response<DatabaseResponse>> {
+        let req = req.into_inner();
+        let res = self.handle_database(req).await?;
+        Ok(Response::new(res))
+    }
+
+    async fn collection(
+        &self,
+        req: Request<CollectionRequest>,
+    ) -> TonicResult<Response<CollectionResponse>> {
+        let req = req.into_inner();
+        let res = self.handle_collection(req).await?;
+        Ok(Response::new(res))
     }
 }

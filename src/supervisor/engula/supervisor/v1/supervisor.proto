@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package engula.supervisor.v1;
+
+import "engula/v1/database.proto";
+import "engula/v1/collection.proto";
+
+service Supervisor {
+  rpc database(engula.v1.DatabaseRequest) returns (engula.v1.DatabaseResponse) {
+  }
+
+  rpc collection(engula.v1.CollectionRequest)
+      returns (engula.v1.CollectionResponse) {}
+}
