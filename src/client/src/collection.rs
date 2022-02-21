@@ -52,7 +52,7 @@ impl<T: Object> Collection<T> {
         } else {
             None
         };
-        desc.ok_or(Error::InvalidResponse)
+        desc.ok_or_else(|| Error::internal("missing collection description"))
     }
 
     pub fn begin(&self) -> CollectionTxn<T> {

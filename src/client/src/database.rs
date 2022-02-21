@@ -42,7 +42,7 @@ impl Database {
         } else {
             None
         };
-        desc.ok_or(Error::InvalidResponse)
+        desc.ok_or_else(|| Error::internal("missing database description"))
     }
 
     pub fn begin(&self) -> DatabaseTxn {

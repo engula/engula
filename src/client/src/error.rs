@@ -12,42 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
-use tonic::{Code, Status};
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0} is not found")]
-    NotFound(String),
-    #[error("{0} already exists")]
-    AlreadyExists(String),
-    #[error("invalid argument: {0}")]
-    InvalidArgument(String),
-    #[error("invalid response")]
-    InvalidResponse,
-    #[error("invalid operation: {0}")]
-    InvalidOperation(String),
-    #[error("type mismatch")]
-    TypeMismatch,
-    #[error("unknown error: {0}")]
-    Unknown(String),
-}
-
-impl Error {
-    pub fn unknown(s: impl ToString) -> Self {
-        Self::Unknown(s.to_string())
-    }
-}
-
-impl From<Status> for Error {
-    fn from(s: Status) -> Self {
-        match s.code() {
-            Code::NotFound => Error::NotFound(s.message().to_owned()),
-            Code::AlreadyExists => Error::AlreadyExists(s.message().to_owned()),
-            Code::InvalidArgument => Error::InvalidArgument(s.message().to_owned()),
-            _ => Error::Unknown(s.to_string()),
-        }
-    }
-}
-
+pub type Error = tonic::Status;
 pub type Result<T> = std::result::Result<T, Error>;
