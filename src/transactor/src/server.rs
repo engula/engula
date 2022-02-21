@@ -15,20 +15,25 @@
 use engula_apis::*;
 use engula_cooperator::Cooperator;
 use engula_supervisor::Supervisor;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
 
-pub struct Server<S> {
-    supervisor: S,
+use crate::Result;
+
+pub struct Server {
+    supervisor: Supervisor,
     cooperator: Cooperator,
 }
 
-impl<S> Server<S>
-where
-    S: Supervisor,
-{
-    pub fn new(supervisor: S) -> Self {
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Server {
+    pub fn new() -> Self {
         Self {
-            supervisor,
+            supervisor: Supervisor::new(),
             cooperator: Cooperator::new(),
         }
     }
@@ -38,30 +43,26 @@ where
     }
 }
 
-type TonicResult<T> = std::result::Result<T, Status>;
-
 #[tonic::async_trait]
-impl<S> engula_server::Engula for Server<S>
-where
-    S: Supervisor,
-{
-    async fn txn(&self, req: Request<TxnRequest>) -> TonicResult<Response<TxnResponse>> {
+impl engula_server::Engula for Server {
+    async fn txn(&self, req: Request<TxnRequest>) -> Result<Response<TxnResponse>> {
         let req = req.into_inner();
         let res = self.cooperator.execute(req).await?;
         Ok(Response::new(res))
     }
 
-    async fn database(
-        &self,
-        req: Request<DatabaseRequest>,
-    ) -> TonicResult<Response<DatabaseResponse>> {
-        self.supervisor.database(req).await
+    async fn database(&self, req: Request<DatabaseRequest>) -> Result<Response<DatabaseResponse>> {
+        let req = req.into_inner();
+        let res = self.supervisor.database(req).await?;
+        Ok(Response::new(res))
     }
 
     async fn collection(
         &self,
         req: Request<CollectionRequest>,
-    ) -> TonicResult<Response<CollectionResponse>> {
-        self.supervisor.collection(req).await
+    ) -> Result<Response<CollectionResponse>> {
+        let req = req.into_inner();
+        let res = self.supervisor.collection(req).await?;
+        Ok(Response::new(res))
     }
 }

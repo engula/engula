@@ -12,28 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
-use tonic::{Code, Status};
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0} is not found")]
-    NotFound(String),
-    #[error("{0} already exists")]
-    AlreadyExists(String),
-    #[error("invalid argument")]
-    InvalidArgument,
-}
-
-impl From<Error> for Status {
-    fn from(err: Error) -> Status {
-        let (code, message) = match err {
-            Error::NotFound(m) => (Code::NotFound, m),
-            Error::AlreadyExists(m) => (Code::AlreadyExists, m),
-            Error::InvalidArgument => (Code::InvalidArgument, "".to_owned()),
-        };
-        Status::new(code, message)
-    }
-}
-
+pub type Error = tonic::Status;
 pub type Result<T> = std::result::Result<T, Error>;
