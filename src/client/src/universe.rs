@@ -15,9 +15,8 @@
 use std::sync::Arc;
 
 use engula_apis::*;
-use tonic::transport::Endpoint;
 
-use crate::{txn_client::TxnClient, universe_client::UniverseClient, Database, Error, Result};
+use crate::{Client, Database, Result};
 
 #[derive(Clone)]
 pub struct Universe {
@@ -26,17 +25,8 @@ pub struct Universe {
 
 impl Universe {
     pub async fn connect(url: impl Into<String>) -> Result<Universe> {
-        // Assumes that users run a standalone server for now so that we can reuse the
-        // same url here.
-        let chan = Endpoint::new(url.into())
-            .map_err(Error::unknown)?
-            .connect()
-            .await
-            .map_err(Error::unknown)?;
-        let inner = UniverseInner {
-            txn_client: TxnClient::new(chan.clone()),
-            universe_client: UniverseClient::new(chan),
-        };
+        let client = Client::connect(url.into()).await?;
+        let inner = UniverseInner { client };
         Ok(Universe {
             inner: Arc::new(inner),
         })
@@ -68,19 +58,18 @@ impl Universe {
 }
 
 struct UniverseInner {
-    txn_client: TxnClient,
-    universe_client: UniverseClient,
+    client: Client,
 }
 
 impl UniverseInner {
     fn new_database(&self, name: String) -> Database {
-        Database::new(name, self.txn_client.clone(), self.universe_client.clone())
+        Database::new(name, self.client.clone())
     }
 
     async fn database_union_call(
         &self,
         req: database_request_union::Request,
     ) -> Result<database_response_union::Response> {
-        self.universe_client.clone().database_union(req).await
+        self.client.database_union(req).await
     }
 }

@@ -19,7 +19,7 @@ use std::{
 
 use engula_apis::*;
 
-use crate::{expr::call, txn_client::TxnClient, Error, Object, Result};
+use crate::{expr::call, Client, Error, Object, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -33,11 +33,11 @@ struct DatabaseTxnInner {
 
 struct DatabaseTxnHandle {
     dbname: String,
-    client: TxnClient,
+    client: Client,
 }
 
 impl DatabaseTxn {
-    pub(crate) fn new(dbname: String, client: TxnClient) -> Self {
+    pub(crate) fn new(dbname: String, client: Client) -> Self {
         let inner = DatabaseTxnInner {
             handle: DatabaseTxnHandle { dbname, client },
             requests: Mutex::new(Vec::new()),
@@ -54,12 +54,12 @@ impl DatabaseTxn {
     pub async fn commit(self) -> Result<()> {
         let inner = Arc::try_unwrap(self.inner)
             .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
-        let mut handle = inner.handle;
+        let handle = inner.handle;
         let req = DatabaseTxnRequest {
             name: handle.dbname,
             requests: inner.requests.into_inner().unwrap(),
         };
-        handle.client.database(req).await?;
+        handle.client.database_txn(req).await?;
         Ok(())
     }
 }
@@ -80,11 +80,11 @@ struct CollectionTxnInner {
 struct CollectionTxnHandle {
     dbname: String,
     coname: String,
-    client: TxnClient,
+    client: Client,
 }
 
 impl<T: Object> CollectionTxn<T> {
-    pub(crate) fn new(dbname: String, coname: String, client: TxnClient) -> Self {
+    pub(crate) fn new(dbname: String, coname: String, client: Client) -> Self {
         let handle = DatabaseTxnHandle { dbname, client };
         Self::new_inner(coname, Some(handle), None)
     }
@@ -125,8 +125,8 @@ impl<T: Object> CollectionTxn<T> {
             name: inner.coname,
             exprs: inner.exprs.into_inner().unwrap(),
         };
-        if let Some(mut handle) = inner.handle {
-            handle.client.collection(handle.dbname, req).await?;
+        if let Some(handle) = inner.handle {
+            handle.client.collection_txn(handle.dbname, req).await?;
         } else {
             let parent = inner.parent.unwrap();
             parent.requests.lock().unwrap().push(req);
@@ -157,7 +157,7 @@ pub struct Txn {
 }
 
 impl Txn {
-    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: TxnClient) -> Self {
+    pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: Client) -> Self {
         let handle = CollectionTxnHandle {
             dbname,
             coname,
@@ -229,7 +229,7 @@ impl Txn {
     }
 
     pub async fn commit(mut self) -> Result<()> {
-        if let Some(mut handle) = self.handle.take() {
+        if let Some(handle) = self.handle.take() {
             let expr = std::mem::take(&mut self.expr);
             handle
                 .client

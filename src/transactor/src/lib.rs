@@ -13,11 +13,9 @@
 // limitations under the License.
 
 mod error;
-mod server;
 mod transactor;
 
-pub(crate) use self::transactor::Transactor;
 pub use self::{
     error::{Error, Result},
-    server::Server,
+    transactor::Transactor,
 };

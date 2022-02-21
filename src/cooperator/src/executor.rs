@@ -46,10 +46,7 @@ impl Executor {
                 let value = if res.values.len() <= 1 {
                     res.values.pop().unwrap_or_default()
                 } else {
-                    let value = RepeatedValue { values: res.values };
-                    ValueUnion {
-                        value: Some(Value::RepeatedValue(value)),
-                    }
+                    RepeatedValue { values: res.values }.into()
                 };
                 result.values.push(value);
             }
@@ -185,7 +182,7 @@ impl Executor {
     fn handle_member_call(
         &mut self,
         id: &[u8],
-        at: &ValueUnion,
+        at: &GenericValue,
         call: CallExpr,
         result: &mut ExprResult,
     ) -> Result<()> {
@@ -282,11 +279,11 @@ impl Executor {
 }
 
 struct Args {
-    args: VecDeque<ValueUnion>,
+    args: VecDeque<GenericValue>,
 }
 
 impl Args {
-    fn new(args: Vec<ValueUnion>) -> Self {
+    fn new(args: Vec<GenericValue>) -> Self {
         Self { args: args.into() }
     }
 

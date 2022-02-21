@@ -50,12 +50,10 @@ struct StartCommand {
 impl StartCommand {
     async fn run(self) -> Result<()> {
         let addr = self.addr.parse()?;
-        let supervisor = engula_supervisor::Server::new().into_service();
-        let transactor = engula_transactor::Server::new().into_service();
+        let transactor = engula_transactor::Transactor::new().into_service();
         let object_engine_master = object_engine_master::Server::new().into_service();
         let stream_engine_master = stream_engine_master::Server::new().into_service();
         tonic::transport::Server::builder()
-            .add_service(supervisor)
             .add_service(transactor)
             .add_service(object_engine_master)
             .add_service(stream_engine_master)

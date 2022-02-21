@@ -16,10 +16,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use engula_apis::*;
 
-use crate::{
-    txn_client::TxnClient, universe_client::UniverseClient, Any, CollectionTxn, DatabaseTxn, Error,
-    Object, ObjectValue, Result,
-};
+use crate::{Any, Client, CollectionTxn, DatabaseTxn, Error, Object, ObjectValue, Result};
 
 #[derive(Clone)]
 pub struct Collection<T> {
@@ -28,17 +25,11 @@ pub struct Collection<T> {
 }
 
 impl<T: Object> Collection<T> {
-    pub(crate) fn new(
-        name: String,
-        dbname: String,
-        txn_client: TxnClient,
-        universe_client: UniverseClient,
-    ) -> Self {
+    pub(crate) fn new(coname: String, dbname: String, client: Client) -> Self {
         let inner = CollectionInner {
             dbname,
-            coname: name,
-            txn_client,
-            universe_client,
+            coname,
+            client,
         };
         Self {
             inner: Arc::new(inner),
@@ -100,8 +91,7 @@ impl<T: Object> Collection<T> {
 pub struct CollectionInner {
     dbname: String,
     coname: String,
-    txn_client: TxnClient,
-    universe_client: UniverseClient,
+    client: Client,
 }
 
 impl CollectionInner {
@@ -109,7 +99,7 @@ impl CollectionInner {
         CollectionTxn::new(
             self.dbname.clone(),
             self.coname.clone(),
-            self.txn_client.clone(),
+            self.client.clone(),
         )
     }
 
@@ -118,7 +108,7 @@ impl CollectionInner {
             id,
             self.dbname.clone(),
             self.coname.clone(),
-            self.txn_client.clone(),
+            self.client.clone(),
         )
         .into()
     }
@@ -127,9 +117,6 @@ impl CollectionInner {
         &self,
         req: collection_request_union::Request,
     ) -> Result<collection_response_union::Response> {
-        self.universe_client
-            .clone()
-            .collection_union(self.dbname.clone(), req)
-            .await
+        self.client.collection_union(self.dbname.clone(), req).await
     }
 }

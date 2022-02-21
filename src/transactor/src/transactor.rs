@@ -14,23 +14,54 @@
 
 use engula_apis::*;
 use engula_cooperator::Cooperator;
+use engula_supervisor::Server as Supervisor;
+use tonic::{Request, Response, Status};
 
-use crate::Result;
+type TonicResult<T> = std::result::Result<T, Status>;
 
-#[derive(Clone)]
 pub struct Transactor {
-    coop: Cooperator,
+    supervisor: Supervisor,
+    cooperator: Cooperator,
+}
+
+impl Default for Transactor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Transactor {
     pub fn new() -> Self {
         Self {
-            coop: Cooperator::new(),
+            supervisor: Supervisor::new(),
+            cooperator: Cooperator::new(),
         }
     }
 
-    pub async fn execute(&self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
-        let res = self.coop.execute(req).await?;
-        Ok(res)
+    pub fn into_service(self) -> engula_server::EngulaServer<Self> {
+        engula_server::EngulaServer::new(self)
+    }
+}
+
+#[tonic::async_trait]
+impl engula_server::Engula for Transactor {
+    async fn txn(&self, req: Request<TxnRequest>) -> TonicResult<Response<TxnResponse>> {
+        let req = req.into_inner();
+        let res = self.cooperator.execute(req).await?;
+        Ok(Response::new(res))
+    }
+
+    async fn database(
+        &self,
+        req: Request<DatabaseRequest>,
+    ) -> TonicResult<Response<DatabaseResponse>> {
+        self.supervisor.database(req).await
+    }
+
+    async fn collection(
+        &self,
+        req: Request<CollectionRequest>,
+    ) -> TonicResult<Response<CollectionResponse>> {
+        self.supervisor.collection(req).await
     }
 }

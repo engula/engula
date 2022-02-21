@@ -16,10 +16,7 @@ use std::sync::Arc;
 
 use engula_apis::*;
 
-use crate::{
-    txn_client::TxnClient, universe_client::UniverseClient, Collection, DatabaseTxn, Error, Object,
-    Result,
-};
+use crate::{Client, Collection, DatabaseTxn, Error, Object, Result};
 
 #[derive(Clone)]
 pub struct Database {
@@ -27,12 +24,8 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(name: String, txn_client: TxnClient, universe_client: UniverseClient) -> Self {
-        let inner = DatabaseInner {
-            name,
-            txn_client,
-            universe_client,
-        };
+    pub fn new(name: String, client: Client) -> Self {
+        let inner = DatabaseInner { name, client };
         Self {
             inner: Arc::new(inner),
         }
@@ -83,38 +76,29 @@ impl Database {
 
 struct DatabaseInner {
     name: String,
-    txn_client: TxnClient,
-    universe_client: UniverseClient,
+    client: Client,
 }
 
 impl DatabaseInner {
     fn new_txn(&self) -> DatabaseTxn {
-        DatabaseTxn::new(self.name.clone(), self.txn_client.clone())
+        DatabaseTxn::new(self.name.clone(), self.client.clone())
     }
 
     fn new_collection<T: Object>(&self, name: String) -> Collection<T> {
-        Collection::new(
-            name,
-            self.name.clone(),
-            self.txn_client.clone(),
-            self.universe_client.clone(),
-        )
+        Collection::new(name, self.name.clone(), self.client.clone())
     }
 
     async fn database_union_call(
         &self,
         req: database_request_union::Request,
     ) -> Result<database_response_union::Response> {
-        self.universe_client.clone().database_union(req).await
+        self.client.database_union(req).await
     }
 
     async fn collection_union_call(
         &self,
         req: collection_request_union::Request,
     ) -> Result<collection_response_union::Response> {
-        self.universe_client
-            .clone()
-            .collection_union(self.name.clone(), req)
-            .await
+        self.client.collection_union(self.name.clone(), req).await
     }
 }
