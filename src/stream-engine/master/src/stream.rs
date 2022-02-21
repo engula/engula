@@ -106,7 +106,7 @@ impl SwitchPolicy {
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
-pub(crate) struct ObserverMeta {
+pub struct ObserverMeta {
     pub observer_id: String,
 
     /// Which stream is observing?
@@ -229,20 +229,13 @@ impl StreamInfo {
         &self,
         config: &Config,
         stores: &[String],
-        observer_id: &str,
-        observer_state: ObserverState,
+        observer_meta: ObserverMeta,
         role: Role,
-        writer_epoch: u32,
-        acked_seq: u64,
     ) -> Result<Vec<Command>> {
+        let writer_epoch = observer_meta.epoch;
+        let observer_id = observer_meta.observer_id.clone();
         let observer_info = ObserverInfo {
-            meta: ObserverMeta {
-                stream_name: self.stream_name.clone(),
-                observer_id: observer_id.into(),
-                state: observer_state,
-                epoch: writer_epoch,
-                acked_seq: acked_seq.into(),
-            },
+            meta: observer_meta,
             role,
             last_heartbeat: Instant::now(),
         };
@@ -250,15 +243,15 @@ impl StreamInfo {
         let mut stream = self.inner.lock().await;
         let stream = stream.deref_mut();
         if stream.epoch < writer_epoch && stream.epoch != INITIAL_EPOCH {
-            // return Err(Status::aborted("too large epoch"));
+            return Err(Error::InvalidRequest("epoch".into()));
         }
 
-        stream.observe(observer_id, observer_info);
+        stream.observe(&observer_id, observer_info);
 
         let applicant = PolicyApplicant {
             epoch: writer_epoch,
             role,
-            observer_id: observer_id.into(),
+            observer_id,
             stores,
         };
         Ok(apply_strategies(self.stream_id, config, &applicant, stream))

@@ -18,7 +18,7 @@ use tonic::{Request, Response, Status};
 use crate::{
     error::{Error, Result},
     master::{Config, Master, Tenant},
-    stream::StreamInfo,
+    stream::{ObserverMeta, StreamInfo},
 };
 
 type TonicResult<T> = std::result::Result<T, Status>;
@@ -78,15 +78,20 @@ impl master_server::Master for Server {
         let tenant = self.master.tenant(&req.tenant).await?;
         let stream = tenant.stream(req.stream_id).await?;
 
+        let observer_meta = ObserverMeta {
+            stream_name: stream.stream_name.clone(),
+            observer_id: req.observer_id,
+            state: req.observer_state.into(),
+            epoch: req.writer_epoch,
+            acked_seq: req.acked_seq.into(),
+        };
+
         let commands = stream
             .heartbeat(
                 &self.master.config,
                 &self.master.stores,
-                &req.observer_id,
-                req.observer_state.into(),
+                observer_meta,
                 req.role.into(),
-                req.writer_epoch,
-                req.acked_seq,
             )
             .await?;
 
@@ -111,7 +116,9 @@ impl Server {
         type Request = tenant_request_union::Request;
         type Response = tenant_response_union::Response;
 
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::InvalidRequest("tenant request".into()))?;
         let res = match req {
             Request::ListTenants(_req) => {
                 todo!();
@@ -137,7 +144,9 @@ impl Server {
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::InvalidRequest("tenant request".into()))?;
         let desc = self.master.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
     }
@@ -171,7 +180,9 @@ impl Server {
         type Request = stream_request_union::Request;
         type Response = stream_response_union::Response;
 
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::InvalidRequest("stream request".into()))?;
         let res = match req {
             Request::ListStreams(_req) => {
                 todo!();
@@ -201,7 +212,9 @@ impl Server {
         tenant: Tenant,
         req: CreateStreamRequest,
     ) -> Result<CreateStreamResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::InvalidRequest("stream request".into()))?;
         let desc = tenant.create_stream(desc).await?;
         Ok(CreateStreamResponse { desc: Some(desc) })
     }
@@ -240,7 +253,10 @@ impl Server {
         type Request = segment_request_union::Request;
         type Response = segment_response_union::Response;
 
-        let res = match req.request.ok_or(Error::InvalidRequest)? {
+        let res = match req
+            .request
+            .ok_or_else(|| Error::InvalidRequest("segment request".into()))?
+        {
             Request::GetSegment(req) => {
                 Response::GetSegment(self.handle_get_segment(stream, segment_epoch, req).await?)
             }

@@ -21,8 +21,8 @@ pub enum Error {
     NotFound(String),
     #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid request")]
-    InvalidRequest,
+    #[error("invalid {0}")]
+    InvalidRequest(String),
 }
 
 impl From<Error> for Status {
@@ -30,7 +30,7 @@ impl From<Error> for Status {
         let (code, message) = match err {
             Error::NotFound(m) => (Code::NotFound, m),
             Error::AlreadyExists(m) => (Code::AlreadyExists, m),
-            Error::InvalidRequest => (Code::InvalidArgument, "invalid request".to_owned()),
+            Error::InvalidRequest(m) => (Code::InvalidArgument, m),
         };
         Status::new(code, message)
     }
