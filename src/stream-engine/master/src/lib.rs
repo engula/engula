@@ -15,5 +15,8 @@
 mod error;
 mod master;
 mod server;
+mod stream;
+
+use error::{Error, Result};
 
 pub use self::server::Server;

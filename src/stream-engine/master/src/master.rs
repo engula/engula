@@ -12,15 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use stream_engine_proto::*;
 use tokio::sync::Mutex;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    stream::StreamInfo,
+};
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// How many tick before an observer's lease is timeout.
+    ///
+    /// Default: 3
+    pub heartbeat_timeout_tick: u64,
+
+    /// Observer heartbeat intervals in ms.
+    ///
+    /// Default: 500ms
+    pub heartbeat_interval_ms: u64,
+}
+
+impl Config {
+    pub fn heartbeat_timeout(&self) -> Duration {
+        Duration::from_millis(self.heartbeat_interval_ms * self.heartbeat_timeout_tick)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            heartbeat_timeout_tick: 3,
+            heartbeat_interval_ms: 500,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Master {
+    pub config: Config,
+
+    // FIXME(w41ter)
+    // This is a temporary implementation, which needs to be
+    // supported on orchestrator.
+    pub stores: Vec<String>,
     inner: Arc<Mutex<MasterInner>>,
 }
 
@@ -30,12 +67,14 @@ struct MasterInner {
 }
 
 impl Master {
-    pub fn new() -> Self {
+    pub fn new(config: Config, stores: Vec<String>) -> Self {
         let inner = MasterInner {
             next_id: 1,
             tenants: HashMap::new(),
         };
         Self {
+            config,
+            stores,
             inner: Arc::new(Mutex::new(inner)),
         }
     }
@@ -70,7 +109,7 @@ pub struct Tenant {
 struct TenantInner {
     desc: TenantDesc,
     next_id: u64,
-    streams: HashMap<String, StreamDesc>,
+    streams: HashMap<u64, StreamInfo>,
 }
 
 impl Tenant {
@@ -89,24 +128,42 @@ impl Tenant {
         self.inner.lock().await.desc.clone()
     }
 
-    pub async fn stream(&self, name: &str) -> Result<StreamDesc> {
+    pub async fn stream_desc(&self, name: &str) -> Result<StreamDesc> {
         let inner = self.inner.lock().await;
         inner
             .streams
-            .get(name)
-            .cloned()
+            .values()
+            .find(|info| info.stream_name == name)
+            .map(StreamInfo::stream_desc)
             .ok_or_else(|| Error::NotFound(format!("stream {}", name)))
+    }
+
+    pub async fn stream(&self, stream_id: u64) -> Result<StreamInfo> {
+        let inner = self.inner.lock().await;
+        inner
+            .streams
+            .get(&stream_id)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("stream id {}", stream_id)))
     }
 
     pub async fn create_stream(&self, mut desc: StreamDesc) -> Result<StreamDesc> {
         let mut inner = self.inner.lock().await;
-        if inner.streams.contains_key(&desc.name) {
+        if inner
+            .streams
+            .values()
+            .any(|info| info.stream_name == desc.name)
+        {
             return Err(Error::AlreadyExists(format!("stream {}", desc.name)));
         }
+
         desc.id = inner.next_id;
         inner.next_id += 1;
         desc.parent_id = inner.desc.id;
-        inner.streams.insert(desc.name.clone(), desc.clone());
+        inner.streams.insert(
+            desc.id,
+            StreamInfo::new(desc.parent_id, desc.id, desc.name.clone()),
+        );
         Ok(desc)
     }
 }

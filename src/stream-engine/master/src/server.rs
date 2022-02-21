@@ -17,7 +17,8 @@ use tonic::{Request, Response, Status};
 
 use crate::{
     error::{Error, Result},
-    master::{Master, Tenant},
+    master::{Config, Master, Tenant},
+    stream::StreamInfo,
 };
 
 type TonicResult<T> = std::result::Result<T, Status>;
@@ -34,8 +35,10 @@ impl Default for Server {
 
 impl Server {
     pub fn new() -> Self {
+        // FIXME(w41ter) add store addresses.
+        let stores = vec![];
         Self {
-            master: Master::new(),
+            master: Master::new(Config::default(), stores),
         }
     }
 
@@ -69,9 +72,25 @@ impl master_server::Master for Server {
 
     async fn heartbeat(
         &self,
-        _req: Request<HeartbeatRequest>,
+        req: Request<HeartbeatRequest>,
     ) -> TonicResult<Response<HeartbeatResponse>> {
-        todo!()
+        let req = req.into_inner();
+        let tenant = self.master.tenant(&req.tenant).await?;
+        let stream = tenant.stream(req.stream_id).await?;
+
+        let commands = stream
+            .heartbeat(
+                &self.master.config,
+                &self.master.stores,
+                &req.observer_id,
+                req.observer_state.into(),
+                req.role.into(),
+                req.writer_epoch,
+                req.acked_seq,
+            )
+            .await?;
+
+        Ok(Response::new(HeartbeatResponse { commands }))
     }
 }
 
@@ -89,24 +108,27 @@ impl Server {
         &self,
         req: TenantRequestUnion,
     ) -> Result<TenantResponseUnion> {
+        type Request = tenant_request_union::Request;
+        type Response = tenant_response_union::Response;
+
         let req = req.request.ok_or(Error::InvalidRequest)?;
         let res = match req {
-            tenant_request_union::Request::ListTenants(_req) => {
+            Request::ListTenants(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::CreateTenant(req) => {
+            Request::CreateTenant(req) => {
                 let res = self.handle_create_tenant(req).await?;
-                tenant_response_union::Response::CreateTenant(res)
+                Response::CreateTenant(res)
             }
-            tenant_request_union::Request::UpdateTenant(_req) => {
+            Request::UpdateTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DeleteTenant(_req) => {
+            Request::DeleteTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DescribeTenant(req) => {
+            Request::DescribeTenant(req) => {
                 let res = self.handle_describe_tenant(req).await?;
-                tenant_response_union::Response::DescribeTenant(res)
+                Response::DescribeTenant(res)
             }
         };
         Ok(TenantResponseUnion {
@@ -146,24 +168,27 @@ impl Server {
         tenant: Tenant,
         req: StreamRequestUnion,
     ) -> Result<StreamResponseUnion> {
+        type Request = stream_request_union::Request;
+        type Response = stream_response_union::Response;
+
         let req = req.request.ok_or(Error::InvalidRequest)?;
         let res = match req {
-            stream_request_union::Request::ListStreams(_req) => {
+            Request::ListStreams(_req) => {
                 todo!();
             }
-            stream_request_union::Request::CreateStream(req) => {
+            Request::CreateStream(req) => {
                 let res = self.handle_create_stream(tenant, req).await?;
-                stream_response_union::Response::CreateStream(res)
+                Response::CreateStream(res)
             }
-            stream_request_union::Request::UpdateStream(_req) => {
+            Request::UpdateStream(_req) => {
                 todo!();
             }
-            stream_request_union::Request::DeleteStream(_req) => {
+            Request::DeleteStream(_req) => {
                 todo!();
             }
-            stream_request_union::Request::DescribeStream(req) => {
+            Request::DescribeStream(req) => {
                 let res = self.handle_describe_stream(tenant, req).await?;
-                stream_response_union::Response::DescribeStream(res)
+                Response::DescribeStream(res)
             }
         };
         Ok(StreamResponseUnion {
@@ -186,7 +211,7 @@ impl Server {
         tenant: Tenant,
         req: DescribeStreamRequest,
     ) -> Result<DescribeStreamResponse> {
-        let desc = tenant.stream(&req.name).await?;
+        let desc = tenant.stream_desc(&req.name).await?;
         Ok(DescribeStreamResponse { desc: Some(desc) })
     }
 }
@@ -194,9 +219,13 @@ impl Server {
 impl Server {
     async fn handle_segment(&self, req: SegmentRequest) -> Result<SegmentResponse> {
         let tenant = self.master.tenant(&req.tenant).await?;
+        let stream = tenant.stream(req.stream_id).await?;
+
         let mut res = SegmentResponse::default();
         for req_union in req.requests {
-            let res_union = self.handle_segment_union(tenant.clone(), req_union).await?;
+            let res_union = self
+                .handle_segment_union(&stream, req.segment_epoch, req_union)
+                .await?;
             res.responses.push(res_union);
         }
         Ok(res)
@@ -204,16 +233,19 @@ impl Server {
 
     async fn handle_segment_union(
         &self,
-        _tenant: Tenant,
+        stream: &StreamInfo,
+        segment_epoch: u32,
         req: SegmentRequestUnion,
     ) -> Result<SegmentResponseUnion> {
         type Request = segment_request_union::Request;
         type Response = segment_response_union::Response;
 
         let res = match req.request.ok_or(Error::InvalidRequest)? {
-            Request::GetSegment(req) => Response::GetSegment(self.handle_get_segment(req).await?),
+            Request::GetSegment(req) => {
+                Response::GetSegment(self.handle_get_segment(stream, segment_epoch, req).await?)
+            }
             Request::SealSegment(req) => {
-                Response::SealSegment(self.handle_seal_segment(req).await?)
+                Response::SealSegment(self.handle_seal_segment(stream, segment_epoch, req).await?)
             }
         };
         Ok(SegmentResponseUnion {
@@ -221,11 +253,25 @@ impl Server {
         })
     }
 
-    async fn handle_get_segment(&self, _req: GetSegmentRequest) -> Result<GetSegmentResponse> {
-        todo!()
+    async fn handle_get_segment(
+        &self,
+        stream: &StreamInfo,
+        segment_epoch: u32,
+        _: GetSegmentRequest,
+    ) -> Result<GetSegmentResponse> {
+        let segment = stream.segment(segment_epoch).await?;
+        Ok(GetSegmentResponse {
+            desc: Some(segment),
+        })
     }
 
-    async fn handle_seal_segment(&self, _req: SealSegmentRequest) -> Result<SealSegmentResponse> {
-        todo!()
+    async fn handle_seal_segment(
+        &self,
+        stream: &StreamInfo,
+        segment_epoch: u32,
+        _: SealSegmentRequest,
+    ) -> Result<SealSegmentResponse> {
+        stream.seal(segment_epoch).await?;
+        Ok(SealSegmentResponse {})
     }
 }
