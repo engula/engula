@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         println!("{}", c0.name());
         let mut t = c0.begin_with(txn.clone());
         t.object("a").add(1).sub(2);
-        t.object("b").append(vec![1u8, 2u8]);
+        t.object("b").store(vec![1u8, 2u8]);
         t.commit().await?;
     }
     {

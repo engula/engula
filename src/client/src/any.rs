@@ -18,6 +18,7 @@ use crate::{expr::call, Client, ObjectValue, Result, Txn};
 
 pub struct Any {
     id: Vec<u8>,
+    index: Option<Value>,
     dbname: String,
     coname: String,
     client: Client,
@@ -27,10 +28,16 @@ impl Any {
     pub(crate) fn new(id: Vec<u8>, dbname: String, coname: String, client: Client) -> Self {
         Self {
             id,
+            index: None,
             dbname,
             coname,
             client,
         }
+    }
+
+    pub(crate) fn index(mut self, index: impl Into<Value>) -> Self {
+        self.index = Some(index.into());
+        self
     }
 
     pub fn begin(self) -> Txn {
@@ -66,27 +73,36 @@ impl Any {
         i64::cast_from_option(value)
     }
 
-    pub async fn append(self, value: impl Into<Value>) -> Result<()> {
+    pub(crate) async fn append(self, value: impl Into<Value>) -> Result<()> {
         self.call(call::append(value)).await?;
         Ok(())
     }
 
-    pub async fn push_back(self, value: impl Into<Value>) -> Result<()> {
+    pub(crate) async fn push_back(self, value: impl Into<Value>) -> Result<()> {
         self.call(call::push_back(value)).await?;
         Ok(())
     }
 
-    pub async fn push_front(self, value: impl Into<Value>) -> Result<()> {
+    pub(crate) async fn push_front(self, value: impl Into<Value>) -> Result<()> {
         self.call(call::push_front(value)).await?;
         Ok(())
     }
 
     async fn call(self, call: CallExpr) -> Result<Option<Value>> {
-        let expr = Expr {
+        let mut expr = Expr {
             from: Some(expr::From::Id(self.id)),
-            call: Some(call),
             ..Default::default()
         };
+        if let Some(index) = self.index {
+            let subexpr = Expr {
+                from: Some(expr::From::Index(index.into())),
+                call: Some(call),
+                ..Default::default()
+            };
+            expr.subexprs.push(subexpr);
+        } else {
+            expr.call = Some(call);
+        }
         let mut result = self
             .client
             .collection_expr(self.dbname, self.coname, expr)

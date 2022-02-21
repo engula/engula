@@ -51,7 +51,7 @@ impl ObjectValue for i64 {
         if let Value::I64Value(v) = v {
             Ok(v)
         } else {
-            Err(Error::TypeMismatch)
+            Err(Error::invalid_argument(format!("{:?} to i64", v)))
         }
     }
 }
@@ -61,7 +61,7 @@ impl ObjectValue for Vec<u8> {
         if let Value::BlobValue(v) = v {
             Ok(v)
         } else {
-            Err(Error::TypeMismatch)
+            Err(Error::invalid_argument(format!("{:?} to Vec<u8>", v)))
         }
     }
 }
@@ -71,7 +71,7 @@ impl ObjectValue for String {
         if let Value::TextValue(v) = v {
             Ok(v)
         } else {
-            Err(Error::TypeMismatch)
+            Err(Error::invalid_argument(format!("{:?} to String", v,)))
         }
     }
 }
@@ -86,16 +86,24 @@ where
             let keys: Result<Vec<K>> = v
                 .keys
                 .into_iter()
-                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(K::cast_from))
+                .map(|x| {
+                    x.value
+                        .ok_or_else(|| Error::invalid_argument("missing value"))
+                        .and_then(K::cast_from)
+                })
                 .collect();
             let values: Result<Vec<V>> = v
                 .values
                 .into_iter()
-                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(V::cast_from))
+                .map(|x| {
+                    x.value
+                        .ok_or_else(|| Error::invalid_argument("missing value"))
+                        .and_then(V::cast_from)
+                })
                 .collect();
             Ok(keys?.into_iter().zip(values?).collect())
         } else {
-            Err(Error::TypeMismatch)
+            Err(Error::invalid_argument(format!("{:?} to Map", v,)))
         }
     }
 }
@@ -105,10 +113,14 @@ impl<T: ObjectValue> ObjectValue for Vec<T> {
         if let Value::RepeatedValue(v) = v {
             v.values
                 .into_iter()
-                .map(|x| x.value.ok_or(Error::TypeMismatch).and_then(T::cast_from))
+                .map(|x| {
+                    x.value
+                        .ok_or_else(|| Error::invalid_argument("missing value"))
+                        .and_then(T::cast_from)
+                })
                 .collect()
         } else {
-            Err(Error::TypeMismatch)
+            Err(Error::invalid_argument(format!("{:?} to Vec", v,)))
         }
     }
 }

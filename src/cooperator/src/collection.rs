@@ -65,32 +65,28 @@ impl Inner {
         if let Some(call) = expr.call {
             self.handle_object_call(&id, call, &mut result)?;
         } else {
-            for expr in expr.subexprs {
-                let mut res = self.handle_object_expr(&id, expr)?;
-                let value = if res.values.len() <= 1 {
-                    res.values.pop().unwrap_or_default()
-                } else {
-                    RepeatedValue { values: res.values }.into()
-                };
-                result.values.push(value);
-            }
+            let mut res = self.handle_object_exprs(&id, expr.subexprs)?;
+            let value = if res.values.len() <= 1 {
+                res.values.pop().unwrap_or_default()
+            } else {
+                RepeatedValue { values: res.values }.into()
+            };
+            result.values.push(value);
         }
         Ok(result)
     }
 
-    fn handle_object_expr(&mut self, id: &[u8], expr: Expr) -> Result<ExprResult> {
+    fn handle_object_exprs(&mut self, id: &[u8], exprs: Vec<Expr>) -> Result<ExprResult> {
         let mut result = ExprResult::default();
-        if let Some(call) = expr.call {
-            self.handle_object_call(id, call, &mut result)?;
-        } else if let Some(expr::From::Index(at)) = expr.from {
-            for expr in expr.subexprs {
-                let call = expr
-                    .call
-                    .ok_or_else(|| Error::invalid_argument("missing call expr"))?;
-                self.handle_member_call(id, &at, call, &mut result)?;
+        for expr in exprs {
+            let call = expr
+                .call
+                .ok_or_else(|| Error::invalid_argument("missing call expr"))?;
+            if let Some(expr::From::Index(index)) = expr.from {
+                self.handle_member_call(id, call, index, &mut result)?;
+            } else {
+                self.handle_object_call(id, call, &mut result)?;
             }
-        } else {
-            return Err(Error::invalid_argument("invalid expression"));
         }
         Ok(result)
     }
@@ -209,8 +205,8 @@ impl Inner {
     fn handle_member_call(
         &mut self,
         id: &[u8],
-        at: &GenericValue,
         call: CallExpr,
+        index: GenericValue,
         result: &mut ExprResult,
     ) -> Result<()> {
         let func = Function::from_i32(call.func)
@@ -222,15 +218,17 @@ impl Inner {
                 if let Some(value) = self.read_cache.get(id) {
                     match value {
                         Value::MappingValue(v) => {
-                            if let Some(index) = v.keys.iter().position(|x| x == at) {
-                                result.values.push(v.values[index].clone());
+                            if let Some(pos) = v.keys.iter().position(|x| x == &index) {
+                                result.values.push(v.values[pos].clone());
                             }
                         }
                         Value::RepeatedValue(v) => {
-                            if let Some(Value::I64Value(index)) = at.value {
-                                let index = index as usize;
-                                if index < v.values.len() {
-                                    result.values.push(v.values[index].clone());
+                            if let Some(Value::I64Value(mut pos)) = index.value {
+                                // TODO: do more checks here
+                                let len = v.values.len() as i64;
+                                pos += len;
+                                if pos >= 0 && pos < len {
+                                    result.values.push(v.values[pos as usize].clone());
                                 } else {
                                     return Err(Error::out_of_range("index out of range"));
                                 }
@@ -245,18 +243,19 @@ impl Inner {
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
                         Value::MappingValue(v) => {
-                            if let Some(index) = v.keys.iter().position(|x| x == at) {
-                                v.values[index] = operand.into();
+                            if let Some(pos) = v.keys.iter().position(|x| x == &index) {
+                                v.values[pos] = operand.into();
                             } else {
-                                v.keys.push(at.to_owned());
+                                v.keys.push(index);
                                 v.values.push(operand.into());
                             }
                         }
                         Value::RepeatedValue(v) => {
-                            if let Some(Value::I64Value(index)) = at.value {
-                                let index = index as usize;
-                                if index < v.values.len() {
-                                    v.values[index] = operand.into();
+                            if let Some(Value::I64Value(mut pos)) = index.value {
+                                let len = v.values.len() as i64;
+                                pos += len;
+                                if pos >= 0 && pos < len {
+                                    v.values[pos as usize] = operand.into();
                                 } else {
                                     return Err(Error::out_of_range("index out of range"));
                                 }
@@ -265,10 +264,10 @@ impl Inner {
                         _ => return Err(Error::invalid_argument("require container object")),
                     }
                 } else {
-                    match at.value {
+                    match index.value {
                         Some(Value::BlobValue(_)) => {
                             let value = MappingValue {
-                                keys: vec![at.to_owned()],
+                                keys: vec![index],
                                 values: vec![operand.into()],
                             };
                             self.read_cache.insert(id.to_owned(), value.into());
@@ -281,16 +280,17 @@ impl Inner {
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
                         Value::MappingValue(v) => {
-                            if let Some(index) = v.keys.iter().position(|x| x == at) {
-                                v.keys.remove(index);
-                                v.values.remove(index);
+                            if let Some(pos) = v.keys.iter().position(|x| x == &index) {
+                                v.keys.remove(pos);
+                                v.values.remove(pos);
                             }
                         }
                         Value::RepeatedValue(v) => {
-                            if let Some(Value::I64Value(index)) = at.value {
-                                let index = index as usize;
-                                if index < v.values.len() {
-                                    v.values.remove(index);
+                            if let Some(Value::I64Value(mut pos)) = index.value {
+                                let len = v.values.len() as i64;
+                                pos += len;
+                                if pos >= 0 && pos < len {
+                                    v.values.remove(pos as usize);
                                 } else {
                                     return Err(Error::out_of_range("index out of range"));
                                 }

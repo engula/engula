@@ -64,6 +64,19 @@ where
     pub async fn len(self) -> Result<Option<i64>> {
         self.ob.len().await
     }
+
+    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
+        let value = self.ob.index(key.into()).load().await?;
+        T::Value::cast_from_option(value)
+    }
+
+    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
+        self.ob.index(key.into()).store(value.into()).await
+    }
+
+    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
+        self.ob.index(key.into()).reset().await
+    }
 }
 
 pub struct MapTxn<T> {
@@ -88,6 +101,16 @@ impl<T: Object> MapTxn<T> {
 
     pub fn reset(&mut self) -> &mut Self {
         self.txn.reset();
+        self
+    }
+
+    pub fn set(&mut self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> &mut Self {
+        self.txn.set(key.into(), value.into());
+        self
+    }
+
+    pub fn delete(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
+        self.txn.delete(key.into());
         self
     }
 

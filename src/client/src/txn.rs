@@ -52,8 +52,8 @@ impl DatabaseTxn {
     }
 
     pub async fn commit(self) -> Result<()> {
-        let inner = Arc::try_unwrap(self.inner)
-            .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
+        let inner =
+            Arc::try_unwrap(self.inner).map_err(|_| Error::aborted("pending transaction"))?;
         let handle = inner.handle;
         let req = DatabaseTxnRequest {
             name: handle.dbname,
@@ -119,8 +119,8 @@ impl<T: Object> CollectionTxn<T> {
     pub async fn commit(mut self) -> Result<()> {
         // Consumes the pending transaction.
         self.subtxn.take();
-        let inner = Arc::try_unwrap(self.inner)
-            .map_err(|_| Error::InvalidOperation("there are pending transactions".to_owned()))?;
+        let inner =
+            Arc::try_unwrap(self.inner).map_err(|_| Error::aborted("pending transaction"))?;
         let req = CollectionTxnRequest {
             name: inner.coname,
             exprs: inner.exprs.into_inner().unwrap(),
@@ -185,47 +185,59 @@ impl Txn {
         }
     }
 
-    fn add_call(&mut self, call: CallExpr) {
+    fn add_call(&mut self, call: CallExpr) -> &mut Self {
         let expr = Expr {
             call: Some(call),
             ..Default::default()
         };
         self.expr.subexprs.push(expr);
+        self
+    }
+
+    fn add_index_call(&mut self, index: impl Into<Value>, call: CallExpr) -> &mut Self {
+        let expr = Expr {
+            from: Some(expr::From::Index(index.into().into())),
+            call: Some(call),
+            ..Default::default()
+        };
+        self.expr.subexprs.push(expr);
+        self
     }
 
     pub fn store(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::store(value));
-        self
+        self.add_call(call::store(value))
     }
 
     pub fn reset(&mut self) -> &mut Self {
-        self.add_call(call::reset());
-        self
+        self.add_call(call::reset())
     }
 
     pub fn add(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::add(value));
-        self
+        self.add_call(call::add(value))
     }
 
     pub fn sub(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::sub(value));
-        self
+        self.add_call(call::sub(value))
     }
 
-    pub fn append(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::append(value));
-        self
+    pub(crate) fn append(&mut self, value: impl Into<Value>) -> &mut Self {
+        self.add_call(call::append(value))
     }
 
-    pub fn push_back(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::push_back(value));
-        self
+    pub(crate) fn push_back(&mut self, value: impl Into<Value>) -> &mut Self {
+        self.add_call(call::push_back(value))
     }
 
-    pub fn push_front(&mut self, value: impl Into<Value>) -> &mut Self {
-        self.add_call(call::push_front(value));
-        self
+    pub(crate) fn push_front(&mut self, value: impl Into<Value>) -> &mut Self {
+        self.add_call(call::push_front(value))
+    }
+
+    pub(crate) fn set(&mut self, index: impl Into<Value>, value: impl Into<Value>) -> &mut Self {
+        self.add_index_call(index, call::store(value))
+    }
+
+    pub(crate) fn delete(&mut self, index: impl Into<Value>) -> &mut Self {
+        self.add_index_call(index, call::reset())
     }
 
     pub async fn commit(mut self) -> Result<()> {

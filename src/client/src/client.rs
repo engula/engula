@@ -26,7 +26,7 @@ impl Client {
     pub async fn connect(url: String) -> Result<Self> {
         let client = engula_client::EngulaClient::connect(url)
             .await
-            .map_err(Error::unknown)?;
+            .map_err(|e| Error::internal(e.to_string()))?;
         Ok(Self { client })
     }
 
@@ -40,7 +40,9 @@ impl Client {
             requests: vec![req],
         };
         let mut res = self.txn(req).await?;
-        res.responses.pop().ok_or(Error::InvalidResponse)
+        res.responses
+            .pop()
+            .ok_or_else(|| Error::internal("missing database response"))
     }
 
     pub async fn collection_txn(
@@ -53,7 +55,9 @@ impl Client {
             requests: vec![req],
         };
         let mut res = self.database_txn(req).await?;
-        res.responses.pop().ok_or(Error::InvalidResponse)
+        res.responses
+            .pop()
+            .ok_or_else(|| Error::internal("missing collection response"))
     }
 
     pub async fn collection_expr(
@@ -67,7 +71,9 @@ impl Client {
             exprs: vec![expr],
         };
         let mut res = self.collection_txn(dbname, req).await?;
-        res.results.pop().ok_or(Error::InvalidResponse)
+        res.results
+            .pop()
+            .ok_or_else(|| Error::internal("missing expression result"))
     }
 
     pub async fn database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
@@ -86,7 +92,7 @@ impl Client {
         res.responses
             .pop()
             .and_then(|x| x.response)
-            .ok_or(Error::InvalidResponse)
+            .ok_or_else(|| Error::internal("missing database response"))
     }
 
     pub async fn collection(&self, req: CollectionRequest) -> Result<CollectionResponse> {
@@ -107,6 +113,6 @@ impl Client {
         res.responses
             .pop()
             .and_then(|x| x.response)
-            .ok_or(Error::InvalidResponse)
+            .ok_or_else(|| Error::internal("missing collection response"))
     }
 }
