@@ -32,9 +32,11 @@ impl Default for Server {
 
 impl Server {
     pub fn new() -> Self {
+        let supervisor = Supervisor::new();
+        let cooperator = Cooperator::new(supervisor.clone());
         Self {
-            supervisor: Supervisor::new(),
-            cooperator: Cooperator::new(),
+            supervisor,
+            cooperator,
         }
     }
 
@@ -47,7 +49,7 @@ impl Server {
 impl engula_server::Engula for Server {
     async fn txn(&self, req: Request<TxnRequest>) -> Result<Response<TxnResponse>> {
         let req = req.into_inner();
-        let res = self.cooperator.execute(req).await?;
+        let res = self.cooperator.txn(req).await?;
         Ok(Response::new(res))
     }
 

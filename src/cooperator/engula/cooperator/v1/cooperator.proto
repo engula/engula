@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod apis;
-mod args;
-mod collection;
-mod cooperator;
-mod database;
-mod error;
-mod server;
-mod universe;
+syntax = "proto3";
 
-pub(crate) use self::{args::Args, collection::Collection, database::Database, universe::Universe};
-pub use self::{
-    cooperator::Cooperator,
-    error::{Error, Result},
-    server::Server,
-};
+package engula.cooperator.v1;
+
+import "engula/v1/txn.proto";
+
+service Cooperator {
+  rpc txn(engula.v1.TxnRequest) returns (engula.v1.TxnResponse) {}
+}

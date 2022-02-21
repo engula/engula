@@ -19,10 +19,10 @@ use engula_client::{Any, Blob, List, Universe, I64};
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("db");
+    let db = uv.create_database("list").await?;
 
     {
-        let c = db.collection::<List<Any>>("list<any>");
+        let c = db.create_collection::<List<Any>>("list<any>").await?;
         println!("{}", c.name());
         let mut txn = c.object("o").begin();
         txn.store(vec![1.into(), 2.into()])
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<List<I64>>("list<i64>");
+        let c = db.create_collection::<List<I64>>("list<i64>").await?;
         println!("{}", c.name());
         c.set("o", [1, 2]).await?;
         println!("o = {:?}", c.get("o").await?);
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     }
 
     {
-        let c = db.collection::<List<Blob>>("list<blob>");
+        let c = db.create_collection::<List<Blob>>("list<blob>").await?;
         println!("{}", c.name());
         c.set("o", [vec![1, 2], vec![3, 4]]).await?;
         println!("o = {:?}", c.get("o").await?);

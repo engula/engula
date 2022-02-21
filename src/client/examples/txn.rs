@@ -19,12 +19,12 @@ use engula_client::{Any, Blob, List, Map, Universe, I64};
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("txn");
-    let c0 = db.collection::<Any>("any");
-    let c1 = db.collection::<I64>("i64");
-    let c2 = db.collection::<Blob>("blob");
-    let c3 = db.collection::<List<I64>>("list<i64>");
-    let c4 = db.collection::<Map<Blob>>("map<blob>");
+    let db = uv.create_database("txn").await?;
+    let c0 = db.create_collection::<Any>("any").await?;
+    let c1 = db.create_collection::<I64>("i64").await?;
+    let c2 = db.create_collection::<Blob>("blob").await?;
+    let c3 = db.create_collection::<List<I64>>("list<i64>").await?;
+    let c4 = db.create_collection::<Map<Blob>>("map<blob>").await?;
 
     let txn = db.begin();
     {

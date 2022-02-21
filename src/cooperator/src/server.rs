@@ -14,25 +14,32 @@
 
 use engula_apis::*;
 use engula_supervisor::Supervisor;
-use tonic::Request;
+use tonic::{Request, Response, Status};
 
-use crate::{apis::cooperator_server::Cooperator as _, Result, Server};
+use crate::{apis::*, Universe};
 
 #[derive(Clone)]
-pub struct Cooperator {
-    server: Server,
+pub struct Server {
+    uv: Universe,
 }
 
-impl Cooperator {
+impl Server {
     pub fn new(supervisor: Supervisor) -> Self {
         Self {
-            server: Server::new(supervisor),
+            uv: Universe::new(supervisor),
         }
     }
 
-    pub async fn txn(&self, req: TxnRequest) -> Result<TxnResponse> {
-        let req = Request::new(req);
-        let res = self.server.txn(req).await?;
-        Ok(res.into_inner())
+    pub fn into_service(self) -> cooperator_server::CooperatorServer<Self> {
+        cooperator_server::CooperatorServer::new(self)
+    }
+}
+
+#[tonic::async_trait]
+impl cooperator_server::Cooperator for Server {
+    async fn txn(&self, req: Request<TxnRequest>) -> Result<Response<TxnResponse>, Status> {
+        let req = req.into_inner();
+        let res = self.uv.execute(req).await?;
+        Ok(Response::new(res))
     }
 }

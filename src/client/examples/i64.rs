@@ -19,8 +19,8 @@ use engula_client::{Universe, I64};
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.database("db");
-    let co = db.collection::<I64>("i64");
+    let db = uv.create_database("i64").await?;
+    let co = db.create_collection::<I64>("i64").await?;
 
     co.set("o", 1).await?;
     println!("o = {:?}", co.get("o").await?);

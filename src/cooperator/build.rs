@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use engula_client::{Any, Universe};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let url = "http://localhost:21716";
-    let uv = Universe::connect(url).await?;
-    let db = uv.create_database("db").await?;
-    println!("created {:?}", db.desc().await?);
-    let co = db.create_collection::<Any>("co").await?;
-    println!("created {:?}", co.desc().await?);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::configure()
+        .extern_path(".engula.v1", "::engula_apis")
+        .compile(
+            &["engula/cooperator/v1/cooperator.proto"],
+            &[".", "../apis"],
+        )?;
     Ok(())
 }

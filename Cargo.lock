@@ -166,10 +166,11 @@ name = "engula-cooperator"
 version = "0.1.0"
 dependencies = [
  "engula-apis",
+ "engula-supervisor",
  "prost",
- "thiserror",
  "tokio",
  "tonic",
+ "tonic-build",
 ]
 
 [[package]]
