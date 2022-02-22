@@ -12,19 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::all)]
+#![feature(async_stream)]
 
-tonic::include_proto!("streamengine.master.v1");
-tonic::include_proto!("streamengine.store.v1");
+mod error;
+mod server;
 
-impl From<i32> for ObserverState {
-    fn from(state: i32) -> Self {
-        ObserverState::from_i32(state).unwrap_or(ObserverState::Following)
-    }
-}
-
-impl From<i32> for Role {
-    fn from(role: i32) -> Self {
-        Role::from_i32(role).unwrap_or(Role::Follower)
-    }
-}
+use error::Result;
