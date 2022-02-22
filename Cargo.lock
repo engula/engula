@@ -897,6 +897,7 @@ name = "stream-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "prost",
  "stream-engine-proto",
  "thiserror",
