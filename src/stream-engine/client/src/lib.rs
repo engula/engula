@@ -21,6 +21,6 @@ mod tenant;
 pub use self::{
     engine::Engine,
     error::{Error, Result},
-    stream::Stream,
+    stream::{EpochState, Role, Stream},
     tenant::Tenant,
 };
