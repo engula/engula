@@ -8,14 +8,14 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a persistent data structure store, used as a database and storage engine. Engula aims to be the standard collections for stateful applications.
+Engula is a persistent data structure store, used as a database and storage engine. Engula aims to be the definitive data collection for stateful applications.
 
-The features of Engula include:
+Features:
 
-- Provide a set of persistent data structures.
+- Provide data structures such as numbers, strings, maps, and lists.
 - Support ACID transactions with different isolation and consistency levels.
-- Implement a built-in cache tier to speed up reads, resist traffic bursts and hotspots.
-- Implement a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service.
+- Provide built-in cache to speed up reads, resist hotspots and traffic bursts.
+- Implement a cloud-native, multi-tenant architecture to deliver a cost-effective service.
 
 ## Status
 
@@ -33,14 +33,14 @@ To run the examples:
 
 ```
 cargo run -p engula -- server start
-cargo run -p engula-client --example universe
+cargo run -p engula-client --example database
 cargo run -p engula-client --example {example file name}
 ```
-
-## Information
-
-For internal designs, please see the [docs](docs). For informal discussions, please go to the [discussion forum](https://github.com/engula/engula/discussions).
 
 ## Contributing
 
 Thanks for your help in improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
+
+## More information
+
+For internal designs, please see the [docs](docs). For informal discussions, please go to the [forum](https://github.com/engula/engula/discussions).
