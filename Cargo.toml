@@ -12,4 +12,5 @@ members = [
   "src/stream-engine/proto",
   "src/stream-engine/client",
   "src/stream-engine/master",
+  "src/stream-engine/store",
 ]

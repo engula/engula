@@ -1,0 +1,15 @@
+[package]
+name = "stream-engine-store"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+stream-engine-proto = { version = "0.1", path = "../proto" }
+
+futures = "0.3.21"
+log = "0.4.14"
+prost = "0.9"
+thiserror = "1.0"
+tokio = { version = "1.15", features = ["full"] }
+tonic = "0.6"
