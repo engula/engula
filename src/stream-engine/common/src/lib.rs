@@ -14,7 +14,12 @@
 
 //! Contains some common definitions for stream engine client, master and store.
 
+#[macro_use]
+extern crate derivative;
+
+mod entry;
 pub mod error;
 mod sequence;
 
+pub use entry::Entry;
 pub use sequence::Sequence;

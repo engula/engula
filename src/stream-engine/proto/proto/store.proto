@@ -59,7 +59,7 @@ message MutateRequestUnion {
 }
 
 message MutateResponseUnion {
-    oneof resonse {
+    oneof response {
         WriteResponse write = 1;
         SealResponse seal = 2;
     }

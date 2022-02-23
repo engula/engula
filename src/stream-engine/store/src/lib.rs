@@ -14,4 +14,4 @@
 
 mod server;
 
-pub use stream_engine_common::error::Result;
+use stream_engine_common::{Entry, Sequence};
