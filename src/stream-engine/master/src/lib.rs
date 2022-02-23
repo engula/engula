@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
 mod master;
 mod server;
 mod stream;
 
-use error::{Error, Result};
+pub use stream_engine_common::{
+    error::{Error, Result},
+    Sequence,
+};
 
 pub use self::server::Server;

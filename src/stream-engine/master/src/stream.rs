@@ -20,45 +20,9 @@ use stream_engine_proto::{
 };
 use tokio::sync::Mutex;
 
-use crate::{master::Config, Error, Result};
+use crate::{master::Config, Error, Result, Sequence};
 
 const INITIAL_EPOCH: u32 = 0;
-
-/// An increasing number to order events.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(C)]
-pub struct Sequence {
-    epoch: u32,
-    index: u32,
-}
-
-impl Sequence {
-    #[allow(dead_code)]
-    fn new(epoch: u32, index: u32) -> Self {
-        Sequence { epoch, index }
-    }
-}
-
-impl From<u64> for Sequence {
-    fn from(v: u64) -> Self {
-        Sequence {
-            epoch: (v >> 32) as u32,
-            index: (v as u32),
-        }
-    }
-}
-
-impl From<Sequence> for u64 {
-    fn from(seq: Sequence) -> Self {
-        (seq.epoch as u64) << 32 | (seq.index as u64)
-    }
-}
-
-impl std::fmt::Display for Sequence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", <Sequence as Into<u64>>::into(*self))
-    }
-}
 
 #[derive(Debug)]
 struct PolicyApplicant<'a> {
