@@ -14,6 +14,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use tracing::info;
 
 #[derive(Parser)]
 pub struct Command {
@@ -50,15 +51,19 @@ struct StartCommand {
 impl StartCommand {
     async fn run(self) -> Result<()> {
         let addr = self.addr.parse()?;
+        info!(message = "Engula server is starting...", %addr);
+
         let transactor = engula_transactor::Server::new().into_service();
         let object_engine_master = object_engine_master::Server::new().into_service();
         let stream_engine_master = stream_engine_master::Server::new().into_service();
+
         tonic::transport::Server::builder()
             .add_service(transactor)
             .add_service(object_engine_master)
             .add_service(stream_engine_master)
             .serve(addr)
             .await?;
+
         Ok(())
     }
 }
