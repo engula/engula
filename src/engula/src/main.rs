@@ -46,6 +46,7 @@ impl SubCommand {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cmd: Command = Command::parse();
+    tracing_subscriber::fmt::init();
     cmd.run().await?;
     Ok(())
 }
