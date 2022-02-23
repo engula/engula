@@ -87,6 +87,7 @@ jobs:
           paths-ignore: >-
             "*"
           paths: >-
+            "*.rs"
             "Cargo.lock"
       - uses: Swatinem/rust-cache@v1
         if: steps.skip-ci.outputs.skip != 'true'
