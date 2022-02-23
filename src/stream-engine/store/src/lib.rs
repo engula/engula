@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(async_stream)]
-
-mod error;
 mod server;
 
-use error::Result;
+pub use stream_engine_common::error::Result;

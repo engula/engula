@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod engine;
-mod master;
-mod stream;
-mod tenant;
+//! Contains some common definitions for stream engine client, master and store.
 
-pub use stream_engine_common::error::{Error, Result};
+pub mod error;
+mod sequence;
 
-pub use self::{
-    engine::Engine,
-    stream::{EpochState, Role, Stream},
-    tenant::Tenant,
-};
+pub use sequence::Sequence;

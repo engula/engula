@@ -16,9 +16,9 @@ use stream_engine_proto::*;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    error::{Error, Result},
     master::{Config, Master, Tenant},
     stream::{ObserverMeta, StreamInfo},
+    Error, Result,
 };
 
 type TonicResult<T> = std::result::Result<T, Status>;

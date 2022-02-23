@@ -17,10 +17,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use stream_engine_proto::*;
 use tokio::sync::Mutex;
 
-use crate::{
-    error::{Error, Result},
-    stream::StreamInfo,
-};
+use crate::{stream::StreamInfo, Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct Config {
