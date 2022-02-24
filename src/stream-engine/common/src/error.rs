@@ -12,54 +12,76 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use futures::channel::oneshot;
 use thiserror::Error;
-use tonic::{Code, Status};
 
+/// Errors for all journal operations.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("{0} is not found")]
     NotFound(String),
+    #[error("not leader, new leader is {0}")]
+    NotLeader(String),
     #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid request: {0}")]
-    InvalidRequest(String),
-    #[error("invalid argument: {0}")]
+    #[error("{0}")]
     InvalidArgument(String),
     #[error("invalid response")]
     InvalidResponse,
-    #[error("unknown error: {0}")]
-    Unknown(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("{0} is staled")]
+    Staled(String),
+    #[error(transparent)]
+    Unknown(Box<dyn std::error::Error + Send>),
 }
 
-impl Error {
-    pub fn unknown(s: impl ToString) -> Self {
-        Self::Unknown(s.to_string())
+#[must_use = "this `Result` may be an `Err` variant, which should be handled"]
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<oneshot::Canceled> for Error {
+    fn from(_: oneshot::Canceled) -> Self {
+        use std::io;
+
+        // Because we cannot determine whether a canceled proposal acked, it is
+        // processed according to the third state of distributed system.
+        Error::Io(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "task has been canceled",
+        ))
     }
 }
 
-impl From<Status> for Error {
-    fn from(s: Status) -> Self {
+impl From<tonic::Status> for Error {
+    fn from(s: tonic::Status) -> Self {
         match s.code() {
-            Code::NotFound => Error::NotFound(s.message().to_owned()),
-            Code::AlreadyExists => Error::AlreadyExists(s.message().to_owned()),
-            Code::InvalidArgument => Error::InvalidArgument(s.message().to_owned()),
-            _ => Error::Unknown(s.to_string()),
+            tonic::Code::NotFound => Error::NotFound(s.message().into()),
+            tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
+            tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
+            tonic::Code::FailedPrecondition => Error::Staled(s.message().into()),
+            _ => Error::Unknown(Box::new(s)),
         }
     }
 }
 
-impl From<Error> for Status {
-    fn from(err: Error) -> Status {
-        let (code, msg) = match err {
-            Error::NotFound(s) => (Code::NotFound, s),
-            Error::AlreadyExists(s) => (Code::AlreadyExists, s),
-            Error::InvalidRequest(s) => (Code::InvalidArgument, s),
-            Error::InvalidArgument(s) => (Code::InvalidArgument, s),
-            Error::InvalidResponse => (Code::InvalidArgument, "invalid response".into()),
-            Error::Unknown(s) => (Code::Unknown, s),
-        };
-        Status::new(code, msg)
+impl From<tonic::transport::Error> for Error {
+    fn from(e: tonic::transport::Error) -> Self {
+        Error::Unknown(Box::new(e))
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let (code, message) = match err {
+            Error::NotLeader(_) => unreachable!(),
+            Error::NotFound(s) => (tonic::Code::NotFound, s),
+            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
+            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::InvalidResponse => (tonic::Code::InvalidArgument, "invalid response".into()),
+            Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
+            Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
+            Error::Staled(s) => (tonic::Code::FailedPrecondition, s),
+        };
+        tonic::Status::new(code, message)
+    }
+}

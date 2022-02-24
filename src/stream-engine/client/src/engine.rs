@@ -12,71 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
-use stream_engine_proto::*;
-use tonic::transport::Endpoint;
-
-use crate::{master::Master, Error, Result, Tenant};
+use crate::{
+    master::{Master, Tenant},
+    Result,
+};
 
 #[derive(Clone)]
 pub struct Engine {
-    inner: Arc<EngineInner>,
+    master: Master,
 }
 
 impl Engine {
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let chan = Endpoint::new(url.into())
-            .map_err(Error::unknown)?
-            .connect()
-            .await
-            .map_err(Error::unknown)?;
-        let inner = EngineInner {
-            master: Master::new(chan),
-        };
-        Ok(Self {
-            inner: Arc::new(inner),
+        Ok(Engine {
+            master: Master::new(url).await?,
         })
     }
 
+    #[inline(always)]
     pub fn tenant(&self, name: &str) -> Tenant {
-        self.inner.new_tenant(name.to_owned())
+        self.master.tenant(name)
     }
 
+    #[inline(always)]
     pub async fn create_tenant(&self, name: &str) -> Result<Tenant> {
-        let desc = TenantDesc {
-            name: name.to_owned(),
-            ..Default::default()
-        };
-        let req = CreateTenantRequest { desc: Some(desc) };
-        let req = tenant_request_union::Request::CreateTenant(req);
-        self.inner.tenant_union_call(req).await?;
-        Ok(self.tenant(name))
+        self.master.create_tenant(name).await
     }
 
+    #[inline(always)]
     pub async fn delete_tenant(&self, name: &str) -> Result<()> {
-        let req = DeleteTenantRequest {
-            name: name.to_owned(),
-        };
-        let req = tenant_request_union::Request::DeleteTenant(req);
-        self.inner.tenant_union_call(req).await?;
-        Ok(())
-    }
-}
-
-struct EngineInner {
-    master: Master,
-}
-
-impl EngineInner {
-    fn new_tenant(&self, name: String) -> Tenant {
-        Tenant::new(name, self.master.clone())
-    }
-
-    async fn tenant_union_call(
-        &self,
-        req: tenant_request_union::Request,
-    ) -> Result<tenant_response_union::Response> {
-        self.master.tenant_union(req).await
+        self.master.delete_tenant(name).await
     }
 }

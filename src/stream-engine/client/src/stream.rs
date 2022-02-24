@@ -23,7 +23,7 @@ use futures::Stream as FutureStream;
 use stream_engine_proto::*;
 use tokio::sync::{Mutex, Notify};
 
-use crate::{master::Master, Error, Result};
+use crate::{master::Stream as MasterStreamClient, Error, Result};
 
 /// The role of a stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,11 +65,9 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub(crate) fn new(stream: String, tenant: String, master: Master) -> Self {
+    pub(crate) fn new(stream_client: MasterStreamClient) -> Self {
         let inner = StreamInner {
-            tenant,
-            stream,
-            master,
+            stream_client,
             core: Mutex::new(StreamCore::new()),
         };
         Self {
@@ -77,18 +75,9 @@ impl Stream {
         }
     }
 
-    pub async fn desc(&self) -> Result<StreamDesc> {
-        let req = DescribeStreamRequest {
-            name: self.inner.stream.clone(),
-        };
-        let req = stream_request_union::Request::DescribeStream(req);
-        let res = self.inner.stream_union_call(req).await?;
-        let desc = if let stream_response_union::Response::DescribeStream(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or(Error::InvalidResponse)
+    #[inline(always)]
+    pub fn desc(&self) -> StreamDesc {
+        self.inner.stream_client.desc()
     }
 
     /// Return a endless stream which returns a new epoch state once the
@@ -129,19 +118,8 @@ impl Stream {
 }
 
 struct StreamInner {
-    tenant: String,
-    stream: String,
-    master: Master,
+    stream_client: MasterStreamClient,
     core: Mutex<StreamCore>,
-}
-
-impl StreamInner {
-    async fn stream_union_call(
-        &self,
-        req: stream_request_union::Request,
-    ) -> Result<stream_response_union::Response> {
-        self.master.stream_union(self.tenant.clone(), req).await
-    }
 }
 
 struct StreamCore {

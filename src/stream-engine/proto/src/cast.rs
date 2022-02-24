@@ -28,6 +28,15 @@ impl From<i32> for Role {
     }
 }
 
+impl From<ObserverState> for Role {
+    fn from(observer_state: ObserverState) -> Self {
+        match observer_state {
+            ObserverState::Following => Role::Follower,
+            ObserverState::Recovering | ObserverState::Leading => Role::Leader,
+        }
+    }
+}
+
 impl From<Entry> for crate::Entry {
     fn from(e: Entry) -> Self {
         match e {

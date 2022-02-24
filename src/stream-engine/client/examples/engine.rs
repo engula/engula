@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
 use futures::StreamExt;
-use stream_engine_client::Engine;
+use stream_engine_client::{Engine, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,7 +22,7 @@ async fn main() -> Result<()> {
     let tenant = engine.create_tenant("tenant").await?;
     println!("created {:?}", tenant.desc().await?);
     let stream = tenant.create_stream("stream").await?;
-    println!("created {:?}", stream.desc().await?);
+    println!("created {:?}", stream.desc());
     let mut state_stream = stream.subscribe_state().await?;
     println!("current state {:?}", state_stream.next().await);
     let seq = stream.append(Box::new([0u8])).await?;

@@ -42,6 +42,13 @@ impl Server {
         }
     }
 
+    #[cfg(debug_assertions)]
+    pub fn test_new(stores: Vec<String>) -> Self {
+        Self {
+            master: Master::new(Config::default(), stores),
+        }
+    }
+
     pub fn into_service(self) -> master_server::MasterServer<Self> {
         master_server::MasterServer::new(self)
     }
@@ -118,7 +125,7 @@ impl Server {
 
         let req = req
             .request
-            .ok_or_else(|| Error::InvalidRequest("tenant request".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("tenant request".into()))?;
         let res = match req {
             Request::ListTenants(_req) => {
                 todo!();
@@ -146,7 +153,7 @@ impl Server {
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
         let desc = req
             .desc
-            .ok_or_else(|| Error::InvalidRequest("tenant request".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("tenant request".into()))?;
         let desc = self.master.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
     }
@@ -182,7 +189,7 @@ impl Server {
 
         let req = req
             .request
-            .ok_or_else(|| Error::InvalidRequest("stream request".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("stream request".into()))?;
         let res = match req {
             Request::ListStreams(_req) => {
                 todo!();
@@ -214,7 +221,7 @@ impl Server {
     ) -> Result<CreateStreamResponse> {
         let desc = req
             .desc
-            .ok_or_else(|| Error::InvalidRequest("stream request".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("stream request".into()))?;
         let desc = tenant.create_stream(desc).await?;
         Ok(CreateStreamResponse { desc: Some(desc) })
     }
@@ -236,9 +243,7 @@ impl Server {
 
         let mut res = SegmentResponse::default();
         for req_union in req.requests {
-            let res_union = self
-                .handle_segment_union(&stream, req.segment_epoch, req_union)
-                .await?;
+            let res_union = self.handle_segment_union(&stream, req_union).await?;
             res.responses.push(res_union);
         }
         Ok(res)
@@ -247,7 +252,6 @@ impl Server {
     async fn handle_segment_union(
         &self,
         stream: &StreamInfo,
-        segment_epoch: u32,
         req: SegmentRequestUnion,
     ) -> Result<SegmentResponseUnion> {
         type Request = segment_request_union::Request;
@@ -255,13 +259,13 @@ impl Server {
 
         let res = match req
             .request
-            .ok_or_else(|| Error::InvalidRequest("segment request".into()))?
+            .ok_or_else(|| Error::InvalidArgument("segment request".into()))?
         {
             Request::GetSegment(req) => {
-                Response::GetSegment(self.handle_get_segment(stream, segment_epoch, req).await?)
+                Response::GetSegment(self.handle_get_segment(stream, req).await?)
             }
             Request::SealSegment(req) => {
-                Response::SealSegment(self.handle_seal_segment(stream, segment_epoch, req).await?)
+                Response::SealSegment(self.handle_seal_segment(stream, req).await?)
             }
         };
         Ok(SegmentResponseUnion {
@@ -272,22 +276,18 @@ impl Server {
     async fn handle_get_segment(
         &self,
         stream: &StreamInfo,
-        segment_epoch: u32,
-        _: GetSegmentRequest,
+        req: GetSegmentRequest,
     ) -> Result<GetSegmentResponse> {
-        let segment = stream.segment(segment_epoch).await?;
-        Ok(GetSegmentResponse {
-            desc: Some(segment),
-        })
+        let segment = stream.segment(req.segment_epoch).await;
+        Ok(GetSegmentResponse { desc: segment })
     }
 
     async fn handle_seal_segment(
         &self,
         stream: &StreamInfo,
-        segment_epoch: u32,
-        _: SealSegmentRequest,
+        req: SealSegmentRequest,
     ) -> Result<SealSegmentResponse> {
-        stream.seal(segment_epoch).await?;
+        stream.seal(req.segment_epoch).await?;
         Ok(SealSegmentResponse {})
     }
 }

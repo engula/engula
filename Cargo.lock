@@ -931,6 +931,7 @@ dependencies = [
  "futures",
  "prost",
  "stream-engine-common",
+ "stream-engine-master",
  "stream-engine-proto",
  "thiserror",
  "tokio",
@@ -942,6 +943,7 @@ name = "stream-engine-common"
 version = "0.1.0"
 dependencies = [
  "derivative",
+ "futures",
  "thiserror",
  "tonic",
 ]
@@ -956,6 +958,7 @@ dependencies = [
  "stream-engine-proto",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 
