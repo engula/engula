@@ -79,6 +79,8 @@ An ObjectEngine deployment consists of a manifest, an orchestrator, a background
 
 ObjectEngine provides interfaces for users to generate and ingest files. ObjectEngine supports atomic ingestion across buckets in the same tenant. The manifest needs to decide the layout of files in each bucket to maintain the LSM-Tree structure. As file ingestions go on, the manifest needs to re-organize LSM-Tree structures to reduce read and space amplification. The manifest can submit background jobs (e.g., compaction, garbage collection) to the scheduler, which provisions resources on-demand to run the jobs.
 
+TODO: We should provide high-level design here and leave the detailed design to [a separated document](object-engine.md).
+
 ## Deployment
 
 While the architecture introduces different components, it doesn't mean that each component must be deployed as an independent node. The separation of concerns allows Engula to provide flexible deployment. For example, it is possible to run all components together as a standalone server for convenience. However, to maximize resource utilization, components with different resource requirements should be separated apart.
