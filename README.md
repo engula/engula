@@ -8,7 +8,7 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a persistent data structure store, used as a database and storage engine. Engula aims to be the definitive data collection for stateful applications.
+Engula is a persistent data structure store, used as a database, cache, and storage engine.
 
 Features:
 
