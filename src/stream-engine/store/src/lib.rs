@@ -14,4 +14,29 @@
 
 mod server;
 
-use stream_engine_common::{Entry, Sequence};
+pub use server::Server;
+use stream_engine_common::{error::Result, Entry, Sequence};
+#[cfg(debug_assertions)]
+pub use tests::build_store;
+
+#[cfg(debug_assertions)]
+mod tests {
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+
+    use super::*;
+
+    pub async fn build_store() -> Result<String> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        tokio::task::spawn(async move {
+            let server = Server::new();
+            tonic::transport::Server::builder()
+                .add_service(server.into_service())
+                .serve_with_incoming(TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        Ok(format!("http://{}", local_addr))
+    }
+}
