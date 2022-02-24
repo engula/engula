@@ -933,6 +933,7 @@ dependencies = [
  "stream-engine-common",
  "stream-engine-master",
  "stream-engine-proto",
+ "stream-engine-store",
  "thiserror",
  "tokio",
  "tonic",
@@ -983,6 +984,7 @@ dependencies = [
  "stream-engine-proto",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 

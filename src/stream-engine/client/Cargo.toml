@@ -16,5 +16,6 @@ tonic = "0.6"
 
 [dev-dependencies]
 stream-engine-master = { version = "0.1", path = "../master" }
+stream-engine-store = { version = "0.1", path = "../store" }
 
 anyhow = "1.0"

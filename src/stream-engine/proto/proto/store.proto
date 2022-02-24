@@ -37,10 +37,9 @@ service Store {
 
 message MutateRequest {
     uint64 stream_id = 1;
-    uint32 segment_epoch = 2;
-    uint32 writer_epoch = 3;
+    uint32 writer_epoch = 2;
 
-    MutateRequestUnion request = 4;
+    MutateRequestUnion request = 3;
 }
 
 message MutateResponse {
@@ -66,14 +65,16 @@ message MutateResponseUnion {
 }
 
 message WriteRequest {
+    uint32 segment_epoch = 1;
+
     // The entries before this sequence have been acked. This value might
     // euquals to `(seg_epoch << 32) | (first_index + events.len())`, so
     // a server would forwards acked once the event all persisted.
-    uint64 acked_seq = 1;
+    uint64 acked_seq = 2;
 
-    uint32 first_index = 2;
+    uint32 first_index = 3;
 
-    repeated Entry entries = 3;
+    repeated Entry entries = 4;
 }
 
 message WriteResponse {
@@ -96,7 +97,9 @@ message ReadResponse {
     Entry entry = 2;
 }
 
-message SealRequest {}
+message SealRequest {
+    uint32 segment_epoch = 1;
+}
 
 message SealResponse {
     // The acked index this replica already known.  This field is used to help

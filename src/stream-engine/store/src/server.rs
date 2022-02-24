@@ -342,13 +342,8 @@ impl Server {
         let mut resp = MutateResponse::default();
         if let Some(union_req) = req.request {
             resp.response = Some(
-                self.handle_mutate_union(
-                    req.stream_id,
-                    req.segment_epoch,
-                    req.writer_epoch,
-                    union_req,
-                )
-                .await?,
+                self.handle_mutate_union(req.stream_id, req.writer_epoch, union_req)
+                    .await?,
             );
         }
         Ok(resp)
@@ -357,7 +352,6 @@ impl Server {
     async fn handle_mutate_union(
         &self,
         stream_id: u64,
-        seg_epoch: u32,
         writer_epoch: u32,
         req: MutateRequestUnion,
     ) -> Result<MutateResponseUnion> {
@@ -368,12 +362,11 @@ impl Server {
             .request
             .ok_or_else(|| Status::invalid_argument("mutate request"))?;
         let res = match req {
-            Request::Write(req) => Response::Write(
-                self.handle_write(stream_id, seg_epoch, writer_epoch, req)
-                    .await?,
-            ),
-            Request::Seal(_) => {
-                Response::Seal(self.handle_seal(stream_id, seg_epoch, writer_epoch).await?)
+            Request::Write(req) => {
+                Response::Write(self.handle_write(stream_id, writer_epoch, req).await?)
+            }
+            Request::Seal(req) => {
+                Response::Seal(self.handle_seal(stream_id, writer_epoch, req).await?)
             }
         };
         Ok(MutateResponseUnion {
@@ -384,14 +377,13 @@ impl Server {
     async fn handle_write(
         &self,
         stream_id: u64,
-        seg_epoch: u32,
         writer_epoch: u32,
         req: WriteRequest,
     ) -> Result<WriteResponse> {
         let mut store = self.store.lock().await;
         let persisted_index = store.write(
             stream_id,
-            seg_epoch,
+            req.segment_epoch,
             writer_epoch,
             req.acked_seq.into(),
             req.first_index,
@@ -404,11 +396,11 @@ impl Server {
     async fn handle_seal(
         &self,
         stream_id: u64,
-        seg_epoch: u32,
         writer_epoch: u32,
+        req: SealRequest,
     ) -> Result<SealResponse> {
         let mut store = self.store.lock().await;
-        let acked_index = store.seal(stream_id, seg_epoch, writer_epoch)?;
+        let acked_index = store.seal(stream_id, req.segment_epoch, writer_epoch)?;
         Ok(SealResponse { acked_index })
     }
 }
