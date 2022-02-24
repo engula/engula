@@ -15,12 +15,14 @@
 mod engine;
 mod master;
 mod stream;
-mod tenant;
 
-pub use stream_engine_common::error::{Error, Result};
+pub use stream_engine_common::{
+    error::{Error, Result},
+    Sequence,
+};
 
 pub use self::{
     engine::Engine,
+    master::Tenant,
     stream::{EpochState, Role, Stream},
-    tenant::Tenant,
 };

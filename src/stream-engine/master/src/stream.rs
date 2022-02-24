@@ -168,13 +168,12 @@ impl StreamInfo {
         }
     }
 
-    pub async fn segment(&self, segment_epoch: u32) -> Result<SegmentDesc> {
+    pub async fn segment(&self, segment_epoch: u32) -> Option<SegmentDesc> {
         let inner = self.inner.lock().await;
         inner
             .segments
             .get(&segment_epoch)
             .map(|s| s.segment_desc(self.stream_id))
-            .ok_or_else(|| Error::NotFound("no such segment".into()))
     }
 
     pub async fn seal(&self, segment_epoch: u32) -> Result<()> {
@@ -207,7 +206,7 @@ impl StreamInfo {
         let mut stream = self.inner.lock().await;
         let stream = stream.deref_mut();
         if stream.epoch < writer_epoch && stream.epoch != INITIAL_EPOCH {
-            return Err(Error::InvalidRequest("epoch".into()));
+            return Err(Error::InvalidArgument("too large epoch".into()));
         }
 
         stream.observe(&observer_id, observer_info);

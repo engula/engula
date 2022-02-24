@@ -18,19 +18,22 @@ use tonic::transport::Channel;
 use crate::{Error, Result};
 
 #[derive(Clone)]
-pub struct Master {
+pub struct MasterClient {
     client: master_client::MasterClient<Channel>,
 }
 
-impl Master {
+impl MasterClient {
     pub fn new(chan: Channel) -> Self {
         let client = master_client::MasterClient::new(chan);
         Self { client }
     }
+}
 
+impl MasterClient {
     pub async fn tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
-        let res = self.client.clone().tenant(req).await?;
-        Ok(res.into_inner())
+        let mut client = self.client.clone();
+        let resp = client.tenant(req).await?;
+        Ok(resp.into_inner())
     }
 
     pub async fn tenant_union(
@@ -46,10 +49,13 @@ impl Master {
             .and_then(|x| x.response)
             .ok_or(Error::InvalidResponse)
     }
+}
 
+impl MasterClient {
     pub async fn stream(&self, req: StreamRequest) -> Result<StreamResponse> {
-        let res = self.client.clone().stream(req).await?;
-        Ok(res.into_inner())
+        let mut client = self.client.clone();
+        let resp = client.stream(req).await?;
+        Ok(resp.into_inner())
     }
 
     pub async fn stream_union(
@@ -66,5 +72,39 @@ impl Master {
             .pop()
             .and_then(|x| x.response)
             .ok_or(Error::InvalidResponse)
+    }
+}
+
+impl MasterClient {
+    pub async fn segment(&self, req: SegmentRequest) -> Result<SegmentResponse> {
+        let mut client = self.client.clone();
+        let resp = client.segment(req).await?;
+        Ok(resp.into_inner())
+    }
+
+    pub async fn segment_union(
+        &self,
+        tenant: String,
+        stream_id: u64,
+        req: segment_request_union::Request,
+    ) -> Result<segment_response_union::Response> {
+        let req = SegmentRequest {
+            tenant,
+            stream_id,
+            requests: vec![SegmentRequestUnion { request: Some(req) }],
+        };
+        let mut res = self.segment(req).await?;
+        res.responses
+            .pop()
+            .and_then(|x| x.response)
+            .ok_or(Error::InvalidResponse)
+    }
+}
+
+impl MasterClient {
+    pub async fn heartbeat(&self, req: HeartbeatRequest) -> Result<HeartbeatResponse> {
+        let mut client = self.client.clone();
+        let resp = client.heartbeat(req).await?;
+        Ok(resp.into_inner())
     }
 }

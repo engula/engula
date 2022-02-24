@@ -145,7 +145,6 @@ message SegmentDesc {
 message SegmentRequest {
   string tenant = 1;
   uint64 stream_id = 2;
-  uint32 segment_epoch = 3;
 
   repeated SegmentRequestUnion requests = 4;
 }
@@ -168,13 +167,17 @@ message SegmentResponseUnion {
   }
 }
 
-message GetSegmentRequest {}
+message GetSegmentRequest {
+  uint32 segment_epoch = 1;
+}
 
 message GetSegmentResponse {
   SegmentDesc desc = 1;
 }
 
-message SealSegmentRequest {}
+message SealSegmentRequest {
+  uint32 segment_epoch = 1;
+}
 
 message SealSegmentResponse {}
 
@@ -198,11 +201,19 @@ message Command {
   repeated uint32 pending_epochs = 5;
 }
 
+// The state of an stream's observer. The transition of states is:
+//
+// Following -> Recovering -> Leading
+//    ^                           |
+//    +---------------------------+
 enum ObserverState {
+  // A follower is prepared to follow and subscribe a stream.
   FOLLOWING = 0;
-  SEALING = 1;
-  RECOVERING = 2;
-  LEADING = 3;
+  // A leader must seals the former epochs and recovery all unfinished
+  // replications before starting to lead a stream.
+  RECOVERING = 1;
+  // A leader is prepared to receive incoming events.
+  LEADING = 2;
 }
 
 message HeartbeatRequest {

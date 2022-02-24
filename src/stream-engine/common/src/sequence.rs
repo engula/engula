@@ -21,8 +21,7 @@ pub struct Sequence {
 }
 
 impl Sequence {
-    #[allow(dead_code)]
-    fn new(epoch: u32, index: u32) -> Self {
+    pub fn new(epoch: u32, index: u32) -> Self {
         Sequence { epoch, index }
     }
 }
