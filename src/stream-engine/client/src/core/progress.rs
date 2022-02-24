@@ -12,20 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod core;
-mod engine;
-mod master;
-mod policy;
-mod store;
-mod stream;
+/// An abstraction for describing the state of a segment store, that receives
+/// and persists entries.
+pub(crate) struct Progress {
+    matched_index: u32,
+}
 
-pub use stream_engine_common::{
-    error::{Error, Result},
-    Entry, Sequence,
-};
-
-pub use self::{
-    engine::Engine,
-    master::Tenant,
-    stream::{EpochState, Role, Stream},
-};
+impl Progress {
+    #[inline(always)]
+    pub fn matched_index(&self) -> u32 {
+        self.matched_index
+    }
+}

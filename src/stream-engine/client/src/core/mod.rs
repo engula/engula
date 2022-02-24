@@ -12,20 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod core;
-mod engine;
-mod master;
-mod policy;
-mod store;
-mod stream;
+mod progress;
 
-pub use stream_engine_common::{
-    error::{Error, Result},
-    Entry, Sequence,
-};
-
-pub use self::{
-    engine::Engine,
-    master::Tenant,
-    stream::{EpochState, Role, Stream},
-};
+pub(crate) use progress::Progress;
