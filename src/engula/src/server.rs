@@ -14,7 +14,9 @@
 
 use anyhow::Result;
 use clap::Parser;
-use tracing::info;
+use tokio::net::TcpListener;
+use tokio_stream::wrappers::TcpListenerStream;
+use tracing::{error, info};
 
 #[derive(Parser)]
 pub struct Command {
@@ -50,19 +52,31 @@ struct StartCommand {
 
 impl StartCommand {
     async fn run(self) -> Result<()> {
-        let addr = self.addr.parse()?;
-        info!(message = "Engula server is starting...", %addr);
+        let listener = TcpListener::bind(self.addr).await?;
+        let addr = listener.local_addr()?;
 
         let transactor = engula_transactor::Server::new().into_service();
         let object_engine_master = object_engine_master::Server::new().into_service();
         let stream_engine_master = stream_engine_master::Server::new().into_service();
 
-        tonic::transport::Server::builder()
+        let serve = tonic::transport::Server::builder()
             .add_service(transactor)
             .add_service(object_engine_master)
             .add_service(stream_engine_master)
-            .serve(addr)
-            .await?;
+            .serve_with_incoming(TcpListenerStream::new(listener));
+
+        info!(message = "Starting Engula server...", %addr);
+
+        tokio::select! {
+            res = serve => {
+                if let Err(err) = res {
+                    error!(cause = %err, "Fatal error occurs!");
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Shutting down...");
+            }
+        }
 
         Ok(())
     }
