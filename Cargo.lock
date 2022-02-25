@@ -600,10 +600,15 @@ dependencies = [
 name = "object-engine-filestore"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "object-engine-common",
- "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "object-engine-lsmstore"
+version = "0.1.0"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
