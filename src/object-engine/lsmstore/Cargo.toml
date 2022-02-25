@@ -1,5 +1,5 @@
 [package]
-name = "object-engine-filestore"
+name = "object-engine-lsmstore"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,4 +7,5 @@ publish = false
 [dependencies]
 object-engine-common = { path = "../common" }
 
+bytes = "1.1"
 tokio = { version = "1.15", features = ["full"] }

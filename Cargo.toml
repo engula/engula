@@ -10,6 +10,7 @@ members = [
   "src/object-engine/client",
   "src/object-engine/common",
   "src/object-engine/master",
+  "src/object-engine/lsmstore",
   "src/object-engine/filestore",
   "src/stream-engine/proto",
   "src/stream-engine/client",
