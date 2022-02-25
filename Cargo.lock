@@ -609,8 +609,6 @@ name = "object-engine-lsmstore"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "object-engine-common",
- "tokio",
 ]
 
 [[package]]

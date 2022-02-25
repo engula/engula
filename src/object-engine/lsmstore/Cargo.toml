@@ -5,7 +5,4 @@ edition = "2021"
 publish = false
 
 [dependencies]
-object-engine-common = { path = "../common" }
-
 bytes = "1.1"
-tokio = { version = "1.15", features = ["full"] }
