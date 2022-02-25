@@ -215,13 +215,9 @@ impl Progress {
         }
     }
 
-    pub fn replicate(
-        &mut self,
-        next_index: u32,
-        replicate_bytes: usize,
-        replicating_acked_index: u32,
-    ) {
-        self.replicating_acked_index = self.replicating_acked_index.max(replicating_acked_index);
+    pub fn replicate(&mut self, next_index: u32, replicate_bytes: usize, replicating_index: u32) {
+        self.replicating_acked_index = self.replicating_acked_index.max(replicating_index);
+
         if self
             .congest
             .as_mut()
@@ -257,7 +253,8 @@ impl Progress {
         }
     }
 
-    #[allow(dead_code, unused)]
+    /// The message sent to target has timed out and no further responses will
+    /// be received.
     pub fn on_timeout(&mut self, range: std::ops::Range<u32>, bytes: usize) {
         if self.congest.is_none() {
             self.sliding_window.freeze();
@@ -283,9 +280,9 @@ impl Progress {
 
     /// Return whether the acked index has been send to a target.
     #[inline(always)]
-    pub fn is_acked_seq_replicating(&self, seq: Sequence) -> bool {
-        seq.epoch > self.epoch
-            || (seq.epoch == self.epoch && self.replicating_acked_index >= seq.index)
+    pub fn is_replicating_acked_seq(&self, seq: Sequence) -> bool {
+        seq.epoch < self.epoch
+            || (seq.epoch == self.epoch && seq.index < self.replicating_acked_index)
     }
 }
 
@@ -353,8 +350,8 @@ mod tests {
     fn timeout_reset_replicating_acked_index() {
         let mut progress = Progress::new(1);
         progress.replicate(100, 1024, 100);
-        assert!(progress.is_acked_seq_replicating(Sequence::new(1, 100)));
+        assert!(progress.is_replicating_acked_seq(Sequence::new(1, 100)));
         progress.on_timeout(1..100, 1024);
-        assert!(!progress.is_acked_seq_replicating(Sequence::new(1, 100)));
+        assert!(!progress.is_replicating_acked_seq(Sequence::new(1, 100)));
     }
 }

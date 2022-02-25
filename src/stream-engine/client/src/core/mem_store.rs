@@ -60,32 +60,23 @@ impl MemStore {
     }
 
     /// Range values.
-    pub fn range(&self, mut r: std::ops::Range<u32>, quota: usize) -> Option<(Vec<Entry>, usize)> {
+    pub fn range(&self, r: std::ops::Range<u32>, quota: usize) -> Option<(Vec<Entry>, usize)> {
         let target_bytes = self.base_bytes + quota + 1;
-        let end = self.first_index
-            + self
-                .entries
-                .binary_search_by_key(&target_bytes, |(_, bytes)| *bytes)
-                .into_ok_or_err() as u32;
-        r.end = end.min(r.end);
-
         let next_index = self.next_index();
         if r.start < r.end && self.first_index <= r.start && r.end <= next_index {
             let start = (r.start - self.first_index) as usize;
             let end = (r.end - self.first_index) as usize;
-            let bytes = self
-                .entries
-                .range(start..end)
-                .map(|(_, b)| b)
-                .sum::<usize>()
-                .saturating_sub(self.base_bytes);
-            Some((
-                self.entries
-                    .range(start..end)
-                    .map(|(e, _)| e.clone())
-                    .collect(),
-                bytes,
-            ))
+
+            let mut entries = vec![];
+            let mut bytes = 0;
+            for (entry, accumulated_bytes) in self.entries.range(start..end) {
+                if *accumulated_bytes > target_bytes {
+                    break;
+                }
+                bytes = *accumulated_bytes;
+                entries.push(entry.clone());
+            }
+            Some((entries, bytes))
         } else {
             None
         }
@@ -187,13 +178,62 @@ mod tests {
         ];
 
         for test in tests {
-            println!("test {:?}", test);
             let mut mem_store = MemStore::new(1);
             for entry in test.entries {
                 mem_store.append(entry);
             }
-            let got = mem_store.range(test.range, 40960);
+            let got = mem_store.range(test.range, 409600);
             match test.expect {
+                Some(entries) => {
+                    assert!(got.is_some());
+                    assert!(entries
+                        .into_iter()
+                        .zip(got.unwrap().0.into_iter())
+                        .all(|(l, r)| l == r));
+                }
+                None => {
+                    assert!(got.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mem_storage_range_with_quota() {
+        #[derive(Debug)]
+        struct Test {
+            quota: usize,
+            expect: Option<Vec<Entry>>,
+        }
+
+        let ent = |v: usize| Entry::Event {
+            epoch: 1,
+            event: v.to_le_bytes().into(),
+        };
+
+        let cases = vec![
+            Test {
+                quota: 10,
+                expect: Some(vec![ent(1)]),
+            },
+            Test {
+                quota: 20,
+                expect: Some(vec![ent(1), ent(2)]),
+            },
+            Test {
+                quota: 30,
+                expect: Some(vec![ent(1), ent(2), ent(3)]),
+            },
+        ];
+
+        let mut mem_store = MemStore::new(1);
+        for i in 1..1024 {
+            mem_store.append(ent(i));
+        }
+
+        for case in cases {
+            let got = mem_store.range(1..1024, case.quota);
+            match case.expect {
                 Some(entries) => {
                     assert!(got.is_some());
                     assert!(entries

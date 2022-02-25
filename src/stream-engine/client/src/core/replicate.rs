@@ -71,7 +71,7 @@ impl Replicate {
                 .into_iter()
                 .map(|c| (c, Progress::new(epoch)))
                 .collect(),
-            acked_seq: Sequence::new(0, 0),
+            acked_seq: Sequence::default(),
             sealed_set: HashSet::new(),
             learning_state: LearningState::None,
         }
@@ -133,7 +133,7 @@ impl Replicate {
             let (Range { start, mut end }, quota) = progress.next_chunk(next_index, latest_tick);
             let (acked_seq, entries, bytes) = if quota > 0
                 && start == next_index
-                && !progress.is_acked_seq_replicating(self.acked_seq)
+                && !progress.is_replicating_acked_seq(self.acked_seq)
             {
                 // All entries are replicated, might broadcast acked sequence.
                 (self.acked_seq, vec![], 0)
@@ -364,4 +364,88 @@ impl EpochInfo {
     fn sequence(&self, index: u32) -> Sequence {
         Sequence::new(self.segment, index)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replicate_keep_continuously() {
+        let entries: Vec<Entry> = (1..10240u64)
+            .into_iter()
+            .map(|i| i.to_le_bytes())
+            .map(|bytes| Entry::Event {
+                epoch: 1,
+                event: bytes.into(),
+            })
+            .collect();
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        for entry in &entries {
+            rep.append(entry.clone());
+        }
+
+        let mut rep_entries = vec![];
+        let mut next_index = 1;
+        loop {
+            let pending_writes = rep.replicate(1);
+            if pending_writes.is_empty() {
+                break;
+            }
+            for m in pending_writes {
+                match m.kind {
+                    MutKind::Write(mut write) => {
+                        assert_eq!(write.range.start, next_index);
+                        next_index = write.range.end;
+                        rep_entries.append(&mut write.entries);
+                    }
+                    _ => {
+                        unreachable!()
+                    }
+                }
+            }
+        }
+
+        assert_eq!(rep_entries, entries);
+    }
+
+    #[test]
+    fn replicate_acked_index_if_all_entries_are_replicated() {
+        let entries: Vec<Entry> = (0..10240u64)
+            .into_iter()
+            .map(|i| i.to_le_bytes())
+            .map(|bytes| Entry::Event {
+                epoch: 1,
+                event: bytes.into(),
+            })
+            .collect();
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        for entry in &entries {
+            rep.append(entry.clone());
+        }
+
+        loop {
+            let pending_writes = rep.replicate(1);
+            if pending_writes.is_empty() {
+                break;
+            }
+        }
+
+        rep.handle_received("a", 10239);
+        rep.advance_acked_sequence();
+        assert_eq!(rep.acked_seq(), Sequence::new(1, 10239));
+
+        let pending_writes = rep.replicate(1);
+        assert_eq!(pending_writes.len(), 1);
+        assert!(
+            matches!(&pending_writes[0].kind, MutKind::Write(write) if write.entries.is_empty() && write.acked_seq.index == 10239)
+        );
+    }
+
+    // left test cases
+    // 1. don't replicate acked index if congested.
+    // 2. the recovering replicas still need to advance. Specially fast
+    //    recovery need execute advance too.
+    // 3. replicating from latest acked index
+    // 4. if latest acked index is bridge, that means recovered.
 }
