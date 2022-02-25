@@ -1,0 +1,16 @@
+[package]
+name = "engula-cooperator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+engula-apis = { version = "0.3", path = "../apis" }
+engula-supervisor = { path = "../supervisor" }
+
+prost = "0.9"
+tokio = { version = "1.15", features = ["full"] }
+tonic = "0.6"
+
+[build-dependencies]
+tonic-build = "0.6"

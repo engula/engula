@@ -1,32 +1,19 @@
-[package]
-name = "engula"
-version = "0.2.0"
-edition = "2021"
-license = "Apache-2.0"
-homepage = "https://engula.io"
-repository = "https://github.com/engula/engula"
-keywords = ["database", "serverless", "storage-engine"]
-categories = [
-  "asynchronous",
-  "data-structures",
-  "database",
-  "database-implementations",
-]
-description = "A serverless storage engine that empowers engineers to build reliable and cost-effective databases."
-
-[[bin]]
-name = "engula"
-path = "bin/engula.rs"
-
 [workspace]
-members = ["src/engine/hash", "src/kernel", "src/journal", "src/storage"]
-
-[dependencies]
-hash-engine = { version = "0.2", path = "src/engine/hash" }
-engula-kernel = { version = "0.2", path = "src/kernel" }
-engula-journal = { version = "0.2", path = "src/journal" }
-engula-storage = { version = "0.2", path = "src/storage" }
-
-clap = "=3.0.0-beta.5"
-tonic = "0.6"
-tokio = { version = "1", features = ["full"] }
+members = [
+  "src/apis",
+  "src/client",
+  "src/engula",
+  "src/supervisor",
+  "src/transactor",
+  "src/cooperator",
+  "src/object-engine/proto",
+  "src/object-engine/client",
+  "src/object-engine/common",
+  "src/object-engine/master",
+  "src/object-engine/filestore",
+  "src/stream-engine/proto",
+  "src/stream-engine/client",
+  "src/stream-engine/common",
+  "src/stream-engine/master",
+  "src/stream-engine/store",
+]

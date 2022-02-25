@@ -1,0 +1,12 @@
+[package]
+name = "object-engine-filestore"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+object-engine-common = { path = "../common" }
+
+async-trait = "0.1"
+thiserror = "1.0"
+tokio = { version = "1.15", features = ["full"] }

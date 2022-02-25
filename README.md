@@ -8,34 +8,39 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a serverless storage engine that empowers engineers to build reliable and cost-effective databases.
+Engula is a persistent data structure store, used as a database, cache, and storage engine.
 
-Engula's design goals are as follows:
+Features:
 
-- **Elastic**: takes advantage of elastic resources on the cloud
-- **Adaptive**: adapts to dynamic workloads and diverse applications
-- **Extensible**: provides pluggable APIs and modules for customization
-- **Platform independent**: allows flexible deployments on local hosts, on-premise servers, and cloud platforms
+- Provide data structures such as numbers, strings, maps, and lists.
+- Support ACID transactions with different isolation and consistency levels.
+- Provide built-in cache to speed up reads, resist hotspots and traffic bursts.
+- Implement a cloud-native, multi-tenant architecture to deliver a cost-effective service.
 
 ## Status
 
-We are working on version 0.2. Please check the [roadmap][roadmap] for more details.
+We are working on v0.3. Please check the [roadmap][roadmap] for more details.
 
-[roadmap]: https://github.com/engula/engula/issues/57
+[roadmap]: https://github.com/engula/engula/issues/359
 
-We have released Demo 1 in Oct 2021.
-You can check [the branch](https://github.com/engula/engula/tree/demo-1) and [the report](https://engula.com/posts/demo-1/) for more details.
+We released demo 1 in Oct 2021 and v0.2 in Dec 2021. You can check the [demo 1 report](https://engula.com/posts/demo-1/) and [v0.2 release post](https://engula.io/posts/release-0.2/) for more details.
 
-## Design
+## Examples
 
-![Architecture](docs/images/architecture.drawio.svg)
+You can check some usages in [examples](src/client/examples).
 
-For internal designs of Engula, please see the [docs](docs).
+To run the examples:
 
-## Discussion
-
-For discussions about ideas, designs, and roadmaps, please see the [discussions](https://github.com/engula/engula/discussions).
+```
+cargo run -p engula -- server start
+cargo run -p engula-client --example database
+cargo run -p engula-client --example {example file name}
+```
 
 ## Contributing
 
-Thanks for your help improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
+Thanks for your help in improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
+
+## More information
+
+For internal designs, please see the [docs](docs). For informal discussions, please go to the [forum](https://github.com/engula/engula/discussions).
