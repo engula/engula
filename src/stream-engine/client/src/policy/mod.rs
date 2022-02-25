@@ -56,7 +56,12 @@ impl Policy {
         }
     }
 
-    pub(super) fn new_group_reader(self, next_index: u32, num_copies: usize) -> GroupReader {
-        GroupReader::new(self.into(), next_index, num_copies)
+    pub(super) fn new_group_reader(
+        self,
+        epoch: u32,
+        next_index: u32,
+        copies: Vec<String>,
+    ) -> GroupReader {
+        GroupReader::new(self.into(), epoch, next_index, copies)
     }
 }

@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod mem_store;
+mod message;
 mod progress;
+mod replicate;
+mod stream;
 
-pub(crate) use progress::Progress;
+pub(crate) use self::progress::Progress;
+use self::{mem_store::MemStore, replicate::Replicate};
+
+const INITIAL_EPOCH: u32 = 0;
