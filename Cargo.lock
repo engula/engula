@@ -594,6 +594,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "object-engine-common"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "thiserror",
+]
+
+[[package]]
+name = "object-engine-filestore"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "object-engine-common",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "object-engine-master"
 version = "0.1.0"
 dependencies = [
