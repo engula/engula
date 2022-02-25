@@ -44,10 +44,11 @@ enum LearningState {
 /// for sealing segment and learning entries during recovery.
 pub(super) struct Replicate {
     epoch_info: EpochInfo,
-    policy: ReplicatePolicy,
-    pub mem_store: MemStore,
-    pub copy_set: HashMap<String, Progress>,
+    replicate_policy: ReplicatePolicy,
+    mem_store: MemStore,
+    copy_set: HashMap<String, Progress>,
 
+    acked_seq: Sequence,
     sealed_set: HashSet<String>,
     learning_state: LearningState,
 }
@@ -64,12 +65,13 @@ impl Replicate {
                 segment: epoch,
                 writer: writer_epoch,
             },
-            policy,
+            replicate_policy: policy,
             mem_store: MemStore::new(epoch),
             copy_set: copy_set
                 .into_iter()
                 .map(|c| (c, Progress::new(epoch)))
                 .collect(),
+            acked_seq: Sequence::new(0, 0),
             sealed_set: HashSet::new(),
             learning_state: LearningState::None,
         }
@@ -96,41 +98,56 @@ impl Replicate {
         self.epoch_info.segment
     }
 
+    #[inline(always)]
+    pub fn acked_seq(&self) -> Sequence {
+        self.acked_seq
+    }
+
+    #[inline(always)]
+    pub fn append(&mut self, entry: Entry) -> Sequence {
+        self.mem_store.append(entry)
+    }
+
     pub fn all_target_matched(&self) -> bool {
         let last_index = self.mem_store.next_index().saturating_sub(1);
         matches!(self.learning_state, LearningState::Terminated)
             && self.copy_set.iter().all(|(_, p)| p.is_matched(last_index))
     }
 
-    fn replicate(
-        &mut self,
-        latest_tick: usize,
-        acked_seq: Sequence,
-        acked_index_advanced: bool,
-        terminated: bool,
-    ) -> Vec<Mutate> {
+    pub fn advance_acked_sequence(&mut self) -> bool {
+        let acked_seq = self
+            .replicate_policy
+            .advance_acked_sequence(self.epoch_info.segment, &self.copy_set);
+        if self.acked_seq < acked_seq {
+            self.acked_seq = acked_seq;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn replicate(&mut self, latest_tick: usize) -> Vec<Mutate> {
         let mut pending_writes = vec![];
         for (server_id, progress) in &mut self.copy_set {
             let next_index = self.mem_store.next_index();
             let (Range { start, mut end }, quota) = progress.next_chunk(next_index, latest_tick);
-            let (acked_seq, entries, bytes) = match self.mem_store.range(start..end, quota) {
-                Some((entries, bytes)) => {
-                    // Do not forward acked sequence to unmatched index.
-                    let matched_acked_seq =
-                        Sequence::min(acked_seq, Sequence::new(self.epoch_info.segment, end - 1));
-                    progress.replicate(end, 0);
-                    (matched_acked_seq, entries, bytes)
-                }
-                // TODO(w41ter) support query indexes
-                None if !terminated && acked_index_advanced => {
-                    // All entries are replicated, might broadcast acked
-                    // sequence.
-                    (acked_seq, vec![], 0)
-                }
-                None => continue,
+            let (acked_seq, entries, bytes) = if quota > 0
+                && start == next_index
+                && !progress.is_acked_seq_replicating(self.acked_seq)
+            {
+                // All entries are replicated, might broadcast acked sequence.
+                (self.acked_seq, vec![], 0)
+            } else if let Some((entries, bytes)) = self.mem_store.range(start..end, quota) {
+                // Do not forward acked sequence to unmatched index.
+                end = start + entries.len() as u32;
+                let matched_acked_seq =
+                    Sequence::min(self.acked_seq, self.epoch_info.sequence(end - 1));
+                (matched_acked_seq, entries, bytes)
+            } else {
+                continue;
             };
 
-            end = start + entries.len() as u32;
+            progress.replicate(end, bytes, acked_seq.index);
             let write = self.epoch_info.build_write(
                 server_id.to_owned(),
                 Write {
@@ -145,23 +162,13 @@ impl Replicate {
         pending_writes
     }
 
-    pub fn broadcast(
-        &mut self,
-        latest_tick: usize,
-        mut acked_seq: Sequence,
-        acked_index_advanced: bool,
-    ) -> (Vec<Mutate>, Vec<Learn>) {
+    pub fn broadcast(&mut self, latest_tick: usize) -> (Vec<Mutate>, Vec<Learn>) {
         let mut pending_writes = vec![];
         let mut pending_learns = vec![];
 
-        let mut terminated = false;
         let mut replicable = false;
         match &mut self.learning_state {
             LearningState::None | LearningState::Terminated => {
-                terminated = matches!(self.learning_state, LearningState::Terminated);
-                if terminated {
-                    acked_seq = Sequence::new(self.epoch_info.writer, 0);
-                }
                 replicable = true;
             }
             LearningState::Sealing { pending, .. } => {
@@ -188,8 +195,7 @@ impl Replicate {
         }
 
         if replicable {
-            let mut writes =
-                self.replicate(latest_tick, acked_seq, acked_index_advanced, terminated);
+            let mut writes = self.replicate(latest_tick);
             pending_writes.append(&mut writes);
         }
 
@@ -206,7 +212,7 @@ impl Replicate {
 
     pub fn handle_received(&mut self, target: &str, index: u32) {
         if let Some(progress) = self.copy_set.get_mut(target) {
-            progress.on_received(index, 0);
+            progress.on_received(index);
         }
     }
 
@@ -244,7 +250,7 @@ impl Replicate {
         if let LearningState::Sealing { acked_indexes, .. } = &mut self.learning_state {
             acked_indexes.push(acked_index);
             if let Some(actual_acked_index) = self
-                .policy
+                .replicate_policy
                 .actual_acked_index(self.copy_set.len(), acked_indexes)
             {
                 // We have received satisfied SEALED response, now changes state to learn
@@ -292,7 +298,7 @@ impl Replicate {
     }
 
     fn become_learning(&mut self, actual_acked_index: u32) {
-        let group_reader = self.policy.new_group_reader(
+        let group_reader = self.replicate_policy.new_group_reader(
             self.epoch_info.writer,
             actual_acked_index,
             self.copy_set.keys().cloned().collect(),
@@ -305,8 +311,9 @@ impl Replicate {
 
         // All progress has already received all acked entries.
         for progress in self.copy_set.values_mut() {
-            progress.on_received(actual_acked_index, actual_acked_index);
+            progress.on_received(actual_acked_index);
         }
+        self.acked_seq = Sequence::new(self.epoch_info.segment, actual_acked_index);
         // FIXME(w41ter) update entries epoch.
         self.mem_store = MemStore::recovery(self.epoch_info.writer, actual_acked_index + 1);
     }
@@ -351,5 +358,10 @@ impl EpochInfo {
     #[inline(always)]
     fn bridge(&self) -> Entry {
         Entry::Bridge { epoch: self.writer }
+    }
+
+    #[inline(always)]
+    fn sequence(&self, index: u32) -> Sequence {
+        Sequence::new(self.segment, index)
     }
 }

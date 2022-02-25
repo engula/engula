@@ -14,6 +14,8 @@
 
 use std::{collections::VecDeque, ops::Range};
 
+use crate::Sequence;
+
 /// A mixin structure holds the fields used in congestion stage.
 #[derive(Default)]
 struct CongestMixin {
@@ -151,8 +153,11 @@ pub(crate) struct Progress {
     /// The default value is zero, so any proposal's index should greater than
     /// zero.
     pub matched_index: u32,
-    acked_index: u32,
     next_index: u32,
+
+    /// Indicates the largest acked index send to the remote (perhaps not yet
+    /// accepted).
+    replicating_acked_index: u32,
 
     sliding_window: SlidingWindow,
 
@@ -166,8 +171,8 @@ impl Progress {
         Progress {
             epoch,
             matched_index: 0,
-            acked_index: 0,
             next_index: 1,
+            replicating_acked_index: 0,
 
             // TODO(w41ter) config sliding window
             sliding_window: SlidingWindow::new(1024 * 1024 * 64),
@@ -210,7 +215,13 @@ impl Progress {
         }
     }
 
-    pub fn replicate(&mut self, next_index: u32, replicate_bytes: usize) {
+    pub fn replicate(
+        &mut self,
+        next_index: u32,
+        replicate_bytes: usize,
+        replicating_acked_index: u32,
+    ) {
+        self.replicating_acked_index = self.replicating_acked_index.max(replicating_acked_index);
         if self
             .congest
             .as_mut()
@@ -232,11 +243,7 @@ impl Progress {
     }
 
     /// The target has received and persisted entries.
-    pub fn on_received(&mut self, matched_index: u32, acked_index: u32) {
-        if self.acked_index < acked_index {
-            self.acked_index = acked_index;
-        }
-        println!("on received {}", matched_index);
+    pub fn on_received(&mut self, matched_index: u32) {
         if self.matched_index < matched_index {
             let consumed_bytes = self.sliding_window.release(matched_index);
             self.matched_index = matched_index;
@@ -261,6 +268,10 @@ impl Progress {
         // requires more available space.
         self.sliding_window.extend(bytes);
         self.congest.as_mut().unwrap().on_timeout(range, bytes);
+
+        // A simple implementation, so that there is no need to record the corresponding
+        // acked index in the timeout message.
+        self.replicating_acked_index = 0;
     }
 
     /// Return whether a target has been matched to the corresponding index.
@@ -270,11 +281,11 @@ impl Progress {
         self.matched_index >= index
     }
 
-    /// Return whether a target has been acked the corresponding index.
-    #[allow(dead_code, unused)]
+    /// Return whether the acked index has been send to a target.
     #[inline(always)]
-    pub fn is_acked(&self, index: u32) -> bool {
-        self.acked_index >= index
+    pub fn is_acked_seq_replicating(&self, seq: Sequence) -> bool {
+        seq.epoch > self.epoch
+            || (seq.epoch == self.epoch && self.replicating_acked_index >= seq.index)
     }
 }
 
@@ -285,11 +296,11 @@ mod tests {
     #[test]
     fn retransmit() {
         let mut progress = Progress::new(1);
-        progress.replicate(100, 1024);
-        progress.replicate(200, 1024);
-        progress.replicate(300, 1024);
-        progress.replicate(400, 1024);
-        progress.replicate(500, 1024);
+        progress.replicate(100, 1024, 0);
+        progress.replicate(200, 1024, 0);
+        progress.replicate(300, 1024, 0);
+        progress.replicate(400, 1024, 0);
+        progress.replicate(500, 1024, 0);
 
         // Now its timeout and lost entries in [300, 400).
         progress.on_timeout(300..400, 1024);
@@ -302,11 +313,11 @@ mod tests {
         assert_eq!(bytes, 0);
 
         // 2. retransmit first.
-        progress.on_received(100, 0);
+        progress.on_received(100);
         let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
         assert_eq!(start, 300);
         assert_eq!(end, 400);
-        progress.replicate(end, bytes);
+        progress.replicate(end, bytes, 0);
 
         // not available
         let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
@@ -315,7 +326,7 @@ mod tests {
         assert_eq!(bytes, 0);
 
         // 3. try replicate normal entries.
-        progress.on_received(200, 0);
+        progress.on_received(200);
         let (Range { start, end }, _) = progress.next_chunk(600, 0);
         assert_eq!(start, 500);
         assert_eq!(end, 600);
@@ -324,7 +335,7 @@ mod tests {
     #[test]
     fn deadlock_but_advance_by_tick() {
         let mut progress = Progress::new(1);
-        progress.replicate(100, 1024);
+        progress.replicate(100, 1024, 0);
         progress.on_timeout(1..100, 1024);
 
         // not available
@@ -336,5 +347,14 @@ mod tests {
         let (Range { start, end }, _) = progress.next_chunk(600, 1);
         assert_eq!(start, 1);
         assert_eq!(end, 100);
+    }
+
+    #[test]
+    fn timeout_reset_replicating_acked_index() {
+        let mut progress = Progress::new(1);
+        progress.replicate(100, 1024, 100);
+        assert!(progress.is_acked_seq_replicating(Sequence::new(1, 100)));
+        progress.on_timeout(1..100, 1024);
+        assert!(!progress.is_acked_seq_replicating(Sequence::new(1, 100)));
     }
 }

@@ -14,7 +14,6 @@
 
 use std::{collections::HashMap, fmt::Display, ops::Range};
 
-use bitflags::bitflags;
 use log::{error, info, warn};
 use stream_engine_proto::ObserverState;
 
@@ -29,13 +28,6 @@ pub(super) struct Ready {
     pub pending_learns: Vec<Learn>,
 }
 
-bitflags! {
-    struct Flags : u64 {
-        const NONE = 0;
-        const ACK_ADVANCED = 0x1;
-    }
-}
-
 pub(super) struct StreamStateMachine {
     pub stream_id: u64,
     pub epoch: u32,
@@ -44,16 +36,12 @@ pub(super) struct StreamStateMachine {
     pub state: ObserverState,
     pub replicate_policy: ReplicatePolicy,
 
-    pub acked_seq: Sequence,
-
     latest_tick: usize,
 
     replicate: Box<Replicate>,
     recovering_replicates: HashMap<u32, Box<Replicate>>,
 
     ready: Ready,
-
-    flags: Flags,
 }
 
 impl Display for StreamStateMachine {
@@ -73,7 +61,6 @@ impl StreamStateMachine {
             state: ObserverState::Following,
             latest_tick: 0,
             replicate_policy: ReplicatePolicy::Simple,
-            acked_seq: Sequence::default(),
             replicate: Box::new(Replicate::new(
                 INITIAL_EPOCH,
                 INITIAL_EPOCH,
@@ -81,8 +68,6 @@ impl StreamStateMachine {
                 ReplicatePolicy::Simple,
             )),
             ready: Ready::default(),
-            flags: Flags::NONE,
-            // pending_epochs: Vec::default(),
             recovering_replicates: HashMap::new(),
         }
     }
@@ -169,13 +154,8 @@ impl StreamStateMachine {
         }
 
         info!(
-            "stream {} promote epoch from {} to {}, new role {:?}, leader {}, num copy {}",
-            self.stream_id,
-            prev_epoch,
-            epoch,
-            self.role,
-            self.leader,
-            self.replicate.copy_set.len(),
+            "stream {} promote epoch from {} to {}, new role {:?}, leader {}",
+            self.stream_id, prev_epoch, epoch, self.role, self.leader,
         );
 
         true
@@ -229,7 +209,7 @@ impl StreamStateMachine {
                 epoch: self.epoch,
                 event,
             };
-            Ok(self.replicate.mem_store.append(entry))
+            Ok(self.replicate.append(entry))
         }
     }
 
@@ -237,8 +217,7 @@ impl StreamStateMachine {
         if self.role == Role::Leader {
             self.advance();
             self.all_replicates_broadcast();
-            self.flags = Flags::NONE;
-            self.ready.acked_seq = self.acked_seq;
+            self.ready.acked_seq = self.replicate.acked_seq();
             Some(std::mem::take(&mut self.ready))
         } else {
             None
@@ -247,29 +226,19 @@ impl StreamStateMachine {
 
     fn advance(&mut self) {
         debug_assert_eq!(self.role, Role::Leader);
+
         // Don't ack any entries if there exists a pending segment.
         if !self.recovering_replicates.is_empty() {
-            return;
-        }
-
-        let acked_seq = self
-            .replicate_policy
-            .advance_acked_sequence(self.epoch, &self.replicate.copy_set);
-        if self.acked_seq < acked_seq {
-            self.acked_seq = acked_seq;
-            self.flags |= Flags::ACK_ADVANCED;
+            for replicate in self.recovering_replicates.values_mut() {
+                replicate.advance_acked_sequence();
+            }
+        } else {
+            self.replicate.advance_acked_sequence();
         }
     }
 
-    fn broadcast(
-        ready: &mut Ready,
-        replicate: &mut Replicate,
-        latest_tick: usize,
-        acked_seq: Sequence,
-        acked_index_advanced: bool,
-    ) {
-        let (mut writes, mut learns) =
-            replicate.broadcast(latest_tick, acked_seq, acked_index_advanced);
+    fn broadcast(ready: &mut Ready, replicate: &mut Replicate, latest_tick: usize) {
+        let (mut writes, mut learns) = replicate.broadcast(latest_tick);
         ready.pending_writes.append(&mut writes);
         ready.pending_learns.append(&mut learns);
     }
@@ -279,27 +248,13 @@ impl StreamStateMachine {
 
         if let Some(epoch) = self.recovering_replicates.keys().min().cloned() {
             let replicate = self.recovering_replicates.get_mut(&epoch).unwrap();
-            Self::broadcast(
-                &mut self.ready,
-                replicate,
-                self.latest_tick,
-                self.acked_seq,
-                false,
-            );
+            Self::broadcast(&mut self.ready, replicate, self.latest_tick);
         }
 
         // Do not replicate entries if there exists two pending segments.
-        if self.recovering_replicates.len() == 2 {
-            return;
+        if self.recovering_replicates.len() != 2 {
+            Self::broadcast(&mut self.ready, &mut self.replicate, self.latest_tick);
         }
-
-        Self::broadcast(
-            &mut self.ready,
-            &mut self.replicate,
-            self.latest_tick,
-            self.acked_seq,
-            self.flags.contains(Flags::ACK_ADVANCED),
-        );
     }
 
     fn handle_received(&mut self, target: &str, epoch: u32, index: u32) {
