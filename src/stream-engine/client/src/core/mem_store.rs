@@ -60,10 +60,11 @@ impl MemStore {
     }
 
     /// Range values.
-    pub fn range(&self, r: std::ops::Range<u32>, quota: usize) -> Option<(Vec<Entry>, usize)> {
+    pub fn range(&self, mut r: std::ops::Range<u32>, quota: usize) -> Option<(Vec<Entry>, usize)> {
         let target_bytes = self.base_bytes + quota + 1;
         let next_index = self.next_index();
-        if r.start < r.end && self.first_index <= r.start && r.end <= next_index {
+        r.end = r.end.min(next_index);
+        if r.start < r.end && self.first_index <= r.start {
             let start = (r.start - self.first_index) as usize;
             let end = (r.end - self.first_index) as usize;
 
@@ -178,11 +179,12 @@ mod tests {
         ];
 
         for test in tests {
+            println!("test {:?}", test);
             let mut mem_store = MemStore::new(1);
             for entry in test.entries {
                 mem_store.append(entry);
             }
-            let got = mem_store.range(test.range, 409600);
+            let got = mem_store.range(test.range, 4096000);
             match test.expect {
                 Some(entries) => {
                     assert!(got.is_some());

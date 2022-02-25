@@ -282,7 +282,7 @@ impl Progress {
     #[inline(always)]
     pub fn is_replicating_acked_seq(&self, seq: Sequence) -> bool {
         seq.epoch < self.epoch
-            || (seq.epoch == self.epoch && seq.index < self.replicating_acked_index)
+            || (seq.epoch == self.epoch && seq.index <= self.replicating_acked_index)
     }
 }
 
