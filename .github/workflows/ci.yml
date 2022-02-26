@@ -225,5 +225,6 @@ jobs:
       - dependency
       - security
       - test
+      - it
     steps:
       - run: exit 0
