@@ -77,7 +77,7 @@ impl StartCommand {
         tokio::select! {
             res = kernel => {
                 if let Err(err) = res {
-                    error!(cause = %err, "Kernel: Fatal error occurs!");
+                    error!(cause = %err, "Fatal error occurs!");
                 }
             }
             _ = tokio::signal::ctrl_c() => {
