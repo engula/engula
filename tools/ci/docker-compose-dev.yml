@@ -15,8 +15,7 @@
 version: '3'
 services:
   standalone:
-    image: ghcr.io/engula/engula:latest
+    build: ../..
     ports:
       - "21716:21716"
-      - "21715:21715"
     command: server start

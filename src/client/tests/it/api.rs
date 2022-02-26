@@ -20,8 +20,6 @@ use crate::create_universe;
 #[tokio::test]
 #[ignore]
 async fn test_apis() -> Result<()> {
-    crate::wait_for_liveness().await?;
-
     let uv = create_universe().await?;
     let db = uv.create_database("blob").await?;
     let co = db.create_collection::<Blob>("blob").await?;
