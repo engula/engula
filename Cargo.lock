@@ -252,6 +252,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "engula-apis",
+ "hyper",
  "prost",
  "tokio",
  "tonic",

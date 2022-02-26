@@ -16,3 +16,4 @@ tonic = "0.6"
 
 [dev-dependencies]
 anyhow = "1.0"
+hyper = "0.14.17"
