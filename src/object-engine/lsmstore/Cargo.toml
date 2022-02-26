@@ -5,4 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+object-engine-common = { path = "../common" }
+object-engine-filestore = { path = "../filestore" }
+
 bytes = "1.1"
