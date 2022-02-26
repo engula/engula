@@ -34,8 +34,8 @@ use bytes::BufMut;
 pub struct BlockBuilder {
     buf: Vec<u8>,
     restarts: Vec<u32>,
-    num_entries: u32,
-    restart_interval: u32,
+    num_entries: usize,
+    restart_interval: usize,
 }
 
 impl Default for BlockBuilder {
@@ -51,7 +51,7 @@ impl Default for BlockBuilder {
 
 #[allow(dead_code)]
 impl BlockBuilder {
-    pub fn restart_interval(mut self, interval: u32) -> Self {
+    pub fn restart_interval(mut self, interval: usize) -> Self {
         self.restart_interval = interval;
         self
     }
@@ -81,6 +81,10 @@ impl BlockBuilder {
         }
         self.buf.put_u32(self.restarts.len() as u32);
         &self.buf
+    }
+
+    pub fn num_entries(&self) -> usize {
+        self.num_entries
     }
 
     pub fn encoded_size(&self) -> usize {

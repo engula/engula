@@ -13,3 +13,5 @@
 // limitations under the License.
 
 mod table;
+
+use object_engine_common::Result;
