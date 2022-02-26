@@ -20,12 +20,20 @@ pub enum Error {
     NotFound(String),
     #[error("{0} already exists")]
     AlreadyExists(String),
-    #[error("invalid argument: {0}")]
+    #[error("{0}")]
     InvalidArgument(String),
+    #[error("{0}")]
+    Corrupted(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Unknown(Box<dyn std::error::Error + Send>),
+}
+
+impl Error {
+    pub fn corrupted(m: impl Into<String>) -> Self {
+        Self::Corrupted(m.into())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
