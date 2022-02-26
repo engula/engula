@@ -208,7 +208,7 @@ jobs:
 
       - name: Setup Docker Compose
         if: steps.skip-ci.outputs.skip != 'true'
-        run: docker-compose -f docker-compose-dev.yml up -d
+        run: docker-compose -f tools/ci/docker-compose-dev.yml up -d
 
       - name: Cargo test
         if: steps.skip-ci.outputs.skip != 'true'
