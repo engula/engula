@@ -16,8 +16,6 @@ use std::mem::size_of;
 
 use bytes::{Buf, BufMut};
 
-use crate::{Error, Result};
-
 pub struct BlockHandle {
     pub offset: u64,
     pub length: u64,
@@ -37,15 +35,10 @@ impl BlockHandle {
         buf
     }
 
-    pub fn decode_from<B: Buf>(buf: &mut B) -> Result<Self> {
-        if buf.remaining() >= ENCODED_SIZE {
-            let handle = BlockHandle {
-                offset: buf.get_u64(),
-                length: buf.get_u64(),
-            };
-            Ok(handle)
-        } else {
-            Err(Error::corrupted("block handle is too small"))
+    pub fn decode_from<B: Buf>(buf: &mut B) -> Self {
+        BlockHandle {
+            offset: buf.get_u64(),
+            length: buf.get_u64(),
         }
     }
 }

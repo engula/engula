@@ -16,7 +16,6 @@ use std::{mem::size_of, ops::Range, sync::Arc};
 
 use bytes::Buf;
 
-#[allow(dead_code)]
 pub struct BlockIter {
     block: Arc<[u8]>,
     num_restarts: usize,
@@ -25,7 +24,6 @@ pub struct BlockIter {
     value_range: Range<usize>,
 }
 
-#[allow(dead_code)]
 impl BlockIter {
     pub fn new(block: Arc<[u8]>) -> Self {
         let offset = block.len() - size_of::<u32>();
