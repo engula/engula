@@ -19,8 +19,11 @@ mod table_builder;
 mod table_footer;
 mod table_reader;
 
-use self::{block_builder::BlockBuilder, block_handle::BlockHandle, table_footer::TableFooter};
+use self::{
+    block_builder::BlockBuilder, block_handle::BlockHandle, block_iter::BlockIter,
+    table_footer::TableFooter,
+};
 pub use self::{
     table_builder::{TableBuilder, TableBuilderOptions, TableDesc},
-    table_reader::TableReader,
+    table_reader::{TableIter, TableReader},
 };

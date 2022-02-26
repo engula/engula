@@ -16,13 +16,13 @@ use std::sync::Arc;
 
 use object_engine_filestore::RandomRead;
 
-use super::{table_footer, BlockHandle, TableFooter};
+use super::{table_footer, BlockHandle, BlockIter, TableFooter};
 use crate::Result;
 
 #[allow(dead_code)]
 pub struct TableReader<R> {
     reader: Reader<R>,
-    index_block: Vec<u8>,
+    index_block: Arc<[u8]>,
 }
 
 #[allow(dead_code)]
@@ -39,11 +39,111 @@ where
             index_block,
         })
     }
+
+    pub fn iter(&self) -> TableIter<R> {
+        let index_iter = BlockIter::new(self.index_block.clone());
+        TableIter::new(self.reader.clone(), index_iter)
+    }
 }
 
-#[derive(Clone)]
+#[allow(dead_code)]
+pub struct TableIter<R> {
+    reader: Reader<R>,
+    index_iter: BlockIter,
+    block_iter: Option<BlockIter>,
+}
+
+#[allow(dead_code)]
+impl<R> TableIter<R>
+where
+    R: RandomRead,
+{
+    fn new(reader: Reader<R>, index_iter: BlockIter) -> Self {
+        Self {
+            reader,
+            index_iter,
+            block_iter: None,
+        }
+    }
+
+    pub fn key(&self) -> &[u8] {
+        debug_assert!(self.valid());
+        self.block_iter.as_ref().unwrap().key()
+    }
+
+    pub fn value(&self) -> &[u8] {
+        debug_assert!(self.valid());
+        self.block_iter.as_ref().unwrap().value()
+    }
+
+    pub fn valid(&self) -> bool {
+        self.block_iter
+            .as_ref()
+            .map(|x| x.valid())
+            .unwrap_or_default()
+    }
+
+    pub async fn seek_to_first(&mut self) -> Result<()> {
+        self.index_iter.seek_to_first();
+        self.block_iter = if self.index_iter.valid() {
+            let mut iter = self.read_block_iter().await?;
+            iter.seek_to_first();
+            Some(iter)
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
+        self.index_iter.seek(target);
+        self.block_iter = if self.index_iter.valid() {
+            let mut iter = self.read_block_iter().await?;
+            iter.seek(target);
+            Some(iter)
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    pub async fn next(&mut self) -> Result<()> {
+        if let Some(mut block_iter) = self.block_iter.take() {
+            block_iter.next();
+            if block_iter.valid() {
+                self.block_iter = Some(block_iter);
+            } else {
+                self.index_iter.next();
+                if self.index_iter.valid() {
+                    let mut iter = self.read_block_iter().await?;
+                    iter.seek_to_first();
+                    self.block_iter = Some(iter);
+                } else {
+                    self.block_iter = None;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn read_block_iter(&mut self) -> Result<BlockIter> {
+        let mut index_value = self.index_iter.value();
+        let handle = BlockHandle::decode_from(&mut index_value);
+        let block = self.reader.read_block(&handle).await?;
+        Ok(BlockIter::new(block))
+    }
+}
+
 struct Reader<R> {
     reader: Arc<R>,
+}
+
+impl<R> Clone for Reader<R> {
+    fn clone(&self) -> Self {
+        Self {
+            reader: self.reader.clone(),
+        }
+    }
 }
 
 impl<R> Reader<R>
@@ -56,10 +156,10 @@ where
         }
     }
 
-    async fn read_block(&self, handle: &BlockHandle) -> Result<Vec<u8>> {
+    async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<[u8]>> {
         let mut buf = Vec::with_capacity(handle.length as usize);
         self.reader.read_at(&mut buf, handle.offset).await?;
-        Ok(buf)
+        Ok(buf.into())
     }
 
     async fn read_footer(&self, table_size: usize) -> Result<TableFooter> {

@@ -36,7 +36,7 @@ impl TableFooter {
 
     pub fn decode_from<B: Buf>(buf: &mut B) -> Result<Self> {
         if buf.remaining() >= ENCODED_SIZE {
-            let index_handle = BlockHandle::decode_from(buf)?;
+            let index_handle = BlockHandle::decode_from(buf);
             Ok(Self { index_handle })
         } else {
             Err(Error::corrupted("table footer is too small"))
