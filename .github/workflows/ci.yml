@@ -140,7 +140,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [nightly]
 
     runs-on: ${{ matrix.os }}
 
@@ -188,6 +187,36 @@ jobs:
         command: test
         args: --workspace
 
+  it:
+    if: (github.event_name == 'schedule' && github.repository == 'engula/engula') || (github.event_name != 'schedule')
+    name: Run integration tests
+    needs: [ editorconfig ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Check Skip CI
+        id: skip-ci
+        uses: ./.github/actions/skip
+
+      - uses: Swatinem/rust-cache@v1
+        if: steps.skip-ci.outputs.skip != 'true'
+
+      - name: Setup Docker Compose
+        if: steps.skip-ci.outputs.skip != 'true'
+        run: docker-compose -f tools/ci/docker-compose-dev.yml up -d
+
+      - name: Cargo test
+        if: steps.skip-ci.outputs.skip != 'true'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --test it -p engula-client -- --ignored
+
   pass:
     name: All tests passed
     runs-on: ubuntu-latest
@@ -196,5 +225,6 @@ jobs:
       - dependency
       - security
       - test
+      - it
     steps:
       - run: exit 0
