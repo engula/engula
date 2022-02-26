@@ -14,4 +14,4 @@
 
 mod table;
 
-use object_engine_common::Result;
+use object_engine_common::{Error, Result};

@@ -15,6 +15,11 @@
 mod block_builder;
 mod block_handle;
 mod table_builder;
+mod table_footer;
+mod table_reader;
 
-pub use self::table_builder::{TableBuilder, TableBuilderOptions, TableDesc};
-use self::{block_builder::BlockBuilder, block_handle::BlockHandle};
+use self::{block_builder::BlockBuilder, block_handle::BlockHandle, table_footer::TableFooter};
+pub use self::{
+    table_builder::{TableBuilder, TableBuilderOptions, TableDesc},
+    table_reader::TableReader,
+};

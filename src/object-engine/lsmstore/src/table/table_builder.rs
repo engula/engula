@@ -14,7 +14,7 @@
 
 use object_engine_filestore::SequentialWrite;
 
-use super::{BlockBuilder, BlockHandle};
+use super::{BlockBuilder, BlockHandle, TableFooter};
 use crate::Result;
 
 #[derive(Default)]
@@ -35,7 +35,7 @@ impl Default for TableBuilderOptions {
 }
 
 pub struct TableBuilder<W> {
-    writer: TableWriter<W>,
+    writer: Writer<W>,
     options: TableBuilderOptions,
     lower_bound: Vec<u8>,
     upper_bound: Vec<u8>,
@@ -50,7 +50,7 @@ where
 {
     pub fn new(writer: W) -> Self {
         Self {
-            writer: TableWriter::new(writer),
+            writer: Writer::new(writer),
             options: TableBuilderOptions::default(),
             lower_bound: Vec::new(),
             upper_bound: Vec::new(),
@@ -86,10 +86,10 @@ where
         if self.data_block_builder.num_entries() > 0 {
             let block = self.data_block_builder.finish();
             let handle = self.writer.write_block(block).await?;
+            self.data_block_builder.reset();
             let index_value = handle.encode_to_vec();
             self.index_block_builder
                 .add(&self.upper_bound, &index_value);
-            self.data_block_builder.reset();
         }
         Ok(())
     }
@@ -98,20 +98,22 @@ where
         if self.index_block_builder.num_entries() > 0 {
             let block = self.index_block_builder.finish();
             let handle = self.writer.write_block(block).await?;
-            let footer = handle.encode_to_vec();
-            self.writer.write(&footer).await?;
             self.index_block_builder.reset();
+            let footer = TableFooter {
+                index_handle: handle,
+            };
+            self.writer.write_footer(&footer).await?;
         }
         Ok(())
     }
 }
 
-struct TableWriter<W> {
+struct Writer<W> {
     writer: W,
     offset: u64,
 }
 
-impl<W> TableWriter<W>
+impl<W> Writer<W>
 where
     W: SequentialWrite,
 {
@@ -136,6 +138,11 @@ where
         };
         self.write(block).await?;
         Ok(handle)
+    }
+
+    async fn write_footer(&mut self, footer: &TableFooter) -> Result<()> {
+        let buf = footer.encode_to_vec();
+        self.write(&buf).await
     }
 
     async fn finish(&mut self) -> Result<()> {

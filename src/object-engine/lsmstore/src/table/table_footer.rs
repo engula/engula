@@ -12,23 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::mem::size_of;
-
 use bytes::{Buf, BufMut};
 
+use super::{block_handle, BlockHandle};
 use crate::{Error, Result};
 
-pub struct BlockHandle {
-    pub offset: u64,
-    pub length: u64,
+pub struct TableFooter {
+    pub index_handle: BlockHandle,
 }
 
-pub const ENCODED_SIZE: usize = size_of::<u64>() * 2;
+pub const ENCODED_SIZE: usize = block_handle::ENCODED_SIZE;
 
-impl BlockHandle {
+impl TableFooter {
     pub fn encode_to<B: BufMut>(&self, buf: &mut B) {
-        buf.put_u64(self.offset);
-        buf.put_u64(self.length);
+        self.index_handle.encode_to(buf);
     }
 
     pub fn encode_to_vec(&self) -> Vec<u8> {
@@ -39,13 +36,10 @@ impl BlockHandle {
 
     pub fn decode_from<B: Buf>(buf: &mut B) -> Result<Self> {
         if buf.remaining() >= ENCODED_SIZE {
-            let handle = BlockHandle {
-                offset: buf.get_u64(),
-                length: buf.get_u64(),
-            };
-            Ok(handle)
+            let index_handle = BlockHandle::decode_from(buf)?;
+            Ok(Self { index_handle })
         } else {
-            Err(Error::corrupted("block handle is too small"))
+            Err(Error::corrupted("table footer is too small"))
         }
     }
 }
