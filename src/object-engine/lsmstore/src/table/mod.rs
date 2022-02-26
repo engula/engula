@@ -14,6 +14,7 @@
 
 mod block_builder;
 mod block_handle;
+mod block_iter;
 mod table_builder;
 mod table_footer;
 mod table_reader;
