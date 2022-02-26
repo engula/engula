@@ -18,4 +18,5 @@ services:
     build: .
     ports:
       - "21716:21716"
+      - "21715:21715"
     command: server start

@@ -18,4 +18,5 @@ services:
     image: ghcr.io/engula/engula:latest
     ports:
       - "21716:21716"
+      - "21715:21715"
     command: server start
