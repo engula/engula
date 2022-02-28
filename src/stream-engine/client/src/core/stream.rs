@@ -336,7 +336,7 @@ impl StreamStateMachine {
     }
 
     fn try_to_finish_recovering(ready: &mut Ready, replicate: &Replicate) {
-        if ready.restored_segment.is_none() && replicate.are_enough_targets_acked() {
+        if ready.restored_segment.is_none() && replicate.is_enough_targets_acked() {
             // FIXME(w41ter) too many sealing request.
             ready.restored_segment = Some(Restored {
                 segment_epoch: replicate.epoch(),
@@ -361,34 +361,30 @@ mod tests {
 
     fn receive_seals(sm: &mut StreamStateMachine, mutates: &Vec<Mutate>) {
         for mutate in mutates {
-            match &mutate.kind {
-                MutKind::Seal => sm.step(Message {
+            if let MutKind::Seal = &mutate.kind {
+                sm.step(Message {
                     target: mutate.target.clone(),
                     segment_epoch: mutate.seg_epoch,
                     writer_epoch: mutate.writer_epoch,
                     detail: MsgDetail::Sealed { acked_index: 0 },
-                }),
-                _ => {}
+                });
             }
         }
     }
 
     fn receive_writes(sm: &mut StreamStateMachine, mutates: &Vec<Mutate>) {
         for mutate in mutates {
-            match &mutate.kind {
-                MutKind::Write(write) => {
-                    let index = write.range.end - 1;
-                    sm.step(Message {
-                        target: mutate.target.clone(),
-                        segment_epoch: mutate.seg_epoch,
-                        writer_epoch: mutate.writer_epoch,
-                        detail: MsgDetail::Received {
-                            matched_index: index,
-                            acked_index: write.acked_seq.index,
-                        },
-                    });
-                }
-                _ => {}
+            if let MutKind::Write(write) = &mutate.kind {
+                let index = write.range.end - 1;
+                sm.step(Message {
+                    target: mutate.target.clone(),
+                    segment_epoch: mutate.seg_epoch,
+                    writer_epoch: mutate.writer_epoch,
+                    detail: MsgDetail::Received {
+                        matched_index: index,
+                        acked_index: write.acked_seq.index,
+                    },
+                });
             }
         }
     }
@@ -553,7 +549,7 @@ mod tests {
             Role::Leader,
             "".to_string(),
             copy_set.clone(),
-            vec![(1, copy_set.clone())],
+            vec![(1, copy_set)],
         );
 
         let ready = ready.unwrap();
@@ -592,7 +588,7 @@ mod tests {
             Role::Leader,
             "".to_string(),
             copy_set.clone(),
-            vec![(1, copy_set.clone())],
+            vec![(1, copy_set)],
         );
 
         let ready = sm.collect();
@@ -625,5 +621,72 @@ mod tests {
         });
         let ready = sm.collect().unwrap();
         assert!(ready.restored_segment.is_some());
+    }
+
+    fn advance_until_acked_seq(
+        sm: &mut StreamStateMachine,
+        expected_seq: Sequence,
+        stores: HashMap<u32, Vec<(u32, Entry)>>,
+    ) {
+        loop {
+            if let Some(ready) = sm.collect() {
+                if ready.acked_seq >= expected_seq {
+                    break;
+                }
+
+                if let Some(restored) = ready.restored_segment {
+                    sm.step(Message {
+                        target: Default::default(),
+                        segment_epoch: restored.segment_epoch,
+                        writer_epoch: restored.writer_epoch,
+                        detail: MsgDetail::Recovered,
+                    });
+                }
+
+                receive_writes(sm, &ready.pending_writes);
+                receive_seals(sm, &ready.pending_writes);
+                for learn in ready.pending_learns {
+                    sm.step(Message {
+                        target: learn.target.clone(),
+                        segment_epoch: learn.seg_epoch,
+                        writer_epoch: learn.writer_epoch,
+                        detail: MsgDetail::Learned(Learned {
+                            entries: stores.get(&learn.seg_epoch).cloned().unwrap(),
+                        }),
+                    });
+                    sm.step(Message {
+                        target: learn.target,
+                        segment_epoch: learn.seg_epoch,
+                        writer_epoch: learn.writer_epoch,
+                        detail: MsgDetail::Learned(Learned { entries: vec![] }),
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn completely_recovery_process() {
+        use super::super::replicate::make_learned_entries;
+
+        let mut stores = HashMap::new();
+        stores.insert(8, make_learned_entries(8, 1, 1024));
+        stores.insert(9, make_learned_entries(9, 1, 1024));
+
+        let mut sm = StreamStateMachine::new(1);
+        let copy_set = vec!["a".to_string()];
+
+        let epoch = 10;
+        let recovering_segments = vec![(8, copy_set.clone()), (9, copy_set.clone())];
+        sm.promote(
+            epoch,
+            Role::Leader,
+            "".to_string(),
+            copy_set,
+            recovering_segments,
+        );
+
+        let expected_seq = sm.propose([0u8].into()).unwrap();
+        advance_until_acked_seq(&mut sm, expected_seq, stores);
     }
 }

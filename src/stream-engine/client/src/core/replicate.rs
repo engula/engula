@@ -125,12 +125,12 @@ impl Replicate {
         self.copy_set.values_mut().for_each(Progress::on_tick);
     }
 
-    pub fn are_enough_targets_acked(&self) -> bool {
+    pub fn is_enough_targets_acked(&self) -> bool {
         let last_index = self.mem_store.next_index().saturating_sub(1);
         matches!(self.learning_state, LearningState::Terminated)
             && self
                 .replicate_policy
-                .enough_targets_acked(last_index, &self.copy_set)
+                .is_enough_targets_acked(last_index, &self.copy_set)
     }
 
     pub fn advance_acked_sequence(&mut self) -> bool {
@@ -405,10 +405,18 @@ impl EpochInfo {
 }
 
 #[cfg(test)]
+pub fn make_learned_entries(epoch: u32, start: u32, end: u32) -> Vec<(u32, Entry)> {
+    (start..end)
+        .into_iter()
+        .zip(self::tests::make_entries(epoch, start..end).into_iter())
+        .collect()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_entries(epoch: u32, range: Range<u32>) -> Vec<Entry> {
+    pub fn make_entries(epoch: u32, range: Range<u32>) -> Vec<Entry> {
         range
             .into_iter()
             .map(|i| i.to_le_bytes())
@@ -583,13 +591,6 @@ mod tests {
         assert_eq!(mutates.len(), 0);
     }
 
-    fn make_learned_entries(epoch: u32, start: u32, end: u32) -> Vec<(u32, Entry)> {
-        (start..end)
-            .into_iter()
-            .zip(make_entries(epoch, start..end).into_iter())
-            .collect()
-    }
-
     /// Like a normal state Replicate, recovering replicate also need to advance
     /// acked sequence manually.
     #[test]
@@ -724,10 +725,10 @@ mod tests {
         assert!(!learns.is_empty());
 
         // start from previous breakpoint.
-        assert!(learns.iter().filter(|l| l.target == "a").all(|l| {
-            println!("start index {}", l.start_index);
-            l.start_index == 110
-        }));
+        assert!(learns
+            .iter()
+            .filter(|l| l.target == "a")
+            .all(|l| { l.start_index == 110 }));
     }
 
     /// The epoch of learned entries should be updated to writer epoch, except

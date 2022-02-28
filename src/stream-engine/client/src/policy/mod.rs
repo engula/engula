@@ -56,13 +56,13 @@ impl Policy {
         }
     }
 
-    pub(super) fn enough_targets_acked(
+    pub(super) fn is_enough_targets_acked(
         self,
         index: u32,
         progresses: &HashMap<String, Progress>,
     ) -> bool {
         match self {
-            Policy::Simple => simple::enough_targets_acked(index, progresses),
+            Policy::Simple => simple::is_enough_targets_acked(index, progresses),
         }
     }
 
