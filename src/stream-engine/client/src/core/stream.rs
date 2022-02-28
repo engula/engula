@@ -170,9 +170,8 @@ impl StreamStateMachine {
     pub fn step(&mut self, msg: Message) {
         use std::cmp::Ordering;
         match msg.writer_epoch.cmp(&self.epoch) {
-            Ordering::Less => {
-                // FIXME(w41ter) When fast recovery is executed, the in-flights messages's epoch
-                // might be staled.
+            // Allowing sealed responses makes the fast recovering process more flexible.
+            Ordering::Less if !self.recovering_replicates.contains_key(&msg.segment_epoch) => {
                 warn!(
                     "{} ignore staled msg {} from {}, epoch {}",
                     self, msg.detail, msg.target, msg.writer_epoch
@@ -264,18 +263,24 @@ impl StreamStateMachine {
         }
     }
 
-    fn handle_received(&mut self, target: &str, epoch: u32, matched_index: u32, acked_index: u32) {
+    fn handle_received(
+        &mut self,
+        target: &str,
+        segment_epoch: u32,
+        matched_index: u32,
+        acked_index: u32,
+    ) {
         debug_assert_eq!(self.role, Role::Leader);
-        if self.epoch == epoch {
+        if self.epoch == segment_epoch {
             self.replicate
                 .handle_received(target, matched_index, acked_index);
-        } else if let Some(replicate) = self.recovering_replicates.get_mut(&epoch) {
+        } else if let Some(replicate) = self.recovering_replicates.get_mut(&segment_epoch) {
             replicate.handle_received(target, matched_index, acked_index);
             Self::try_to_finish_recovering(&mut self.ready, replicate);
         } else {
             warn!(
                 "{} receive staled RECEIVED from {}, epoch {}",
-                self, target, epoch
+                self, target, segment_epoch
             );
         }
     }
@@ -358,14 +363,28 @@ mod tests {
         });
     }
 
+    fn receive_seals(sm: &mut StreamStateMachine, mutates: &Vec<Mutate>) {
+        for mutate in mutates {
+            match &mutate.kind {
+                MutKind::Seal => sm.step(Message {
+                    target: mutate.target.clone(),
+                    segment_epoch: mutate.seg_epoch,
+                    writer_epoch: mutate.writer_epoch,
+                    detail: MsgDetail::Sealed { acked_index: 0 },
+                }),
+                _ => {}
+            }
+        }
+    }
+
     fn receive_writes(sm: &mut StreamStateMachine, mutates: &Vec<Mutate>) {
         for mutate in mutates {
             match &mutate.kind {
-                MutKind::Write(write) if !write.entries.is_empty() => {
-                    let index = write.range.start + write.entries.len() as u32 - 1;
+                MutKind::Write(write) => {
+                    let index = write.range.end - 1;
                     sm.step(Message {
                         target: mutate.target.clone(),
-                        segment_epoch: mutate.writer_epoch,
+                        segment_epoch: mutate.seg_epoch,
                         writer_epoch: mutate.writer_epoch,
                         detail: MsgDetail::Received {
                             matched_index: index,
@@ -516,5 +535,99 @@ mod tests {
         let ready = sm.collect();
         assert!(ready.is_some());
         assert!(ready.as_ref().unwrap().acked_seq >= Sequence::new(10, 3));
+    }
+
+    /// When a stream promote and do fast recovering, the messages send in
+    /// previous epoch should be accepted to advance the progresses.
+    #[test]
+    fn fast_recovering_would_receive_staled_response() {
+        let mut sm = StreamStateMachine::new(1);
+        let copy_set = vec!["a".to_string()];
+        sm.promote(1, Role::Leader, "".to_string(), copy_set.clone(), vec![]);
+
+        sm.propose([0u8].into()).unwrap();
+        sm.propose([1u8].into()).unwrap();
+        sm.propose([2u8].into()).unwrap();
+        let ready = sm.collect();
+        assert!(ready.is_some());
+
+        let epoch = 2;
+        sm.promote(
+            epoch,
+            Role::Leader,
+            "".to_string(),
+            copy_set.clone(),
+            vec![(1, copy_set.clone())],
+        );
+
+        let ready = ready.unwrap();
+        receive_writes(&mut sm, &ready.pending_writes);
+
+        let ready = sm.collect();
+        assert!(ready.is_some());
+        let ready = ready.unwrap();
+        receive_seals(&mut sm, &ready.pending_writes);
+
+        let ready = sm.collect();
+        assert!(ready.is_some());
+        let ready = ready.unwrap();
+        for m in ready.pending_writes {
+            match m.kind {
+                MutKind::Write(w) if w.entries.len() == 1 => {},
+                _ =>  panic!("Once the staled responses are accepted, there no any writes except acked writing or bridge record, write is {:?}", m),
+            }
+        }
+    }
+
+    #[test]
+    fn restored_timeout() {
+        let mut sm = StreamStateMachine::new(1);
+        let copy_set = vec!["a".to_string()];
+        sm.promote(1, Role::Leader, "".to_string(), copy_set.clone(), vec![]);
+
+        sm.propose([0u8].into()).unwrap();
+        sm.propose([1u8].into()).unwrap();
+        sm.propose([2u8].into()).unwrap();
+        let prev_ready = sm.collect();
+
+        let epoch = 2;
+        sm.promote(
+            epoch,
+            Role::Leader,
+            "".to_string(),
+            copy_set.clone(),
+            vec![(1, copy_set.clone())],
+        );
+
+        let ready = sm.collect();
+        assert!(ready.is_some());
+        let ready = ready.unwrap();
+        receive_seals(&mut sm, &ready.pending_writes);
+
+        let ready = prev_ready.unwrap();
+        receive_writes(&mut sm, &ready.pending_writes);
+
+        // advanced and broadcast bridge record.
+        let ready = sm.collect().unwrap();
+        receive_writes(&mut sm, &ready.pending_writes);
+
+        // advanced and broadcast acked writes
+        let ready = sm.collect().unwrap();
+        receive_writes(&mut sm, &ready.pending_writes);
+
+        let ready = sm.collect().unwrap();
+        assert!(ready.restored_segment.is_some());
+
+        sm.step(Message {
+            target: "a".to_owned(),
+            segment_epoch: 1,
+            writer_epoch: 2,
+            detail: MsgDetail::Timeout {
+                range: None,
+                bytes: 0,
+            },
+        });
+        let ready = sm.collect().unwrap();
+        assert!(ready.restored_segment.is_some());
     }
 }

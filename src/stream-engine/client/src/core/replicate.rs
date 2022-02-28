@@ -243,11 +243,10 @@ impl Replicate {
     pub fn handle_timeout(&mut self, target: &str, range: Option<Range<u32>>, bytes: usize) {
         match &mut self.learning_state {
             LearningState::None | LearningState::Terminated => {
-                if let Some(progress) = self.copy_set.get_mut(target) {
-                    progress.on_timeout(
-                        range.expect("normal replicating should exists a range field"),
-                        bytes,
-                    )
+                if let Some(range) = range {
+                    if let Some(progress) = self.copy_set.get_mut(target) {
+                        progress.on_timeout(range, bytes)
+                    }
                 }
             }
             LearningState::Sealing { pending, .. } => {
