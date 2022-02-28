@@ -21,9 +21,9 @@ We have two major git branches for now:
 
 ## Release process
 
-When the current release is almost ready, we can start a release process. By default, the release day will be a Friday.
+When the current release is almost ready, we can start a release process.
 
-### Prepare the release post (4 days before announce)
+### Prepare the release post (3 days before announce)
 
 Every release comes with a post announcing the release. Writing and reviewing the release post may take more time than expected. So it's a good idea to prepare it a few days before the release.
 
@@ -31,49 +31,35 @@ Every release comes with a post announcing the release. Writing and reviewing th
 
 Ensure all issues are resolved, and all commits are landed on the release branch.
 
-Bump the version number of the main and release branches:
+### Release day
 
-- The main branch should use the version number for the next release.
-- The release branch should use the version number for the current release.
-
-To bump the version number of all crates:
-
-```sh
-cargo workspaces version <bump> --no-git-tag
-```
-
-Note that we don't tag here because we will do that along with the release on Github.
-
-Then send a pull request with the generated commit to the main and release branches, respectively. After the commits have been merged, close the tracking issues and the milestone for the current release.
-
-### Release day (Friday)
-
-The following steps assume that you are on the release branch with `upstream` pointing to `github.com/engula/engula`.
+The following steps assume that you are on the release branch with `origin` pointing to `github.com/engula/engula`.
 
 - **30 minutes before announce** - Publish to crates.io and release on Github
+  - In the release branch, bump the version of public crates:
+
+    ```
+    cargo workspaces version <bump> --allow-branch release --no-individual-tags
+    ```
+
   - Publish all crates:
 
-    ```sh
+    ```
     cargo workspaces publish --from-git
     ```
 
     Check crates.io to see if everything works.
 
-  - Tag the release commit and push it to Github:
+  - Create a release with the version tag on Github.
 
-    ```sh
-    git tag vx.y.z
-    git push vx.y.z -u upstream
-    ```
-
-  - Create a release with the tag on Github.
+  - Close the tracking issues and the milestone for the current release.
 
 - **The announcement**
     - First, merge the release post.
-    - Tweet on [Twitter](https://twitter.com/engulaio).
-    - Post on [Reddit](https://www.reddit.com/r/rust).
+    - Tweet on [Twitter](https://twitter.com/engulaio)
+    - Share on [Reddit](https://www.reddit.com/r/rust)
     - Share on [Hacker News](https://news.ycombinator.com/)
-    - Send a message to everyone on [Zulip](https://engula.zulipchat.com/).
+    - Send a message to [Zulip](https://engula.zulipchat.com/)
 
 - Take a break to celebrate with all the contributors!
 

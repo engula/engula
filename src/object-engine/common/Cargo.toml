@@ -7,3 +7,4 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 thiserror = "1.0"
+tonic = "0.6"

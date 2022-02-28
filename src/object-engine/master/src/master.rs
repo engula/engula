@@ -14,10 +14,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use object_engine_proto::*;
 use tokio::sync::Mutex;
 
-use crate::error::{Error, Result};
+use crate::{proto::*, Error, Result};
 
 #[derive(Clone)]
 pub struct Master {

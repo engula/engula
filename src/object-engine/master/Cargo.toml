@@ -5,9 +5,12 @@ edition = "2021"
 publish = false
 
 [dependencies]
-object-engine-proto = { version = "0.1", path = "../proto" }
+object-engine-common = { version = "0.1", path = "../common" }
 
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }
 tonic = "0.6"
+
+[build-dependencies]
+tonic-build = "0.6"

@@ -8,7 +8,7 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a persistent data structure store, used as a database, cache, and storage engine.
+Engula is a cloud-native data structure store, used as a database, cache, and storage engine.
 
 Features:
 
@@ -17,25 +17,26 @@ Features:
 - Provide built-in cache to speed up reads, resist hotspots and traffic bursts.
 - Implement a cloud-native, multi-tenant architecture to deliver a cost-effective service.
 
-## Status
+## Usage
 
-We are working on v0.3. Please check the [roadmap][roadmap] for more details.
+The current released version is 0.3. You can start with this [tutorial][tutorial].
 
-[roadmap]: https://github.com/engula/engula/issues/359
+[tutorial]: https://www.engula.io/blog/tutorial-0.3
 
-We released demo 1 in Oct 2021 and v0.2 in Dec 2021. You can check the [demo 1 report](https://engula.com/posts/demo-1/) and [v0.2 release post](https://engula.io/posts/release-0.2/) for more details.
-
-## Examples
-
-You can check some usages in [examples](src/client/examples).
-
-To run the examples:
+You can also check more usages in [examples](src/client/examples). To run the examples:
 
 ```
 cargo run -p engula -- server start
-cargo run -p engula-client --example database
+cargo run -p engula-client --example tutorial
 cargo run -p engula-client --example {example file name}
 ```
+
+## Status
+
+We are working on v0.4. Please check the [roadmap][roadmap] for more details. For previous releases, please check the release posts on the [website][website].
+
+[roadmap]: https://github.com/engula/engula/issues/490
+[website]: https://engula.io/blog
 
 ## Contributing
 

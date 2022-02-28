@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::SocketAddr;
+
 use anyhow::Result;
 use clap::Parser;
 use tokio::net::TcpListener;
@@ -50,25 +52,30 @@ struct StartCommand {
     addr: String,
 }
 
+async fn connect(addr: &str) -> Result<(TcpListenerStream, SocketAddr)> {
+    let listener = TcpListener::bind(addr).await?;
+    let addr = listener.local_addr()?;
+    Ok((TcpListenerStream::new(listener), addr))
+}
+
 impl StartCommand {
     async fn run(self) -> Result<()> {
-        let listener = TcpListener::bind(self.addr).await?;
-        let addr = listener.local_addr()?;
+        let (kernel_stream, kernel_addr) = connect(self.addr.as_str()).await?;
 
         let transactor = engula_transactor::Server::new().into_service();
         let object_engine_master = object_engine_master::Server::new().into_service();
         let stream_engine_master = stream_engine_master::Server::new().into_service();
 
-        let serve = tonic::transport::Server::builder()
+        let kernel = tonic::transport::Server::builder()
             .add_service(transactor)
             .add_service(object_engine_master)
             .add_service(stream_engine_master)
-            .serve_with_incoming(TcpListenerStream::new(listener));
+            .serve_with_incoming(kernel_stream);
 
-        info!(message = "Starting Engula server...", %addr);
+        info!(message = "Starting Engula server...", %kernel_addr);
 
         tokio::select! {
-            res = serve => {
+            res = kernel => {
                 if let Err(err) = res {
                     error!(cause = %err, "Fatal error occurs!");
                 }

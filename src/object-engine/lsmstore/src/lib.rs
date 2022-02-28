@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod master;
-pub mod proto;
-mod server;
+mod table;
 
 use object_engine_common::{Error, Result};
-
-use self::master::{Master, Tenant};
-pub use self::server::Server;

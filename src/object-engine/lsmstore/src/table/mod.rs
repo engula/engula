@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod master;
-pub mod proto;
-mod server;
+mod block_builder;
+mod block_handle;
+mod block_iter;
+mod table_builder;
+mod table_footer;
+mod table_reader;
 
-use object_engine_common::{Error, Result};
-
-use self::master::{Master, Tenant};
-pub use self::server::Server;
+use self::{
+    block_builder::BlockBuilder, block_handle::BlockHandle, block_iter::BlockIter,
+    table_footer::TableFooter,
+};
+pub use self::{
+    table_builder::{TableBuilder, TableBuilderOptions, TableDesc},
+    table_reader::{TableIter, TableReader},
+};
