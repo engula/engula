@@ -106,6 +106,11 @@ impl Replicate {
     }
 
     #[inline(always)]
+    pub fn writer_epoch(&self) -> u32 {
+        self.epoch_info.writer
+    }
+
+    #[inline(always)]
     pub fn acked_seq(&self) -> Sequence {
         self.acked_seq
     }
@@ -120,10 +125,12 @@ impl Replicate {
         self.copy_set.values_mut().for_each(Progress::on_tick);
     }
 
-    pub fn all_target_matched(&self) -> bool {
+    pub fn are_enough_targets_acked(&self) -> bool {
         let last_index = self.mem_store.next_index().saturating_sub(1);
         matches!(self.learning_state, LearningState::Terminated)
-            && self.copy_set.iter().all(|(_, p)| p.is_matched(last_index))
+            && self
+                .replicate_policy
+                .enough_targets_acked(last_index, &self.copy_set)
     }
 
     pub fn advance_acked_sequence(&mut self) -> bool {
@@ -227,9 +234,9 @@ impl Replicate {
         };
     }
 
-    pub fn handle_received(&mut self, target: &str, index: u32) {
+    pub fn handle_received(&mut self, target: &str, matched_index: u32, acked_index: u32) {
         if let Some(progress) = self.copy_set.get_mut(target) {
-            progress.on_received(index);
+            progress.on_received(matched_index, acked_index);
         }
     }
 
@@ -344,8 +351,7 @@ impl Replicate {
 
         // All progress has already received all acked entries.
         for progress in self.copy_set.values_mut() {
-            progress.replicate_acked_index(actual_acked_index);
-            progress.on_received(actual_acked_index);
+            progress.on_received(actual_acked_index, actual_acked_index);
         }
         self.acked_seq = Sequence::new(self.epoch_info.segment, actual_acked_index);
         // FIXME(w41ter) update entries epoch.
@@ -425,7 +431,7 @@ mod tests {
         for m in mutates {
             match m.kind {
                 MutKind::Write(write) if !write.entries.is_empty() => {
-                    rep.handle_received(&m.target, write.range.end - 1);
+                    rep.handle_received(&m.target, write.range.end - 1, write.range.start - 1);
                 }
                 _ => unreachable!("mutate is {:?}", m),
             }
@@ -571,7 +577,7 @@ mod tests {
         append_and_replicate_entries(&mut rep, 1, 2048..4096);
         // Since the target has received entries before 2048, the replicate should
         // replicate acked index to stores immediately.
-        rep.handle_received("a", 2047);
+        rep.handle_received("a", 2047, 0);
         // But the transport is congest...
         rep.handle_timeout("a", Some(2048..4096), 1234);
 

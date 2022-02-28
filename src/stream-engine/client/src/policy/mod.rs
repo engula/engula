@@ -56,6 +56,16 @@ impl Policy {
         }
     }
 
+    pub(super) fn enough_targets_acked(
+        self,
+        index: u32,
+        progresses: &HashMap<String, Progress>,
+    ) -> bool {
+        match self {
+            Policy::Simple => simple::enough_targets_acked(index, progresses),
+        }
+    }
+
     pub(super) fn new_group_reader(
         self,
         epoch: u32,

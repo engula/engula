@@ -152,7 +152,6 @@ impl SlidingWindow {
 
 /// An abstraction for describing the state of a segment store, that receives
 /// and persists entries.
-#[allow(dead_code)]
 pub(crate) struct Progress {
     epoch: u32,
 
@@ -160,8 +159,9 @@ pub(crate) struct Progress {
     ///
     /// The default value is zero, so any proposal's index should greater than
     /// zero.
-    pub matched_index: u32,
+    matched_index: u32,
     next_index: u32,
+    acked_index: u32,
 
     /// Indicates the largest acked index send to the remote (perhaps not yet
     /// accepted).
@@ -181,6 +181,7 @@ impl Progress {
             epoch,
             matched_index: 0,
             next_index: 1,
+            acked_index: 0,
             replicating_acked_index: 0,
 
             // TODO(w41ter) config sliding window
@@ -230,13 +231,11 @@ impl Progress {
         }
     }
 
-    #[inline(always)]
-    pub fn replicate_acked_index(&mut self, index: u32) {
-        self.replicating_acked_index = self.replicating_acked_index.max(index);
-    }
-
     pub fn replicate(&mut self, next_index: u32, replicate_bytes: usize, replicating_index: u32) {
-        self.replicate_acked_index(replicating_index);
+        if self.replicating_acked_index < replicating_index {
+            self.replicating_acked_index = replicating_index;
+        }
+
         if self
             .congest
             .as_mut()
@@ -258,7 +257,17 @@ impl Progress {
     }
 
     /// The target has received and persisted entries.
-    pub fn on_received(&mut self, matched_index: u32) {
+    pub fn on_received(&mut self, matched_index: u32, acked_index: u32) {
+        debug_assert!(acked_index <= matched_index);
+
+        if self.acked_index < acked_index {
+            self.acked_index = acked_index;
+        }
+
+        if self.replicating_acked_index < acked_index {
+            self.replicating_acked_index = acked_index;
+        }
+
         if self.matched_index < matched_index {
             let consumed_bytes = self.sliding_window.release(matched_index);
             self.matched_index = matched_index;
@@ -294,10 +303,9 @@ impl Progress {
     }
 
     /// Return whether a target has been matched to the corresponding index.
-    #[allow(dead_code, unused)]
     #[inline(always)]
-    pub fn is_matched(&self, index: u32) -> bool {
-        self.matched_index >= index
+    pub fn is_acked(&self, index: u32) -> bool {
+        index <= self.acked_index
     }
 
     /// Return whether the acked index has been send to a target.
@@ -332,7 +340,7 @@ mod tests {
         assert_eq!(bytes, 0);
 
         // 2. retransmit first.
-        progress.on_received(100);
+        progress.on_received(100, 0);
         let (Range { start, end }, bytes) = progress.next_chunk(600);
         assert_eq!(start, 300);
         assert_eq!(end, 400);
@@ -345,7 +353,7 @@ mod tests {
         assert_eq!(bytes, 0);
 
         // 3. try replicate normal entries.
-        progress.on_received(200);
+        progress.on_received(200, 0);
         let (Range { start, end }, _) = progress.next_chunk(600);
         assert_eq!(start, 500);
         assert_eq!(end, 600);
@@ -381,7 +389,7 @@ mod tests {
     #[test]
     fn next_index_always_great_than_matched_index() {
         let mut progress = Progress::new(1);
-        progress.on_received(100);
+        progress.on_received(100, 0);
         assert!(progress.matched_index < progress.next_index);
     }
 }

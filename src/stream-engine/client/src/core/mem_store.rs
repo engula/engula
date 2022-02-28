@@ -179,7 +179,6 @@ mod tests {
         ];
 
         for test in tests {
-            println!("test {:?}", test);
             let mut mem_store = MemStore::new(1);
             for entry in test.entries {
                 mem_store.append(entry);

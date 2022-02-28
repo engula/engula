@@ -58,12 +58,22 @@ pub(crate) struct Learned {
     pub entries: Vec<(u32, Entry)>,
 }
 
+/// Restored is used to notify the worker to send a message to the master to
+/// seal the corresponding segment.
+#[allow(unused)]
+#[derive(Clone, Debug)]
+pub(crate) struct Restored {
+    pub segment_epoch: u32,
+    pub writer_epoch: u32,
+}
+
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
 #[allow(unused)]
 pub(crate) enum MsgDetail {
     Received {
-        index: u32,
+        matched_index: u32,
+        acked_index: u32,
     },
     Recovered,
     Rejected,
@@ -96,7 +106,7 @@ impl Display for MsgDetail {
 #[derive(Debug, Clone)]
 pub(crate) struct Message {
     pub target: String,
-    pub seg_epoch: u32,
-    pub epoch: u32,
+    pub segment_epoch: u32,
+    pub writer_epoch: u32,
     pub detail: MsgDetail,
 }
