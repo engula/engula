@@ -44,10 +44,7 @@ message ListTenantsRequest {}
 
 message ListTenantsResponse { repeated TenantDesc descs = 1; }
 
-message LookupTenantRequest {
-  uint64 id = 1;
-  string name = 2;
-}
+message LookupTenantRequest { string name = 1; }
 
 message LookupTenantResponse { TenantDesc desc = 1; }
 
@@ -59,10 +56,7 @@ message UpdateTenantRequest { TenantDesc desc = 1; }
 
 message UpdateTenantResponse {}
 
-message DeleteTenantRequest {
-  uint64 id = 1;
-  string name = 2;
-}
+message DeleteTenantRequest { uint64 id = 1; }
 
 message DeleteTenantResponse {}
 

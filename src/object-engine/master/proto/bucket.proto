@@ -47,10 +47,7 @@ message ListBucketsRequest {}
 
 message ListBucketsResponse { repeated BucketDesc descs = 1; }
 
-message LookupBucketRequest {
-  uint64 id = 1;
-  string name = 2;
-}
+message LookupBucketRequest { string name = 1; }
 
 message LookupBucketResponse { BucketDesc desc = 1; }
 
@@ -62,10 +59,7 @@ message UpdateBucketRequest { BucketDesc desc = 1; }
 
 message UpdateBucketResponse {}
 
-message DeleteBucketRequest {
-  uint64 id = 1;
-  string name = 2;
-}
+message DeleteBucketRequest { uint64 id = 1; }
 
 message DeleteBucketResponse {}
 
