@@ -581,6 +581,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engula-apis",
+ "object-engine-common",
  "object-engine-master",
  "prost",
  "thiserror",

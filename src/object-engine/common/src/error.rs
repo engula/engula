@@ -24,6 +24,8 @@ pub enum Error {
     InvalidArgument(String),
     #[error("{0}")]
     Corrupted(String),
+    #[error("{0}")]
+    Internal(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -39,6 +41,10 @@ impl Error {
         Self::Corrupted(m.into())
     }
 
+    pub fn internal(m: impl Into<String>) -> Self {
+        Self::Internal(m.into())
+    }
+
     pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
         Self::Unknown(Box::new(err))
     }
@@ -51,6 +57,7 @@ impl From<tonic::Status> for Error {
             tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
             tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
             tonic::Code::DataLoss => Error::Corrupted(s.message().into()),
+            tonic::Code::Internal => Error::Internal(s.message().into()),
             _ => Error::Unknown(Box::new(s)),
         }
     }
@@ -69,6 +76,7 @@ impl From<Error> for tonic::Status {
             Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
             Error::Corrupted(s) => (tonic::Code::DataLoss, s),
+            Error::Internal(s) => (tonic::Code::Internal, s),
             Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
             Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
         };

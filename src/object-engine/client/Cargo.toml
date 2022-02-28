@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 engula-apis = { version = "0.3", path = "../../apis" }
+object-engine-common = { version = "0.1", path = "../common" }
 object-engine-master = { version = "0.1", path = "../master" }
 
 prost = "0.9"

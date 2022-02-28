@@ -12,68 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use object_engine_master::Master;
 
-use engula_apis::*;
-use object_engine_master::proto::*;
-
-use crate::{master::Master, BucketTxn, Error, Result};
-
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Bucket {
-    inner: Arc<BucketInner>,
-}
-
-impl Bucket {
-    pub(crate) fn new(bucket: String, tenant: String, master: Master) -> Self {
-        let inner = BucketInner {
-            tenant,
-            bucket,
-            master,
-        };
-        Self {
-            inner: Arc::new(inner),
-        }
-    }
-
-    pub async fn desc(&self) -> Result<BucketDesc> {
-        let req = LookupBucketRequest {
-            name: self.inner.bucket.clone(),
-        };
-        let req = bucket_request_union::Request::LookupBucket(req);
-        let res = self.inner.bucket_union_call(req).await?;
-        let desc = if let bucket_response_union::Response::LookupBucket(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or(Error::InvalidResponse)
-    }
-
-    pub async fn eval(&self, _expr: Expr) -> Result<ExprResult> {
-        todo!();
-    }
-
-    pub async fn metadata(&self, _key: &[u8]) -> Result<Option<Vec<u8>>> {
-        todo!();
-    }
-
-    pub fn begin(&self) -> BucketTxn {
-        todo!();
-    }
-}
-
-struct BucketInner {
-    tenant: String,
-    bucket: String,
+    bucket_id: u64,
+    tenant_id: u64,
     master: Master,
 }
 
-impl BucketInner {
-    async fn bucket_union_call(
-        &self,
-        req: bucket_request_union::Request,
-    ) -> Result<bucket_response_union::Response> {
-        self.master.bucket_union(self.tenant.clone(), req).await
+impl Bucket {
+    pub(crate) fn new(bucket_id: u64, tenant_id: u64, master: Master) -> Self {
+        Self {
+            tenant_id,
+            bucket_id,
+            master,
+        }
     }
 }
