@@ -537,7 +537,7 @@ mod tests {
     }
 
     /// If an Replicate become recovering from normal state, the don't need to
-    /// learn unacked entries from stores because it already known all pending
+    /// learn un-acked entries from stores because it already known all pending
     /// entries and the replicating progress of each one of copy set.
     #[test]
     fn fast_recovering_step_terminated_directly_from_recovering() {
@@ -579,6 +579,13 @@ mod tests {
         assert_eq!(mutates.len(), 0);
     }
 
+    fn make_learned_entries(epoch: u32, start: u32, end: u32) -> Vec<(u32, Entry)> {
+        (start..end)
+            .into_iter()
+            .zip(make_entries(epoch, start..end).into_iter())
+            .collect()
+    }
+
     /// Like a normal state Replicate, recovering replicate also need to advance
     /// acked sequence manually.
     #[test]
@@ -608,18 +615,11 @@ mod tests {
             acked_indexes.insert("a".to_owned(), 1023);
             advance_and_receive_sealed(&mut rep, acked_indexes);
 
-            let make_learned_entries = |start, end| {
-                (start..end)
-                    .into_iter()
-                    .zip(make_entries(1, start..end).into_iter())
-                    .collect()
-            };
-
             if case.recovery {
                 let (writes, learns) = rep.broadcast();
                 assert!(writes.is_empty(), "writes is {:?}", writes);
                 assert!(!learns.is_empty());
-                rep.handle_learned("a", make_learned_entries(1024, 2048));
+                rep.handle_learned("a", make_learned_entries(1, 1024, 2048));
                 rep.handle_learned("a", vec![]); // Learning is finished.
             }
             assert!(
@@ -717,5 +717,48 @@ mod tests {
         rep.handle_timeout("a", None, 0);
         let (_, learns) = rep.broadcast();
         assert!(!learns.is_empty());
+    }
+
+    /// The epoch of learned entries should be updated to writer epoch, except
+    /// fast recovering.
+    #[test]
+    fn recovering_will_replicate_entries_with_writer_epoch() {
+        for recovery in vec![false, true] {
+            let mut rep = if recovery {
+                Replicate::recovery(1, 3, vec!["a".to_owned()], ReplicatePolicy::Simple)
+            } else {
+                let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+                append_and_replicate_entries(&mut rep, 1, 1..1024);
+                rep.become_recovery(3);
+                rep
+            };
+
+            let mut acked_indexes = HashMap::new();
+            acked_indexes.insert("a".to_owned(), 100);
+            advance_and_receive_sealed(&mut rep, acked_indexes);
+            if recovery {
+                let (_, learns) = rep.broadcast();
+                assert!(!learns.is_empty());
+                rep.handle_learned("a", make_learned_entries(2, 100, 1024));
+                rep.handle_learned("a", vec![]);
+            }
+
+            assert!(matches!(rep.learning_state, LearningState::Terminated));
+            let (writes, _) = rep.broadcast();
+            for w in writes {
+                match w.kind {
+                    MutKind::Write(write) => {
+                        for entry in write.entries {
+                            if recovery {
+                                assert!(entry.epoch() == 3);
+                            } else {
+                                assert!(entry.epoch() <= 3);
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
     }
 }
