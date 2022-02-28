@@ -23,30 +23,26 @@ message TenantResponse { repeated TenantResponseUnion responses = 1; }
 message TenantRequestUnion {
   oneof request {
     ListTenantsRequest list_tenants = 1;
-    LookupTenantRequest lookup_tenant = 2;
-    CreateTenantRequest create_tenant = 3;
-    UpdateTenantRequest update_tenant = 4;
-    DeleteTenantRequest delete_tenant = 5;
+    CreateTenantRequest create_tenant = 2;
+    UpdateTenantRequest update_tenant = 3;
+    DeleteTenantRequest delete_tenant = 4;
+    LookupTenantRequest lookup_tenant = 5;
   }
 }
 
 message TenantResponseUnion {
   oneof response {
     ListTenantsResponse list_tenants = 1;
-    LookupTenantResponse lookup_tenant = 2;
-    CreateTenantResponse create_tenant = 3;
-    UpdateTenantResponse update_tenant = 4;
-    DeleteTenantResponse delete_tenant = 5;
+    CreateTenantResponse create_tenant = 2;
+    UpdateTenantResponse update_tenant = 3;
+    DeleteTenantResponse delete_tenant = 4;
+    LookupTenantResponse lookup_tenant = 5;
   }
 }
 
 message ListTenantsRequest {}
 
 message ListTenantsResponse { repeated TenantDesc descs = 1; }
-
-message LookupTenantRequest { string name = 1; }
-
-message LookupTenantResponse { TenantDesc desc = 1; }
 
 message CreateTenantRequest { TenantDesc desc = 1; }
 
@@ -59,6 +55,10 @@ message UpdateTenantResponse {}
 message DeleteTenantRequest { uint64 id = 1; }
 
 message DeleteTenantResponse {}
+
+message LookupTenantRequest { string name = 1; }
+
+message LookupTenantResponse { TenantDesc desc = 1; }
 
 message TenantDesc {
   uint64 id = 1;

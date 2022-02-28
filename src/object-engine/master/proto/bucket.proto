@@ -26,30 +26,26 @@ message BucketResponse { repeated BucketResponseUnion responses = 1; }
 message BucketRequestUnion {
   oneof request {
     ListBucketsRequest list_buckets = 1;
-    LookupBucketRequest lookup_bucket = 2;
-    CreateBucketRequest create_bucket = 3;
-    UpdateBucketRequest update_bucket = 4;
-    DeleteBucketRequest delete_bucket = 5;
+    CreateBucketRequest create_bucket = 2;
+    UpdateBucketRequest update_bucket = 3;
+    DeleteBucketRequest delete_bucket = 4;
+    LookupBucketRequest lookup_bucket = 5;
   }
 }
 
 message BucketResponseUnion {
   oneof response {
     ListBucketsResponse list_buckets = 1;
-    LookupBucketResponse lookup_bucket = 5;
     CreateBucketResponse create_bucket = 2;
     UpdateBucketResponse update_bucket = 3;
     DeleteBucketResponse delete_bucket = 4;
+    LookupBucketResponse lookup_bucket = 5;
   }
 }
 
 message ListBucketsRequest {}
 
 message ListBucketsResponse { repeated BucketDesc descs = 1; }
-
-message LookupBucketRequest { string name = 1; }
-
-message LookupBucketResponse { BucketDesc desc = 1; }
 
 message CreateBucketRequest { BucketDesc desc = 1; }
 
@@ -62,6 +58,10 @@ message UpdateBucketResponse {}
 message DeleteBucketRequest { uint64 id = 1; }
 
 message DeleteBucketResponse {}
+
+message LookupBucketRequest { string name = 1; }
+
+message LookupBucketResponse { BucketDesc desc = 1; }
 
 message BucketDesc {
   uint64 id = 1;
