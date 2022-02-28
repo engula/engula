@@ -53,6 +53,10 @@ impl master_server::Master for Server {
         let res = self.handle_bucket(req).await?;
         Ok(Response::new(res))
     }
+
+    async fn ingest(&self, _: Request<IngestRequest>) -> TonicResult<Response<IngestResponse>> {
+        todo!()
+    }
 }
 
 impl Server {
