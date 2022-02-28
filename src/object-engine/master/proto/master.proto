@@ -20,6 +20,8 @@ service Master {
   rpc Tenant(TenantRequest) returns (TenantResponse) {}
 
   rpc Bucket(BucketRequest) returns (BucketResponse) {}
+
+  rpc Ingest(IngestRequest) returns (IngestResponse) {}
 }
 
 message TenantRequest { repeated TenantRequestUnion requests = 1; }
@@ -122,4 +124,56 @@ message BucketDesc {
   uint64 id = 1;
   string name = 2;
   uint64 parent_id = 3;
+}
+
+message IngestRequest {
+  uint64 tenant_id = 1;
+  IngestRequestUnion request = 2;
+}
+
+message IngestResponse { IngestResponseUnion response = 1; }
+
+message IngestRequestUnion {
+  oneof request {
+    BeginIngestionRequest begin_ingestion = 1;
+    CommitIngestionRequest commit_ingestion = 2;
+    AllocateFileNameRequest allocate_file_name = 3;
+  }
+}
+
+message IngestResponseUnion {
+  oneof response {
+    BeginIngestionResponse begin_ingestion = 1;
+    CommitIngestionResponse commit_ingestion = 2;
+    AllocateFileNameResponse allocate_file_name = 3;
+  }
+}
+
+message BeginIngestionRequest {}
+
+message BeginIngestionResponse {}
+
+message CommitIngestionRequest {
+  oneof output {
+    BulkLoadOutput bulkload = 1;
+    CompactionOutput compaction = 2;
+  }
+}
+
+message CommitIngestionResponse {}
+
+message AllocateFileNameRequest { uint64 count = 1; }
+
+message AllocateFileNameResponse { repeated string file_names = 1; }
+
+message BulkLoadOutput { repeated TenantFileDesc files = 1; }
+
+message CompactionOutput {}
+
+message TenantFileDesc {
+  uint64 bucket_id = 1;
+  string file_name = 2;
+  uint64 file_size = 3;
+  bytes lower_bound = 4;
+  bytes upper_bound = 5;
 }
