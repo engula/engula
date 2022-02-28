@@ -37,8 +37,6 @@ pub(super) struct StreamStateMachine {
     pub state: ObserverState,
     pub replicate_policy: ReplicatePolicy,
 
-    latest_tick: usize,
-
     replicate: Box<Replicate>,
     recovering_replicates: HashMap<u32, Box<Replicate>>,
 
@@ -60,7 +58,6 @@ impl StreamStateMachine {
             role: Role::Follower,
             leader: "".to_owned(),
             state: ObserverState::Following,
-            latest_tick: 0,
             replicate_policy: ReplicatePolicy::Simple,
             replicate: Box::new(Replicate::new(
                 INITIAL_EPOCH,
@@ -86,7 +83,6 @@ impl StreamStateMachine {
     }
 
     pub fn tick(&mut self) {
-        self.latest_tick += 1;
         self.replicate.on_tick();
         self.recovering_replicates
             .values_mut()

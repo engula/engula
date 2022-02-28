@@ -211,11 +211,11 @@ impl GroupReader {
     }
 
     /// Return the next index this target haven't receiving.
-    pub(crate) fn target_next_index(&self, target: &str, hint_index: u32) -> u32 {
+    pub(crate) fn target_next_index(&self, target: &str) -> u32 {
         self.reading_progress
             .get(target)
             .and_then(|p| p.entries.back().map(|e| e.0 + 1))
-            .unwrap_or(hint_index)
+            .unwrap_or(self.next_index)
     }
 }
 

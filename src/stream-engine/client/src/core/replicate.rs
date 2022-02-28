@@ -197,17 +197,16 @@ impl Replicate {
             }
             LearningState::Learning {
                 pending,
-                actual_acked_index,
                 group_reader,
+                ..
             } => {
                 // We would also replicate acked entries.
                 replicable = true;
-                let actual_acked_index = *actual_acked_index;
                 for target in std::mem::take(pending) {
                     // Learn from the previous breakpoint. If no data has been read before, we need
                     // to start reading from acked_index, the reason is that we don't know whether a
                     // bridge entry has already been committed.
-                    let start_index = group_reader.target_next_index(&target, actual_acked_index);
+                    let start_index = group_reader.target_next_index(&target);
                     pending_learns.push(self.epoch_info.build_learn(target, start_index));
                 }
             }
@@ -719,9 +718,16 @@ mod tests {
         let (_, learns) = rep.broadcast();
         assert!(learns.is_empty());
 
+        rep.handle_learned("a", make_learned_entries(1, 100, 110));
         rep.handle_timeout("a", None, 0);
         let (_, learns) = rep.broadcast();
         assert!(!learns.is_empty());
+
+        // start from previous breakpoint.
+        assert!(learns.iter().filter(|l| l.target == "a").all(|l| {
+            println!("start index {}", l.start_index);
+            l.start_index == 110
+        }));
     }
 
     /// The epoch of learned entries should be updated to writer epoch, except
