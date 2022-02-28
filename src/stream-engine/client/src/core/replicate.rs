@@ -278,7 +278,7 @@ impl Replicate {
                 // We have received satisfied SEALED response, now changes state to learn
                 // pending entries or just terminated if do fast recovering.
                 if *fast_recovery {
-                    self.become_terminated(0);
+                    self.become_terminated(true, 0);
                 } else {
                     self.become_learning(actual_acked_index);
                 }
@@ -306,18 +306,21 @@ impl Replicate {
                     }
 
                     let actual_acked_index = *actual_acked_index;
-                    self.become_terminated(actual_acked_index);
+                    self.become_terminated(false, actual_acked_index);
                 }
                 break;
             }
         }
     }
 
-    fn become_terminated(&mut self, actual_acked_index: u32) {
+    fn become_terminated(&mut self, fast_recovery: bool, actual_acked_index: u32) {
         // The next index is the `actual_acked_index`, means that all entries in all
         // stores are acked and a bridge record exists.  We could skip append new bridge
         // record in that case.
-        if actual_acked_index < self.mem_store.next_index() {
+        //
+        // For fast recovering, there should ensures that always append a bridge record
+        // to mem store.
+        if fast_recovery || actual_acked_index + 1 < self.mem_store.next_index() {
             self.mem_store.append(self.epoch_info.bridge());
         }
         self.learning_state = LearningState::Terminated;
@@ -452,6 +455,8 @@ mod tests {
         }
     }
 
+    /// If there is no error during the replicating process, the range of the
+    /// output mutations should keep continuously.
     #[test]
     fn replicate_keep_continuously() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -482,6 +487,8 @@ mod tests {
         assert_eq!(rep_entries, entries);
     }
 
+    /// Once all entries are replicated and received by target, the acked index
+    /// should be broadcast to target immediately to speed up reading process.
     #[test]
     fn replicate_acked_index_if_all_entries_are_replicated() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -510,6 +517,8 @@ mod tests {
         }
     }
 
+    /// The actual acked index of Learning state should obtained from sealed
+    /// responses.
     #[test]
     fn recovery_acked_index_from_sealed_response() {
         let mut rep = Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -523,6 +532,9 @@ mod tests {
         assert_eq!(rep.acked_seq, Sequence::new(1, 1024));
     }
 
+    /// If an Replicate become recovering from normal state, the don't need to
+    /// learn unacked entries from stores because it already known all pending
+    /// entries and the replicating progress of each one of copy set.
     #[test]
     fn fast_recovering_step_terminated_directly_from_recovering() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -541,6 +553,8 @@ mod tests {
         assert!(matches!(rep.learning_state, LearningState::Terminated));
     }
 
+    /// Once a target of Replicate become congested, there no any message could
+    /// be send even the message is only a acked write.
     #[test]
     fn do_not_replicate_acked_index_if_congested() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -561,6 +575,8 @@ mod tests {
         assert_eq!(mutates.len(), 0);
     }
 
+    /// Like a normal state Replicate, recovering replicate also need to advance
+    /// acked sequence manually.
     #[test]
     fn recovering_replicate_also_need_advance() {
         struct TestCase {
@@ -617,6 +633,8 @@ mod tests {
         }
     }
 
+    /// The fast recovering Replicate don't use the acked index from sealed
+    /// responses, because it already know the actually replicating progresses.
     #[test]
     fn fast_recovering_replicate_start_from_latest_acked_index() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -643,9 +661,23 @@ mod tests {
         assert_eq!(rep.acked_seq, Sequence::new(1, 2047));
     }
 
-    // left test cases
-    // 2. the recovering replicas still need to advance. Specially fast
-    //    recovery need execute advance too.
-    // 3. replicating from latest acked index
-    // 4. if latest acked index is bridge, that means recovered.
+    /// If a recovering process faulted after all entries acked (include bridge
+    /// record), the new recovery Replicate would continue recovering without
+    /// change the acked bridge record.
+    #[test]
+    fn recovering_from_acked_bridge_record() {
+        let mut rep = Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        let mut acked_indexes = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 100);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Learning { .. }));
+        let (writes, learns) = rep.broadcast();
+        assert!(writes.is_empty());
+        assert!(!learns.is_empty());
+        rep.handle_learned("a", vec![(100, Entry::Bridge { epoch: 1 })]);
+        rep.handle_learned("a", vec![]);
+        assert!(matches!(rep.learning_state, LearningState::Terminated));
+        assert_eq!(rep.mem_store.next_index(), 101);
+        assert_eq!(rep.acked_seq, Sequence::new(1, 100));
+    }
 }
