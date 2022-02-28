@@ -286,7 +286,7 @@ impl StreamStateMachine {
         }
     }
 
-    fn handle_timeout(&mut self, target: &str, epoch: u32, range: Range<u32>, bytes: usize) {
+    fn handle_timeout(&mut self, target: &str, epoch: u32, range: Option<Range<u32>>, bytes: usize) {
         debug_assert_eq!(self.role, Role::Leader);
         if self.epoch == epoch {
             self.replicate.handle_timeout(target, range, bytes);

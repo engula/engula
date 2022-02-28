@@ -233,26 +233,30 @@ impl Replicate {
         }
     }
 
-    pub fn handle_timeout(&mut self, target: &str, range: Range<u32>, bytes: usize) {
+    pub fn handle_timeout(&mut self, target: &str, range: Option<Range<u32>>, bytes: usize) {
         match &mut self.learning_state {
             LearningState::None | LearningState::Terminated => {
                 if let Some(progress) = self.copy_set.get_mut(target) {
-                    progress.on_timeout(range, bytes)
+                    progress.on_timeout(
+                        range.expect("normal replicating should exists a range field"),
+                        bytes,
+                    )
                 }
             }
             LearningState::Sealing { pending, .. } => {
                 // resend to target again.
-                pending.insert(target.to_owned());
+                if range.is_none() {
+                    pending.insert(target.to_owned());
+                }
             }
             LearningState::Learning { pending, .. } => {
-                if range.end < range.start {
-                    // It means timeout by learning resend to target again.
-                    pending.insert(target.to_owned());
-                } else {
-                    // otherwise timeout by replicating
+                if let Some(range) = range {
                     if let Some(progress) = self.copy_set.get_mut(target) {
                         progress.on_timeout(range, bytes)
                     }
+                } else {
+                    // It means timeout by learning resend to target again.
+                    pending.insert(target.to_owned());
                 }
             }
         }
@@ -569,7 +573,7 @@ mod tests {
         // replicate acked index to stores immediately.
         rep.handle_received("a", 2047);
         // But the transport is congest...
-        rep.handle_timeout("a", 2048..4096, 1234);
+        rep.handle_timeout("a", Some(2048..4096), 1234);
 
         let mutates = rep.replicate();
         assert_eq!(mutates.len(), 0);
@@ -679,5 +683,39 @@ mod tests {
         assert!(matches!(rep.learning_state, LearningState::Terminated));
         assert_eq!(rep.mem_store.next_index(), 101);
         assert_eq!(rep.acked_seq, Sequence::new(1, 100));
+    }
+
+    #[test]
+    fn sealing_timeout() {
+        let mut rep = Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+        rep.broadcast();
+        rep.broadcast();
+        rep.handle_timeout("a", None, 0);
+        assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+
+        let mut acked_indexes = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 100);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Learning { .. }));
+    }
+
+    #[test]
+    fn learning_timeout() {
+        let mut rep = Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+        let mut acked_indexes = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 100);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Learning { .. }));
+
+        let (_, learns) = rep.broadcast();
+        assert!(!learns.is_empty());
+        let (_, learns) = rep.broadcast();
+        assert!(learns.is_empty());
+
+        rep.handle_timeout("a", None, 0);
+        let (_, learns) = rep.broadcast();
+        assert!(!learns.is_empty());
     }
 }

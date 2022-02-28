@@ -62,11 +62,18 @@ pub(crate) struct Learned {
 #[derivative(Debug)]
 #[allow(unused)]
 pub(crate) enum MsgDetail {
-    Received { index: u32 },
+    Received {
+        index: u32,
+    },
     Recovered,
     Rejected,
-    Timeout { range: Range<u32>, bytes: usize },
-    Sealed { acked_index: u32 },
+    Timeout {
+        range: Option<Range<u32>>,
+        bytes: usize,
+    },
+    Sealed {
+        acked_index: u32,
+    },
     Learned(Learned),
 }
 
