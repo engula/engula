@@ -90,9 +90,9 @@ impl Server {
             tenant_request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DescribeTenant(req) => {
-                let res = self.handle_describe_tenant(req).await?;
-                tenant_response_union::Response::DescribeTenant(res)
+            tenant_request_union::Request::LookupTenant(req) => {
+                let res = self.handle_lookup_tenant(req).await?;
+                tenant_response_union::Response::LookupTenant(res)
             }
         };
         Ok(TenantResponseUnion {
@@ -108,13 +108,10 @@ impl Server {
         Ok(CreateTenantResponse { desc: Some(desc) })
     }
 
-    async fn handle_describe_tenant(
-        &self,
-        req: DescribeTenantRequest,
-    ) -> Result<DescribeTenantResponse> {
+    async fn handle_lookup_tenant(&self, req: LookupTenantRequest) -> Result<LookupTenantResponse> {
         let db = self.master.tenant(&req.name).await?;
         let desc = db.desc().await;
-        Ok(DescribeTenantResponse { desc: Some(desc) })
+        Ok(LookupTenantResponse { desc: Some(desc) })
     }
 }
 
@@ -151,9 +148,9 @@ impl Server {
             bucket_request_union::Request::DeleteBucket(_req) => {
                 todo!();
             }
-            bucket_request_union::Request::DescribeBucket(req) => {
-                let res = self.handle_describe_bucket(tenant, req).await?;
-                bucket_response_union::Response::DescribeBucket(res)
+            bucket_request_union::Request::LookupBucket(req) => {
+                let res = self.handle_lookup_bucket(tenant, req).await?;
+                bucket_response_union::Response::LookupBucket(res)
             }
         };
         Ok(BucketResponseUnion {
@@ -173,12 +170,12 @@ impl Server {
         Ok(CreateBucketResponse { desc: Some(desc) })
     }
 
-    async fn handle_describe_bucket(
+    async fn handle_lookup_bucket(
         &self,
         tenant: Tenant,
-        req: DescribeBucketRequest,
-    ) -> Result<DescribeBucketResponse> {
+        req: LookupBucketRequest,
+    ) -> Result<LookupBucketResponse> {
         let desc = tenant.bucket(&req.name).await?;
-        Ok(DescribeBucketResponse { desc: Some(desc) })
+        Ok(LookupBucketResponse { desc: Some(desc) })
     }
 }

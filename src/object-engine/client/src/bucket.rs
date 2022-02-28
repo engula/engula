@@ -37,12 +37,12 @@ impl Bucket {
     }
 
     pub async fn desc(&self) -> Result<BucketDesc> {
-        let req = DescribeBucketRequest {
+        let req = LookupBucketRequest {
             name: self.inner.bucket.clone(),
         };
-        let req = bucket_request_union::Request::DescribeBucket(req);
+        let req = bucket_request_union::Request::LookupBucket(req);
         let res = self.inner.bucket_union_call(req).await?;
-        let desc = if let bucket_response_union::Response::DescribeBucket(res) = res {
+        let desc = if let bucket_response_union::Response::LookupBucket(res) = res {
             res.desc
         } else {
             None

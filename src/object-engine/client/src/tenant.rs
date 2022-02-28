@@ -32,12 +32,12 @@ impl Tenant {
     }
 
     pub async fn desc(&self) -> Result<TenantDesc> {
-        let req = DescribeTenantRequest {
+        let req = LookupTenantRequest {
             name: self.inner.name.clone(),
         };
-        let req = tenant_request_union::Request::DescribeTenant(req);
+        let req = tenant_request_union::Request::LookupTenant(req);
         let res = self.inner.tenant_union_call(req).await?;
-        let desc = if let tenant_response_union::Response::DescribeTenant(res) = res {
+        let desc = if let tenant_response_union::Response::LookupTenant(res) = res {
             res.desc
         } else {
             None
@@ -60,10 +60,8 @@ impl Tenant {
         Ok(self.bucket(name))
     }
 
-    pub async fn delete_bucket(&self, name: &str) -> Result<()> {
-        let req = DeleteBucketRequest {
-            name: name.to_owned(),
-        };
+    pub async fn delete_bucket(&self, id: u64) -> Result<()> {
+        let req = DeleteBucketRequest { id };
         let req = bucket_request_union::Request::DeleteBucket(req);
         self.inner.bucket_union_call(req).await?;
         Ok(())
