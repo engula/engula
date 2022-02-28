@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use object_engine_proto::*;
+use object_engine_master::proto::*;
 
 use crate::{master::Master, Bucket, Error, Result};
 

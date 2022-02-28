@@ -581,7 +581,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engula-apis",
- "object-engine-proto",
+ "object-engine-master",
  "prost",
  "thiserror",
  "tokio",
@@ -594,6 +594,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "thiserror",
+ "tonic",
 ]
 
 [[package]]
@@ -617,18 +618,10 @@ dependencies = [
 name = "object-engine-master"
 version = "0.1.0"
 dependencies = [
- "object-engine-proto",
+ "object-engine-common",
  "prost",
  "thiserror",
  "tokio",
- "tonic",
-]
-
-[[package]]
-name = "object-engine-proto"
-version = "0.1.0"
-dependencies = [
- "prost",
  "tonic",
  "tonic-build",
 ]

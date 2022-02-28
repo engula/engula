@@ -31,8 +31,48 @@ pub enum Error {
 }
 
 impl Error {
+    pub fn invalid_argument(m: impl Into<String>) -> Self {
+        Self::InvalidArgument(m.into())
+    }
+
     pub fn corrupted(m: impl Into<String>) -> Self {
         Self::Corrupted(m.into())
+    }
+
+    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
+        Self::Unknown(Box::new(err))
+    }
+}
+
+impl From<tonic::Status> for Error {
+    fn from(s: tonic::Status) -> Self {
+        match s.code() {
+            tonic::Code::NotFound => Error::NotFound(s.message().into()),
+            tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
+            tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
+            tonic::Code::DataLoss => Error::Corrupted(s.message().into()),
+            _ => Error::Unknown(Box::new(s)),
+        }
+    }
+}
+
+impl From<tonic::transport::Error> for Error {
+    fn from(e: tonic::transport::Error) -> Self {
+        Error::Unknown(Box::new(e))
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(err: Error) -> Self {
+        let (code, message) = match err {
+            Error::NotFound(s) => (tonic::Code::NotFound, s),
+            Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
+            Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::Corrupted(s) => (tonic::Code::DataLoss, s),
+            Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
+            Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
+        };
+        tonic::Status::new(code, message)
     }
 }
 
