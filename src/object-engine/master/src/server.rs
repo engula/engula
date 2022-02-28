@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_proto::*;
 use tonic::{Request, Response, Status};
 
-use crate::{
-    error::{Error, Result},
-    master::{Master, Tenant},
-};
+use crate::{proto::*, Error, Master, Result, Tenant};
 
 type TonicResult<T> = std::result::Result<T, Status>;
 
@@ -73,7 +69,9 @@ impl Server {
         &self,
         req: TenantRequestUnion,
     ) -> Result<TenantResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::invalid_argument("missing tenant request"))?;
         let res = match req {
             tenant_request_union::Request::ListTenants(_req) => {
                 todo!();
@@ -99,7 +97,9 @@ impl Server {
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::invalid_argument("missing tenant descriptor"))?;
         let desc = self.master.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
     }
@@ -130,7 +130,9 @@ impl Server {
         tenant: Tenant,
         req: BucketRequestUnion,
     ) -> Result<BucketResponseUnion> {
-        let req = req.request.ok_or(Error::InvalidRequest)?;
+        let req = req
+            .request
+            .ok_or_else(|| Error::invalid_argument("missing bucket request"))?;
         let res = match req {
             bucket_request_union::Request::ListBuckets(_req) => {
                 todo!();
@@ -160,7 +162,9 @@ impl Server {
         tenant: Tenant,
         req: CreateBucketRequest,
     ) -> Result<CreateBucketResponse> {
-        let desc = req.desc.ok_or(Error::InvalidRequest)?;
+        let desc = req
+            .desc
+            .ok_or_else(|| Error::invalid_argument("missing bucket descriptor"))?;
         let desc = tenant.create_bucket(desc).await?;
         Ok(CreateBucketResponse { desc: Some(desc) })
     }

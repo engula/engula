@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_proto::*;
+use object_engine_master::proto::*;
 use tonic::transport::Channel;
 
 use crate::{Error, Result};
