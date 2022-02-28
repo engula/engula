@@ -1,0 +1,76 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package objectengine.master.v1;
+
+message BucketRequest {
+  string tenant = 1;
+  repeated BucketRequestUnion requests = 2;
+}
+
+message BucketResponse { repeated BucketResponseUnion responses = 1; }
+
+message BucketRequestUnion {
+  oneof request {
+    ListBucketsRequest list_buckets = 1;
+    LookupBucketRequest lookup_bucket = 2;
+    CreateBucketRequest create_bucket = 3;
+    UpdateBucketRequest update_bucket = 4;
+    DeleteBucketRequest delete_bucket = 5;
+  }
+}
+
+message BucketResponseUnion {
+  oneof response {
+    ListBucketsResponse list_buckets = 1;
+    LookupBucketResponse lookup_bucket = 5;
+    CreateBucketResponse create_bucket = 2;
+    UpdateBucketResponse update_bucket = 3;
+    DeleteBucketResponse delete_bucket = 4;
+  }
+}
+
+message ListBucketsRequest {}
+
+message ListBucketsResponse { repeated BucketDesc descs = 1; }
+
+message LookupBucketRequest {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message LookupBucketResponse { BucketDesc desc = 1; }
+
+message CreateBucketRequest { BucketDesc desc = 1; }
+
+message CreateBucketResponse { BucketDesc desc = 1; }
+
+message UpdateBucketRequest { BucketDesc desc = 1; }
+
+message UpdateBucketResponse {}
+
+message DeleteBucketRequest {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message DeleteBucketResponse {}
+
+message BucketDesc {
+  uint64 id = 1;
+  string name = 2;
+  uint64 parent_id = 3;
+}

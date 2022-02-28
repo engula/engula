@@ -1,0 +1,72 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package objectengine.master.v1;
+
+message TenantRequest { repeated TenantRequestUnion requests = 1; }
+
+message TenantResponse { repeated TenantResponseUnion responses = 1; }
+
+message TenantRequestUnion {
+  oneof request {
+    ListTenantsRequest list_tenants = 1;
+    LookupTenantRequest lookup_tenant = 2;
+    CreateTenantRequest create_tenant = 3;
+    UpdateTenantRequest update_tenant = 4;
+    DeleteTenantRequest delete_tenant = 5;
+  }
+}
+
+message TenantResponseUnion {
+  oneof response {
+    ListTenantsResponse list_tenants = 1;
+    LookupTenantResponse lookup_tenant = 2;
+    CreateTenantResponse create_tenant = 3;
+    UpdateTenantResponse update_tenant = 4;
+    DeleteTenantResponse delete_tenant = 5;
+  }
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse { repeated TenantDesc descs = 1; }
+
+message LookupTenantRequest {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message LookupTenantResponse { TenantDesc desc = 1; }
+
+message CreateTenantRequest { TenantDesc desc = 1; }
+
+message CreateTenantResponse { TenantDesc desc = 1; }
+
+message UpdateTenantRequest { TenantDesc desc = 1; }
+
+message UpdateTenantResponse {}
+
+message DeleteTenantRequest {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message DeleteTenantResponse {}
+
+message TenantDesc {
+  uint64 id = 1;
+  string name = 2;
+}

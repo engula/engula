@@ -57,6 +57,7 @@ impl Engine {
     pub async fn delete_tenant(&self, name: &str) -> Result<()> {
         let req = DeleteTenantRequest {
             name: name.to_owned(),
+            ..Default::default()
         };
         let req = tenant_request_union::Request::DeleteTenant(req);
         self.inner.tenant_union_call(req).await?;
