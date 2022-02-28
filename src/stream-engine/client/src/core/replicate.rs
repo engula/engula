@@ -723,8 +723,8 @@ mod tests {
     /// fast recovering.
     #[test]
     fn recovering_will_replicate_entries_with_writer_epoch() {
-        for recovery in vec![false, true] {
-            let mut rep = if recovery {
+        for recovery in &[false, true] {
+            let mut rep = if *recovery {
                 Replicate::recovery(1, 3, vec!["a".to_owned()], ReplicatePolicy::Simple)
             } else {
                 let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
@@ -736,7 +736,7 @@ mod tests {
             let mut acked_indexes = HashMap::new();
             acked_indexes.insert("a".to_owned(), 100);
             advance_and_receive_sealed(&mut rep, acked_indexes);
-            if recovery {
+            if *recovery {
                 let (_, learns) = rep.broadcast();
                 assert!(!learns.is_empty());
                 rep.handle_learned("a", make_learned_entries(2, 100, 1024));
@@ -749,7 +749,7 @@ mod tests {
                 match w.kind {
                     MutKind::Write(write) => {
                         for entry in write.entries {
-                            if recovery {
+                            if *recovery {
                                 assert!(entry.epoch() == 3);
                             } else {
                                 assert!(entry.epoch() <= 3);
