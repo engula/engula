@@ -17,7 +17,6 @@ use std::{collections::VecDeque, ops::Range};
 use crate::Sequence;
 
 /// A mixin structure holds the fields used in congestion stage.
-#[derive(Default)]
 struct CongestMixin {
     /// The latest tick retransmit entries.
     tick: usize,
@@ -32,6 +31,15 @@ struct CongestMixin {
 }
 
 impl CongestMixin {
+    fn new(tick: usize) -> Self {
+        CongestMixin {
+            tick,
+            invalid_bytes: 0,
+            recoup_bytes: 0,
+            retransmit_ranges: VecDeque::default(),
+        }
+    }
+
     /// Handle received events, and return whether the congestion is finished.
     fn on_received(&mut self, received_bytes: usize) -> bool {
         self.recoup_bytes += received_bytes;
@@ -52,7 +60,7 @@ impl CongestMixin {
     fn might_replicate(&mut self, next_index: u32, replicate_bytes: usize) -> bool {
         if let Some((Range { start, end }, bytes)) = self.retransmit_ranges.pop_front() {
             // There still exists some pending entries.
-            debug_assert!(start < next_index, "Progress::next_chunk()");
+            debug_assert!(start < next_index, "Progress::next_chunk()",);
             debug_assert!(next_index <= end, "Progress::next_chunk()");
             if next_index < end {
                 self.retransmit_ranges
@@ -159,6 +167,7 @@ pub(crate) struct Progress {
     /// accepted).
     replicating_acked_index: u32,
 
+    current_tick: usize,
     sliding_window: SlidingWindow,
 
     /// Records congestion and retransmission data structures.  The link is
@@ -176,8 +185,14 @@ impl Progress {
 
             // TODO(w41ter) config sliding window
             sliding_window: SlidingWindow::new(1024 * 1024 * 64),
+            current_tick: 0,
             congest: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn on_tick(&mut self) {
+        self.current_tick += 1;
     }
 
     #[inline(always)]
@@ -186,7 +201,7 @@ impl Progress {
     }
 
     /// Return which chunk needs to replicate to the target.
-    pub fn next_chunk(&mut self, next_index: u32, latest_tick: usize) -> (Range<u32>, usize) {
+    pub fn next_chunk(&mut self, next_index: u32) -> (Range<u32>, usize) {
         let avail = self.sliding_window.available();
         if let Some(congest) = &mut self.congest {
             if let Some((range, bytes)) = congest.retransmit_ranges.front() {
@@ -196,9 +211,9 @@ impl Progress {
                 // Sometimes the bandwidth is always insufficient (for example, all messages
                 // have timed out), in order to avoid replication interruption, each tick tries
                 // to send some data.
-                if *bytes < avail || congest.tick < latest_tick {
+                if *bytes < avail || congest.tick < self.current_tick {
                     // TODO(w41ter) combine tiny continuously ranges.
-                    congest.tick = latest_tick;
+                    congest.tick = self.current_tick;
                     return (range.clone(), avail.max(*bytes));
                 } else {
                     return (self.next_index..self.next_index, 0);
@@ -258,7 +273,7 @@ impl Progress {
     pub fn on_timeout(&mut self, range: std::ops::Range<u32>, bytes: usize) {
         if self.congest.is_none() {
             self.sliding_window.freeze();
-            self.congest = Some(Box::new(CongestMixin::default()));
+            self.congest = Some(Box::new(CongestMixin::new(self.current_tick)));
         }
 
         // NOTE: the sliding window now becomes available, so the retransmission
@@ -304,27 +319,27 @@ mod tests {
 
         // 1. Only available after receive another entry.
         // not available
-        let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
+        let (Range { start, end }, bytes) = progress.next_chunk(600);
         assert_eq!(start, end);
         assert_eq!(start, 500);
         assert_eq!(bytes, 0);
 
         // 2. retransmit first.
         progress.on_received(100);
-        let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
+        let (Range { start, end }, bytes) = progress.next_chunk(600);
         assert_eq!(start, 300);
         assert_eq!(end, 400);
         progress.replicate(end, bytes, 0);
 
         // not available
-        let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
+        let (Range { start, end }, bytes) = progress.next_chunk(600);
         assert_eq!(start, end);
         assert_eq!(start, 500);
         assert_eq!(bytes, 0);
 
         // 3. try replicate normal entries.
         progress.on_received(200);
-        let (Range { start, end }, _) = progress.next_chunk(600, 0);
+        let (Range { start, end }, _) = progress.next_chunk(600);
         assert_eq!(start, 500);
         assert_eq!(end, 600);
     }
@@ -336,12 +351,13 @@ mod tests {
         progress.on_timeout(1..100, 1024);
 
         // not available
-        let (Range { start, end }, bytes) = progress.next_chunk(600, 0);
+        let (Range { start, end }, bytes) = progress.next_chunk(600);
         assert_eq!(start, end);
         assert_eq!(start, 100);
         assert_eq!(bytes, 0);
 
-        let (Range { start, end }, _) = progress.next_chunk(600, 1);
+        progress.on_tick();
+        let (Range { start, end }, _) = progress.next_chunk(600);
         assert_eq!(start, 1);
         assert_eq!(end, 100);
     }

@@ -108,6 +108,11 @@ impl Replicate {
         self.mem_store.append(entry)
     }
 
+    #[inline]
+    pub fn on_tick(&mut self) {
+        self.copy_set.values_mut().for_each(Progress::on_tick);
+    }
+
     pub fn all_target_matched(&self) -> bool {
         let last_index = self.mem_store.next_index().saturating_sub(1);
         matches!(self.learning_state, LearningState::Terminated)
@@ -126,11 +131,11 @@ impl Replicate {
         }
     }
 
-    fn replicate(&mut self, latest_tick: usize) -> Vec<Mutate> {
+    fn replicate(&mut self) -> Vec<Mutate> {
         let mut pending_writes = vec![];
         for (server_id, progress) in &mut self.copy_set {
             let next_index = self.mem_store.next_index();
-            let (Range { start, mut end }, quota) = progress.next_chunk(next_index, latest_tick);
+            let (Range { start, mut end }, quota) = progress.next_chunk(next_index);
             let (acked_seq, entries, bytes) = if quota > 0
                 && start == next_index
                 && !progress.is_replicating_acked_seq(self.acked_seq)
@@ -162,7 +167,7 @@ impl Replicate {
         pending_writes
     }
 
-    pub fn broadcast(&mut self, latest_tick: usize) -> (Vec<Mutate>, Vec<Learn>) {
+    pub fn broadcast(&mut self) -> (Vec<Mutate>, Vec<Learn>) {
         let mut pending_writes = vec![];
         let mut pending_learns = vec![];
 
@@ -195,7 +200,7 @@ impl Replicate {
         }
 
         if replicable {
-            let mut writes = self.replicate(latest_tick);
+            let mut writes = self.replicate();
             pending_writes.append(&mut writes);
         }
 
@@ -370,25 +375,54 @@ impl EpochInfo {
 mod tests {
     use super::*;
 
-    #[test]
-    fn replicate_keep_continuously() {
-        let entries: Vec<Entry> = (1..10240u64)
+    fn make_entries(epoch: u32, range: Range<u32>) -> Vec<Entry> {
+        range
             .into_iter()
             .map(|i| i.to_le_bytes())
             .map(|bytes| Entry::Event {
-                epoch: 1,
+                epoch,
                 event: bytes.into(),
             })
-            .collect();
-        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
-        for entry in &entries {
-            rep.append(entry.clone());
+            .collect()
+    }
+
+    fn append_entries(rep: &mut Replicate, entries: Vec<Entry>) {
+        for entry in entries {
+            rep.append(entry);
         }
+    }
+
+    fn receive_writes(rep: &mut Replicate, mutates: Vec<Mutate>) {
+        for m in mutates {
+            match m.kind {
+                MutKind::Write(write) if !write.entries.is_empty() => {
+                    rep.handle_received(&m.target, write.range.end - 1);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn advance_and_receive_all_writes(rep: &mut Replicate) {
+        loop {
+            let pending_writes = rep.replicate();
+            if pending_writes.is_empty() {
+                break;
+            }
+            receive_writes(rep, pending_writes);
+        }
+    }
+
+    #[test]
+    fn replicate_keep_continuously() {
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        let entries = make_entries(1, 1..1024);
+        append_entries(&mut rep, entries.clone());
 
         let mut rep_entries = vec![];
         let mut next_index = 1;
         loop {
-            let pending_writes = rep.replicate(1);
+            let pending_writes = rep.replicate();
             if pending_writes.is_empty() {
                 break;
             }
@@ -411,39 +445,53 @@ mod tests {
 
     #[test]
     fn replicate_acked_index_if_all_entries_are_replicated() {
-        let entries: Vec<Entry> = (0..10240u64)
-            .into_iter()
-            .map(|i| i.to_le_bytes())
-            .map(|bytes| Entry::Event {
-                epoch: 1,
-                event: bytes.into(),
-            })
-            .collect();
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
-        for entry in &entries {
-            rep.append(entry.clone());
-        }
+        let entries = make_entries(1, 1..1024);
+        append_entries(&mut rep, entries);
 
+        advance_and_receive_all_writes(&mut rep);
+        rep.advance_acked_sequence();
+
+        assert_eq!(rep.acked_seq(), Sequence::new(1, 1023));
+
+        let pending_writes = rep.replicate();
+        assert_eq!(pending_writes.len(), 1);
+        assert!(
+            matches!(&pending_writes[0].kind, MutKind::Write(write) if write.entries.is_empty() && write.acked_seq.index == 1023)
+        );
+    }
+
+    fn append_and_replicate_entries(rep: &mut Replicate, epoch: u32, range: Range<u32>) {
+        append_entries(rep, make_entries(epoch, range));
         loop {
-            let pending_writes = rep.replicate(1);
+            let pending_writes = rep.replicate();
             if pending_writes.is_empty() {
                 break;
             }
         }
+    }
 
-        rep.handle_received("a", 10239);
-        rep.advance_acked_sequence();
-        assert_eq!(rep.acked_seq(), Sequence::new(1, 10239));
+    #[test]
+    fn do_not_replicate_acked_index_if_congested() {
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
 
-        let pending_writes = rep.replicate(1);
-        assert_eq!(pending_writes.len(), 1);
-        assert!(
-            matches!(&pending_writes[0].kind, MutKind::Write(write) if write.entries.is_empty() && write.acked_seq.index == 10239)
-        );
+        let entries = make_entries(1, 0..1024);
+        append_entries(&mut rep, entries);
+        advance_and_receive_all_writes(&mut rep);
+
+        append_and_replicate_entries(&mut rep, 1, 1024..2048);
+        append_and_replicate_entries(&mut rep, 1, 2048..4096);
+        // Since the target has received entries before 2048, the replicate should
+        // replicate acked index to stores immediately.
+        rep.handle_received("a", 2047);
+        // But the transport is congest...
+        rep.handle_timeout("a", 2048..4096, 1234);
+
+        let mutates = rep.replicate();
+        assert_eq!(mutates.len(), 0);
     }
 
     // left test cases
-    // 1. don't replicate acked index if congested.
     // 2. the recovering replicas still need to advance. Specially fast
     //    recovery need execute advance too.
     // 3. replicating from latest acked index

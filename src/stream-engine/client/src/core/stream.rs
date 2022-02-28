@@ -86,6 +86,11 @@ impl StreamStateMachine {
 
     pub fn tick(&mut self) {
         self.latest_tick += 1;
+        self.replicate.on_tick();
+        self.recovering_replicates
+            .values_mut()
+            .map(Box::as_mut)
+            .for_each(Replicate::on_tick);
     }
 
     pub fn promote(
@@ -237,8 +242,8 @@ impl StreamStateMachine {
         }
     }
 
-    fn broadcast(ready: &mut Ready, replicate: &mut Replicate, latest_tick: usize) {
-        let (mut writes, mut learns) = replicate.broadcast(latest_tick);
+    fn broadcast(ready: &mut Ready, replicate: &mut Replicate) {
+        let (mut writes, mut learns) = replicate.broadcast();
         ready.pending_writes.append(&mut writes);
         ready.pending_learns.append(&mut learns);
     }
@@ -248,12 +253,12 @@ impl StreamStateMachine {
 
         if let Some(epoch) = self.recovering_replicates.keys().min().cloned() {
             let replicate = self.recovering_replicates.get_mut(&epoch).unwrap();
-            Self::broadcast(&mut self.ready, replicate, self.latest_tick);
+            Self::broadcast(&mut self.ready, replicate);
         }
 
         // Do not replicate entries if there exists two pending segments.
         if self.recovering_replicates.len() != 2 {
-            Self::broadcast(&mut self.ready, &mut self.replicate, self.latest_tick);
+            Self::broadcast(&mut self.ready, &mut self.replicate);
         }
     }
 
