@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use super::Policy;
 use crate::Entry;
@@ -51,7 +51,7 @@ struct ReadingProgress {
     reader_state: ReaderState,
     /// Whether the end of reading is reached.
     terminated: bool,
-    entries: Vec<(u32, Entry)>,
+    entries: VecDeque<(u32, Entry)>,
 }
 
 impl ReadingProgress {
@@ -59,7 +59,7 @@ impl ReadingProgress {
         ReadingProgress {
             reader_state: ReaderState::Polling,
             terminated: false,
-            entries: Vec::new(),
+            entries: VecDeque::new(),
         }
     }
 
@@ -69,11 +69,11 @@ impl ReadingProgress {
 
     /// Append entries into progress, if entries is empty, the end of reading is
     /// reached.
-    fn append(&mut self, mut entries: Vec<(u32, Entry)>) {
+    fn append(&mut self, entries: Vec<(u32, Entry)>) {
         if entries.is_empty() {
             self.terminated = true;
         } else {
-            self.entries.append(&mut entries);
+            self.entries.append(&mut entries.into());
         }
     }
 }
@@ -124,6 +124,7 @@ impl GroupReader {
         let num_copies = self.reading_progress.len();
         let majority = self.majority();
         match self.policy {
+            GroupPolicy::Simple if self.num_done == num_copies => GroupState::Done,
             GroupPolicy::Simple if self.num_ready >= 1 => GroupState::Active,
             GroupPolicy::Majority if self.num_ready >= majority => GroupState::Active,
             GroupPolicy::Majority if self.num_done >= majority => GroupState::Done,
@@ -173,7 +174,7 @@ impl GroupReader {
                     continue;
                 }
 
-                match progress.entries.pop() {
+                match progress.entries.pop_front() {
                     Some((index, entry)) if index >= self.next_index => {
                         self.num_ready += 1;
                         progress.reader_state = ReaderState::Ready { index, entry };
@@ -213,7 +214,7 @@ impl GroupReader {
     pub(crate) fn target_next_index(&self, target: &str, hint_index: u32) -> u32 {
         self.reading_progress
             .get(target)
-            .and_then(|p| p.entries.last().map(|e| e.0 + 1))
+            .and_then(|p| p.entries.back().map(|e| e.0 + 1))
             .unwrap_or(hint_index)
     }
 }

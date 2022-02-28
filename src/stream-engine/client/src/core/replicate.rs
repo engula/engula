@@ -23,15 +23,21 @@ use crate::{
     Entry, Sequence,
 };
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 enum LearningState {
     None,
     Sealing {
+        // Fast recovery means that the current leader already knows all pending entries and does
+        // not need to go through the learning state.
+        fast_recovery: bool,
         acked_indexes: Vec<u32>,
         /// Need send SEAL request to this target.
         pending: HashSet<String>,
     },
     Learning {
         actual_acked_index: u32,
+        #[derivative(Debug = "ignore")]
         group_reader: GroupReader,
         /// Need send LEARN request to this target.
         pending: HashSet<String>,
@@ -86,6 +92,7 @@ impl Replicate {
         let pending = copy_set.iter().map(Clone::clone).collect();
         Replicate {
             learning_state: LearningState::Sealing {
+                fast_recovery: false,
                 acked_indexes: Vec::default(),
                 pending,
             },
@@ -211,8 +218,13 @@ impl Replicate {
     pub fn become_recovery(&mut self, new_epoch: u32) {
         debug_assert!(matches!(self.learning_state, LearningState::None));
 
+        let pending = self.copy_set.keys().cloned().collect();
         self.epoch_info.writer = new_epoch;
-        self.become_terminated(0);
+        self.learning_state = LearningState::Sealing {
+            fast_recovery: true,
+            acked_indexes: Vec::new(),
+            pending,
+        };
     }
 
     pub fn handle_received(&mut self, target: &str, index: u32) {
@@ -252,15 +264,24 @@ impl Replicate {
         }
 
         self.sealed_set.insert(target.into());
-        if let LearningState::Sealing { acked_indexes, .. } = &mut self.learning_state {
+        if let LearningState::Sealing {
+            fast_recovery,
+            acked_indexes,
+            ..
+        } = &mut self.learning_state
+        {
             acked_indexes.push(acked_index);
             if let Some(actual_acked_index) = self
                 .replicate_policy
                 .actual_acked_index(self.copy_set.len(), acked_indexes)
             {
                 // We have received satisfied SEALED response, now changes state to learn
-                // pending entries.
-                self.become_learning(actual_acked_index);
+                // pending entries or just terminated if do fast recovering.
+                if *fast_recovery {
+                    self.become_terminated(0);
+                } else {
+                    self.become_learning(actual_acked_index);
+                }
             }
         }
     }
@@ -316,6 +337,7 @@ impl Replicate {
 
         // All progress has already received all acked entries.
         for progress in self.copy_set.values_mut() {
+            progress.replicate_acked_index(actual_acked_index);
             progress.on_received(actual_acked_index);
         }
         self.acked_seq = Sequence::new(self.epoch_info.segment, actual_acked_index);
@@ -398,18 +420,35 @@ mod tests {
                 MutKind::Write(write) if !write.entries.is_empty() => {
                     rep.handle_received(&m.target, write.range.end - 1);
                 }
-                _ => {}
+                _ => unreachable!("mutate is {:?}", m),
             }
         }
     }
 
     fn advance_and_receive_all_writes(rep: &mut Replicate) {
         loop {
-            let pending_writes = rep.replicate();
+            let (pending_writes, pending_learns) = rep.broadcast();
+            assert!(pending_learns.is_empty());
             if pending_writes.is_empty() {
                 break;
             }
             receive_writes(rep, pending_writes);
+        }
+    }
+
+    fn advance_and_receive_sealed(rep: &mut Replicate, acked_indexes: HashMap<String, u32>) {
+        let (pending_writes, pending_learns) = rep.broadcast();
+        assert!(pending_learns.is_empty());
+        for m in pending_writes {
+            match m.kind {
+                MutKind::Seal => {
+                    rep.handle_sealed(
+                        &m.target,
+                        acked_indexes.get(&m.target).cloned().unwrap_or(0),
+                    );
+                }
+                _ => unreachable!("mutate is {:?}", m),
+            }
         }
     }
 
@@ -472,6 +511,37 @@ mod tests {
     }
 
     #[test]
+    fn recovery_acked_index_from_sealed_response() {
+        let mut rep = Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple);
+        assert_eq!(rep.acked_seq, Sequence::default());
+
+        let mut acked_indexes: HashMap<String, u32> = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 1024u32);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Learning { .. }));
+
+        assert_eq!(rep.acked_seq, Sequence::new(1, 1024));
+    }
+
+    #[test]
+    fn fast_recovering_step_terminated_directly_from_recovering() {
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+
+        let entries = make_entries(1, 0..1024);
+        append_entries(&mut rep, entries);
+        advance_and_receive_all_writes(&mut rep);
+
+        append_and_replicate_entries(&mut rep, 1, 1024..2048);
+        rep.become_recovery(2);
+        assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+
+        let mut acked_indexes = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 1024u32);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Terminated));
+    }
+
+    #[test]
     fn do_not_replicate_acked_index_if_congested() {
         let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
 
@@ -489,6 +559,88 @@ mod tests {
 
         let mutates = rep.replicate();
         assert_eq!(mutates.len(), 0);
+    }
+
+    #[test]
+    fn recovering_replicate_also_need_advance() {
+        struct TestCase {
+            recovery: bool,
+        }
+        let cases: Vec<TestCase> = vec![TestCase { recovery: false }, TestCase { recovery: true }];
+        for case in cases {
+            let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+            append_entries(&mut rep, make_entries(1, 1..1024));
+            advance_and_receive_all_writes(&mut rep);
+            rep.advance_acked_sequence();
+
+            append_and_replicate_entries(&mut rep, 1, 1024..2048);
+
+            let mut rep = if case.recovery {
+                Replicate::recovery(1, 2, vec!["a".to_owned()], ReplicatePolicy::Simple)
+            } else {
+                rep.become_recovery(2);
+                rep
+            };
+
+            assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+
+            let mut acked_indexes = HashMap::new();
+            acked_indexes.insert("a".to_owned(), 1023);
+            advance_and_receive_sealed(&mut rep, acked_indexes);
+
+            let make_learned_entries = |start, end| {
+                (start..end)
+                    .into_iter()
+                    .zip(make_entries(1, start..end).into_iter())
+                    .collect()
+            };
+
+            if case.recovery {
+                let (writes, learns) = rep.broadcast();
+                assert!(writes.is_empty(), "writes is {:?}", writes);
+                assert!(!learns.is_empty());
+                rep.handle_learned("a", make_learned_entries(1024, 2048));
+                rep.handle_learned("a", vec![]); // Learning is finished.
+            }
+            assert!(
+                matches!(rep.learning_state, LearningState::Terminated),
+                "state is {:?}",
+                rep.learning_state
+            );
+            advance_and_receive_all_writes(&mut rep);
+
+            assert_eq!(rep.acked_seq, Sequence::new(1, 1023));
+            rep.advance_acked_sequence();
+
+            // Include bridge entries.
+            assert_eq!(rep.acked_seq, Sequence::new(1, 2048));
+        }
+    }
+
+    #[test]
+    fn fast_recovering_replicate_start_from_latest_acked_index() {
+        let mut rep = Replicate::new(1, 1, vec!["a".to_owned()], ReplicatePolicy::Simple);
+
+        let entries = make_entries(1, 1..1024);
+        append_entries(&mut rep, entries);
+        advance_and_receive_all_writes(&mut rep);
+        rep.advance_acked_sequence();
+        assert_eq!(rep.acked_seq, Sequence::new(1, 1023));
+
+        append_entries(&mut rep, make_entries(1, 1024..2048));
+        advance_and_receive_all_writes(&mut rep);
+        rep.advance_acked_sequence();
+        assert_eq!(rep.acked_seq, Sequence::new(1, 2047));
+
+        rep.become_recovery(2);
+        assert!(matches!(rep.learning_state, LearningState::Sealing { .. }));
+        assert_eq!(rep.acked_seq, Sequence::new(1, 2047));
+
+        let mut acked_indexes = HashMap::new();
+        acked_indexes.insert("a".to_owned(), 1024u32);
+        advance_and_receive_sealed(&mut rep, acked_indexes);
+        assert!(matches!(rep.learning_state, LearningState::Terminated));
+        assert_eq!(rep.acked_seq, Sequence::new(1, 2047));
     }
 
     // left test cases

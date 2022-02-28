@@ -230,9 +230,13 @@ impl Progress {
         }
     }
 
-    pub fn replicate(&mut self, next_index: u32, replicate_bytes: usize, replicating_index: u32) {
-        self.replicating_acked_index = self.replicating_acked_index.max(replicating_index);
+    #[inline(always)]
+    pub fn replicate_acked_index(&mut self, index: u32) {
+        self.replicating_acked_index = self.replicating_acked_index.max(index);
+    }
 
+    pub fn replicate(&mut self, next_index: u32, replicate_bytes: usize, replicating_index: u32) {
+        self.replicate_acked_index(replicating_index);
         if self
             .congest
             .as_mut()
@@ -258,6 +262,9 @@ impl Progress {
         if self.matched_index < matched_index {
             let consumed_bytes = self.sliding_window.release(matched_index);
             self.matched_index = matched_index;
+            if self.next_index < self.matched_index {
+                self.next_index = self.matched_index + 1;
+            }
 
             if let Some(congest) = &mut self.congest {
                 if congest.on_received(consumed_bytes) {
@@ -369,5 +376,12 @@ mod tests {
         assert!(progress.is_replicating_acked_seq(Sequence::new(1, 100)));
         progress.on_timeout(1..100, 1024);
         assert!(!progress.is_replicating_acked_seq(Sequence::new(1, 100)));
+    }
+
+    #[test]
+    fn next_index_always_great_than_matched_index() {
+        let mut progress = Progress::new(1);
+        progress.on_received(100);
+        assert!(progress.matched_index < progress.next_index);
     }
 }
