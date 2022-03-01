@@ -580,7 +580,7 @@ name = "object-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "engula-apis",
+ "object-engine-common",
  "object-engine-master",
  "prost",
  "thiserror",
@@ -929,8 +929,10 @@ name = "stream-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "derivative",
  "futures",
  "libc",
+ "log",
  "prost",
  "stream-engine-common",
  "stream-engine-master",

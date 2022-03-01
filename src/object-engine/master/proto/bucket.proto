@@ -17,7 +17,7 @@ syntax = "proto3";
 package objectengine.master.v1;
 
 message BucketRequest {
-  string tenant = 1;
+  uint64 tenant_id = 1;
   repeated BucketRequestUnion requests = 2;
 }
 

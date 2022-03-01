@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(result_into_ok_or_err)]
+
+#[macro_use]
+extern crate derivative;
+
 mod core;
 mod engine;
 mod master;

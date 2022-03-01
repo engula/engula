@@ -39,3 +39,8 @@ pub(super) fn advance_acked_sequence(
 pub(super) fn actual_acked_index(_num_copies: usize, acked_indexes: &[u32]) -> Option<u32> {
     acked_indexes.iter().max().cloned()
 }
+
+#[inline(always)]
+pub(super) fn is_enough_targets_acked(index: u32, progresses: &HashMap<String, Progress>) -> bool {
+    progresses.values().any(|p| p.is_acked(index))
+}

@@ -56,7 +56,22 @@ impl Policy {
         }
     }
 
-    pub(super) fn new_group_reader(self, next_index: u32, num_copies: usize) -> GroupReader {
-        GroupReader::new(self.into(), next_index, num_copies)
+    pub(super) fn is_enough_targets_acked(
+        self,
+        index: u32,
+        progresses: &HashMap<String, Progress>,
+    ) -> bool {
+        match self {
+            Policy::Simple => simple::is_enough_targets_acked(index, progresses),
+        }
+    }
+
+    pub(super) fn new_group_reader(
+        self,
+        epoch: u32,
+        next_index: u32,
+        copies: Vec<String>,
+    ) -> GroupReader {
+        GroupReader::new(self.into(), epoch, next_index, copies)
     }
 }
