@@ -18,17 +18,17 @@ use crate::{Bucket, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
-    id: u64,
     master: Master,
+    tenant_id: u64,
 }
 
 impl Tenant {
-    pub fn new(id: u64, master: Master) -> Self {
-        Self { id, master }
+    pub fn new(master: Master, tenant_id: u64) -> Self {
+        Self { master, tenant_id }
     }
 
     pub fn bucket(&self, id: u64) -> Bucket {
-        Bucket::new(id, self.id, self.master.clone())
+        Bucket::new(self.master.clone(), self.tenant_id, id)
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<BucketDesc> {
@@ -36,6 +36,6 @@ impl Tenant {
             name: name.to_owned(),
             ..Default::default()
         };
-        self.master.create_bucket(self.id, desc).await
+        self.master.create_bucket(self.tenant_id, desc).await
     }
 }

@@ -95,10 +95,6 @@ impl Server {
             tenant_request_union::Request::ListTenants(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::LookupTenant(req) => {
-                let res = self.handle_lookup_tenant(req).await?;
-                tenant_response_union::Response::LookupTenant(res)
-            }
             tenant_request_union::Request::CreateTenant(req) => {
                 let res = self.handle_create_tenant(req).await?;
                 tenant_response_union::Response::CreateTenant(res)
@@ -109,16 +105,14 @@ impl Server {
             tenant_request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
+            tenant_request_union::Request::LookupTenant(req) => {
+                let res = self.handle_lookup_tenant(req).await?;
+                tenant_response_union::Response::LookupTenant(res)
+            }
         };
         Ok(TenantResponseUnion {
             response: Some(res),
         })
-    }
-
-    async fn handle_lookup_tenant(&self, req: LookupTenantRequest) -> Result<LookupTenantResponse> {
-        let tenant = self.lookup_tenant(&req.name).await?;
-        let desc = tenant.desc().await;
-        Ok(LookupTenantResponse { desc: Some(desc) })
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
@@ -127,6 +121,12 @@ impl Server {
             .ok_or_else(|| Error::invalid_argument("missing tenant descriptor"))?;
         let desc = self.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
+    }
+
+    async fn handle_lookup_tenant(&self, req: LookupTenantRequest) -> Result<LookupTenantResponse> {
+        let tenant = self.lookup_tenant(&req.name).await?;
+        let desc = tenant.desc().await;
+        Ok(LookupTenantResponse { desc: Some(desc) })
     }
 }
 
@@ -153,10 +153,6 @@ impl Server {
             bucket_request_union::Request::ListBuckets(_req) => {
                 todo!();
             }
-            bucket_request_union::Request::LookupBucket(req) => {
-                let res = self.handle_lookup_bucket(tenant, req).await?;
-                bucket_response_union::Response::LookupBucket(res)
-            }
             bucket_request_union::Request::CreateBucket(req) => {
                 let res = self.handle_create_bucket(tenant, req).await?;
                 bucket_response_union::Response::CreateBucket(res)
@@ -167,19 +163,14 @@ impl Server {
             bucket_request_union::Request::DeleteBucket(_req) => {
                 todo!();
             }
+            bucket_request_union::Request::LookupBucket(req) => {
+                let res = self.handle_lookup_bucket(tenant, req).await?;
+                bucket_response_union::Response::LookupBucket(res)
+            }
         };
         Ok(BucketResponseUnion {
             response: Some(res),
         })
-    }
-
-    async fn handle_lookup_bucket(
-        &self,
-        tenant: Tenant,
-        req: LookupBucketRequest,
-    ) -> Result<LookupBucketResponse> {
-        let desc = tenant.lookup_bucket(&req.name).await?;
-        Ok(LookupBucketResponse { desc: Some(desc) })
     }
 
     async fn handle_create_bucket(
@@ -192,6 +183,15 @@ impl Server {
             .ok_or_else(|| Error::invalid_argument("missing bucket descriptor"))?;
         let desc = tenant.create_bucket(desc).await?;
         Ok(CreateBucketResponse { desc: Some(desc) })
+    }
+
+    async fn handle_lookup_bucket(
+        &self,
+        tenant: Tenant,
+        req: LookupBucketRequest,
+    ) -> Result<LookupBucketResponse> {
+        let desc = tenant.lookup_bucket(&req.name).await?;
+        Ok(LookupBucketResponse { desc: Some(desc) })
     }
 }
 

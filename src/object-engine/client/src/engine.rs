@@ -28,7 +28,7 @@ impl Engine {
     }
 
     pub fn tenant(&self, id: u64) -> Tenant {
-        Tenant::new(id, self.master.clone())
+        Tenant::new(self.master.clone(), id)
     }
 
     pub async fn create_tenant(&self, name: &str) -> Result<TenantDesc> {
