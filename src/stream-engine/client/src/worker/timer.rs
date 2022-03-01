@@ -182,6 +182,7 @@ impl<H: TimerHandle> MonoTimer<H> {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "linux")]
 mod tests {
     use std::sync::atomic::AtomicUsize;
 
@@ -215,7 +216,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
     fn channel_timer_timeout() {
         let timer = MonoTimer::new(100);
         let cloned_timer = timer.clone();
