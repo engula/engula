@@ -125,6 +125,9 @@ impl<L: ActiveLauncher> StreamMixin<L> {
         self.applier.might_advance(ready.acked_seq);
         scheduler.handle_writes(ready.pending_writes);
         scheduler.handle_learns(ready.pending_learns);
+        if let Some(restored) = ready.restored_segment {
+            scheduler.seal_segment(restored.segment_epoch, restored.writer_epoch);
+        }
     }
 
     #[allow(dead_code)]
@@ -286,6 +289,8 @@ pub(crate) trait Scheduler {
         acked_seq: Sequence,
         observer_state: ObserverState,
     );
+
+    fn seal_segment(&mut self, segment_epoch: u32, writer_epoch: u32);
 
     fn handle_writes(&mut self, writes: Vec<Mutate>);
 
