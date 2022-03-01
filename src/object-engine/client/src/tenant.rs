@@ -12,83 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use object_engine_master::{proto::*, Master};
 
-use object_engine_master::proto::*;
-
-use crate::{master::Master, Bucket, Error, Result};
+use crate::{Bucket, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
-    inner: Arc<TenantInner>,
+    master: Master,
+    tenant_id: u64,
 }
 
 impl Tenant {
-    pub fn new(name: String, master: Master) -> Self {
-        let inner = TenantInner { name, master };
-        Self {
-            inner: Arc::new(inner),
-        }
+    pub fn new(master: Master, tenant_id: u64) -> Self {
+        Self { master, tenant_id }
     }
 
-    pub async fn desc(&self) -> Result<TenantDesc> {
-        let req = LookupTenantRequest {
-            name: self.inner.name.clone(),
-        };
-        let req = tenant_request_union::Request::LookupTenant(req);
-        let res = self.inner.tenant_union_call(req).await?;
-        let desc = if let tenant_response_union::Response::LookupTenant(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or(Error::InvalidResponse)
+    pub fn bucket(&self, id: u64) -> Bucket {
+        Bucket::new(self.master.clone(), self.tenant_id, id)
     }
 
-    pub fn bucket(&self, name: &str) -> Bucket {
-        self.inner.new_bucket(name.to_owned())
-    }
-
-    pub async fn create_bucket(&self, name: &str) -> Result<Bucket> {
+    pub async fn create_bucket(&self, name: &str) -> Result<BucketDesc> {
         let desc = BucketDesc {
             name: name.to_owned(),
             ..Default::default()
         };
-        let req = CreateBucketRequest { desc: Some(desc) };
-        let req = bucket_request_union::Request::CreateBucket(req);
-        self.inner.bucket_union_call(req).await?;
-        Ok(self.bucket(name))
-    }
-
-    pub async fn delete_bucket(&self, id: u64) -> Result<()> {
-        let req = DeleteBucketRequest { id };
-        let req = bucket_request_union::Request::DeleteBucket(req);
-        self.inner.bucket_union_call(req).await?;
-        Ok(())
-    }
-}
-
-struct TenantInner {
-    name: String,
-    master: Master,
-}
-
-impl TenantInner {
-    fn new_bucket(&self, name: String) -> Bucket {
-        Bucket::new(name, self.name.clone(), self.master.clone())
-    }
-
-    async fn tenant_union_call(
-        &self,
-        req: tenant_request_union::Request,
-    ) -> Result<tenant_response_union::Response> {
-        self.master.tenant_union(req).await
-    }
-
-    async fn bucket_union_call(
-        &self,
-        req: bucket_request_union::Request,
-    ) -> Result<bucket_response_union::Response> {
-        self.master.bucket_union(self.name.clone(), req).await
+        self.master.create_bucket(self.tenant_id, desc).await
     }
 }

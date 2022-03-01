@@ -13,16 +13,9 @@
 // limitations under the License.
 
 mod bucket;
-mod bucket_txn;
 mod engine;
-mod error;
-mod master;
 mod tenant;
 
-pub use self::{
-    bucket::Bucket,
-    bucket_txn::BucketTxn,
-    engine::Engine,
-    error::{Error, Result},
-    tenant::Tenant,
-};
+use object_engine_common::Result;
+
+pub use self::{bucket::Bucket, engine::Engine, tenant::Tenant};

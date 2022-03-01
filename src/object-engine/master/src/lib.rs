@@ -18,5 +18,4 @@ mod server;
 
 use object_engine_common::{Error, Result};
 
-use self::master::{Master, Tenant};
-pub use self::server::Server;
+pub use self::{master::Master, server::Server};
