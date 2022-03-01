@@ -930,6 +930,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "libc",
  "prost",
  "stream-engine-common",
  "stream-engine-master",
