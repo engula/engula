@@ -18,7 +18,7 @@ mod progress;
 mod replicate;
 mod stream;
 
-pub(crate) use self::progress::Progress;
 use self::{mem_store::MemStore, replicate::Replicate};
+pub(crate) use self::{message::*, progress::Progress, stream::StreamStateMachine};
 
 const INITIAL_EPOCH: u32 = 0;
