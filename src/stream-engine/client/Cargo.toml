@@ -8,7 +8,9 @@ publish = false
 stream-engine-common = { version = "0.1", path = "../common" }
 stream-engine-proto = { version = "0.1", path = "../proto" }
 
+derivative = "2.2.0"
 futures = "0.3"
+log = "0.4.14"
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }

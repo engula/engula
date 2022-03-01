@@ -929,7 +929,9 @@ name = "stream-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "derivative",
  "futures",
+ "log",
  "prost",
  "stream-engine-common",
  "stream-engine-master",
