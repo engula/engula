@@ -123,7 +123,7 @@ impl<H: TimerHandle> MonoTimer<H> {
 
     #[cfg(not(target_os = "linux"))]
     pub fn sleep(timeout_ms: u64) {
-        thread::sleep(Duration::from_millis(timeout_ms));
+        std::thread::sleep(std::time::Duration::from_millis(timeout_ms));
     }
 
     pub fn run(self) {
