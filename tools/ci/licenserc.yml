@@ -19,7 +19,6 @@ header:
   paths-ignore:
     - 'docs'
     - '**/*.md'
-    - '.cargo/audit.toml'
     - '.dockerignore'
     - '.gitignore'
     - '.gitmodules'
@@ -29,3 +28,5 @@ header:
     - 'rust-toolchain.toml'
     - 'rustfmt.toml'
     - 'taplo.toml'
+    - src/engula/cooperator/engula/v1
+    - src/engula/supervisor/engula/v1
