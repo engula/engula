@@ -21,7 +21,7 @@ use super::{message::*, Replicate, INITIAL_EPOCH};
 use crate::{policy::Policy as ReplicatePolicy, Entry, EpochState, Error, Result, Role, Sequence};
 
 #[derive(Default)]
-pub(super) struct Ready {
+pub(crate) struct Ready {
     pub acked_seq: Sequence,
 
     pub pending_writes: Vec<Mutate>,
@@ -29,12 +29,11 @@ pub(super) struct Ready {
     pub restored_segment: Option<Restored>,
 }
 
-pub(super) struct StreamStateMachine {
+pub(crate) struct StreamStateMachine {
     pub stream_id: u64,
-    pub epoch: u32,
+    pub writer_epoch: u32,
     pub role: Role,
     pub leader: String,
-    pub state: ObserverState,
     pub replicate_policy: ReplicatePolicy,
 
     replicate: Box<Replicate>,
@@ -45,7 +44,7 @@ pub(super) struct StreamStateMachine {
 
 impl Display for StreamStateMachine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "stream {} epoch {}", self.stream_id, self.epoch)
+        write!(f, "stream {} epoch {}", self.stream_id, self.writer_epoch)
     }
 }
 
@@ -54,10 +53,9 @@ impl StreamStateMachine {
     pub fn new(stream_id: u64) -> Self {
         StreamStateMachine {
             stream_id,
-            epoch: INITIAL_EPOCH,
+            writer_epoch: INITIAL_EPOCH,
             role: Role::Follower,
             leader: "".to_owned(),
-            state: ObserverState::Following,
             replicate_policy: ReplicatePolicy::Simple,
             replicate: Box::new(Replicate::new(
                 INITIAL_EPOCH,
@@ -72,13 +70,27 @@ impl StreamStateMachine {
 
     pub fn epoch_state(&self) -> EpochState {
         EpochState {
-            epoch: self.epoch as u64,
+            epoch: self.writer_epoch as u64,
             role: self.role,
-            leader: if self.epoch == INITIAL_EPOCH {
+            leader: if self.writer_epoch == INITIAL_EPOCH {
                 None
             } else {
                 Some(self.leader.clone())
             },
+        }
+    }
+
+    #[inline(always)]
+    pub fn acked_seq(&self) -> Sequence {
+        self.replicate.acked_seq()
+    }
+
+    #[inline(always)]
+    pub fn observer_state(&self) -> ObserverState {
+        match self.role {
+            Role::Leader if self.recovering_replicates.is_empty() => ObserverState::Leading,
+            Role::Leader => ObserverState::Recovering,
+            Role::Follower => ObserverState::Following,
         }
     }
 
@@ -98,30 +110,26 @@ impl StreamStateMachine {
         copy_set: Vec<String>,
         pending_epochs: Vec<(u32, Vec<String>)>,
     ) -> bool {
-        if self.epoch >= epoch {
+        if self.writer_epoch >= epoch {
             warn!(
                 "stream {} epoch {} reject staled promote, epoch: {}, role: {:?}, leader: {}",
-                self.stream_id, self.epoch, epoch, role, leader
+                self.stream_id, self.writer_epoch, epoch, role, leader
             );
             return false;
         }
 
-        let prev_epoch = std::mem::replace(&mut self.epoch, epoch);
+        let prev_epoch = std::mem::replace(&mut self.writer_epoch, epoch);
         let prev_role = self.role;
         self.leader = leader;
         self.role = role;
-        self.state = match role {
-            Role::Leader => ObserverState::Leading,
-            Role::Follower => ObserverState::Following,
-        };
         if self.role == Role::Leader {
             let new_replicate = Box::new(Replicate::new(
-                self.epoch,
-                self.epoch,
+                self.writer_epoch,
+                self.writer_epoch,
                 copy_set,
                 self.replicate_policy,
             ));
-            if self.replicate.epoch() + 1 == self.epoch && prev_role == self.role {
+            if self.replicate.epoch() + 1 == self.writer_epoch && prev_role == self.role {
                 // do fast recovery
                 debug_assert_eq!(pending_epochs.len(), 1);
                 debug_assert_eq!(pending_epochs[0].0, prev_epoch);
@@ -130,7 +138,7 @@ impl StreamStateMachine {
                 // recovery?.
                 debug_assert!(self.recovering_replicates.is_empty());
                 let mut prev_replicate = std::mem::replace(&mut self.replicate, new_replicate);
-                prev_replicate.become_recovery(self.epoch);
+                prev_replicate.become_recovery(self.writer_epoch);
                 self.recovering_replicates
                     .insert(prev_epoch, prev_replicate);
             } else {
@@ -143,7 +151,7 @@ impl StreamStateMachine {
                             epoch,
                             Box::new(Replicate::recovery(
                                 epoch,
-                                self.epoch,
+                                self.writer_epoch,
                                 copy_set,
                                 self.replicate_policy,
                             )),
@@ -165,7 +173,7 @@ impl StreamStateMachine {
 
     pub fn step(&mut self, msg: Message) {
         use std::cmp::Ordering;
-        match msg.writer_epoch.cmp(&self.epoch) {
+        match msg.writer_epoch.cmp(&self.writer_epoch) {
             // Allowing sealed responses makes the fast recovering process more flexible.
             Ordering::Less if !self.recovering_replicates.contains_key(&msg.segment_epoch) => {
                 warn!(
@@ -208,7 +216,7 @@ impl StreamStateMachine {
             Err(Error::NotLeader(self.leader.clone()))
         } else {
             let entry = Entry::Event {
-                epoch: self.epoch,
+                epoch: self.writer_epoch,
                 event,
             };
             Ok(self.replicate.append(entry))
@@ -267,7 +275,7 @@ impl StreamStateMachine {
         acked_index: u32,
     ) {
         debug_assert_eq!(self.role, Role::Leader);
-        if self.epoch == segment_epoch {
+        if self.writer_epoch == segment_epoch {
             self.replicate
                 .handle_received(target, matched_index, acked_index);
         } else if let Some(replicate) = self.recovering_replicates.get_mut(&segment_epoch) {
@@ -289,7 +297,7 @@ impl StreamStateMachine {
         bytes: usize,
     ) {
         debug_assert_eq!(self.role, Role::Leader);
-        if self.epoch == epoch {
+        if self.writer_epoch == epoch {
             self.replicate.handle_timeout(target, range, bytes);
         } else if let Some(replicate) = self.recovering_replicates.get_mut(&epoch) {
             replicate.handle_timeout(target, range, bytes);
@@ -304,7 +312,10 @@ impl StreamStateMachine {
 
     fn handle_learned(&mut self, target: &str, epoch: u32, entries: Vec<(u32, Entry)>) {
         debug_assert_eq!(self.role, Role::Leader);
-        debug_assert_ne!(self.epoch, epoch, "current epoch don't need to recovery");
+        debug_assert_ne!(
+            self.writer_epoch, epoch,
+            "current epoch don't need to recovery"
+        );
         if let Some(replicate) = self.recovering_replicates.get_mut(&epoch) {
             replicate.handle_learned(target, entries);
         } else {
@@ -314,7 +325,10 @@ impl StreamStateMachine {
 
     fn handle_sealed(&mut self, target: &str, epoch: u32, acked_index: u32) {
         debug_assert_eq!(self.role, Role::Leader);
-        debug_assert_ne!(self.epoch, epoch, "current epoch don't need to recovery");
+        debug_assert_ne!(
+            self.writer_epoch, epoch,
+            "current epoch don't need to recovery"
+        );
         if let Some(replicate) = self.recovering_replicates.get_mut(&epoch) {
             replicate.handle_sealed(target, acked_index);
         } else {
@@ -354,7 +368,7 @@ mod tests {
         sm.step(Message {
             target: "self".into(),
             segment_epoch: seg_epoch,
-            writer_epoch: sm.epoch,
+            writer_epoch: sm.writer_epoch,
             detail: MsgDetail::Recovered,
         });
     }
