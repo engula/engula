@@ -19,6 +19,7 @@ mod cooperator;
 mod database;
 mod server;
 mod universe;
+mod write_cache;
 
 use engula_common::{Error, Result};
 
