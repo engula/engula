@@ -14,13 +14,14 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use stream_engine_proto::{SealRequest, WriteRequest};
+use stream_engine_proto::{ReadRequest, ReadResponse, SealRequest, WriteRequest};
 use tokio::sync::Mutex;
-use tonic::transport::Endpoint;
+use tonic::{transport::Endpoint, Streaming};
 
 use super::client::StoreClient;
 use crate::Result;
 
+#[derive(Clone)]
 pub struct Transport {
     inner: Arc<Mutex<TransportInner>>,
 }
@@ -32,7 +33,7 @@ struct TransportInner {
 
 #[allow(dead_code)]
 impl Transport {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         Transport {
             inner: Arc::new(Mutex::new(TransportInner {
                 clients: HashMap::new(),
@@ -51,16 +52,35 @@ impl Transport {
         inner.stream_set.remove(&stream_id);
     }
 
+    pub async fn read(
+        &self,
+        target: String,
+        stream_id: u64,
+        seg_epoch: u32,
+        start_index: u32,
+        only_include_acked: bool,
+    ) -> Result<Streaming<ReadResponse>> {
+        let client = self.get_client(target).await?;
+        let req = ReadRequest {
+            stream_id,
+            seg_epoch,
+            start_index,
+            limit: u32::MAX,
+            include_pending_entries: !only_include_acked,
+        };
+        client.read(req).await
+    }
+
     pub async fn write(
         &self,
         target: String,
         stream_id: u64,
         writer_epoch: u32,
         write: WriteRequest,
-    ) -> Result<()> {
+    ) -> Result<(u32, u32)> {
         let client = self.get_client(target).await?;
-        client.write(stream_id, writer_epoch, write).await?;
-        Ok(())
+        let resp = client.write(stream_id, writer_epoch, write).await?;
+        Ok((resp.matched_index, resp.acked_index))
     }
 
     pub async fn seal(
@@ -69,12 +89,12 @@ impl Transport {
         stream_id: u64,
         writer_epoch: u32,
         segment_epoch: u32,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         let client = self.get_client(target).await?;
-        client
+        let resp = client
             .seal(stream_id, writer_epoch, SealRequest { segment_epoch })
             .await?;
-        Ok(())
+        Ok(resp.acked_index)
     }
 
     async fn get_client(&self, target: String) -> Result<StoreClient> {

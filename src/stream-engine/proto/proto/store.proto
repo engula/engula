@@ -79,7 +79,8 @@ message WriteRequest {
 
 message WriteResponse {
     // The store only returns continouesly index.
-    uint32 persisted_index = 1;
+    uint32 matched_index = 1;
+    uint32 acked_index = 2;
 }
 
 message ReadRequest {

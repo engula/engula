@@ -19,11 +19,11 @@ extern crate derivative;
 
 mod core;
 mod engine;
+mod group;
 mod master;
 mod policy;
 mod store;
 mod stream;
-mod worker;
 
 pub use stream_engine_common::{
     error::{Error, Result},

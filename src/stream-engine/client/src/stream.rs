@@ -47,6 +47,15 @@ impl std::fmt::Display for Role {
     }
 }
 
+impl From<i32> for Role {
+    fn from(role: i32) -> Self {
+        match stream_engine_proto::Role::from_i32(role) {
+            Some(stream_engine_proto::Role::Follower) | None => Role::Follower,
+            Some(stream_engine_proto::Role::Leader) => Role::Leader,
+        }
+    }
+}
+
 /// The role and leader's address of current epoch.
 #[derive(Debug, Clone)]
 pub struct EpochState {
