@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::sync::Arc;
 
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use log::{error, warn};
-use stream_engine_proto::{
-    Command, CommandType, ObserverState, ReadResponse, SegmentDesc, WriteRequest,
-};
+use stream_engine_proto::{Command, CommandType, ObserverState, SegmentDesc, WriteRequest};
 use tokio::runtime::Handle as RuntimeHandle;
 
 use super::{
@@ -32,11 +26,9 @@ use super::{
 use crate::{
     core::{Learn, Learned, Message, MutKind, Mutate, Write},
     master::{ObserverMeta, Stream as MasterStream},
-    store::Transport,
-    Entry, Error, Result, Role, Sequence,
+    store::{Transport, TryBatchNext},
+    Error, Result, Role, Sequence,
 };
-
-type TonicResult<T> = std::result::Result<T, tonic::Status>;
 
 #[derive(Clone)]
 pub struct IoContext {
@@ -289,68 +281,5 @@ impl IoScheduler {
             broken_segments: segments,
         });
         self.channel.on_promote(promote);
-    }
-}
-
-struct TryBatchNext<'a, S>
-where
-    S: Stream<Item = TonicResult<ReadResponse>>,
-{
-    stream: &'a mut S,
-    terminated: Option<TonicResult<()>>,
-    entries: Vec<(u32, Entry)>,
-}
-
-impl<'a, S> TryBatchNext<'a, S>
-where
-    S: Stream<Item = TonicResult<ReadResponse>>,
-{
-    fn new(stream: &'a mut S) -> Self {
-        TryBatchNext {
-            stream,
-            terminated: None,
-            entries: Vec::default(),
-        }
-    }
-}
-
-impl<'a, S> Stream for TryBatchNext<'a, S>
-where
-    S: Stream<Item = TonicResult<ReadResponse>> + Unpin,
-{
-    type Item = TonicResult<Vec<(u32, Entry)>>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        while this.terminated.is_none() {
-            match Pin::new(&mut this.stream).poll_next(cx) {
-                Poll::Ready(Some(resp)) => match resp {
-                    Ok(resp) => this.entries.push((resp.index, resp.entry.unwrap().into())),
-                    Err(status) => {
-                        this.terminated = Some(Err(status));
-                    }
-                },
-                Poll::Ready(None) => {
-                    this.terminated = Some(Ok(()));
-                }
-                Poll::Pending => {
-                    if this.entries.is_empty() {
-                        return Poll::Pending;
-                    } else {
-                        return Poll::Ready(Some(Ok(std::mem::take(&mut this.entries))));
-                    }
-                }
-            }
-        }
-
-        if !this.entries.is_empty() {
-            return Poll::Ready(Some(Ok(std::mem::take(&mut this.entries))));
-        }
-
-        match std::mem::replace(&mut this.terminated, Some(Ok(()))) {
-            Some(Ok(())) => Poll::Ready(None),
-            Some(Err(status)) => Poll::Ready(Some(Err(status))),
-            None => unreachable!(),
-        }
     }
 }

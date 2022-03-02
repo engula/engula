@@ -23,7 +23,7 @@ use crate::{core::Progress, Sequence};
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Policy {
+pub enum Policy {
     /// A simple strategy that allows ack entries as long as one copy holds the
     /// dataset.
     ///

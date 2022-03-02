@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod batch;
 mod client;
 mod transport;
 
+pub use batch::TryBatchNext;
 pub use transport::Transport;
