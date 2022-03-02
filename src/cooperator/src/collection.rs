@@ -69,7 +69,7 @@ impl Inner {
             let value = if res.values.len() <= 1 {
                 res.values.pop().unwrap_or_default()
             } else {
-                RepeatedValue { values: res.values }.into()
+                ListValue { values: res.values }.into()
             };
             result.values.push(value);
         }
@@ -135,8 +135,8 @@ impl Inner {
                     match value {
                         Value::BlobValue(v) => v.len(),
                         Value::TextValue(v) => v.len(),
-                        Value::MappingValue(v) => v.keys.len(),
-                        Value::RepeatedValue(v) => v.values.len(),
+                        Value::MapValue(v) => v.keys.len(),
+                        Value::ListValue(v) => v.values.len(),
                         _ => return Err(Error::invalid_argument("require container object")),
                     }
                 } else {
@@ -155,8 +155,8 @@ impl Inner {
                             let operand = args.take_text()?;
                             v.push_str(&operand);
                         }
-                        Value::RepeatedValue(v) => {
-                            let mut operand = args.take_repeated()?;
+                        Value::ListValue(v) => {
+                            let mut operand = args.take_list()?;
                             v.values.append(&mut operand.values);
                         }
                         _ => return Err(Error::invalid_argument("require sequence object")),
@@ -170,13 +170,13 @@ impl Inner {
                 let operand = args.take()?;
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
-                        Value::RepeatedValue(v) => {
+                        Value::ListValue(v) => {
                             v.values.push(operand.into());
                         }
                         _ => return Err(Error::invalid_argument("require sequence object")),
                     }
                 } else {
-                    let value = RepeatedValue {
+                    let value = ListValue {
                         values: vec![operand.into()],
                     };
                     self.read_cache.insert(id.to_owned(), value.into());
@@ -186,13 +186,13 @@ impl Inner {
                 let operand = args.take()?;
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
-                        Value::RepeatedValue(v) => {
+                        Value::ListValue(v) => {
                             v.values.insert(0, operand.into());
                         }
                         _ => return Err(Error::invalid_argument("require sequence object")),
                     }
                 } else {
-                    let value = RepeatedValue {
+                    let value = ListValue {
                         values: vec![operand.into()],
                     };
                     self.read_cache.insert(id.to_owned(), value.into());
@@ -206,7 +206,7 @@ impl Inner {
         &mut self,
         id: &[u8],
         call: CallExpr,
-        index: GenericValue,
+        index: ValueUnion,
         result: &mut ExprResult,
     ) -> Result<()> {
         let func = Function::from_i32(call.func)
@@ -217,12 +217,12 @@ impl Inner {
             Function::Load => {
                 if let Some(value) = self.read_cache.get(id) {
                     match value {
-                        Value::MappingValue(v) => {
+                        Value::MapValue(v) => {
                             if let Some(pos) = v.keys.iter().position(|x| x == &index) {
                                 result.values.push(v.values[pos].clone());
                             }
                         }
-                        Value::RepeatedValue(v) => {
+                        Value::ListValue(v) => {
                             if let Some(Value::I64Value(mut pos)) = index.value {
                                 // TODO: do more checks here
                                 let len = v.values.len() as i64;
@@ -242,7 +242,7 @@ impl Inner {
                 let operand = args.take()?;
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
-                        Value::MappingValue(v) => {
+                        Value::MapValue(v) => {
                             if let Some(pos) = v.keys.iter().position(|x| x == &index) {
                                 v.values[pos] = operand.into();
                             } else {
@@ -250,7 +250,7 @@ impl Inner {
                                 v.values.push(operand.into());
                             }
                         }
-                        Value::RepeatedValue(v) => {
+                        Value::ListValue(v) => {
                             if let Some(Value::I64Value(mut pos)) = index.value {
                                 let len = v.values.len() as i64;
                                 pos += len;
@@ -266,7 +266,7 @@ impl Inner {
                 } else {
                     match index.value {
                         Some(Value::BlobValue(_)) => {
-                            let value = MappingValue {
+                            let value = MapValue {
                                 keys: vec![index],
                                 values: vec![operand.into()],
                             };
@@ -279,13 +279,13 @@ impl Inner {
             Function::Reset => {
                 if let Some(value) = self.read_cache.get_mut(id) {
                     match value {
-                        Value::MappingValue(v) => {
+                        Value::MapValue(v) => {
                             if let Some(pos) = v.keys.iter().position(|x| x == &index) {
                                 v.keys.remove(pos);
                                 v.values.remove(pos);
                             }
                         }
-                        Value::RepeatedValue(v) => {
+                        Value::ListValue(v) => {
                             if let Some(Value::I64Value(mut pos)) = index.value {
                                 let len = v.values.len() as i64;
                                 pos += len;

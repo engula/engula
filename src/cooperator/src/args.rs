@@ -18,10 +18,10 @@ use engula_apis::*;
 
 use crate::{Error, Result};
 
-pub struct Args(VecDeque<GenericValue>);
+pub struct Args(VecDeque<ValueUnion>);
 
 impl Args {
-    pub fn new(args: Vec<GenericValue>) -> Self {
+    pub fn new(args: Vec<ValueUnion>) -> Self {
         Self(args.into())
     }
 
@@ -61,10 +61,10 @@ impl Args {
         }
     }
 
-    pub fn take_repeated(&mut self) -> Result<RepeatedValue> {
+    pub fn take_list(&mut self) -> Result<ListValue> {
         match self.take()? {
-            Value::RepeatedValue(v) => Ok(v),
-            _ => Err(Error::invalid_argument("require repeated")),
+            Value::ListValue(v) => Ok(v),
+            _ => Err(Error::invalid_argument("require list")),
         }
     }
 
@@ -73,7 +73,7 @@ impl Args {
         match v {
             Value::BlobValue(_) => Ok(v),
             Value::TextValue(_) => Ok(v),
-            Value::RepeatedValue(_) => Ok(v),
+            Value::ListValue(_) => Ok(v),
             _ => Err(Error::invalid_argument("require sequence")),
         }
     }
