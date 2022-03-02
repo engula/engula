@@ -12,5 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub type Error = tonic::Status;
-pub type Result<T> = std::result::Result<T, Error>;
+mod error;
+
+pub use self::error::{Error, Result};

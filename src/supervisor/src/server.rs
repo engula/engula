@@ -166,9 +166,14 @@ impl Server {
     }
 }
 
+type TonicResult<T> = std::result::Result<T, tonic::Status>;
+
 #[tonic::async_trait]
 impl supervisor_server::Supervisor for Server {
-    async fn database(&self, req: Request<DatabaseRequest>) -> Result<Response<DatabaseResponse>> {
+    async fn database(
+        &self,
+        req: Request<DatabaseRequest>,
+    ) -> TonicResult<Response<DatabaseResponse>> {
         let req = req.into_inner();
         let res = self.handle_database(req).await?;
         Ok(Response::new(res))
@@ -177,7 +182,7 @@ impl supervisor_server::Supervisor for Server {
     async fn collection(
         &self,
         req: Request<CollectionRequest>,
-    ) -> Result<Response<CollectionResponse>> {
+    ) -> TonicResult<Response<CollectionResponse>> {
         let req = req.into_inner();
         let res = self.handle_collection(req).await?;
         Ok(Response::new(res))

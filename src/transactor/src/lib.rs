@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
 mod server;
 
-pub use self::{
-    error::{Error, Result},
-    server::Server,
-};
+pub use self::server::Server;

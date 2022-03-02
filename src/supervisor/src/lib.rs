@@ -13,14 +13,11 @@
 // limitations under the License.
 
 mod apis;
-mod error;
 mod server;
 mod supervisor;
 mod universe;
 
-pub(crate) use self::universe::{Database, Universe};
-pub use self::{
-    error::{Error, Result},
-    server::Server,
-    supervisor::Supervisor,
-};
+use engula_common::{Error, Result};
+
+use self::universe::{Database, Universe};
+pub use self::{server::Server, supervisor::Supervisor};

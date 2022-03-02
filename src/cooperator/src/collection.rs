@@ -230,7 +230,7 @@ impl Inner {
                                 if pos >= 0 && pos < len {
                                     result.values.push(v.values[pos as usize].clone());
                                 } else {
-                                    return Err(Error::out_of_range("index out of range"));
+                                    return Err(Error::invalid_argument("index out of range"));
                                 }
                             }
                         }
@@ -257,7 +257,7 @@ impl Inner {
                                 if pos >= 0 && pos < len {
                                     v.values[pos as usize] = operand.into();
                                 } else {
-                                    return Err(Error::out_of_range("index out of range"));
+                                    return Err(Error::invalid_argument("index out of range"));
                                 }
                             }
                         }
@@ -292,7 +292,7 @@ impl Inner {
                                 if pos >= 0 && pos < len {
                                     v.values.remove(pos as usize);
                                 } else {
-                                    return Err(Error::out_of_range("index out of range"));
+                                    return Err(Error::invalid_argument("index out of range"));
                                 }
                             }
                         }

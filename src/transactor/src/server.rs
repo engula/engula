@@ -17,8 +17,6 @@ use engula_cooperator::Cooperator;
 use engula_supervisor::Supervisor;
 use tonic::{Request, Response};
 
-use crate::Result;
-
 pub struct Server {
     supervisor: Supervisor,
     cooperator: Cooperator,
@@ -45,15 +43,20 @@ impl Server {
     }
 }
 
+type TonicResult<T> = std::result::Result<T, tonic::Status>;
+
 #[tonic::async_trait]
 impl engula_server::Engula for Server {
-    async fn txn(&self, req: Request<TxnRequest>) -> Result<Response<TxnResponse>> {
+    async fn txn(&self, req: Request<TxnRequest>) -> TonicResult<Response<TxnResponse>> {
         let req = req.into_inner();
         let res = self.cooperator.txn(req).await?;
         Ok(Response::new(res))
     }
 
-    async fn database(&self, req: Request<DatabaseRequest>) -> Result<Response<DatabaseResponse>> {
+    async fn database(
+        &self,
+        req: Request<DatabaseRequest>,
+    ) -> TonicResult<Response<DatabaseResponse>> {
         let req = req.into_inner();
         let res = self.supervisor.database(req).await?;
         Ok(Response::new(res))
@@ -62,7 +65,7 @@ impl engula_server::Engula for Server {
     async fn collection(
         &self,
         req: Request<CollectionRequest>,
-    ) -> Result<Response<CollectionResponse>> {
+    ) -> TonicResult<Response<CollectionResponse>> {
         let req = req.into_inner();
         let res = self.supervisor.collection(req).await?;
         Ok(Response::new(res))

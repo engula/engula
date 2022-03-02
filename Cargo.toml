@@ -2,6 +2,7 @@
 members = [
   "src/apis",
   "src/client",
+  "src/common",
   "src/engula",
   "src/supervisor",
   "src/transactor",
