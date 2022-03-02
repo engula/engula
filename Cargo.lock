@@ -184,10 +184,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "engula-common"
+version = "0.3.0"
+dependencies = [
+ "thiserror",
+ "tonic",
+]
+
+[[package]]
 name = "engula-cooperator"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "engula-apis",
+ "engula-common",
  "engula-supervisor",
  "prost",
  "tokio",
@@ -197,9 +206,10 @@ dependencies = [
 
 [[package]]
 name = "engula-supervisor"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "engula-apis",
+ "engula-common",
  "prost",
  "tokio",
  "tonic",
@@ -208,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "engula-transactor"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "engula-apis",
  "engula-cooperator",

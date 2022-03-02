@@ -17,13 +17,10 @@ mod args;
 mod collection;
 mod cooperator;
 mod database;
-mod error;
 mod server;
 mod universe;
 
-pub(crate) use self::{args::Args, collection::Collection, database::Database, universe::Universe};
-pub use self::{
-    cooperator::Cooperator,
-    error::{Error, Result},
-    server::Server,
-};
+use engula_common::{Error, Result};
+
+use self::{args::Args, collection::Collection, database::Database, universe::Universe};
+pub use self::{cooperator::Cooperator, server::Server};
