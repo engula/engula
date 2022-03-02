@@ -82,7 +82,7 @@ where
     V: ObjectValue,
 {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Value::MappingValue(v) = v {
+        if let Value::MapValue(v) = v {
             let keys: Result<Vec<K>> = v
                 .keys
                 .into_iter()
@@ -110,7 +110,7 @@ where
 
 impl<T: ObjectValue> ObjectValue for Vec<T> {
     fn cast_from(v: Value) -> Result<Self> {
-        if let Value::RepeatedValue(v) = v {
+        if let Value::ListValue(v) = v {
             v.values
                 .into_iter()
                 .map(|x| {

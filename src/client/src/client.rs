@@ -38,6 +38,7 @@ impl Client {
     pub async fn database_txn(&self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
         let req = TxnRequest {
             requests: vec![req],
+            ..Default::default()
         };
         let mut res = self.txn(req).await?;
         res.responses
