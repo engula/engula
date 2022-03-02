@@ -1,12 +1,12 @@
 # Engula
 
-Engula is a persistent data structure store, used as a database and storage engine. Engula aims to the standard collections for stateful applications. Engula provides a set of persistent data structures that optimize for specific use cases to serve diverse applications in one system. New data structures can be added for new use cases to extend Engula's capabilities instead of reinventing the wheel from scratch.
+Engula is a cloud-native data structure store, used as a database, cache, and storage engine. Engula provides a set of data structures that optimize for specific use cases to serve diverse applications in one system. New data structures can be added for new use cases to extend Engula's capabilities instead of reinventing the wheel from scratch.
 
 Engula provides clients for different programming languages. The most important client interface is a set of typed collections. A typed collection contains a set of objects of the same type. Each type defines the meaning of the data and the operations that can be done on the data. A client converts data operations into internal expressions and then communicates with Engula to execute the expressions.
 
-Engula provides ACID transactions to extend its range of applications further. Engula supports different isolation and consistency levels. The default is read committed (RC) isolation with causal consistency level. This combination meets the requirements of most OLTP applications with high performance. To provide causally consistent reads and writes, Engula uses hybrid logical clocks (HLC) to order events throughout the system.
+Engula provides ACID transactions to extend its range of applications further. Engula supports different isolation and consistency levels. The default is read committed (RC) isolation with causal consistency. This combination meets the requirements of most OLTP applications with high performance. To preserve causal consistency, Engula uses hybrid logical clocks (HLC) to order events throughout the system.
 
-Engula implements a cloud-native architecture to deliver a cost-effective, highly-scalable, and highly-available service on the cloud. Engula disaggregates compute and storage to allow scaling different kinds of resources on-demand. The compute tier consists of a set of cooperators, each serving a portion of data. The storage tier consists of a stream engine and an object engine. Cooperators use the stream engine to elect leaders and store transaction logs. Committed transactions are first accumulated in cooperators and then flushed to the object engine in batches. On failures, cooperators read logs from the stream engine to recover unflushed transactions. Since all cooperators share the same stream engine and object engine, it is lightweight to scale cooperators without data movement. Cooperators also serve as a built-in cache tier to speed up reads, enabling Engula to resist traffic bursts and hotspots.
+Engula implements a cloud-native, multi-tenant architecture to deliver a cost-effective, highly-scalable, and highly-available service on the cloud. Engula disaggregates compute and storage to allow scaling different kinds of resources on-demand. The compute tier consists of a set of cooperators, each serving a portion of data. The storage tier consists of a stream engine and an object engine. Cooperators use the stream engine to elect leaders and store transaction logs. Committed transactions are first accumulated in cooperators and then flushed to the object engine. On failures, cooperators read logs from the stream engine to recover unflushed transactions. Since all cooperators share the same stream engine and object engine, it is lightweight to scale cooperators without data movement. Cooperators also serve as a built-in cache tier to speed up reads, enabling Engula to resist hotspots and traffic bursts.
 
 ## Data model
 
@@ -55,13 +55,13 @@ Engula employs orchestrators to build an autonomous system. From this point of v
 
 The storage of Engula consists of a stream engine and an object engine. The stream engine and the object engine are multi-tenant, highly scalable, and highly available storage systems. Both of them can serve a lot of tenants in one deployment. A stream engine tenant manages multiple streams, and an object engine tenant manages multiple buckets. Each database uses one dedicated tenant in the stream engine to store logs and one dedicated tenant in the object engine to store objects.
 
-### StreamEngine
+### Stream Engine
 
-A StreamEngine deployment manages a lot of tenants, each of which consists of multiple streams. A stream stores a sequence of events proposed by users.
+A Stream Engine deployment manages a lot of tenants, each of which consists of multiple streams. A stream stores a sequence of events proposed by users.
 
 ![Stream Engine Architecture](images/stream-engine-architecture.drawio.svg)
 
-A StreamEngine deployment consists of a master, an orchestrator, and a set of segment stores.
+A Stream Engine deployment consists of a master, an orchestrator, and a set of segment stores.
 
 The events of a stream are divided into multiple segments, according to a certain strategy, since its capacity might exceed the hardware limitation. For fault tolerance and durability, each segment is replicated and persisted in multiple segment stores. The master records the segment placements of streams, and it assigns the segment's replica to the segment store and balances load among them.
 
@@ -69,15 +69,15 @@ The events of a stream are divided into multiple segments, according to a certai
 
 Only one client as a leader can write events into a stream at the same time. For fault tolerance, multiple clients will try to elect a leader at the same time. The master is responsible for choosing one of these clients as the leader.
 
-### ObjectEngine
+### Object Engine
 
-An ObjectEngine deployment manages a lot of tenants, each of which consists of multiple buckets. ObjectEngine stores data as files. Files in a bucket are organized as an LSM-Tree.
+An Object Engine deployment manages a lot of tenants, each of which consists of multiple buckets. Object Engine stores data as files. Files in a bucket are organized as an LSM-Tree.
 
 ![Object Engine Architecture](images/object-engine-architecture.drawio.svg)
 
-An ObjectEngine deployment consists of a manifest, an orchestrator, a background scheduler, a file store, and a set of cache stores. All files are persisted in the file store. The file store is highly durable and serves as the single point of truth for data. Each cache store caches a portion of files from the file store to speed up reads. The manifest assigns data to the cache stores and balances load among them. It is important to note that the data distribution in cache stores has nothing to do with the data partition of collections described in the data model section. Multiple cache stores can serve overlapped data to share traffic.
+An Object Engine deployment consists of a manifest, an orchestrator, a background scheduler, a file store, and a set of cache stores. All files are persisted in the file store. The file store is highly durable and serves as the single point of truth for data. Each cache store caches a portion of files from the file store to speed up reads. The manifest assigns data to the cache stores and balances load among them. It is important to note that the data distribution in cache stores has nothing to do with the data partition of collections described in the data model section. Multiple cache stores can serve overlapped data to share traffic.
 
-ObjectEngine provides interfaces for users to generate and ingest files. ObjectEngine supports atomic ingestion across buckets in the same tenant. The manifest needs to decide the layout of files in each bucket to maintain the LSM-Tree structure. As file ingestions go on, the manifest needs to re-organize LSM-Tree structures to reduce read and space amplification. The manifest can submit background jobs (e.g., compaction, garbage collection) to the scheduler, which provisions resources on-demand to run the jobs.
+Object Engine provides interfaces for users to generate and ingest files. It supports atomic ingestion across buckets in the same tenant. The manifest needs to decide the layout of files in each bucket to maintain the LSM-Tree structure. As file ingestions go on, the manifest needs to re-organize LSM-Tree structures to reduce read and space amplification. The manifest can submit background jobs (e.g., compaction, garbage collection) to the scheduler, which provisions resources on-demand to run the jobs.
 
 TODO: We should provide high-level design here and leave the detailed design to [a separated document](object-engine.md).
 
