@@ -931,6 +931,7 @@ dependencies = [
  "anyhow",
  "derivative",
  "futures",
+ "libc",
  "log",
  "prost",
  "stream-engine-common",
