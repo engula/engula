@@ -63,13 +63,8 @@ impl StartCommand {
         let (kernel_stream, kernel_addr) = connect(self.addr.as_str()).await?;
 
         let transactor = engula_transactor::Server::new().into_service();
-        let object_engine_master = object_engine_master::Server::new().into_service();
-        let stream_engine_master = stream_engine_master::Server::new().into_service();
-
         let kernel = tonic::transport::Server::builder()
             .add_service(transactor)
-            .add_service(object_engine_master)
-            .add_service(stream_engine_master)
             .serve_with_incoming(kernel_stream);
 
         info!(message = "Starting Engula server...", %kernel_addr);
