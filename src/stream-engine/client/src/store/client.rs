@@ -87,7 +87,6 @@ impl StoreClient {
 }
 
 impl StoreClient {
-    #[allow(dead_code)]
     pub async fn read(&self, input: ReadRequest) -> crate::Result<Streaming<ReadResponse>> {
         let mut client = self.client.clone();
         let resp = client.read(input).await?;
@@ -454,7 +453,7 @@ mod tests {
             entries: vec![entry(vec![1u8]), entry(vec![2u8]), entry(vec![3u8])],
         };
         let resp = client.write(1, 1, write_req).await?;
-        assert_eq!(resp.persisted_index, 3);
+        assert_eq!(resp.matched_index, 3);
 
         let write_req = WriteRequest {
             segment_epoch: 1,
@@ -463,7 +462,7 @@ mod tests {
             entries: vec![entry(vec![5u8])],
         };
         let resp = client.write(1, 1, write_req).await?;
-        assert_eq!(resp.persisted_index, 3);
+        assert_eq!(resp.matched_index, 3);
 
         let write_req = WriteRequest {
             segment_epoch: 1,
@@ -472,7 +471,7 @@ mod tests {
             entries: vec![entry(vec![4u8])],
         };
         let resp = client.write(1, 1, write_req).await?;
-        assert_eq!(resp.persisted_index, 5);
+        assert_eq!(resp.matched_index, 5);
 
         Ok(())
     }

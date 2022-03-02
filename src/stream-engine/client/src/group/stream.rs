@@ -23,16 +23,17 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use super::timer::TimerHandle;
 use crate::{
     core::{Learn, Message, Mutate, StreamStateMachine},
+    master::Stream as MasterStream,
     EpochState, Result, Role, Sequence,
 };
 
 #[derive(Debug)]
 pub(crate) struct Promote {
-    role: Role,
-    epoch: u32,
-    leader: String,
-    copy_set: Vec<String>,
-    broken_segments: Vec<SegmentDesc>,
+    pub role: Role,
+    pub epoch: u32,
+    pub leader: String,
+    pub copy_set: Vec<String>,
+    pub broken_segments: Vec<SegmentDesc>,
 }
 
 #[derive(Derivative)]
@@ -57,12 +58,29 @@ type StateObserver = UnboundedSender<EpochState>;
 
 pub(crate) struct StreamMixin<L> {
     pub channel: EventChannel<L>,
+    pub master_stream: MasterStream,
+
     state_machine: StreamStateMachine,
     state_observer: StateObserver,
     applier: Applier,
 }
 
 impl<L: ActiveLauncher> StreamMixin<L> {
+    pub fn new(
+        channel: EventChannel<L>,
+        master_stream: MasterStream,
+        state_observer: StateObserver,
+    ) -> Self {
+        let stream_id = master_stream.stream_id();
+        StreamMixin {
+            channel,
+            master_stream,
+            state_machine: StreamStateMachine::new(stream_id),
+            state_observer,
+            applier: Applier::new(),
+        }
+    }
+
     fn handle_proposal(&mut self, event: Box<[u8]>, sender: oneshot::Sender<Result<Sequence>>) {
         match self.state_machine.propose(event) {
             Ok(seq) => self.applier.push_proposal(seq, sender),
@@ -209,7 +227,7 @@ impl<L: ActiveLauncher> EventChannel<L> {
         std::mem::take(&mut state.events).into_iter().collect()
     }
 
-    fn poll(&self, launcher: L) {
+    pub(super) fn poll(&self, launcher: L) {
         let mut state = self.state.lock().unwrap();
         if state.events.is_empty() {
             state.launcher = Some(launcher);

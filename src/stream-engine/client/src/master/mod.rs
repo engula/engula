@@ -20,7 +20,10 @@ use stream_engine_proto::*;
 use tonic::transport::Endpoint;
 
 use self::client::MasterClient;
-pub use self::{stream::Stream, tenant::Tenant};
+pub use self::{
+    stream::{ObserverMeta, Stream},
+    tenant::Tenant,
+};
 use crate::Result;
 
 #[derive(Clone)]

@@ -56,6 +56,11 @@ impl Stream {
         self.stream_desc.clone()
     }
 
+    #[inline(always)]
+    pub fn stream_id(&self) -> u64 {
+        self.stream_desc.id
+    }
+
     /// Sends the state of a stream observer to master, and receives commands.
     pub async fn heartbeat(&self, observer_meta: ObserverMeta) -> Result<Vec<Command>> {
         let role: Role = observer_meta.state.into();

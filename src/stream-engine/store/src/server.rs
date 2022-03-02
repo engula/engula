@@ -195,7 +195,7 @@ impl Store {
         acked_seq: Sequence,
         first_index: u32,
         entries: Vec<Entry>,
-    ) -> Result<u32> {
+    ) -> Result<(u32, u32)> {
         let stream = self
             .streams
             .entry(stream_id)
@@ -232,7 +232,10 @@ impl Store {
             replica.broadcast();
         }
 
-        Ok(replica.continuously_persisted_index())
+        Ok((
+            replica.continuously_persisted_index(),
+            replica.acked_index.unwrap_or_default(),
+        ))
     }
 
     pub fn read(
@@ -381,7 +384,7 @@ impl Server {
         req: WriteRequest,
     ) -> Result<WriteResponse> {
         let mut store = self.store.lock().await;
-        let persisted_index = store.write(
+        let (matched_index, acked_index) = store.write(
             stream_id,
             req.segment_epoch,
             writer_epoch,
@@ -390,7 +393,10 @@ impl Server {
             req.entries.into_iter().map(Into::into).collect(),
         )?;
 
-        Ok(WriteResponse { persisted_index })
+        Ok(WriteResponse {
+            matched_index,
+            acked_index,
+        })
     }
 
     async fn handle_seal(

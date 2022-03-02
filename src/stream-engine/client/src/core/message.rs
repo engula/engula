@@ -40,7 +40,6 @@ pub(crate) enum MutKind {
     Seal,
 }
 
-#[allow(dead_code)]
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
 pub(crate) struct Write {
@@ -109,4 +108,86 @@ pub(crate) struct Message {
     pub segment_epoch: u32,
     pub writer_epoch: u32,
     pub detail: MsgDetail,
+}
+
+impl Message {
+    #[inline(always)]
+    pub fn master_timeout(segment_epoch: u32, writer_epoch: u32) -> Self {
+        Self::store_timeout("<MASTER>".into(), segment_epoch, writer_epoch)
+    }
+
+    #[inline(always)]
+    pub fn store_timeout(target: String, segment_epoch: u32, writer_epoch: u32) -> Self {
+        Self::write_timeout(target, segment_epoch, writer_epoch, None, 0)
+    }
+
+    #[inline(always)]
+    pub fn write_timeout(
+        target: String,
+        segment_epoch: u32,
+        writer_epoch: u32,
+        range: Option<Range<u32>>,
+        bytes: usize,
+    ) -> Self {
+        Message {
+            target,
+            segment_epoch,
+            writer_epoch,
+            detail: MsgDetail::Timeout { range, bytes },
+        }
+    }
+
+    #[inline(always)]
+    pub fn sealed(target: String, segment_epoch: u32, writer_epoch: u32, acked_index: u32) -> Self {
+        Message {
+            target,
+            segment_epoch,
+            writer_epoch,
+            detail: MsgDetail::Sealed { acked_index },
+        }
+    }
+
+    #[inline(always)]
+    pub fn received(
+        target: String,
+        segment_epoch: u32,
+        writer_epoch: u32,
+        matched_index: u32,
+        acked_index: u32,
+    ) -> Self {
+        Message {
+            target,
+            segment_epoch,
+            writer_epoch,
+            detail: MsgDetail::Received {
+                matched_index,
+                acked_index,
+            },
+        }
+    }
+
+    #[inline(always)]
+    pub fn recovered(segment_epoch: u32, writer_epoch: u32) -> Self {
+        Message {
+            target: "<MASTER>".into(),
+            segment_epoch,
+            writer_epoch,
+            detail: MsgDetail::Recovered,
+        }
+    }
+
+    #[inline(always)]
+    pub fn learned(
+        target: String,
+        segment_epoch: u32,
+        writer_epoch: u32,
+        learned: Learned,
+    ) -> Self {
+        Message {
+            target,
+            segment_epoch,
+            writer_epoch,
+            detail: MsgDetail::Learned(learned),
+        }
+    }
 }
