@@ -30,18 +30,15 @@ impl Bucket {
 
 #[async_trait]
 impl crate::Bucket for Bucket {
-    type RandomReader = RandomReader;
-    type SequentialWriter = SequentialWriter;
-
-    async fn new_random_reader(&self, name: &str) -> Result<Self::RandomReader> {
+    async fn new_random_reader(&self, name: &str) -> Result<Box<dyn crate::RandomRead>> {
         let path = self.path.join(name);
         let file = tokio::fs::File::open(&path).await?;
-        Ok(RandomReader {
+        Ok(Box::new(RandomReader {
             file: file.into_std().await,
-        })
+        }))
     }
 
-    async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter> {
+    async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn crate::SequentialWrite>> {
         let path = self.path.join(name);
         let file = tokio::fs::OpenOptions::new()
             .write(true)
@@ -49,7 +46,7 @@ impl crate::Bucket for Bucket {
             .truncate(true)
             .open(&path)
             .await?;
-        Ok(SequentialWriter { file })
+        Ok(Box::new(SequentialWriter { file }))
     }
 }
 
@@ -59,9 +56,9 @@ pub struct RandomReader {
 
 #[async_trait]
 impl crate::RandomRead for RandomReader {
-    async fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize> {
-        let size = self.file.read_at(buf, offset)?;
-        Ok(size)
+    async fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
+        self.file.read_exact_at(buf, offset)?;
+        Ok(())
     }
 }
 
@@ -76,7 +73,7 @@ impl crate::SequentialWrite for SequentialWriter {
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<()> {
+    async fn finish(&mut self) -> Result<()> {
         self.file.sync_all().await?;
         Ok(())
     }
