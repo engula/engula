@@ -17,14 +17,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use futures::channel::oneshot;
 use stream_engine_proto::{ObserverState, SegmentDesc};
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::timer::TimerHandle;
 use crate::{
     core::{Learn, Message, Mutate, StreamStateMachine},
     master::Stream as MasterStream,
-    EpochState, Result, Role, Sequence,
+    EpochState, Error, Result, Role, Sequence,
 };
 
 #[derive(Debug)]
@@ -48,6 +49,11 @@ enum StreamEvent {
         #[derivative(Debug = "ignore")]
         sender: oneshot::Sender<Result<Sequence>>,
     },
+    Truncate {
+        up_to: Sequence,
+        #[derivative(Debug = "ignore")]
+        sender: oneshot::Sender<Result<()>>,
+    },
     EpochState {
         #[derivative(Debug = "ignore")]
         sender: oneshot::Sender<EpochState>,
@@ -61,22 +67,18 @@ pub(crate) struct StreamMixin<L> {
     pub master_stream: MasterStream,
 
     state_machine: StreamStateMachine,
-    state_observer: StateObserver,
+    state_observer: Option<StateObserver>,
     applier: Applier,
 }
 
 impl<L: ActiveLauncher> StreamMixin<L> {
-    pub fn new(
-        channel: EventChannel<L>,
-        master_stream: MasterStream,
-        state_observer: StateObserver,
-    ) -> Self {
+    pub fn new(channel: EventChannel<L>, master_stream: MasterStream) -> Self {
         let stream_id = master_stream.stream_id();
         StreamMixin {
             channel,
             master_stream,
             state_machine: StreamStateMachine::new(stream_id),
-            state_observer,
+            state_observer: None,
             applier: Applier::new(),
         }
     }
@@ -86,6 +88,29 @@ impl<L: ActiveLauncher> StreamMixin<L> {
             Ok(seq) => self.applier.push_proposal(seq, sender),
             Err(err) => sender.send(Err(err)).unwrap_or_default(),
         }
+    }
+
+    fn handle_truncate(&mut self, sequence: u64, sender: oneshot::Sender<Result<()>>) {
+        if self.state_machine.role != Role::Follower {
+            sender
+                .send(Err(Error::NotLeader(self.state_machine.leader.clone())))
+                .unwrap_or_default();
+            return;
+        }
+
+        let acked_seq: u64 = self.state_machine.acked_seq().into();
+        if acked_seq.checked_sub(sequence).is_none() {
+            sender
+                .send(Err(Error::InvalidArgument(format!(
+                    "truncate sequence (is {}) should be <= end (is {})",
+                    sequence, acked_seq
+                ))))
+                .unwrap_or_default();
+            return;
+        }
+
+        // TODO(w41ter) truncate entries from master and state machine.
+        sender.send(Ok(())).unwrap_or_default();
     }
 
     fn handle_promote(&mut self, promote: Promote) {
@@ -102,9 +127,11 @@ impl<L: ActiveLauncher> StreamMixin<L> {
         );
 
         // FIXME(w41ter) cancel subscribing when the receiving end are closed.
-        self.state_observer
-            .send(self.state_machine.epoch_state())
-            .unwrap_or_default();
+        if let Some(state_observer) = &mut self.state_observer {
+            state_observer
+                .send(self.state_machine.epoch_state())
+                .unwrap_or_default();
+        }
     }
 
     fn dispatch_events(&mut self) -> bool {
@@ -116,6 +143,9 @@ impl<L: ActiveLauncher> StreamMixin<L> {
                 }
                 StreamEvent::Proposal { event, sender } => {
                     self.handle_proposal(event, sender);
+                }
+                StreamEvent::Truncate { up_to, sender } => {
+                    self.handle_truncate(up_to.into(), sender);
                 }
                 StreamEvent::Tick => {
                     self.state_machine.tick();
@@ -148,15 +178,26 @@ impl<L: ActiveLauncher> StreamMixin<L> {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn observe(&mut self, state_observer: StateObserver) -> Result<()> {
+        if self.state_observer.is_some() {
+            return Err(Error::AlreadyExists("state observer".to_owned()));
+        }
+        self.state_observer = Some(state_observer);
+        Ok(())
+    }
+
     pub fn on_active(&mut self, scheduler: &mut impl Scheduler) {
         if self.dispatch_events() {
-            scheduler.send_heartbeat(
-                self.state_machine.role,
-                self.state_machine.writer_epoch,
-                self.state_machine.acked_seq(),
-                self.state_machine.observer_state(),
-            );
+            // If state observer is none, the user don't subscribe the change of epoch
+            // states, and the stream shouldn't participate in election.
+            if self.state_observer.is_some() {
+                scheduler.send_heartbeat(
+                    self.state_machine.role,
+                    self.state_machine.writer_epoch,
+                    self.state_machine.acked_seq(),
+                    self.state_machine.observer_state(),
+                );
+            }
         }
         self.flush_ready(scheduler);
     }
@@ -167,7 +208,6 @@ pub(crate) struct Applier {
 }
 
 impl Applier {
-    #[allow(dead_code)]
     fn new() -> Self {
         Applier {
             proposals: VecDeque::new(),
@@ -206,7 +246,6 @@ pub(crate) struct EventChannel<L> {
     state: Arc<Mutex<ChannelState<L>>>,
 }
 
-#[allow(dead_code)]
 impl<L: ActiveLauncher> EventChannel<L> {
     pub fn new(stream_id: u64) -> Self {
         EventChannel {
@@ -218,6 +257,7 @@ impl<L: ActiveLauncher> EventChannel<L> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn stream_id(&self) -> u64 {
         self.stream_id
     }
@@ -255,8 +295,17 @@ impl<L: ActiveLauncher> EventChannel<L> {
     }
 
     #[inline(always)]
-    pub fn on_propose(&self, event: Box<[u8]>, sender: oneshot::Sender<Result<Sequence>>) {
+    pub fn on_propose(&self, event: Box<[u8]>) -> oneshot::Receiver<Result<Sequence>> {
+        let (sender, receiver) = oneshot::channel();
         self.send(StreamEvent::Proposal { event, sender });
+        receiver
+    }
+
+    #[inline(always)]
+    pub fn on_truncate(&self, up_to: Sequence) -> oneshot::Receiver<Result<()>> {
+        let (sender, receiver) = oneshot::channel();
+        self.send(StreamEvent::Truncate { up_to, sender });
+        receiver
     }
 
     #[inline(always)]
@@ -265,8 +314,10 @@ impl<L: ActiveLauncher> EventChannel<L> {
     }
 
     #[inline(always)]
-    pub fn on_epoch_state(&self, sender: oneshot::Sender<EpochState>) {
+    pub fn on_epoch_state(&self) -> oneshot::Receiver<EpochState> {
+        let (sender, receiver) = oneshot::channel();
         self.send(StreamEvent::EpochState { sender });
+        receiver
     }
 
     #[inline(always)]

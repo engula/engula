@@ -8,9 +8,13 @@ publish = false
 stream-engine-common = { version = "0.1", path = "../common" }
 stream-engine-proto = { version = "0.1", path = "../proto" }
 
-log = "0.4.14"
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.6"
+tracing = "0.1.31"
+
+[dev-dependencies]
+clap = { version = "3.0.14", features = ["derive"] }
+tracing-subscriber = "0.3.9"

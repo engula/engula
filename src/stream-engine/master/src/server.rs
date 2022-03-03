@@ -27,23 +27,9 @@ pub struct Server {
     master: Master,
 }
 
-impl Default for Server {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Server {
-    pub fn new() -> Self {
-        // FIXME(w41ter) add store addresses.
-        let stores = vec![];
-        Self {
-            master: Master::new(Config::default(), stores),
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn test_new(stores: Vec<String>) -> Self {
+    // FIXME(w41ter) Support address lookup
+    pub fn new(stores: Vec<String>) -> Self {
         Self {
             master: Master::new(Config::default(), stores),
         }

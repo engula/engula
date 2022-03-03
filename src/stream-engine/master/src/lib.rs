@@ -38,7 +38,7 @@ pub mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async {
-            let server = Server::test_new(replicas);
+            let server = Server::new(replicas);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))

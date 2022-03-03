@@ -172,12 +172,13 @@ pub(crate) mod tests {
         let master = Master::new(&local_addr.to_string()).await?;
         let tenant = master.create_tenant("tenant").await?;
         let stream = tenant.create_stream_client("stream").await?;
+        let stream_id = stream.stream_id();
         default_heartbeat(&stream).await?;
 
         let resp = stream.get_segment(1).await?;
         assert!(
             matches!(resp, Some(segment_desc) if segment_desc == SegmentDesc {
-                stream_id: 1,
+                stream_id,
                 epoch: 1,
                 copy_set: replicas.iter().map(ToString::to_string).collect(),
                 state: SegmentState::Appending as i32,

@@ -11,14 +11,16 @@ stream-engine-proto = { version = "0.1", path = "../proto" }
 derivative = "2.2.0"
 futures = "0.3"
 libc = "0.2"
-log = "0.4.14"
 prost = "0.9"
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }
 tonic = "0.6"
+tracing = "0.1.31"
 
 [dev-dependencies]
 stream-engine-master = { version = "0.1", path = "../master" }
 stream-engine-store = { version = "0.1", path = "../store" }
 
 anyhow = "1.0"
+clap = { version = "3.0.14", features = ["derive"] }
+tracing-subscriber = "0.3.9"

@@ -16,3 +16,6 @@ mod io;
 mod stream;
 mod timer;
 mod worker;
+
+pub(crate) type EventChannel = self::stream::EventChannel<self::worker::Launcher>;
+pub(crate) use self::worker::{ActionChannel, Worker, WorkerOption};

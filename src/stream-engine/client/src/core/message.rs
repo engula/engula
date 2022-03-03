@@ -59,7 +59,6 @@ pub(crate) struct Learned {
 
 /// Restored is used to notify the worker to send a message to the master to
 /// seal the corresponding segment.
-#[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) struct Restored {
     pub segment_epoch: u32,

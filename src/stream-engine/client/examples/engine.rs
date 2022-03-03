@@ -18,7 +18,7 @@ use stream_engine_client::{Engine, Result};
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
-    let engine = Engine::connect(url).await?;
+    let engine = Engine::new("1".to_owned(), url).await?;
     let tenant = engine.create_tenant("tenant").await?;
     println!("created {:?}", tenant.desc().await?);
     let stream = tenant.create_stream("stream").await?;
