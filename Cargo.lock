@@ -937,10 +937,10 @@ name = "stream-engine-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "derivative",
  "futures",
  "libc",
- "log",
  "prost",
  "stream-engine-common",
  "stream-engine-master",
@@ -949,6 +949,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -965,7 +967,7 @@ dependencies = [
 name = "stream-engine-master"
 version = "0.1.0"
 dependencies = [
- "log",
+ "clap",
  "prost",
  "stream-engine-common",
  "stream-engine-proto",
@@ -973,6 +975,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -989,8 +993,8 @@ dependencies = [
 name = "stream-engine-store"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "futures",
- "log",
  "prost",
  "stream-engine-common",
  "stream-engine-proto",
@@ -998,6 +1002,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

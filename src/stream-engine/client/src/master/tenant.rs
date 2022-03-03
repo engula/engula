@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use stream_engine_proto::*;
 
-use super::{client::MasterClient, stream::Stream as MasterStreamClient};
-use crate::{Error, Result, Stream};
+use super::{client::MasterClient, stream::Stream};
+use crate::{Error, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -61,12 +61,11 @@ impl Tenant {
             None
         };
         let stream_desc = desc.ok_or(Error::InvalidResponse)?;
-        let client = self.inner.new_stream_client(stream_desc);
-        Ok(Stream::new(client))
+        Ok(self.inner.new_stream_client(stream_desc))
     }
 
     pub async fn create_stream(&self, name: &str) -> Result<Stream> {
-        Ok(Stream::new(self.create_stream_client(name).await?))
+        self.create_stream_client(name).await
     }
 
     pub async fn delete_stream(&self, name: &str) -> Result<()> {
@@ -78,7 +77,7 @@ impl Tenant {
         Ok(())
     }
 
-    pub(super) async fn create_stream_client(&self, name: &str) -> Result<MasterStreamClient> {
+    pub(super) async fn create_stream_client(&self, name: &str) -> Result<Stream> {
         let desc = StreamDesc {
             name: name.to_owned(),
             ..Default::default()
@@ -102,8 +101,8 @@ struct TenantInner {
 }
 
 impl TenantInner {
-    fn new_stream_client(&self, stream_desc: StreamDesc) -> MasterStreamClient {
-        MasterStreamClient::new(self.name.clone(), stream_desc, self.master_client.clone())
+    fn new_stream_client(&self, stream_desc: StreamDesc) -> Stream {
+        Stream::new(self.name.clone(), stream_desc, self.master_client.clone())
     }
 
     async fn tenant_union_call(

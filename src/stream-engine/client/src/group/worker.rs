@@ -21,10 +21,9 @@ use std::{
     thread,
 };
 
-use tokio::{
-    runtime::Handle as RuntimeHandle,
-    sync::{mpsc::UnboundedSender, oneshot},
-};
+use futures::channel::oneshot;
+use tokio::{runtime::Handle as RuntimeHandle, sync::mpsc::UnboundedSender};
+use tracing::info;
 
 use super::{
     io::{IoContext, IoScheduler},
@@ -55,6 +54,10 @@ enum Action {
     Add {
         channel: EventChannel<Launcher>,
         master_stream: MasterStream,
+        sender: oneshot::Sender<Result<()>>,
+    },
+    Observe {
+        stream_id: u64,
         state_observer: UnboundedSender<EpochState>,
         sender: oneshot::Sender<Result<()>>,
     },
@@ -111,25 +114,37 @@ impl ActionChannel {
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
     pub(crate) fn add(
         &self,
         channel: EventChannel<Launcher>,
         master_stream: MasterStream,
-        state_observer: UnboundedSender<EpochState>,
     ) -> oneshot::Receiver<Result<()>> {
         let (sender, receiver) = oneshot::channel();
         self.submit(Action::Add {
             channel,
             master_stream,
-            state_observer,
             sender,
         });
         receiver
     }
 
     #[inline(always)]
+    pub(crate) fn observe(
+        &self,
+        stream_id: u64,
+        state_observer: UnboundedSender<EpochState>,
+    ) -> oneshot::Receiver<Result<()>> {
+        let (sender, receiver) = oneshot::channel();
+        self.submit(Action::Observe {
+            stream_id,
+            state_observer,
+            sender,
+        });
+        receiver
+    }
+
     #[allow(dead_code)]
+    #[inline(always)]
     pub(crate) fn remove(&self, stream_id: u64) -> oneshot::Receiver<Result<()>> {
         let (sender, receiver) = oneshot::channel();
         self.submit(Action::Remove { stream_id, sender });
@@ -190,7 +205,6 @@ impl Selector {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct WorkerOption {
     pub observer_id: String,
     pub heartbeat_interval_ms: u64,
@@ -201,7 +215,6 @@ pub(crate) struct WorkerOption {
 #[allow(dead_code)]
 pub(crate) struct Worker {
     io_ctx: Arc<IoContext>,
-    selector: Selector,
     mono_timer: MonoTimer<EventChannel<Launcher>>,
 
     channel: ActionChannel,
@@ -218,7 +231,6 @@ impl Worker {
         };
         Worker {
             io_ctx: Arc::new(io_ctx),
-            selector: Selector::new(),
             mono_timer: MonoTimer::new(opt.heartbeat_interval_ms),
 
             channel: ActionChannel::new(),
@@ -236,20 +248,35 @@ impl Worker {
                 Action::Add {
                     channel,
                     master_stream,
-                    state_observer,
                     sender,
                 } => {
                     let stream_id = master_stream.stream_id();
                     let cloned_channel = channel.clone();
-                    let stream = StreamMixin::new(channel, master_stream, state_observer);
+                    let stream = StreamMixin::new(channel, master_stream);
                     if self.streams.insert(stream_id, stream).is_some() {
                         sender
                             .send(Err(Error::AlreadyExists(format!("stream {}", stream_id))))
                             .unwrap_or_default();
                     } else {
-                        self.mono_timer.register(cloned_channel.clone());
                         consumed.push(cloned_channel);
                         sender.send(Ok(())).unwrap_or_default();
+                    }
+                }
+                Action::Observe {
+                    stream_id,
+                    state_observer,
+                    sender,
+                } => {
+                    if let Some(stream) = self.streams.get_mut(&stream_id) {
+                        let observe_result = stream.observe(state_observer);
+                        if observe_result.is_ok() {
+                            self.mono_timer.register(stream.channel.clone());
+                        }
+                        sender.send(observe_result).unwrap_or_default();
+                    } else {
+                        sender
+                            .send(Err(Error::NotFound(format!("stream {}", stream_id))))
+                            .unwrap_or_default();
                     }
                 }
                 Action::Remove { stream_id, sender } => {
@@ -291,10 +318,13 @@ impl Worker {
             cloned_timer.run();
         });
 
-        let mut action_channel = None;
-        let mut consumed: Vec<EventChannel<Launcher>> = vec![];
+        info!("worker is serving");
+
+        let selector = Selector::new();
+        let mut consumed = vec![];
+        let mut action_channel = Some(w.action_channel());
         while !exit_flag.load(Ordering::Acquire) {
-            let mut actives = w.selector.select(action_channel.take(), &consumed);
+            let mut actives = selector.select(action_channel.take(), &consumed);
             consumed.clear();
 
             if actives.remove(&u64::MAX) {
@@ -304,6 +334,8 @@ impl Worker {
 
             w.handle_active_channels(actives, &mut consumed);
         }
+
+        info!("worker is shuting");
 
         w.mono_timer.close();
         join_handle.join().unwrap_or_default();

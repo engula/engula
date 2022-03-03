@@ -25,6 +25,7 @@ mod policy;
 mod reader;
 mod store;
 mod stream;
+mod tenant;
 
 pub use stream_engine_common::{
     error::{Error, Result},
@@ -33,8 +34,8 @@ pub use stream_engine_common::{
 
 pub use self::{
     engine::Engine,
-    master::Tenant,
     stream::{EpochState, Role, Stream},
+    tenant::Tenant,
 };
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;

@@ -14,8 +14,8 @@
 
 use std::{collections::HashMap, fmt::Display, ops::Range};
 
-use log::{error, info, warn};
 use stream_engine_proto::ObserverState;
+use tracing::{error, info, warn};
 
 use super::{message::*, Replicate, INITIAL_EPOCH};
 use crate::{policy::Policy as ReplicatePolicy, Entry, EpochState, Error, Result, Role, Sequence};
@@ -122,6 +122,8 @@ impl StreamStateMachine {
         let prev_role = self.role;
         self.leader = leader;
         self.role = role;
+
+        let mut recovering_epochs = vec![];
         if self.role == Role::Leader {
             let new_replicate = Box::new(Replicate::new(
                 self.writer_epoch,
@@ -129,7 +131,7 @@ impl StreamStateMachine {
                 copy_set,
                 self.replicate_policy,
             ));
-            if self.replicate.epoch() + 1 == self.writer_epoch && prev_role == self.role {
+            if prev_epoch + 1 == self.writer_epoch && prev_role == self.role {
                 // do fast recovery
                 debug_assert_eq!(pending_epochs.len(), 1);
                 debug_assert_eq!(pending_epochs[0].0, prev_epoch);
@@ -141,6 +143,7 @@ impl StreamStateMachine {
                 prev_replicate.become_recovery(self.writer_epoch);
                 self.recovering_replicates
                     .insert(prev_epoch, prev_replicate);
+                recovering_epochs.push(prev_epoch);
             } else {
                 // Sort in reverse to ensure that the smallest is at the end. See
                 // `StreamStateMachine::handle_recovered` for details.
@@ -159,13 +162,14 @@ impl StreamStateMachine {
                     })
                     .collect();
                 self.replicate = new_replicate;
+                recovering_epochs = self.recovering_replicates.keys().cloned().collect();
             }
             debug_assert!(self.recovering_replicates.len() <= 2);
         }
 
         info!(
-            "stream {} promote epoch from {} to {}, new role {:?}, leader {}",
-            self.stream_id, prev_epoch, epoch, self.role, self.leader,
+            "stream {} promote epoch from {} to {}, new role {:?}, leader {}, recovery epochs {:?}",
+            self.stream_id, prev_epoch, epoch, self.role, self.leader, recovering_epochs
         );
 
         true
@@ -280,7 +284,7 @@ impl StreamStateMachine {
                 .handle_received(target, matched_index, acked_index);
         } else if let Some(replicate) = self.recovering_replicates.get_mut(&segment_epoch) {
             replicate.handle_received(target, matched_index, acked_index);
-            Self::try_to_finish_recovering(&mut self.ready, replicate);
+            Self::try_to_finish_recovering(self.stream_id, &mut self.ready, replicate);
         } else {
             warn!(
                 "{} receive staled RECEIVED from {}, epoch {}",
@@ -301,7 +305,7 @@ impl StreamStateMachine {
             self.replicate.handle_timeout(target, range, bytes);
         } else if let Some(replicate) = self.recovering_replicates.get_mut(&epoch) {
             replicate.handle_timeout(target, range, bytes);
-            Self::try_to_finish_recovering(&mut self.ready, replicate);
+            Self::try_to_finish_recovering(self.stream_id, &mut self.ready, replicate);
         } else {
             warn!(
                 "{} receive staled TIMEOUT from {}, epoch {}",
@@ -349,8 +353,13 @@ impl StreamStateMachine {
         self.recovering_replicates.remove(&seg_epoch);
     }
 
-    fn try_to_finish_recovering(ready: &mut Ready, replicate: &Replicate) {
+    fn try_to_finish_recovering(stream_id: u64, ready: &mut Ready, replicate: &Replicate) {
         if ready.restored_segment.is_none() && replicate.is_enough_targets_acked() {
+            info!(
+                "stream {} segment {} is recovered, now make it sealed",
+                stream_id,
+                replicate.epoch()
+            );
             // FIXME(w41ter) too many sealing request.
             ready.restored_segment = Some(Restored {
                 segment_epoch: replicate.epoch(),

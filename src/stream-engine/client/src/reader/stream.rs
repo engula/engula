@@ -42,7 +42,9 @@ impl StreamReader {
             policy,
             transport,
             master_stream,
-            current_epoch: 0,
+            // FIXME(w41ter) provide a mechanism to start reading from the beginning of a stream
+            // even if it is truncated.
+            current_epoch: 1,
             start_index: None,
             segment_reader: None,
         }
@@ -81,8 +83,13 @@ impl StreamReader {
     /// Seeks to the given sequence.
     pub async fn seek(&mut self, sequence: u64) -> Result<()> {
         let sequence = Sequence::from(sequence);
-        self.current_epoch = sequence.epoch;
-        self.start_index = Some(sequence.index);
+        if sequence.epoch >= 1 {
+            self.current_epoch = sequence.epoch;
+            self.start_index = Some(sequence.index);
+        } else {
+            self.current_epoch = 1;
+            self.start_index = None;
+        };
         self.switch_segment().await?;
         Ok(())
     }

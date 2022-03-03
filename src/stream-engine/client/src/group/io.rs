@@ -15,9 +15,9 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
-use log::{error, warn};
 use stream_engine_proto::{Command, CommandType, ObserverState, SegmentDesc, WriteRequest};
 use tokio::runtime::Handle as RuntimeHandle;
+use tracing::{error, info, warn};
 
 use super::{
     stream::{EventChannel, Promote, Scheduler},
@@ -132,7 +132,10 @@ impl IoScheduler {
             {
                 Ok(streaming) => streaming,
                 Err(error) => {
-                    warn!("stream {} learn entries: {}", stream_id, error);
+                    warn!(
+                        "stream {} learn entries from {}: {}",
+                        stream_id, learn.target, error
+                    );
                     channel.on_msg(Message::store_timeout(
                         learn.target,
                         learn.seg_epoch,
@@ -154,7 +157,10 @@ impl IoScheduler {
                         ));
                     }
                     Some(Err(status)) => {
-                        warn!("stream {} learn entries: {}", stream_id, status);
+                        warn!(
+                            "stream {} learn entries from target {}: {}",
+                            stream_id, learn.target, status
+                        );
                         break;
                     }
                     None => {
@@ -197,8 +203,8 @@ impl IoScheduler {
                 }
                 Err(error) => {
                     error!(
-                        "stream {} seal replica {}: {}",
-                        stream_id, segment_epoch, error
+                        "stream {} epoch {} flush write to {}: {}",
+                        stream_id, segment_epoch, target, error
                     );
                     channel.on_msg(Message::write_timeout(
                         target,
@@ -231,8 +237,8 @@ impl IoScheduler {
                 }
                 Err(error) => {
                     error!(
-                        "stream {} seal replica {}: {}",
-                        stream_id, segment_epoch, error
+                        "stream {} epoch {} seal replica {}: {}",
+                        stream_id, segment_epoch, target, error
                     );
                     channel.on_msg(Message::store_timeout(target, segment_epoch, writer_epoch));
                 }
@@ -272,6 +278,7 @@ impl IoScheduler {
             }
         };
         debug_assert_eq!(segments.len(), cmd.pending_epochs.len() + 1);
+
         let new_seg = segments.pop().unwrap();
         let promote = Box::new(Promote {
             role: cmd.role.into(),
@@ -280,6 +287,10 @@ impl IoScheduler {
             copy_set: new_seg.copy_set,
             broken_segments: segments,
         });
+
+        info!("stream {} receives PROMOTE from master, epoch {}, role {}, leader {}, copy set {:?}, recovering epochs {:?}",
+            stream_id, cmd.epoch, promote.role, promote.leader, promote.copy_set, cmd.pending_epochs);
+
         self.channel.on_promote(promote);
     }
 }

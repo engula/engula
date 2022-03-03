@@ -20,10 +20,10 @@ use std::{
 };
 
 use futures::Stream;
-use log::warn;
 use stream_engine_proto::*;
 use tokio::sync::Mutex as TokioMutex;
 use tonic::{async_trait, Request, Response, Status};
+use tracing::warn;
 
 use crate::{Entry, Sequence};
 
@@ -297,7 +297,6 @@ pub struct Server {
     store: Arc<TokioMutex<Store>>,
 }
 
-#[allow(unused, dead_code)]
 impl Server {
     pub fn new() -> Self {
         Server {

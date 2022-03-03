@@ -14,11 +14,11 @@
 
 use std::{collections::HashMap, ops::DerefMut, sync::Arc, time::Instant};
 
-use log::{debug, info};
 use stream_engine_proto::{
     Command, CommandType, ObserverState, Role, SegmentDesc, SegmentState, StreamDesc,
 };
 use tokio::sync::Mutex;
+use tracing::{debug, info};
 
 use crate::{master::Config, Error, Result, Sequence};
 

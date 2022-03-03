@@ -59,7 +59,7 @@ pub struct Master {
 }
 
 struct MasterInner {
-    next_id: u64,
+    next_id: u32,
     tenants: HashMap<String, Tenant>,
 }
 
@@ -90,7 +90,7 @@ impl Master {
         if inner.tenants.contains_key(&desc.name) {
             return Err(Error::AlreadyExists(format!("tenant {}", desc.name)));
         }
-        desc.id = inner.next_id;
+        desc.id = (inner.next_id as u64) << 32;
         inner.next_id += 1;
         let db = Tenant::new(desc.clone());
         inner.tenants.insert(desc.name.clone(), db);
@@ -111,9 +111,10 @@ struct TenantInner {
 
 impl Tenant {
     fn new(desc: TenantDesc) -> Self {
+        let next_id = desc.id;
         let inner = TenantInner {
             desc,
-            next_id: 1,
+            next_id,
             streams: HashMap::new(),
         };
         Self {

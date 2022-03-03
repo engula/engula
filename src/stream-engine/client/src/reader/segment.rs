@@ -19,8 +19,8 @@ use std::{
 };
 
 use futures::{Stream, TryStreamExt};
-use log::warn;
 use tokio::task::JoinHandle;
+use tracing::warn;
 
 use crate::{
     policy::{GroupReader, Policy as ReplicatePolicy},
