@@ -29,13 +29,11 @@ impl Tenant {
 
 #[async_trait]
 impl crate::Tenant for Tenant {
-    type Bucket = Bucket;
-
-    fn bucket(&self, name: &str) -> Bucket {
-        Bucket::new(self.path.join(name))
+    fn bucket(&self, name: &str) -> Box<dyn crate::Bucket> {
+        Box::new(Bucket::new(self.path.join(name)))
     }
 
-    async fn create_bucket(&self, name: &str) -> Result<Bucket> {
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn crate::Bucket>> {
         let path = self.path.join(name);
         if path.exists() {
             return Err(Error::AlreadyExists(format!("bucket {}", name)));

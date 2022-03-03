@@ -34,8 +34,8 @@ impl Default for TableBuilderOptions {
     }
 }
 
-pub struct TableBuilder<W> {
-    writer: Writer<W>,
+pub struct TableBuilder {
+    writer: FileWriter,
     options: TableBuilderOptions,
     lower_bound: Vec<u8>,
     upper_bound: Vec<u8>,
@@ -44,14 +44,11 @@ pub struct TableBuilder<W> {
 }
 
 #[allow(dead_code)]
-impl<W> TableBuilder<W>
-where
-    W: SequentialWrite,
-{
-    pub fn new(writer: W) -> Self {
+impl TableBuilder {
+    pub fn new(writer: SequentialWriter, options: TableBuilderOptions) -> Self {
         Self {
-            writer: Writer::new(writer),
-            options: TableBuilderOptions::default(),
+            writer: FileWriter::new(writer),
+            options,
             lower_bound: Vec::new(),
             upper_bound: Vec::new(),
             data_block_builder: BlockBuilder::default(),
@@ -108,16 +105,15 @@ where
     }
 }
 
-struct Writer<W> {
-    writer: W,
+type SequentialWriter = Box<dyn SequentialWrite>;
+
+struct FileWriter {
+    writer: SequentialWriter,
     offset: u64,
 }
 
-impl<W> Writer<W>
-where
-    W: SequentialWrite,
-{
-    fn new(writer: W) -> Self {
+impl FileWriter {
+    fn new(writer: SequentialWriter) -> Self {
         Self { writer, offset: 0 }
     }
 
@@ -146,6 +142,6 @@ where
     }
 
     async fn finish(&mut self) -> Result<()> {
-        self.writer.flush().await
+        self.writer.finish().await
     }
 }

@@ -31,13 +31,11 @@ impl Store {
 
 #[async_trait]
 impl crate::Store for Store {
-    type Tenant = Tenant;
-
-    fn tenant(&self, name: &str) -> Self::Tenant {
-        Tenant::new(self.path.join(name))
+    fn tenant(&self, name: &str) -> Box<dyn crate::Tenant> {
+        Box::new(Tenant::new(self.path.join(name)))
     }
 
-    async fn create_tenant(&self, name: &str) -> Result<Self::Tenant> {
+    async fn create_tenant(&self, name: &str) -> Result<Box<dyn crate::Tenant>> {
         let path = self.path.join(name);
         if path.exists() {
             return Err(Error::AlreadyExists(format!("tenant {}", name)));

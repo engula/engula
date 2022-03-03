@@ -20,18 +20,15 @@ use super::{table_footer, BlockHandle, BlockIter, TableFooter};
 use crate::Result;
 
 #[allow(dead_code)]
-pub struct TableReader<R> {
-    reader: Reader<R>,
+pub struct TableReader {
+    reader: FileReader,
     index_block: Arc<[u8]>,
 }
 
 #[allow(dead_code)]
-impl<R> TableReader<R>
-where
-    R: RandomRead,
-{
-    pub async fn open(reader: R, table_size: usize) -> Result<Self> {
-        let reader = Reader::new(reader);
+impl TableReader {
+    pub async fn open(reader: RandomReader, table_size: usize) -> Result<Self> {
+        let reader = FileReader::new(reader);
         let footer = reader.read_footer(table_size).await?;
         let index_block = reader.read_block(&footer.index_handle).await?;
         Ok(Self {
@@ -40,25 +37,22 @@ where
         })
     }
 
-    pub fn iter(&self) -> TableIter<R> {
+    pub fn iter(&self) -> TableIter {
         let index_iter = BlockIter::new(self.index_block.clone());
         TableIter::new(self.reader.clone(), index_iter)
     }
 }
 
 #[allow(dead_code)]
-pub struct TableIter<R> {
-    reader: Reader<R>,
+pub struct TableIter {
+    reader: FileReader,
     index_iter: BlockIter,
     block_iter: Option<BlockIter>,
 }
 
 #[allow(dead_code)]
-impl<R> TableIter<R>
-where
-    R: RandomRead,
-{
-    fn new(reader: Reader<R>, index_iter: BlockIter) -> Self {
+impl TableIter {
+    fn new(reader: FileReader, index_iter: BlockIter) -> Self {
         Self {
             reader,
             index_iter,
@@ -134,38 +128,28 @@ where
     }
 }
 
-struct Reader<R> {
-    reader: Arc<R>,
+type RandomReader = Arc<dyn RandomRead>;
+
+#[derive(Clone)]
+struct FileReader {
+    reader: RandomReader,
 }
 
-impl<R> Clone for Reader<R> {
-    fn clone(&self) -> Self {
-        Self {
-            reader: self.reader.clone(),
-        }
-    }
-}
-
-impl<R> Reader<R>
-where
-    R: RandomRead,
-{
-    fn new(reader: R) -> Self {
-        Self {
-            reader: Arc::new(reader),
-        }
+impl FileReader {
+    fn new(reader: RandomReader) -> Self {
+        Self { reader }
     }
 
     async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<[u8]>> {
         let mut buf = Vec::with_capacity(handle.length as usize);
-        self.reader.read_at(&mut buf, handle.offset).await?;
+        self.reader.read_exact_at(&mut buf, handle.offset).await?;
         Ok(buf.into())
     }
 
     async fn read_footer(&self, table_size: usize) -> Result<TableFooter> {
         let mut buf = [0; table_footer::ENCODED_SIZE];
         let offset = table_size - buf.len();
-        self.reader.read_at(&mut buf, offset as u64).await?;
+        self.reader.read_exact_at(&mut buf, offset as u64).await?;
         TableFooter::decode_from(&mut buf.as_slice())
     }
 }

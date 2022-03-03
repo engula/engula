@@ -16,40 +16,33 @@ use crate::{async_trait, Result};
 
 #[async_trait]
 pub trait Store {
-    type Tenant: Tenant;
+    fn tenant(&self, name: &str) -> Box<dyn Tenant>;
 
-    fn tenant(&self, name: &str) -> Self::Tenant;
-
-    async fn create_tenant(&self, name: &str) -> Result<Self::Tenant>;
+    async fn create_tenant(&self, name: &str) -> Result<Box<dyn Tenant>>;
 }
 
 #[async_trait]
 pub trait Tenant {
-    type Bucket: Bucket;
+    fn bucket(&self, name: &str) -> Box<dyn Bucket>;
 
-    fn bucket(&self, name: &str) -> Self::Bucket;
-
-    async fn create_bucket(&self, name: &str) -> Result<Self::Bucket>;
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
 }
 
 #[async_trait]
 pub trait Bucket {
-    type RandomReader: RandomRead;
-    type SequentialWriter: SequentialWrite;
+    async fn new_random_reader(&self, name: &str) -> Result<Box<dyn RandomRead>>;
 
-    async fn new_random_reader(&self, name: &str) -> Result<Self::RandomReader>;
-
-    async fn new_sequential_writer(&self, name: &str) -> Result<Self::SequentialWriter>;
+    async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>>;
 }
 
 #[async_trait]
 pub trait RandomRead {
-    async fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize>;
+    async fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()>;
 }
 
 #[async_trait]
 pub trait SequentialWrite {
     async fn write(&mut self, buf: &[u8]) -> Result<()>;
 
-    async fn flush(&mut self) -> Result<()>;
+    async fn finish(&mut self) -> Result<()>;
 }
