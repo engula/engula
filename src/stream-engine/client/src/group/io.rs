@@ -288,7 +288,7 @@ impl IoScheduler {
             broken_segments: segments,
         });
 
-        info!("stream {} receives PROMOTE from master, epoch {}, role {}, leader {}, copy set {:?}, recovering epochs {:?}", 
+        info!("stream {} receives PROMOTE from master, epoch {}, role {}, leader {}, copy set {:?}, recovering epochs {:?}",
             stream_id, cmd.epoch, promote.role, promote.leader, promote.copy_set, cmd.pending_epochs);
 
         self.channel.on_promote(promote);
