@@ -26,7 +26,7 @@ message TenantRequestUnion {
     CreateTenantRequest create_tenant = 2;
     UpdateTenantRequest update_tenant = 3;
     DeleteTenantRequest delete_tenant = 4;
-    LookupTenantRequest lookup_tenant = 5;
+    DescribeTenantRequest describe_tenant = 5;
   }
 }
 
@@ -36,7 +36,7 @@ message TenantResponseUnion {
     CreateTenantResponse create_tenant = 2;
     UpdateTenantResponse update_tenant = 3;
     DeleteTenantResponse delete_tenant = 4;
-    LookupTenantResponse lookup_tenant = 5;
+    DescribeTenantResponse describe_tenant = 5;
   }
 }
 
@@ -52,15 +52,12 @@ message UpdateTenantRequest { TenantDesc desc = 1; }
 
 message UpdateTenantResponse {}
 
-message DeleteTenantRequest { uint64 id = 1; }
+message DeleteTenantRequest { string name = 1; }
 
 message DeleteTenantResponse {}
 
-message LookupTenantRequest { string name = 1; }
+message DescribeTenantRequest { string name = 1; }
 
-message LookupTenantResponse { TenantDesc desc = 1; }
+message DescribeTenantResponse { TenantDesc desc = 1; }
 
-message TenantDesc {
-  uint64 id = 1;
-  string name = 2;
-}
+message TenantDesc { string name = 1; }

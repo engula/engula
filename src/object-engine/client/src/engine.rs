@@ -27,14 +27,13 @@ impl Engine {
         Ok(Self { master })
     }
 
-    pub fn tenant(&self, id: u64) -> Tenant {
-        Tenant::new(self.master.clone(), id)
+    pub fn tenant(&self, name: &str) -> Tenant {
+        Tenant::new(name.to_owned(), self.master.clone())
     }
 
     pub async fn create_tenant(&self, name: &str) -> Result<TenantDesc> {
         let desc = TenantDesc {
             name: name.to_owned(),
-            ..Default::default()
         };
         self.master.create_tenant(desc).await
     }
