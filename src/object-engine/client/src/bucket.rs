@@ -17,17 +17,17 @@ use object_engine_master::Master;
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct Bucket {
+    name: String,
+    tenant: String,
     master: Master,
-    tenant_id: u64,
-    bucket_id: u64,
 }
 
 impl Bucket {
-    pub(crate) fn new(master: Master, tenant_id: u64, bucket_id: u64) -> Self {
+    pub(crate) fn new(name: String, tenant: String, master: Master) -> Self {
         Self {
+            name,
+            tenant,
             master,
-            tenant_id,
-            bucket_id,
         }
     }
 }

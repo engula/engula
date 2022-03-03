@@ -40,14 +40,9 @@ impl Server {
         master_server::MasterServer::new(self)
     }
 
-    async fn tenant(&self, id: u64) -> Result<Tenant> {
+    async fn tenant(&self, name: &str) -> Result<Tenant> {
         let inner = self.inner.lock().await;
-        inner.tenant(id)
-    }
-
-    async fn lookup_tenant(&self, name: &str) -> Result<Tenant> {
-        let inner = self.inner.lock().await;
-        inner.lookup_tenant(name)
+        inner.tenant(name)
     }
 
     async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
@@ -105,9 +100,9 @@ impl Server {
             tenant_request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::LookupTenant(req) => {
-                let res = self.handle_lookup_tenant(req).await?;
-                tenant_response_union::Response::LookupTenant(res)
+            tenant_request_union::Request::DescribeTenant(req) => {
+                let res = self.handle_describe_tenant(req).await?;
+                tenant_response_union::Response::DescribeTenant(res)
             }
         };
         Ok(TenantResponseUnion {
@@ -123,16 +118,19 @@ impl Server {
         Ok(CreateTenantResponse { desc: Some(desc) })
     }
 
-    async fn handle_lookup_tenant(&self, req: LookupTenantRequest) -> Result<LookupTenantResponse> {
-        let tenant = self.lookup_tenant(&req.name).await?;
+    async fn handle_describe_tenant(
+        &self,
+        req: DescribeTenantRequest,
+    ) -> Result<DescribeTenantResponse> {
+        let tenant = self.tenant(&req.name).await?;
         let desc = tenant.desc().await;
-        Ok(LookupTenantResponse { desc: Some(desc) })
+        Ok(DescribeTenantResponse { desc: Some(desc) })
     }
 }
 
 impl Server {
     async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
-        let tenant = self.tenant(req.tenant_id).await?;
+        let tenant = self.tenant(&req.tenant).await?;
         let mut res = BucketResponse::default();
         for req_union in req.requests {
             let res_union = self.handle_bucket_union(tenant.clone(), req_union).await?;
@@ -163,9 +161,9 @@ impl Server {
             bucket_request_union::Request::DeleteBucket(_req) => {
                 todo!();
             }
-            bucket_request_union::Request::LookupBucket(req) => {
-                let res = self.handle_lookup_bucket(tenant, req).await?;
-                bucket_response_union::Response::LookupBucket(res)
+            bucket_request_union::Request::DescribeBucket(req) => {
+                let res = self.handle_describe_bucket(tenant, req).await?;
+                bucket_response_union::Response::DescribeBucket(res)
             }
         };
         Ok(BucketResponseUnion {
@@ -185,56 +183,40 @@ impl Server {
         Ok(CreateBucketResponse { desc: Some(desc) })
     }
 
-    async fn handle_lookup_bucket(
+    async fn handle_describe_bucket(
         &self,
         tenant: Tenant,
-        req: LookupBucketRequest,
-    ) -> Result<LookupBucketResponse> {
-        let desc = tenant.lookup_bucket(&req.name).await?;
-        Ok(LookupBucketResponse { desc: Some(desc) })
+        req: DescribeBucketRequest,
+    ) -> Result<DescribeBucketResponse> {
+        let desc = tenant.bucket(&req.name).await?;
+        Ok(DescribeBucketResponse { desc: Some(desc) })
     }
 }
 
 struct Inner {
-    next_id: u64,
-    tenants: HashMap<u64, Tenant>,
-    tenant_names: HashMap<String, u64>,
+    tenants: HashMap<String, Tenant>,
 }
 
 impl Inner {
     fn new() -> Self {
         Inner {
-            next_id: 1,
             tenants: HashMap::new(),
-            tenant_names: HashMap::new(),
         }
     }
 
-    fn tenant(&self, id: u64) -> Result<Tenant> {
+    fn tenant(&self, name: &str) -> Result<Tenant> {
         self.tenants
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| Error::NotFound(format!("tenant id {}", id)))
-    }
-
-    fn lookup_tenant(&self, name: &str) -> Result<Tenant> {
-        let id = self
-            .tenant_names
             .get(name)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("tenant name {}", name)))?;
-        self.tenant(id)
+            .ok_or_else(|| Error::NotFound(format!("tenant {}", name)))
     }
 
-    fn create_tenant(&mut self, mut desc: TenantDesc) -> Result<TenantDesc> {
-        if self.tenant_names.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("tenant name {}", desc.name)));
+    fn create_tenant(&mut self, desc: TenantDesc) -> Result<TenantDesc> {
+        if self.tenants.contains_key(&desc.name) {
+            return Err(Error::AlreadyExists(format!("tenant {}", desc.name)));
         }
-        desc.id = self.next_id;
-        self.next_id += 1;
         let tenant = Tenant::new(desc.clone());
-        self.tenants.insert(desc.id, tenant);
-        self.tenant_names.insert(desc.name.clone(), desc.id);
+        self.tenants.insert(desc.name.clone(), tenant);
         Ok(desc)
     }
 }
@@ -255,9 +237,9 @@ impl Tenant {
         self.inner.lock().await.desc()
     }
 
-    pub async fn lookup_bucket(&self, name: &str) -> Result<BucketDesc> {
+    pub async fn bucket(&self, name: &str) -> Result<BucketDesc> {
         let inner = self.inner.lock().await;
-        inner.lookup_bucket(name)
+        inner.bucket(name)
     }
 
     pub async fn create_bucket(&self, desc: BucketDesc) -> Result<BucketDesc> {
@@ -268,18 +250,14 @@ impl Tenant {
 
 struct TenantInner {
     desc: TenantDesc,
-    next_id: u64,
-    buckets: HashMap<u64, BucketDesc>,
-    bucket_names: HashMap<String, u64>,
+    buckets: HashMap<String, BucketDesc>,
 }
 
 impl TenantInner {
     fn new(desc: TenantDesc) -> Self {
         Self {
             desc,
-            next_id: 1,
             buckets: HashMap::new(),
-            bucket_names: HashMap::new(),
         }
     }
 
@@ -287,31 +265,19 @@ impl TenantInner {
         self.desc.clone()
     }
 
-    fn bucket(&self, id: u64) -> Result<BucketDesc> {
+    fn bucket(&self, name: &str) -> Result<BucketDesc> {
         self.buckets
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| Error::NotFound(format!("bucket id {}", id)))
-    }
-
-    fn lookup_bucket(&self, name: &str) -> Result<BucketDesc> {
-        let id = self
-            .bucket_names
             .get(name)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("bucket name {}", name)))?;
-        self.bucket(id)
+            .ok_or_else(|| Error::NotFound(format!("bucket {}", name)))
     }
 
     fn create_bucket(&mut self, mut desc: BucketDesc) -> Result<BucketDesc> {
-        if self.bucket_names.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("bucket name {}", desc.name)));
+        if self.buckets.contains_key(&desc.name) {
+            return Err(Error::AlreadyExists(format!("bucket {}", desc.name)));
         }
-        desc.id = self.next_id;
-        self.next_id += 1;
-        desc.parent_id = self.desc.id;
-        self.buckets.insert(desc.id, desc.clone());
-        self.bucket_names.insert(desc.name.clone(), desc.id);
+        desc.tenant = self.desc.name.clone();
+        self.buckets.insert(desc.name.clone(), desc.clone());
         Ok(desc)
     }
 }

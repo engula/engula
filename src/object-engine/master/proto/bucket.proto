@@ -17,7 +17,7 @@ syntax = "proto3";
 package objectengine.master.v1;
 
 message BucketRequest {
-  uint64 tenant_id = 1;
+  string tenant = 1;
   repeated BucketRequestUnion requests = 2;
 }
 
@@ -29,7 +29,7 @@ message BucketRequestUnion {
     CreateBucketRequest create_bucket = 2;
     UpdateBucketRequest update_bucket = 3;
     DeleteBucketRequest delete_bucket = 4;
-    LookupBucketRequest lookup_bucket = 5;
+    DescribeBucketRequest describe_bucket = 5;
   }
 }
 
@@ -39,7 +39,7 @@ message BucketResponseUnion {
     CreateBucketResponse create_bucket = 2;
     UpdateBucketResponse update_bucket = 3;
     DeleteBucketResponse delete_bucket = 4;
-    LookupBucketResponse lookup_bucket = 5;
+    DescribeBucketResponse describe_bucket = 5;
   }
 }
 
@@ -55,16 +55,15 @@ message UpdateBucketRequest { BucketDesc desc = 1; }
 
 message UpdateBucketResponse {}
 
-message DeleteBucketRequest { uint64 id = 1; }
+message DeleteBucketRequest { string name = 1; }
 
 message DeleteBucketResponse {}
 
-message LookupBucketRequest { string name = 1; }
+message DescribeBucketRequest { string name = 1; }
 
-message LookupBucketResponse { BucketDesc desc = 1; }
+message DescribeBucketResponse { BucketDesc desc = 1; }
 
 message BucketDesc {
-  uint64 id = 1;
-  string name = 2;
-  uint64 parent_id = 3;
+  string name = 1;
+  string tenant = 2;
 }

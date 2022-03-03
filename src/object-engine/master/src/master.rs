@@ -39,11 +39,11 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
     }
 
-    pub async fn lookup_tenant(&self, name: String) -> Result<TenantDesc> {
-        let req = LookupTenantRequest { name };
-        let req = tenant_request_union::Request::LookupTenant(req);
+    pub async fn describe_tenant(&self, name: String) -> Result<TenantDesc> {
+        let req = DescribeTenantRequest { name };
+        let req = tenant_request_union::Request::DescribeTenant(req);
         let res = self.tenant_union(req).await?;
-        let desc = if let tenant_response_union::Response::LookupTenant(res) = res {
+        let desc = if let tenant_response_union::Response::DescribeTenant(res) = res {
             res.desc
         } else {
             None
@@ -51,10 +51,10 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
     }
 
-    pub async fn create_bucket(&self, tenant_id: u64, desc: BucketDesc) -> Result<BucketDesc> {
+    pub async fn create_bucket(&self, tenant: String, desc: BucketDesc) -> Result<BucketDesc> {
         let req = CreateBucketRequest { desc: Some(desc) };
         let req = bucket_request_union::Request::CreateBucket(req);
-        let res = self.bucket_union(tenant_id, req).await?;
+        let res = self.bucket_union(tenant, req).await?;
         let desc = if let bucket_response_union::Response::CreateBucket(res) = res {
             res.desc
         } else {
@@ -63,11 +63,11 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
-    pub async fn lookup_bucket(&self, tenant_id: u64, name: String) -> Result<BucketDesc> {
-        let req = LookupBucketRequest { name };
-        let req = bucket_request_union::Request::LookupBucket(req);
-        let res = self.bucket_union(tenant_id, req).await?;
-        let desc = if let bucket_response_union::Response::LookupBucket(res) = res {
+    pub async fn describe_bucket(&self, tenant: String, name: String) -> Result<BucketDesc> {
+        let req = DescribeBucketRequest { name };
+        let req = bucket_request_union::Request::DescribeBucket(req);
+        let res = self.bucket_union(tenant, req).await?;
+        let desc = if let bucket_response_union::Response::DescribeBucket(res) = res {
             res.desc
         } else {
             None
@@ -103,11 +103,11 @@ impl Master {
 
     pub async fn bucket_union(
         &self,
-        tenant_id: u64,
+        tenant: String,
         req: bucket_request_union::Request,
     ) -> Result<bucket_response_union::Response> {
         let req = BucketRequest {
-            tenant_id,
+            tenant,
             requests: vec![BucketRequestUnion { request: Some(req) }],
         };
         let mut res = self.bucket(req).await?;
