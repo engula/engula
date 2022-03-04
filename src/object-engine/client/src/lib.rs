@@ -14,8 +14,10 @@
 
 mod bucket;
 mod engine;
+mod master;
 mod tenant;
 
-use object_engine_common::Result;
+use object_engine_common::{Error, Result};
 
+use self::master::Master;
 pub use self::{bucket::Bucket, engine::Engine, tenant::Tenant};

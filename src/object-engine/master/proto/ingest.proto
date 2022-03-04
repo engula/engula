@@ -17,7 +17,7 @@ syntax = "proto3";
 package objectengine.master.v1;
 
 message IngestRequest {
-  uint64 tenant_id = 1;
+  string tenant = 1;
   IngestRequestUnion request = 2;
 }
 
@@ -48,24 +48,19 @@ message BeginIngestionResponse {
 
 message CommitIngestionRequest {
   string token = 1;
-  oneof output {
-    BulkLoadOutput bulkload = 2;
-    CompactionOutput compaction = 3;
-  }
+  BulkLoadOutput bulkload = 2;
 }
 
 message CommitIngestionResponse {}
 
 message AllocateFileNameRequest { uint64 count = 1; }
 
-message AllocateFileNameResponse { repeated string file_names = 1; }
+message AllocateFileNameResponse { repeated string names = 1; }
 
-message BulkLoadOutput { repeated OutputFileDesc files = 1; }
+message BulkLoadOutput { repeated BulkLoadOutputFileDesc files = 1; }
 
-message CompactionOutput {}
-
-message OutputFileDesc {
-  uint64 bucket_id = 1;
+message BulkLoadOutputFileDesc {
+  string bucket = 1;
   string file_name = 2;
   uint64 file_size = 3;
   bytes lower_bound = 4;

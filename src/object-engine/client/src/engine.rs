@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::{proto::*, Master};
+use object_engine_master::proto::*;
 
-use crate::{Result, Tenant};
+use crate::{Master, Result, Tenant};
 
 #[derive(Clone)]
 pub struct Engine {
@@ -22,6 +22,13 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Opens a local engine.
+    pub async fn open() -> Result<Self> {
+        let master = Master::open().await?;
+        Ok(Self { master })
+    }
+
+    /// Connects to a remote engine service.
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
         let master = Master::connect(url).await?;
         Ok(Self { master })

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::{proto::*, Master};
+use object_engine_master::proto::*;
 
-use crate::{Bucket, Result};
+use crate::{Bucket, Master, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -25,6 +25,10 @@ pub struct Tenant {
 impl Tenant {
     pub(crate) fn new(name: String, master: Master) -> Self {
         Self { name, master }
+    }
+
+    pub async fn desc(&self) -> Result<TenantDesc> {
+        self.master.describe_tenant(self.name.clone()).await
     }
 
     pub fn bucket(&self, name: &str) -> Bucket {

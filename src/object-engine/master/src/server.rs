@@ -19,6 +19,7 @@ use tonic::{Request, Response, Status};
 
 use crate::{proto::*, Error, Result};
 
+#[derive(Clone)]
 pub struct Server {
     inner: Arc<Mutex<Inner>>,
 }
@@ -73,7 +74,7 @@ impl master_server::Master for Server {
 }
 
 impl Server {
-    async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
+    pub async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
         let mut res = TenantResponse::default();
         for req_union in req.requests {
             let res_union = self.handle_tenant_union(req_union).await?;
@@ -129,7 +130,7 @@ impl Server {
 }
 
 impl Server {
-    async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
+    pub async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
         let tenant = self.tenant(&req.tenant).await?;
         let mut res = BucketResponse::default();
         for req_union in req.requests {

@@ -12,19 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tonic::transport::Channel;
+use object_engine_master::{proto::*, Server};
 
-use crate::{proto::*, Error, Result};
+use crate::{Error, Result};
 
 #[derive(Clone)]
 pub struct Master {
-    client: master_client::MasterClient<Channel>,
+    handle: MasterHandle,
 }
 
 impl Master {
+    pub async fn open() -> Result<Self> {
+        let server = Server::new();
+        let handle = MasterHandle::Server(server);
+        Ok(Self { handle })
+    }
+
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
         let client = master_client::MasterClient::connect(url.into()).await?;
-        Ok(Self { client })
+        let handle = MasterHandle::Client(client);
+        Ok(Self { handle })
     }
 
     pub async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
@@ -77,11 +84,6 @@ impl Master {
 }
 
 impl Master {
-    async fn tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
-        let res = self.client.clone().tenant(req).await?;
-        Ok(res.into_inner())
-    }
-
     async fn tenant_union(
         &self,
         req: tenant_request_union::Request,
@@ -89,19 +91,14 @@ impl Master {
         let req = TenantRequest {
             requests: vec![TenantRequestUnion { request: Some(req) }],
         };
-        let mut res = self.tenant(req).await?;
+        let mut res = self.handle.tenant(req).await?;
         res.responses
             .pop()
             .and_then(|x| x.response)
             .ok_or_else(|| Error::internal("missing tenant response"))
     }
 
-    pub async fn bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
-        let res = self.client.clone().bucket(req).await?;
-        Ok(res.into_inner())
-    }
-
-    pub async fn bucket_union(
+    async fn bucket_union(
         &self,
         tenant: String,
         req: bucket_request_union::Request,
@@ -110,10 +107,40 @@ impl Master {
             tenant,
             requests: vec![BucketRequestUnion { request: Some(req) }],
         };
-        let mut res = self.bucket(req).await?;
+        let mut res = self.handle.bucket(req).await?;
         res.responses
             .pop()
             .and_then(|x| x.response)
             .ok_or_else(|| Error::internal("missing bucket response"))
+    }
+}
+
+type Client = master_client::MasterClient<tonic::transport::Channel>;
+
+#[derive(Clone)]
+enum MasterHandle {
+    Client(Client),
+    Server(Server),
+}
+
+impl MasterHandle {
+    async fn tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
+        match self {
+            MasterHandle::Client(client) => {
+                let res = client.clone().tenant(req).await?;
+                Ok(res.into_inner())
+            }
+            MasterHandle::Server(server) => server.handle_tenant(req).await,
+        }
+    }
+
+    async fn bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
+        match self {
+            MasterHandle::Client(client) => {
+                let res = client.clone().bucket(req).await?;
+                Ok(res.into_inner())
+            }
+            MasterHandle::Server(server) => server.handle_bucket(req).await,
+        }
     }
 }
