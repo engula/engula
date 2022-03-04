@@ -48,7 +48,7 @@ This process is called **replica sealing**. Only the number of received requests
 
 ##### Recovery
 
-When a working leader goes down unexpectedly, the segment stores may contain some inconsistent replicas of events. In a majority replication policy, for example, the leader receives the responses from majority and returns success to the user by calculating the number of replicas (to achieve the lowest possible latency), and asynchronously broadcasting acked index to all segment stores. If that leader dies before broadcasting, the new leader will have to recalculate which events have been acked (as users may already be aware) in order to maintain external consistency.
+A leader will assign a unique **index** to an event, and broadcast it in order. When a working leader goes down unexpectedly, the segment stores may contain some inconsistent replicas of events. In a majority replication policy, for example, the leader receives the responses from majority and returns success to the user by calculating the number of replicas (to achieve the lowest possible latency), and asynchronously broadcasting **acked index** to all segment stores. If that leader dies before broadcasting, the new leader will have to recalculate which events have been acked (as users may already be aware) in order to maintain external consistency.
 
 In the "replica sealing" response, each segment store will carry they known acked index. Starting with the largest acked index, the new leader must read events from all segment stores and replicate them to other segment stores. Ultimately, all events are acked and no inconsistent replicas of events in the segment stores. Once the above steps have been completed, the segment can be marked as sealed by the leader. The process described in above is call **segment sealing** or **recovery**.
 
@@ -67,15 +67,27 @@ The purpose of replication policy is to:
 
 The replication policy's implementation determines the exact details. NRW or flexible quorum, for example, can be chosen as an implementation.
 
-### Store
+### Segment Store
 
-#### Accumulated Ack
+The segment store manages events by segment. In general, a leader always replicates events in order, but the segment store may selectively discard some events due to back pressure, so there might exists a hole in events of a segment. If the segment store receives a event but former one are missed, it returns the largest consecutive index as the **matched index** to the leader. The leader could select and retransmit events according the matched index.
 
 #### Entry and Epoch
 
-Describe events and hole.
+During recovering, the leader also has to deal with holes exists in segment store events. In order to express holes, the structure `Entry` is used when communicating between the stream engine and segment stores, which has three types:
+
+1. event
+2. hole
+3. bridge
+
+When a leader recovers non-consecutive events, it must replicate a sequence of hole entries to fill the hole, but this may cause confusion for events readers. Consider an NRW replication policy, where N = 3 and both R and W are 2. There are three segment stores in a segment's copy set, named A, B, C. A leader 1 replicates entries `{e(1), e(2), e(3)}` to them. Before leader 1 crash, the entries of A, B, C are `{e(1), e(2), e(3)}`, `{e(1), e(3)}`, `{e(1), e(3)}`. Suppose a new leader 2 starts to recover, it reads B, C and adds a hole entry and replicate it to B, C, now the entries of A, B, C, are `{e(1), e(2), e(3)}`, `{e(1), h(2), e(3)}`, `{e(1), h(2), e(3)}`. At the same time, a follower 3 reads A, B, find two conflicting entries in index 2.
+
+So that each entry records the epoch of the leader who replicated it. Even while recovering, the new leader must update the entry's epoch and re-replicate it to the segment stores of copy set.
+
+The goal of bridge entry is straightforward. It is used to inform the reader that the segment has come to an end and that they must move on to the next segment. When a leader recovering former segment, it must append a bridge entry to the end of segment.
 
 ### Master
+
+The master is a global decision maker that can detect and replace fault segment stores to ensure data durability. For sealed segments, the master could perform scheduling tasks to add a replica to another segment store while also removing the failed replica from the copy set. For the segment isn't sealed, the master could actively promote the leader, causing it to switch segment and seal the previous segment.
 
 ## Future Work
 
