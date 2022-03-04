@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::Master;
+use object_engine_master::proto::*;
+
+use crate::{Master, Result};
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -29,5 +31,11 @@ impl Bucket {
             tenant,
             master,
         }
+    }
+
+    pub async fn desc(&self) -> Result<BucketDesc> {
+        self.master
+            .describe_bucket(self.tenant.clone(), self.name.clone())
+            .await
     }
 }
