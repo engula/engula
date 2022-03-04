@@ -1,8 +1,11 @@
 [package]
 name = "object-engine-common"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
-publish = false
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "The common crate for Object Engine."
 
 [dependencies]
 async-trait = "0.1"
