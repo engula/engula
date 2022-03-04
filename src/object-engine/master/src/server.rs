@@ -47,7 +47,9 @@ impl master_server::Master for Server {
         Ok(Response::new(res))
     }
 
-    async fn ingest(&self, _: Request<IngestRequest>) -> TonicResult<Response<IngestResponse>> {
-        todo!()
+    async fn engine(&self, req: Request<EngineRequest>) -> TonicResult<Response<EngineResponse>> {
+        let req = req.into_inner();
+        let res = self.master.handle_engine(req).await?;
+        Ok(Response::new(res))
     }
 }

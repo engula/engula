@@ -58,6 +58,10 @@ impl Master {
             .request
             .ok_or_else(|| Error::invalid_argument("missing tenant request"))?;
         let res = match req {
+            tenant_request_union::Request::GetTenant(req) => {
+                let res = self.handle_get_tenant(req).await?;
+                tenant_response_union::Response::GetTenant(res)
+            }
             tenant_request_union::Request::ListTenants(_req) => {
                 todo!();
             }
@@ -71,14 +75,16 @@ impl Master {
             tenant_request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DescribeTenant(req) => {
-                let res = self.handle_describe_tenant(req).await?;
-                tenant_response_union::Response::DescribeTenant(res)
-            }
         };
         Ok(TenantResponseUnion {
             response: Some(res),
         })
+    }
+
+    async fn handle_get_tenant(&self, req: GetTenantRequest) -> Result<GetTenantResponse> {
+        let tenant = self.tenant(&req.name).await?;
+        let desc = tenant.desc().await;
+        Ok(GetTenantResponse { desc: Some(desc) })
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
@@ -87,15 +93,6 @@ impl Master {
             .ok_or_else(|| Error::invalid_argument("missing tenant descriptor"))?;
         let desc = self.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
-    }
-
-    async fn handle_describe_tenant(
-        &self,
-        req: DescribeTenantRequest,
-    ) -> Result<DescribeTenantResponse> {
-        let tenant = self.tenant(&req.name).await?;
-        let desc = tenant.desc().await;
-        Ok(DescribeTenantResponse { desc: Some(desc) })
     }
 }
 
@@ -119,6 +116,10 @@ impl Master {
             .request
             .ok_or_else(|| Error::invalid_argument("missing bucket request"))?;
         let res = match req {
+            bucket_request_union::Request::GetBucket(req) => {
+                let res = self.handle_get_bucket(tenant, req).await?;
+                bucket_response_union::Response::GetBucket(res)
+            }
             bucket_request_union::Request::ListBuckets(_req) => {
                 todo!();
             }
@@ -132,14 +133,20 @@ impl Master {
             bucket_request_union::Request::DeleteBucket(_req) => {
                 todo!();
             }
-            bucket_request_union::Request::DescribeBucket(req) => {
-                let res = self.handle_describe_bucket(tenant, req).await?;
-                bucket_response_union::Response::DescribeBucket(res)
-            }
         };
         Ok(BucketResponseUnion {
             response: Some(res),
         })
+    }
+
+    async fn handle_get_bucket(
+        &self,
+        tenant: Tenant,
+        req: GetBucketRequest,
+    ) -> Result<GetBucketResponse> {
+        let bucket = tenant.bucket(&req.name).await?;
+        let desc = bucket.desc().await;
+        Ok(GetBucketResponse { desc: Some(desc) })
     }
 
     async fn handle_create_bucket(
@@ -153,15 +160,11 @@ impl Master {
         let desc = tenant.create_bucket(desc).await?;
         Ok(CreateBucketResponse { desc: Some(desc) })
     }
+}
 
-    async fn handle_describe_bucket(
-        &self,
-        tenant: Tenant,
-        req: DescribeBucketRequest,
-    ) -> Result<DescribeBucketResponse> {
-        let bucket = tenant.bucket(&req.name).await?;
-        let desc = bucket.desc().await;
-        Ok(DescribeBucketResponse { desc: Some(desc) })
+impl Master {
+    pub async fn handle_engine(&self, _: EngineRequest) -> Result<EngineResponse> {
+        todo!();
     }
 }
 

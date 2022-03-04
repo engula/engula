@@ -16,25 +16,28 @@ use object_engine_master::proto::*;
 
 use crate::{Master, Result};
 
-#[derive(Clone)]
-pub struct Bucket {
-    name: String,
+pub struct BulkLoad {
     tenant: String,
     master: Master,
+    bulkload: CommitBulkLoadRequest,
 }
 
-impl Bucket {
-    pub(crate) fn new(name: String, tenant: String, master: Master) -> Self {
+impl BulkLoad {
+    pub(crate) fn new(token: String, tenant: String, master: Master) -> Self {
+        let bulkload = CommitBulkLoadRequest {
+            token,
+            ..Default::default()
+        };
         Self {
-            name,
             tenant,
             master,
+            bulkload,
         }
     }
 
-    pub async fn desc(&self) -> Result<BucketDesc> {
+    pub async fn commit(self) -> Result<()> {
         self.master
-            .get_bucket(self.tenant.clone(), self.name.clone())
+            .commit_bulkload(self.tenant, self.bulkload)
             .await
     }
 }

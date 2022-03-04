@@ -1,0 +1,66 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package objectengine.master.v1;
+
+message EngineRequest {
+  string tenant = 1;
+  repeated EngineRequestUnion requests = 2;
+}
+
+message EngineResponse { repeated EngineResponseUnion responses = 1; }
+
+message EngineRequestUnion {
+  oneof request {
+    BeginBulkLoadRequest begin_bulkload = 1;
+    CommitBulkLoadRequest commit_bulkload = 2;
+    AllocateFileNamesRequest allocate_file_names = 3;
+  }
+}
+
+message EngineResponseUnion {
+  oneof response {
+    BeginBulkLoadResponse begin_bulkload = 1;
+    CommitBulkLoadResponse commit_bulkload = 2;
+    AllocateFileNamesResponse allocate_file_names = 3;
+  }
+}
+
+message BeginBulkLoadRequest {}
+
+message BeginBulkLoadResponse {
+  // A unique identifier of this bulkload.
+  string token = 1;
+}
+
+message CommitBulkLoadRequest {
+  string token = 1;
+  repeated BulkLoadFileDesc files = 2;
+}
+
+message CommitBulkLoadResponse {}
+
+message AllocateFileNamesRequest { uint64 count = 1; }
+
+message AllocateFileNamesResponse { repeated string names = 1; }
+
+message BulkLoadFileDesc {
+  string bucket = 1;
+  string file_name = 2;
+  uint64 file_size = 3;
+  bytes lower_bound = 4;
+  bytes upper_bound = 5;
+}
