@@ -73,7 +73,7 @@ impl MasterSubCommand {
 
 #[derive(Parser)]
 struct MasterStartCommand {
-    #[clap(long, default_value = "localhost:21717")]
+    #[clap(long, default_value = "0.0.0.0:21717")]
     addr: String,
     #[clap(long, default_value = "/tmp/object-engine")]
     path: String,

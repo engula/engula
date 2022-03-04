@@ -46,7 +46,7 @@ impl SubCommand {
 
 #[derive(Parser)]
 struct StartCommand {
-    #[clap(long, default_value = "localhost:21716")]
+    #[clap(long, default_value = "0.0.0.0:21716")]
     addr: String,
 }
 
