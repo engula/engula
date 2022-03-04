@@ -627,6 +627,7 @@ name = "object-engine-master"
 version = "0.1.0"
 dependencies = [
  "object-engine-common",
+ "object-engine-filestore",
  "prost",
  "thiserror",
  "tokio",

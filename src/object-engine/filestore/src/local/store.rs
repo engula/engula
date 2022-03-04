@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
+
+use tokio::fs;
 
 use super::Tenant;
 use crate::{async_trait, Error, Result};
@@ -22,9 +24,9 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
+    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).await?;
         Ok(Self { path })
     }
 }
@@ -40,7 +42,7 @@ impl crate::Store for Store {
         if path.exists() {
             return Err(Error::AlreadyExists(format!("tenant {}", name)));
         }
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).await?;
         Ok(self.tenant(name))
     }
 }

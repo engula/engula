@@ -15,21 +15,21 @@
 use crate::{async_trait, Result};
 
 #[async_trait]
-pub trait Store {
+pub trait Store: Send + Sync {
     fn tenant(&self, name: &str) -> Box<dyn Tenant>;
 
     async fn create_tenant(&self, name: &str) -> Result<Box<dyn Tenant>>;
 }
 
 #[async_trait]
-pub trait Tenant {
+pub trait Tenant: Send + Sync {
     fn bucket(&self, name: &str) -> Box<dyn Bucket>;
 
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
 }
 
 #[async_trait]
-pub trait Bucket {
+pub trait Bucket: Send + Sync {
     async fn new_random_reader(&self, name: &str) -> Result<Box<dyn RandomRead>>;
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>>;

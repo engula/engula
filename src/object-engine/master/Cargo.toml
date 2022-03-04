@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 object-engine-common = { version = "0.1", path = "../common" }
+object-engine-filestore = { version = "0.1", path = "../filestore" }
 
 prost = "0.9"
 thiserror = "1.0"
