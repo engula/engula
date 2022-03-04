@@ -14,7 +14,7 @@
 
 use object_engine_master::proto::*;
 
-use crate::{Bucket, Master, Result};
+use crate::{Bucket, BulkLoad, Master, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -28,7 +28,7 @@ impl Tenant {
     }
 
     pub async fn desc(&self) -> Result<TenantDesc> {
-        self.master.describe_tenant(self.name.clone()).await
+        self.master.get_tenant(self.name.clone()).await
     }
 
     pub fn bucket(&self, name: &str) -> Bucket {
@@ -41,5 +41,10 @@ impl Tenant {
             ..Default::default()
         };
         self.master.create_bucket(self.name.clone(), desc).await
+    }
+
+    pub async fn begin_bulkload(&self) -> Result<BulkLoad> {
+        let token = self.master.begin_bulkload(self.name.clone()).await?;
+        Ok(BulkLoad::new(token, self.name.clone(), self.master.clone()))
     }
 }

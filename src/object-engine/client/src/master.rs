@@ -36,6 +36,18 @@ impl Master {
         Ok(Self { handle })
     }
 
+    pub async fn get_tenant(&self, name: String) -> Result<TenantDesc> {
+        let req = GetTenantRequest { name };
+        let req = tenant_request_union::Request::GetTenant(req);
+        let res = self.tenant_union(req).await?;
+        let desc = if let tenant_response_union::Response::GetTenant(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
+    }
+
     pub async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
         let req = CreateTenantRequest { desc: Some(desc) };
         let req = tenant_request_union::Request::CreateTenant(req);
@@ -48,16 +60,16 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
     }
 
-    pub async fn describe_tenant(&self, name: String) -> Result<TenantDesc> {
-        let req = DescribeTenantRequest { name };
-        let req = tenant_request_union::Request::DescribeTenant(req);
-        let res = self.tenant_union(req).await?;
-        let desc = if let tenant_response_union::Response::DescribeTenant(res) = res {
+    pub async fn get_bucket(&self, tenant: String, name: String) -> Result<BucketDesc> {
+        let req = GetBucketRequest { name };
+        let req = bucket_request_union::Request::GetBucket(req);
+        let res = self.bucket_union(tenant, req).await?;
+        let desc = if let bucket_response_union::Response::GetBucket(res) = res {
             res.desc
         } else {
             None
         };
-        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
+        desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
     pub async fn create_bucket(&self, tenant: String, desc: BucketDesc) -> Result<BucketDesc> {
@@ -72,16 +84,41 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
-    pub async fn describe_bucket(&self, tenant: String, name: String) -> Result<BucketDesc> {
-        let req = DescribeBucketRequest { name };
-        let req = bucket_request_union::Request::DescribeBucket(req);
-        let res = self.bucket_union(tenant, req).await?;
-        let desc = if let bucket_response_union::Response::DescribeBucket(res) = res {
-            res.desc
+    pub async fn begin_bulkload(&self, tenant: String) -> Result<String> {
+        let req = BeginBulkLoadRequest {};
+        let req = engine_request_union::Request::BeginBulkload(req);
+        let res = self.engine_union(tenant, req).await?;
+        if let engine_response_union::Response::BeginBulkload(res) = res {
+            Ok(res.token)
         } else {
-            None
-        };
-        desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
+            Err(Error::internal("missing begin bulkload response"))
+        }
+    }
+
+    pub async fn commit_bulkload(
+        &self,
+        tenant: String,
+        bulkload: CommitBulkLoadRequest,
+    ) -> Result<()> {
+        let req = engine_request_union::Request::CommitBulkload(bulkload);
+        let res = self.engine_union(tenant, req).await?;
+        if let engine_response_union::Response::CommitBulkload(_) = res {
+            Ok(())
+        } else {
+            Err(Error::internal("missing commit bulkload response"))
+        }
+    }
+
+    #[allow(dead_code)]
+    pub async fn allocate_file_names(&self, tenant: String, count: u64) -> Result<Vec<String>> {
+        let req = AllocateFileNamesRequest { count };
+        let req = engine_request_union::Request::AllocateFileNames(req);
+        let res = self.engine_union(tenant, req).await?;
+        if let engine_response_union::Response::AllocateFileNames(res) = res {
+            Ok(res.names)
+        } else {
+            Err(Error::internal("missing allocate file names response"))
+        }
     }
 }
 
@@ -115,6 +152,22 @@ impl Master {
             .and_then(|x| x.response)
             .ok_or_else(|| Error::internal("missing bucket response"))
     }
+
+    async fn engine_union(
+        &self,
+        tenant: String,
+        req: engine_request_union::Request,
+    ) -> Result<engine_response_union::Response> {
+        let req = EngineRequest {
+            tenant,
+            requests: vec![EngineRequestUnion { request: Some(req) }],
+        };
+        let mut res = self.handle.engine(req).await?;
+        res.responses
+            .pop()
+            .and_then(|x| x.response)
+            .ok_or_else(|| Error::internal("missing engine response"))
+    }
 }
 
 type LocalMaster = object_engine_master::Master;
@@ -142,6 +195,16 @@ impl MasterHandle {
             MasterHandle::Local(master) => master.handle_bucket(req).await,
             MasterHandle::Remote(client) => {
                 let res = client.clone().bucket(req).await?;
+                Ok(res.into_inner())
+            }
+        }
+    }
+
+    async fn engine(&self, req: EngineRequest) -> Result<EngineResponse> {
+        match self {
+            MasterHandle::Local(master) => master.handle_engine(req).await,
+            MasterHandle::Remote(client) => {
+                let res = client.clone().engine(req).await?;
                 Ok(res.into_inner())
             }
         }

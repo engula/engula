@@ -13,11 +13,12 @@
 // limitations under the License.
 
 mod bucket;
+mod bulkload;
 mod engine;
 mod master;
 mod tenant;
 
 use object_engine_common::{Error, Result};
 
-use self::master::Master;
 pub use self::{bucket::Bucket, engine::Engine, tenant::Tenant};
+use self::{bulkload::BulkLoad, master::Master};

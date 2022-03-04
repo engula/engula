@@ -18,12 +18,12 @@ package objectengine.master.v1;
 
 import "tenant.proto";
 import "bucket.proto";
-import "ingest.proto";
+import "engine.proto";
 
 service Master {
   rpc Tenant(TenantRequest) returns (TenantResponse) {}
 
   rpc Bucket(BucketRequest) returns (BucketResponse) {}
 
-  rpc Ingest(IngestRequest) returns (IngestResponse) {}
+  rpc Engine(EngineRequest) returns (EngineResponse) {}
 }
