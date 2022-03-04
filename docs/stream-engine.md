@@ -22,13 +22,13 @@ Leaving the concept of multiple tenants aside, Stream Engine is responsible for 
 
 A stream's number of events is unrestricted, its size might exceeds the hardware limitation. In order to achieve scalability, a stream is divided into multiple **segments** and distributed across various segment stores.
 
-All events are replicated to the last segment. When a segment meets certain conditions, such as the size exceeds the threshold, leadership transferred (introduced in [leader election and recovery](#leader-election)), it would be **sealed** (introduced in [recovery](#recovery)) and a new segment is created to serve new events.
+All events are replicated to the last segment. When a segment meets certain conditions, such as the size exceeds the threshold, leadership transferred (introduced in [leader election and recovery](#leader-election-and-safety)), it would be **sealed** (introduced in [recovery](#recovery)) and a new segment is created to serve new events.
 
 #### Durable
 
 ![Stream and segments](images/stream-engine-segments.drawio.svg)
 
-Hardware failures can happen at any time, and to ensure data durability, each one of events proposed by users is replicated to multiple segment stores. That is, each segment has multiple **replicas**, and the events are complete as long as enough replicas exists. The consistency between replicas is resolved by the [replication policy](#replication-policy). When a event is replicated to enough segment stores (config in replication policy), it is **acked** and could be read.
+Hardware failures can happen at any time, and to ensure data durability, each one of events proposed by users is replicated to multiple segment stores. That is, each segment has multiple **replicas**, and the events are complete as long as enough replicas exists. These segment stores that contains replicas of the same segment form a **copy set**. The consistency between replicas is resolved by the [replication policy](#replication-policy). When a event is replicated to enough segment stores (config in replication policy), it is **acked** and could be read.
 
 #### Fault Tolerance
 
@@ -54,10 +54,18 @@ In the "replica sealing" response, each segment store will carry they known acke
 
 The recovery process could consume a lot of time, the new leader might not be able to ack events during the intervals. In addition to recovery, the leader allows events to be replicated in order to reduce latency. However, new events can only be acked if all previous segment have been sealed to maintain consistency. This is called **parallel replicating and recovering**. Only two unsealed segment are allowed here for simplicity. The leader will not be able to replicate events if there already exists two unsealed segments.
 
+### Replication Policy
 
-### Data Path
+![Stream Engine Data Path](images/stream-engine-data-path.drawio.svg)
 
-#### Replication Policy
+Leader broadcasts events and acked index to copy set of segment. Followers consume stream events by subscribing acked events from the copy set of segment. The replication policy is in charge of dealing with and resolving issues of consistency between replicas in above process.
+
+The purpose of replication policy is to:
+1. determine the minimum number of replicas that can ack an event;
+2. resolve conflicting events during recovery;
+3. resolve conflicting events during subscribing;
+
+The replication policy's implementation determines the exact details. NRW or flexible quorum, for example, can be chosen as an implementation.
 
 ### Store
 
@@ -70,4 +78,12 @@ Describe events and hole.
 ### Master
 
 ## Future Work
+
+### Reading consistency
+
+Now, the read request is to get the acked events from the segment stores, which has a lag from the client's observation of the acked (the interval between the broadcast of the acked index to the segment store). In the future, we could also allow un-acked events to be read from the segment store and use the same methods as the leader to calculate acked events to avoid this latency gap.
+
+### Chain replication
+
+Now, an event is broadcast to each segment store in the copy set through the leader. In the future, we could add a chain replication strategy, where the leader only replicate events to one segment store, and that segment store continuously replicate events to next segment store, and soon. Eventually all segment stores have been successfully received events.
 
