@@ -29,7 +29,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Unknown(Box<dyn std::error::Error + Send>),
+    Unknown(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl Error {
@@ -45,7 +45,7 @@ impl Error {
         Self::Internal(m.into())
     }
 
-    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
+    pub fn unknown(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Unknown(Box::new(err))
     }
 }

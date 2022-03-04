@@ -14,7 +14,9 @@
 
 use anyhow::Result;
 use clap::Parser;
+use tracing::{error, info};
 
+mod object_engine;
 mod server;
 
 #[derive(Parser)]
@@ -33,12 +35,14 @@ impl Command {
 #[derive(Parser)]
 enum SubCommand {
     Server(server::Command),
+    ObjectEngine(object_engine::Command),
 }
 
 impl SubCommand {
     async fn run(self) -> Result<()> {
         match self {
             SubCommand::Server(cmd) => cmd.run().await,
+            SubCommand::ObjectEngine(cmd) => cmd.run().await,
         }
     }
 }
@@ -47,6 +51,15 @@ impl SubCommand {
 async fn main() -> Result<()> {
     let cmd: Command = Command::parse();
     tracing_subscriber::fmt::init();
-    cmd.run().await?;
+    tokio::select! {
+        res = cmd.run() => {
+            if let Err(err) = res {
+                error!(cause = %err, "Fatal error occurs!");
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Goodbye!");
+        }
+    }
     Ok(())
 }

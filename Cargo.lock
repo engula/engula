@@ -153,6 +153,7 @@ dependencies = [
  "anyhow",
  "clap",
  "engula-transactor",
+ "object-engine-master",
  "prost",
  "tokio",
  "tokio-stream",
