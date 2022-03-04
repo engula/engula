@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
+
 use object_engine_master::proto::*;
 
 use crate::{Master, Result, Tenant};
@@ -23,8 +25,8 @@ pub struct Engine {
 
 impl Engine {
     /// Opens a local engine.
-    pub async fn open() -> Result<Self> {
-        let master = Master::open().await?;
+    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        let master = Master::open(path).await?;
         Ok(Self { master })
     }
 

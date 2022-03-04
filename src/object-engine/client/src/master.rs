@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::{proto::*, Server};
+use std::path::PathBuf;
+
+use object_engine_master::proto::*;
 
 use crate::{Error, Result};
 
@@ -22,15 +24,15 @@ pub struct Master {
 }
 
 impl Master {
-    pub async fn open() -> Result<Self> {
-        let server = Server::new();
-        let handle = MasterHandle::Server(server);
+    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        let master = LocalMaster::open(path).await?;
+        let handle = MasterHandle::Local(master);
         Ok(Self { handle })
     }
 
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let client = master_client::MasterClient::connect(url.into()).await?;
-        let handle = MasterHandle::Client(client);
+        let master = RemoteMaster::connect(url.into()).await?;
+        let handle = MasterHandle::Remote(master);
         Ok(Self { handle })
     }
 
@@ -115,32 +117,33 @@ impl Master {
     }
 }
 
-type Client = master_client::MasterClient<tonic::transport::Channel>;
+type LocalMaster = object_engine_master::Master;
+type RemoteMaster = master_client::MasterClient<tonic::transport::Channel>;
 
 #[derive(Clone)]
 enum MasterHandle {
-    Client(Client),
-    Server(Server),
+    Local(LocalMaster),
+    Remote(RemoteMaster),
 }
 
 impl MasterHandle {
     async fn tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
         match self {
-            MasterHandle::Client(client) => {
+            MasterHandle::Local(master) => master.handle_tenant(req).await,
+            MasterHandle::Remote(client) => {
                 let res = client.clone().tenant(req).await?;
                 Ok(res.into_inner())
             }
-            MasterHandle::Server(server) => server.handle_tenant(req).await,
         }
     }
 
     async fn bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
         match self {
-            MasterHandle::Client(client) => {
+            MasterHandle::Local(master) => master.handle_bucket(req).await,
+            MasterHandle::Remote(client) => {
                 let res = client.clone().bucket(req).await?;
                 Ok(res.into_inner())
             }
-            MasterHandle::Server(server) => server.handle_bucket(req).await,
         }
     }
 }

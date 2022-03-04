@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
+
+use tokio::fs;
 
 use super::Bucket;
 use crate::{async_trait, Error, Result};
@@ -38,7 +40,7 @@ impl crate::Tenant for Tenant {
         if path.exists() {
             return Err(Error::AlreadyExists(format!("bucket {}", name)));
         }
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).await?;
         Ok(self.bucket(name))
     }
 }
