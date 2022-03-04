@@ -585,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "object-engine-client"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "object-engine-common",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "object-engine-common"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "thiserror",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "object-engine-filestore"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "object-engine-common",
  "tokio",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "object-engine-lsmstore"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "object-engine-common",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "object-engine-master"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "object-engine-common",
  "object-engine-filestore",

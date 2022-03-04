@@ -1,12 +1,15 @@
 [package]
 name = "object-engine-master"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
-publish = false
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "The master for Object Engine."
 
 [dependencies]
-object-engine-common = { version = "0.1", path = "../common" }
-object-engine-filestore = { version = "0.1", path = "../filestore" }
+object-engine-common = { version = "0.3", path = "../common" }
+object-engine-filestore = { version = "0.3", path = "../filestore" }
 
 prost = "0.9"
 thiserror = "1.0"
