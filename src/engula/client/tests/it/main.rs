@@ -25,7 +25,7 @@ async fn create_universe() -> Result<Universe> {
     let port = option_env!("ENGULA_UNIVERSE_PORT").unwrap_or("21716");
 
     for _ in 0..retry {
-        let uv = Universe::connect(format!("http://0.0.0.0:{}", port)).await;
+        let uv = Universe::connect(format!("http://localhost:{}", port)).await;
         match uv {
             Ok(uv) => return Ok(uv),
             _ => tokio::time::sleep(Duration::from_secs(interval)).await,
