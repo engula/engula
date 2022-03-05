@@ -50,7 +50,7 @@ impl<'a> Key<'a> {
         buf.put_u8(tp.into());
     }
 
-    pub fn encode_to_owned(id: &[u8], ts: Timestamp, tp: ValueType) -> Vec<u8> {
+    pub fn encode_to_vec(id: &[u8], ts: Timestamp, tp: ValueType) -> Vec<u8> {
         let len = id.len() + size_of::<Timestamp>() + 1;
         let mut buf = Vec::with_capacity(len);
         Self::encode_to(&mut buf, id, ts, tp);

@@ -19,13 +19,13 @@ use crate::Result;
 
 #[derive(Default)]
 pub struct TableDesc {
-    pub table_size: u64,
+    pub table_size: usize,
     pub lower_bound: Vec<u8>,
     pub upper_bound: Vec<u8>,
 }
 
 pub struct TableBuilderOptions {
-    pub block_size: u64,
+    pub block_size: usize,
 }
 
 impl Default for TableBuilderOptions {
@@ -66,6 +66,12 @@ impl TableBuilder {
             self.finish_data_block().await?;
         }
         Ok(())
+    }
+
+    pub fn estimated_size(&self) -> usize {
+        self.writer.offset()
+            + self.data_block_builder.encoded_size()
+            + self.index_block_builder.encoded_size()
     }
 
     pub async fn finish(mut self) -> Result<TableDesc> {
@@ -109,7 +115,7 @@ type SequentialWriter = Box<dyn SequentialWrite>;
 
 struct FileWriter {
     writer: SequentialWriter,
-    offset: u64,
+    offset: usize,
 }
 
 impl FileWriter {
@@ -117,19 +123,19 @@ impl FileWriter {
         Self { writer, offset: 0 }
     }
 
-    fn offset(&self) -> u64 {
+    fn offset(&self) -> usize {
         self.offset
     }
 
     async fn write(&mut self, buf: &[u8]) -> Result<()> {
         self.writer.write(buf).await?;
-        self.offset += buf.len() as u64;
+        self.offset += buf.len();
         Ok(())
     }
 
     async fn write_block(&mut self, block: &[u8]) -> Result<BlockHandle> {
         let handle = BlockHandle {
-            offset: self.offset,
+            offset: self.offset as u64,
             length: block.len() as u64,
         };
         self.write(block).await?;

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use object_engine_lsmstore::{TableBuilder, TableBuilderOptions};
 use object_engine_master::{proto::*, FileTenant};
 
 use crate::{Error, FileBuilder, Master, Result};
@@ -46,11 +47,25 @@ impl BulkLoad {
             .file_tenant
             .new_sequential_writer(bucket, &file_name)
             .await?;
-        Ok(FileBuilder::new(bucket.to_owned(), file_name, file_writer))
+        let table_options = TableBuilderOptions::default();
+        let table_builder = TableBuilder::new(file_writer, table_options);
+        Ok(FileBuilder::new(
+            self.token.clone(),
+            bucket.to_owned(),
+            file_name,
+            table_builder,
+        ))
     }
 
-    pub fn add_file(&mut self, file: BulkLoadFileDesc) {
-        self.output_files.push(file);
+    pub async fn finish_file_builder(&mut self, file: FileBuilder) -> Result<()> {
+        if file.token() != self.token {
+            return Err(Error::invalid_argument(
+                "the file doesn't belong to this bulkload",
+            ));
+        }
+        let desc = file.finish().await?;
+        self.output_files.push(desc);
+        Ok(())
     }
 
     pub async fn commit(self) -> Result<()> {
