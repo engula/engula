@@ -590,6 +590,8 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "object-engine-common",
+ "object-engine-filestore",
+ "object-engine-lsmstore",
  "object-engine-master",
  "prost",
  "thiserror",

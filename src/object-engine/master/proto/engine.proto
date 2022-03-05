@@ -53,7 +53,10 @@ message CommitBulkLoadRequest {
 
 message CommitBulkLoadResponse {}
 
-message AllocateFileNamesRequest { uint64 count = 1; }
+message AllocateFileNamesRequest {
+  string token = 1;
+  uint64 count = 2;
+}
 
 message AllocateFileNamesResponse { repeated string names = 1; }
 

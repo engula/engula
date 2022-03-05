@@ -32,6 +32,11 @@ impl Master {
         })
     }
 
+    pub async fn file_store(&self) -> FileStore {
+        let inner = self.inner.lock().await;
+        inner.file_store.clone()
+    }
+
     async fn tenant(&self, name: &str) -> Result<Tenant> {
         let inner = self.inner.lock().await;
         inner.tenant(name)

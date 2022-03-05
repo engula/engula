@@ -14,30 +14,37 @@
 
 use std::path::PathBuf;
 
-use object_engine_master::proto::*;
+use object_engine_master::{proto::*, FileStore};
 
 use crate::{Master, Result, Tenant};
 
 #[derive(Clone)]
 pub struct Engine {
     master: Master,
+    file_store: FileStore,
 }
 
 impl Engine {
+    async fn new(master: Master) -> Result<Self> {
+        let file_store = master.file_store().await?;
+        Ok(Self { master, file_store })
+    }
+
     /// Opens a local engine.
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let master = Master::open(path).await?;
-        Ok(Self { master })
+        Self::new(master).await
     }
 
     /// Connects to a remote engine service.
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
         let master = Master::connect(url).await?;
-        Ok(Self { master })
+        Self::new(master).await
     }
 
     pub fn tenant(&self, name: &str) -> Tenant {
-        Tenant::new(name.to_owned(), self.master.clone())
+        let file_tenant = self.file_store.tenant(name);
+        Tenant::new(name.to_owned(), self.master.clone(), file_tenant.into())
     }
 
     pub async fn create_tenant(&self, name: &str) -> Result<TenantDesc> {
