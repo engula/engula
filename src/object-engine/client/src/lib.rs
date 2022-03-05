@@ -15,11 +15,13 @@
 mod bucket;
 mod bulkload;
 mod engine;
-mod file_builder;
 mod master;
+mod sst_builder;
 mod tenant;
 
-use object_engine_common::{Error, Result};
+pub use object_engine_common::{Error, Result};
 
-pub use self::{bucket::Bucket, engine::Engine, tenant::Tenant};
-use self::{bulkload::BulkLoad, file_builder::FileBuilder, master::Master};
+use self::master::Master;
+pub use self::{
+    bucket::Bucket, bulkload::BulkLoad, engine::Engine, sst_builder::SstBuilder, tenant::Tenant,
+};

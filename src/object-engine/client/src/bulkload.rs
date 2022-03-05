@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use object_engine_lsmstore::{TableBuilder, TableBuilderOptions};
 use object_engine_master::{proto::*, FileTenant};
 
-use crate::{Error, FileBuilder, Master, Result};
+use crate::{Error, Master, Result, SstBuilder};
 
 pub struct BulkLoad {
     token: String,
@@ -40,17 +41,31 @@ impl BulkLoad {
         }
     }
 
-    pub async fn new_file_builder(&self, bucket: &str) -> Result<FileBuilder> {
+    pub async fn new_sst_builder(&self, bucket: &str) -> Result<SstBuilder> {
         let file_name = self.allocate_file_name().await?;
         let file_writer = self
             .file_tenant
             .new_sequential_writer(bucket, &file_name)
             .await?;
-        Ok(FileBuilder::new(bucket.to_owned(), file_name, file_writer))
+        let table_options = TableBuilderOptions::default();
+        let table_builder = TableBuilder::new(file_writer, table_options);
+        Ok(SstBuilder::new(
+            self.token.clone(),
+            bucket.to_owned(),
+            file_name,
+            table_builder,
+        ))
     }
 
-    pub fn add_file(&mut self, file: BulkLoadFileDesc) {
-        self.output_files.push(file);
+    pub async fn finish_sst_builder(&mut self, builder: SstBuilder) -> Result<()> {
+        if builder.token() != self.token {
+            return Err(Error::invalid_argument(
+                "the file doesn't belong to this bulkload",
+            ));
+        }
+        let desc = builder.finish().await?;
+        self.output_files.push(desc);
+        Ok(())
     }
 
     pub async fn commit(self) -> Result<()> {
