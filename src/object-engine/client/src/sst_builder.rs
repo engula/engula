@@ -17,14 +17,14 @@ use object_engine_master::proto::BulkLoadFileDesc;
 
 use crate::Result;
 
-pub struct FileBuilder {
+pub struct SstBuilder {
     token: String,
     bucket: String,
     file_name: String,
     table_builder: TableBuilder,
 }
 
-impl FileBuilder {
+impl SstBuilder {
     pub(crate) fn new(
         token: String,
         bucket: String,
