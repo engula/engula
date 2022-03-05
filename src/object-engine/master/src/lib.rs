@@ -19,5 +19,5 @@ mod server;
 
 use object_engine_common::{Error, Result};
 
-use self::fs::{FileBucket, FileStore, FileTenant};
+use self::fs::{FileStore, FileTenant};
 pub use self::{master::Master, server::Server};

@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
+use std::{os::unix::fs::FileExt, path::PathBuf};
 
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 
-use super::Bucket;
 use crate::{async_trait, Error, Result};
 
 pub struct Tenant {
@@ -31,16 +30,68 @@ impl Tenant {
 
 #[async_trait]
 impl crate::Tenant for Tenant {
-    fn bucket(&self, name: &str) -> Box<dyn crate::Bucket> {
-        Box::new(Bucket::new(self.path.join(name)))
-    }
-
-    async fn create_bucket(&self, name: &str) -> Result<Box<dyn crate::Bucket>> {
-        let path = self.path.join(name);
+    async fn create_bucket(&self, bucket: &str) -> Result<()> {
+        let path = self.path.join(bucket);
         if path.exists() {
-            return Err(Error::AlreadyExists(format!("bucket {}", name)));
+            return Err(Error::AlreadyExists(format!("bucket {}", bucket)));
         }
         fs::create_dir_all(&path).await?;
-        Ok(self.bucket(name))
+        Ok(())
+    }
+
+    async fn new_random_reader(
+        &self,
+        bucket: &str,
+        file_name: &str,
+    ) -> Result<Box<dyn crate::RandomRead>> {
+        let path = self.path.join(bucket).join(file_name);
+        let file = tokio::fs::File::open(&path).await?;
+        Ok(Box::new(RandomReader {
+            file: file.into_std().await,
+        }))
+    }
+
+    async fn new_sequential_writer(
+        &self,
+        bucket: &str,
+        file_name: &str,
+    ) -> Result<Box<dyn crate::SequentialWrite>> {
+        let path = self.path.join(bucket).join(file_name);
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .await?;
+        Ok(Box::new(SequentialWriter { file }))
+    }
+}
+
+pub struct RandomReader {
+    file: std::fs::File,
+}
+
+#[async_trait]
+impl crate::RandomRead for RandomReader {
+    async fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
+        self.file.read_exact_at(buf, offset)?;
+        Ok(())
+    }
+}
+
+pub struct SequentialWriter {
+    file: tokio::fs::File,
+}
+
+#[async_trait]
+impl crate::SequentialWrite for SequentialWriter {
+    async fn write(&mut self, buf: &[u8]) -> Result<()> {
+        self.file.write_all(buf).await?;
+        Ok(())
+    }
+
+    async fn finish(&mut self) -> Result<()> {
+        self.file.sync_all().await?;
+        Ok(())
     }
 }

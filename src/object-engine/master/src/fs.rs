@@ -14,13 +14,12 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use object_engine_filestore::{local, Bucket, Store, Tenant};
+use object_engine_filestore::{local, Store, Tenant};
 
 use crate::Result;
 
 pub type FileStore = Arc<dyn Store>;
 pub type FileTenant = Arc<dyn Tenant>;
-pub type FileBucket = Arc<dyn Bucket>;
 
 pub async fn open(path: impl Into<PathBuf>) -> Result<FileStore> {
     let store = local::Store::open(path).await?;
