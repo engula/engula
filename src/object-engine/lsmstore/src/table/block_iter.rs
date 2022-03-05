@@ -16,6 +16,8 @@ use std::{mem::size_of, ops::Range, sync::Arc};
 
 use bytes::Buf;
 
+use super::Key;
+
 pub struct BlockIter {
     block: Arc<[u8]>,
     num_restarts: usize,
@@ -38,9 +40,9 @@ impl BlockIter {
         }
     }
 
-    pub fn key(&self) -> &[u8] {
+    pub fn key(&self) -> Key<'_> {
         debug_assert!(self.valid());
-        &self.block[self.key_range.clone()]
+        self.block[self.key_range.clone()].into()
     }
 
     pub fn value(&self) -> &[u8] {
@@ -56,7 +58,7 @@ impl BlockIter {
         self.decode_next(0);
     }
 
-    pub fn seek(&mut self, target: &[u8]) {
+    pub fn seek(&mut self, target: Key<'_>) {
         let mut l = 0;
         let mut r = self.num_restarts - 1;
         while l < r {
@@ -94,10 +96,10 @@ impl BlockIter {
         }
     }
 
-    fn restart_key(&self, index: usize) -> &[u8] {
+    fn restart_key(&self, index: usize) -> Key<'_> {
         let offset = self.restart_offset(index);
         let (key_range, _) = decode_entry(&self.block, offset);
-        &self.block[key_range]
+        self.block[key_range].into()
     }
 
     fn restart_offset(&self, index: usize) -> usize {

@@ -16,4 +16,6 @@ mod table;
 
 use object_engine_common::{Error, Result};
 
-pub use self::table::{TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader};
+pub use self::table::{
+    Key, TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader, Timestamp, ValueType,
+};

@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use object_engine_filestore::RandomRead;
 
-use super::{table_footer, BlockHandle, BlockIter, TableFooter};
+use super::{table_footer, BlockHandle, BlockIter, Key, TableFooter};
 use crate::Result;
 
 #[allow(dead_code)]
@@ -60,7 +60,7 @@ impl TableIter {
         }
     }
 
-    pub fn key(&self) -> &[u8] {
+    pub fn key(&self) -> Key<'_> {
         debug_assert!(self.valid());
         self.block_iter.as_ref().unwrap().key()
     }
@@ -89,7 +89,7 @@ impl TableIter {
         Ok(())
     }
 
-    pub async fn seek(&mut self, target: &[u8]) -> Result<()> {
+    pub async fn seek(&mut self, target: Key<'_>) -> Result<()> {
         self.index_iter.seek(target);
         self.block_iter = if self.index_iter.valid() {
             let mut iter = self.read_block_iter().await?;

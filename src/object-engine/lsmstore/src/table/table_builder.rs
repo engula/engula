@@ -14,7 +14,7 @@
 
 use object_engine_filestore::SequentialWrite;
 
-use super::{BlockBuilder, BlockHandle, TableFooter};
+use super::{BlockBuilder, BlockHandle, Key, TableFooter};
 use crate::Result;
 
 #[derive(Default)]
@@ -56,12 +56,12 @@ impl TableBuilder {
         }
     }
 
-    pub async fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub async fn add(&mut self, key: Key<'_>, value: &[u8]) -> Result<()> {
         if self.lower_bound.is_empty() {
             self.lower_bound = key.to_owned();
         }
         self.upper_bound = key.to_owned();
-        self.data_block_builder.add(key, value);
+        self.data_block_builder.add(key.as_slice(), value);
         if self.data_block_builder.encoded_size() >= self.options.block_size as usize {
             self.finish_data_block().await?;
         }

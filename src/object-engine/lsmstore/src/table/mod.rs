@@ -15,6 +15,7 @@
 mod block_builder;
 mod block_handle;
 mod block_iter;
+mod format;
 mod table_builder;
 mod table_footer;
 mod table_reader;
@@ -24,6 +25,7 @@ use self::{
     table_footer::TableFooter,
 };
 pub use self::{
+    format::{Key, Timestamp, ValueType},
     table_builder::{TableBuilder, TableBuilderOptions, TableDesc},
     table_reader::{TableIter, TableReader},
 };
