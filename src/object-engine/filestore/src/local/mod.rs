@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket;
 mod store;
 mod tenant;
 
-pub use self::{bucket::Bucket, store::Store, tenant::Tenant};
+pub use self::{store::Store, tenant::Tenant};

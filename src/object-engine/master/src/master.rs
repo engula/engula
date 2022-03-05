@@ -16,7 +16,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{fs, proto::*, Error, FileBucket, FileStore, FileTenant, Result};
+use crate::{fs, proto::*, Error, FileStore, FileTenant, Result};
 
 #[derive(Clone)]
 pub struct Master {
@@ -253,9 +253,9 @@ impl TenantInner {
         if self.buckets.contains_key(&desc.name) {
             return Err(Error::AlreadyExists(format!("bucket {}", desc.name)));
         }
+        self.file_tenant.create_bucket(&desc.name).await?;
         desc.tenant = self.desc.name.clone();
-        let file_bucket = self.file_tenant.create_bucket(&desc.name).await?;
-        let bucket = Bucket::new(desc.clone(), file_bucket.into());
+        let bucket = Bucket::new(desc.clone());
         self.buckets.insert(desc.name.clone(), bucket);
         Ok(desc)
     }
@@ -267,8 +267,8 @@ struct Bucket {
 }
 
 impl Bucket {
-    fn new(desc: BucketDesc, file_bucket: FileBucket) -> Self {
-        let inner = BucketInner::new(desc, file_bucket);
+    fn new(desc: BucketDesc) -> Self {
+        let inner = BucketInner::new(desc);
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
@@ -282,11 +282,10 @@ impl Bucket {
 #[allow(dead_code)]
 struct BucketInner {
     desc: BucketDesc,
-    file_bucket: FileBucket,
 }
 
 impl BucketInner {
-    fn new(desc: BucketDesc, file_bucket: FileBucket) -> Self {
-        Self { desc, file_bucket }
+    fn new(desc: BucketDesc) -> Self {
+        Self { desc }
     }
 }
