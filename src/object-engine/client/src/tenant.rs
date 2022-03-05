@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::proto::*;
+use object_engine_master::{proto::*, FileTenant};
 
 use crate::{Bucket, BulkLoad, Master, Result};
 
@@ -20,11 +20,16 @@ use crate::{Bucket, BulkLoad, Master, Result};
 pub struct Tenant {
     name: String,
     master: Master,
+    file_tenant: FileTenant,
 }
 
 impl Tenant {
-    pub(crate) fn new(name: String, master: Master) -> Self {
-        Self { name, master }
+    pub(crate) fn new(name: String, master: Master, file_tenant: FileTenant) -> Self {
+        Self {
+            name,
+            master,
+            file_tenant,
+        }
     }
 
     pub async fn desc(&self) -> Result<TenantDesc> {
@@ -45,6 +50,11 @@ impl Tenant {
 
     pub async fn begin_bulkload(&self) -> Result<BulkLoad> {
         let token = self.master.begin_bulkload(self.name.clone()).await?;
-        Ok(BulkLoad::new(token, self.name.clone(), self.master.clone()))
+        Ok(BulkLoad::new(
+            token,
+            self.name.clone(),
+            self.master.clone(),
+            self.file_tenant.clone(),
+        ))
     }
 }

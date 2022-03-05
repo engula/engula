@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use object_engine_master::proto::*;
+use object_engine_master::{proto::*, FileStore};
 
 use crate::{Error, Result};
 
@@ -84,6 +84,10 @@ impl Master {
         desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
+    pub async fn file_store(&self) -> Result<FileStore> {
+        self.handle.file_store().await
+    }
+
     pub async fn begin_bulkload(&self, tenant: String) -> Result<String> {
         let req = BeginBulkLoadRequest {};
         let req = engine_request_union::Request::BeginBulkload(req);
@@ -110,8 +114,13 @@ impl Master {
     }
 
     #[allow(dead_code)]
-    pub async fn allocate_file_names(&self, tenant: String, count: u64) -> Result<Vec<String>> {
-        let req = AllocateFileNamesRequest { count };
+    pub async fn allocate_file_names(
+        &self,
+        tenant: String,
+        token: String,
+        count: u64,
+    ) -> Result<Vec<String>> {
+        let req = AllocateFileNamesRequest { token, count };
         let req = engine_request_union::Request::AllocateFileNames(req);
         let res = self.engine_union(tenant, req).await?;
         if let engine_response_union::Response::AllocateFileNames(res) = res {
@@ -207,6 +216,13 @@ impl MasterHandle {
                 let res = client.clone().engine(req).await?;
                 Ok(res.into_inner())
             }
+        }
+    }
+
+    async fn file_store(&self) -> Result<FileStore> {
+        match self {
+            MasterHandle::Local(master) => Ok(master.file_store().await),
+            MasterHandle::Remote(_) => todo!(),
         }
     }
 }

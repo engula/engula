@@ -12,32 +12,62 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::proto::*;
+use object_engine_master::{proto::*, FileTenant};
 
-use crate::{Master, Result};
+use crate::{Error, FileBuilder, Master, Result};
 
 pub struct BulkLoad {
+    token: String,
     tenant: String,
     master: Master,
-    bulkload: CommitBulkLoadRequest,
+    file_tenant: FileTenant,
+    output_files: Vec<BulkLoadFileDesc>,
 }
 
 impl BulkLoad {
-    pub(crate) fn new(token: String, tenant: String, master: Master) -> Self {
-        let bulkload = CommitBulkLoadRequest {
-            token,
-            ..Default::default()
-        };
+    pub(crate) fn new(
+        token: String,
+        tenant: String,
+        master: Master,
+        file_tenant: FileTenant,
+    ) -> Self {
         Self {
+            token,
             tenant,
             master,
-            bulkload,
+            file_tenant,
+            output_files: Vec::new(),
         }
     }
 
+    pub async fn new_file_builder(&self, bucket: &str) -> Result<FileBuilder> {
+        let file_name = self.allocate_file_name().await?;
+        let file_writer = self
+            .file_tenant
+            .new_sequential_writer(bucket, &file_name)
+            .await?;
+        Ok(FileBuilder::new(bucket.to_owned(), file_name, file_writer))
+    }
+
+    pub fn add_file(&mut self, file: BulkLoadFileDesc) {
+        self.output_files.push(file);
+    }
+
     pub async fn commit(self) -> Result<()> {
-        self.master
-            .commit_bulkload(self.tenant, self.bulkload)
-            .await
+        let req = CommitBulkLoadRequest {
+            token: self.token,
+            files: self.output_files,
+        };
+        self.master.commit_bulkload(self.tenant, req).await
+    }
+
+    async fn allocate_file_name(&self) -> Result<String> {
+        let mut file_names = self
+            .master
+            .allocate_file_names(self.tenant.clone(), self.token.clone(), 1)
+            .await?;
+        file_names
+            .pop()
+            .ok_or_else(|| Error::internal("missing file names"))
     }
 }

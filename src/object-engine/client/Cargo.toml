@@ -9,6 +9,8 @@ description = "The Rust client for Object Engine."
 
 [dependencies]
 object-engine-common = { version = "0.3", path = "../common" }
+object-engine-filestore = { version = "0.3", path = "../filestore" }
+object-engine-lsmstore = { version = "0.3", path = "../lsmstore" }
 object-engine-master = { version = "0.3", path = "../master" }
 
 prost = "0.9"
