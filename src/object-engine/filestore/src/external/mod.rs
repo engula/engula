@@ -12,15 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod store;
-
-pub mod external;
-pub mod local;
-
-use object_engine_common::{async_trait, Error, Result};
-
-pub(crate) use self::store::blob_stream::BlobStore;
-pub use self::store::{
-    Bucket, RandomRead, SequentialWrite, Store, StreamBlock, StreamReader, StreamState,
-    StreamWriter, Tenant,
-};
+mod s3;

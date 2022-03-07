@@ -10,4 +10,8 @@ description = "The file store for Object Engine."
 [dependencies]
 object-engine-common = { version = "0.3", path = "../common" }
 
+bytes = "1.1.0"
 tokio = { version = "1.15", features = ["full"] }
+
+[dev-dependencies]
+tempdir = "0.3.7"

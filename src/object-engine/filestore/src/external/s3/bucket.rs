@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    os::unix::fs::FileExt,
-    path::{Path, PathBuf},
-};
+use std::{os::unix::fs::FileExt, path::PathBuf};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::*;
+use crate::{
+    async_trait,
+    store::blob_stream::{self, BlobStreamExt},
+    RandomRead, Result, SequentialWrite,
+};
 
 const FILE_SUFFIX: &str = ".file";
-const STREAM_SUFFIX: &str = ".stream";
 
 #[derive(Clone)]
 pub struct Bucket {
@@ -32,31 +32,6 @@ pub struct Bucket {
 impl Bucket {
     pub(crate) fn new(path: PathBuf) -> Self {
         Self { path }
-    }
-}
-
-#[async_trait]
-impl crate::Bucket for Bucket {
-    async fn new_random_reader(&self, name: &str) -> Result<Box<dyn RandomRead>> {
-        let path = self.path.join(name.to_owned() + FILE_SUFFIX);
-        crate::BlobStore::new_random_reader(self, path).await
-    }
-
-    async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>> {
-        let path = self.path.join(name.to_owned() + FILE_SUFFIX);
-        crate::BlobStore::new_sequential_writer(self, path).await
-    }
-
-    async fn new_stream_reader(&self, file_name: &str) -> Result<Box<dyn crate::StreamReader>> {
-        tokio::fs::create_dir_all(&self.path).await?;
-        let path = self.path.join(file_name.to_owned() + STREAM_SUFFIX);
-        Ok(Box::new(StreamReader::open(path).await?))
-    }
-
-    async fn new_stream_writer(&self, file_name: &str) -> Result<Box<dyn crate::StreamWriter>> {
-        tokio::fs::create_dir_all(&self.path).await?;
-        let path = self.path.join(file_name.to_owned() + STREAM_SUFFIX);
-        Ok(Box::new(StreamWriter::open(path).await?))
     }
 }
 
@@ -87,10 +62,63 @@ impl crate::BlobStore for Bucket {
 
     async fn list_files_by_prefix(
         &self,
-        _bucket_path: PathBuf,
-        _file_name_prefix: &str,
+        bucket_path: PathBuf,
+        file_name_prefix: &str,
     ) -> Result<Vec<PathBuf>> {
-        unreachable!("local file should never call this")
+        let res = tokio::fs::read_dir(bucket_path).await;
+        if let Err(e) = &res {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(Vec::new());
+            }
+        }
+        let mut read_dir = res?;
+        let name_prefix = stream_file_prefix(file_name_prefix);
+        let mut res = Vec::new();
+        loop {
+            let ent = read_dir.next_entry().await?;
+            if ent.is_none() {
+                break;
+            }
+            let path = ent.unwrap().path();
+            if let Some(stem) = path.file_stem() {
+                if Some(name_prefix.as_str()) != stem.to_str() {
+                    continue;
+                }
+            }
+            if path.extension().is_some() {
+                res.push(path)
+            }
+        }
+        Ok(res)
+    }
+}
+
+fn stream_file_prefix(name: &str) -> String {
+    format!("{}{}", name, blob_stream::STREAM_SUFFIX)
+}
+
+#[async_trait]
+impl crate::Bucket for Bucket {
+    async fn new_random_reader(&self, name: &str) -> Result<Box<dyn RandomRead>> {
+        let path = self.path.join(name.to_owned() + FILE_SUFFIX);
+        crate::BlobStore::new_random_reader(self, path).await
+    }
+
+    async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>> {
+        let path = self.path.join(name.to_owned() + FILE_SUFFIX);
+        crate::BlobStore::new_sequential_writer(self, path).await
+    }
+
+    async fn new_stream_reader(&self, file_name: &str) -> Result<Box<dyn crate::StreamReader>> {
+        tokio::fs::create_dir_all(&self.path).await?;
+        let bucket = self.to_owned();
+        BlobStreamExt::new_stream_reader(bucket, self.path.to_owned(), file_name).await
+    }
+
+    async fn new_stream_writer(&self, file_name: &str) -> Result<Box<dyn crate::StreamWriter>> {
+        tokio::fs::create_dir_all(&self.path).await?;
+        let bucket = self.to_owned();
+        BlobStreamExt::new_stream_writer(bucket, self.path.to_owned(), file_name).await
     }
 }
 
@@ -123,77 +151,15 @@ impl crate::SequentialWrite for SequentialWriter {
     }
 }
 
-pub struct StreamReader {
-    file: tokio::fs::File,
-}
-
-#[async_trait]
-impl crate::StreamReader for StreamReader {
-    async fn next(&mut self, block: &mut crate::StreamBlock) -> Result<()> {
-        block.decode_from_async_read(&mut self.file).await?;
-        Ok(())
-    }
-}
-
-impl StreamReader {
-    async fn open(stream_path: impl AsRef<Path>) -> Result<Self> {
-        let path = stream_path.as_ref();
-        let file = tokio::fs::File::open(&path).await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                crate::Error::NotFound(format!("file {:?}", path.file_name()))
-            } else {
-                e.into()
-            }
-        })?;
-        Ok(Self { file })
-    }
-}
-
-pub struct StreamWriter {
-    file: tokio::fs::File,
-}
-
-#[async_trait]
-impl crate::StreamWriter for StreamWriter {
-    async fn append(&mut self, block: crate::StreamBlock) -> Result<()> {
-        let buf = block.encode();
-        self.file.write_all(&buf).await?;
-        Ok(())
-    }
-
-    async fn flush(&mut self) -> Result<()> {
-        self.file.sync_all().await?;
-        Ok(())
-    }
-
-    async fn state(&self) -> Result<StreamState> {
-        let data_size = self.file.metadata().await?.len() as i64;
-        Ok(StreamState::SingleFile { data_size })
-    }
-}
-
-impl StreamWriter {
-    async fn open(stream_path: impl AsRef<Path>) -> Result<Self> {
-        let path = stream_path.as_ref();
-        let file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .append(true)
-            .open(&path)
-            .await?;
-        Ok(Self { file })
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use crate::{external::s3, *};
 
     #[tokio::test]
     async fn test_local_stream_rw() -> Result<()> {
         let tmp = tempdir::TempDir::new("test")?;
         let p = tmp.path();
-        let s = local::Store::open(p).await?;
+        let s = s3::Store::open(p).await?;
         let t = s.create_tenant("t1").await?;
         let _ = t.create_bucket("b1").await?;
         let b = super::Bucket::new(p.join("b1").join("t1"));
