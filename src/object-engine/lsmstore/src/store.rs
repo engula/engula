@@ -12,17 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_iter;
-mod store;
-mod table;
+use crate::{BucketIter, Result};
 
-use object_engine_common::{Error, Result};
+pub struct Store {}
 
-pub use self::{
-    bucket_iter::BucketIter,
-    store::{Bucket, Store, Tenant},
-    table::{
-        Key, TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader, Timestamp,
-        ValueType,
-    },
-};
+impl Store {
+    pub async fn tenant(&self, _name: &str) -> Result<Tenant> {
+        todo!();
+    }
+}
+
+pub struct Tenant {}
+
+impl Tenant {
+    pub async fn bucket(&self, _name: &str) -> Result<Bucket> {
+        todo!();
+    }
+}
+
+pub struct Bucket {}
+
+impl Bucket {
+    pub async fn get(&self, _id: &[u8]) -> Result<Option<Vec<u8>>> {
+        todo!();
+    }
+
+    pub fn iter(&self) -> BucketIter {
+        BucketIter {}
+    }
+}

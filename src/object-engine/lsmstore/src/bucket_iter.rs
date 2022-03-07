@@ -12,17 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_iter;
-mod store;
-mod table;
+use crate::Result;
 
-use object_engine_common::{Error, Result};
+pub struct BucketIter {}
 
-pub use self::{
-    bucket_iter::BucketIter,
-    store::{Bucket, Store, Tenant},
-    table::{
-        Key, TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader, Timestamp,
-        ValueType,
-    },
-};
+impl BucketIter {
+    pub fn id(&self) -> &[u8] {
+        todo!();
+    }
+
+    pub fn value(&self) -> &[u8] {
+        todo!();
+    }
+
+    pub fn valid(&self) -> bool {
+        todo!();
+    }
+
+    pub async fn seek_to_first(&mut self) -> Result<()> {
+        todo!();
+    }
+
+    pub async fn seek(&mut self, _target: &[u8]) -> Result<()> {
+        todo!();
+    }
+
+    pub async fn next(&mut self) -> Result<()> {
+        todo!();
+    }
+}
