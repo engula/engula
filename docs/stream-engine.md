@@ -79,7 +79,31 @@ During recovering, the leader also has to deal with holes exists in segment stor
 2. hole
 3. bridge
 
-When a leader recovers non-consecutive events, it must replicate a sequence of hole entries to fill the hole, but this may cause confusion for events readers. Consider an NRW replication policy, where N = 3 and both R and W are 2. There are three segment stores in a segment's copy set, named A, B, C. A leader 1 replicates entries `{e(1), e(2), e(3)}` to them. Before leader 1 crash, the entries of A, B, C are `{e(1), e(2), e(3)}`, `{e(1), e(3)}`, `{e(1), e(3)}`. Suppose a new leader 2 starts to recover, it reads B, C and adds a hole entry and replicate it to B, C, now the entries of A, B, C, are `{e(1), e(2), e(3)}`, `{e(1), h(2), e(3)}`, `{e(1), h(2), e(3)}`. At the same time, a follower 3 reads A, B, find two conflicting entries in index 2.
+When a leader recovers non-consecutive events, it must replicate a sequence of hole entries to fill the hole, but this may cause confusion for events readers.
+
+Consider an NRW replication policy, where N = 3 and both R and W are 2. There are three segment stores in a segment's copy set, named A, B, C. A leader 1 replicates below entries to them.
+
+```
+ent(1), ent(2), ent(3)
+```
+
+B and C did not receive the `ent(2)`, now the entries of segment stores A, B, C are:
+
+```
+A: ent(1), ent(2), ent(3)
+B: ent(1),         ent(3)
+C: ent(1),         ent(3)
+```
+
+Suppose a new leader 2 starts to recover, it reads B, C and found that both B, C the slot 2 are empty. So leader 2 adds a hole entry and replicate it to B, C. Now the entries of A, B, C, are:
+
+```
+A: ent(1), ent(2), ent(3)
+B: ent(1), hol(2), ent(3)
+C: ent(1), hol(2), ent(3)
+```
+
+At the same time, a follower 3 reads A, B, find two conflicting entries `{ent(2), hol(2)}` in index 2.
 
 So that each entry records the epoch of the leader who replicated it. Even while recovering, the new leader must update the entry's epoch and re-replicate it to the segment stores of copy set.
 
