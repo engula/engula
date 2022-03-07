@@ -76,6 +76,12 @@ impl Master {
         }
     }
 
+    pub async fn tenants(&self) -> Result<Vec<Tenant>> {
+        let inner = self.inner.lock().await;
+        let tenants = inner.tenants.values().cloned().collect();
+        Ok(tenants)
+    }
+
     pub async fn tenant(&self, name: &str) -> Result<Tenant> {
         let inner = self.inner.lock().await;
         inner

@@ -113,8 +113,9 @@ impl Server {
             .request
             .ok_or_else(|| Error::InvalidArgument("tenant request".into()))?;
         let res = match req {
-            Request::ListTenants(_req) => {
-                todo!()
+            Request::ListTenants(req) => {
+                let res = self.handle_list_tenants(req).await?;
+                Response::ListTenants(res)
             }
             Request::CreateTenant(req) => {
                 let res = self.handle_create_tenant(req).await?;
@@ -134,6 +135,15 @@ impl Server {
         Ok(TenantResponseUnion {
             response: Some(res),
         })
+    }
+
+    async fn handle_list_tenants(&self, _: ListTenantsRequest) -> Result<ListTenantsResponse> {
+        let dbs = self.master.tenants().await?;
+        let mut descs = vec![];
+        for db in dbs {
+            descs.push(db.desc().await);
+        }
+        Ok(ListTenantsResponse { descs })
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
