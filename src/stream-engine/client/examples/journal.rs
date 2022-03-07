@@ -21,7 +21,6 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use stream_engine_client::{Engine, Error, Role, Tenant};
 use tracing::info;
-use tracing_subscriber;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -126,7 +125,7 @@ async fn load_events<P: AsRef<Path>>(
                 Err(Error::NotLeader(_)) => {
                     break;
                 }
-                Err(err) => Err(err)?,
+                Err(err) => return Err(err.into()),
             };
         }
     }
@@ -149,7 +148,7 @@ async fn append_event(tenant: &mut Tenant, stream_name: String, event: Vec<u8>) 
                 break;
             }
             Err(Error::NotLeader(_)) => {}
-            Err(err) => Err(err)?,
+            Err(err) => return Err(err.into()),
         };
     }
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -159,7 +158,7 @@ async fn append_event(tenant: &mut Tenant, stream_name: String, event: Vec<u8>) 
 async fn subscribe_events(tenant: &Tenant, stream_name: String, start: Option<u64>) -> Result<()> {
     let stream = tenant.stream(&stream_name).await?;
     let mut reader = stream.new_reader().await?;
-    reader.seek(start.unwrap_or_default().into()).await?;
+    reader.seek(start.unwrap_or_default()).await?;
     loop {
         let event = reader.wait_next().await?;
         println!("{:?}", event);
@@ -180,7 +179,7 @@ async fn main() -> Result<()> {
             engine.tenant("tenant")
         }
         Ok(tenant) => tenant,
-        Err(error) => Err(error)?,
+        Err(error) => return Err(error.into()),
     };
 
     match args.cmd {

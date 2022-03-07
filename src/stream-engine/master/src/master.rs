@@ -136,6 +136,16 @@ impl Tenant {
             .ok_or_else(|| Error::NotFound(format!("stream {}", name)))
     }
 
+    pub async fn stream_descs(&self) -> Result<Vec<StreamDesc>> {
+        let inner = self.inner.lock().await;
+        let descs = inner
+            .streams
+            .values()
+            .map(StreamInfo::stream_desc)
+            .collect();
+        Ok(descs)
+    }
+
     pub async fn stream(&self, stream_id: u64) -> Result<StreamInfo> {
         let inner = self.inner.lock().await;
         inner

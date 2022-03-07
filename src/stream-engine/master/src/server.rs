@@ -114,17 +114,17 @@ impl Server {
             .ok_or_else(|| Error::InvalidArgument("tenant request".into()))?;
         let res = match req {
             Request::ListTenants(_req) => {
-                todo!();
+                todo!()
             }
             Request::CreateTenant(req) => {
                 let res = self.handle_create_tenant(req).await?;
                 Response::CreateTenant(res)
             }
             Request::UpdateTenant(_req) => {
-                todo!();
+                todo!()
             }
             Request::DeleteTenant(_req) => {
-                todo!();
+                todo!()
             }
             Request::DescribeTenant(req) => {
                 let res = self.handle_describe_tenant(req).await?;
@@ -177,18 +177,19 @@ impl Server {
             .request
             .ok_or_else(|| Error::InvalidArgument("stream request".into()))?;
         let res = match req {
-            Request::ListStreams(_req) => {
-                todo!();
+            Request::ListStreams(req) => {
+                let res = self.handle_list_streams(tenant, req).await?;
+                Response::ListStreams(res)
             }
             Request::CreateStream(req) => {
                 let res = self.handle_create_stream(tenant, req).await?;
                 Response::CreateStream(res)
             }
             Request::UpdateStream(_req) => {
-                todo!();
+                todo!()
             }
             Request::DeleteStream(_req) => {
-                todo!();
+                todo!()
             }
             Request::DescribeStream(req) => {
                 let res = self.handle_describe_stream(tenant, req).await?;
@@ -198,6 +199,15 @@ impl Server {
         Ok(StreamResponseUnion {
             response: Some(res),
         })
+    }
+
+    async fn handle_list_streams(
+        &self,
+        tenant: Tenant,
+        _: ListStreamsRequest,
+    ) -> Result<ListStreamsResponse> {
+        let descs = tenant.stream_descs().await?;
+        Ok(ListStreamsResponse { descs })
     }
 
     async fn handle_create_stream(

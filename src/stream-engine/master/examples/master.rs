@@ -16,7 +16,6 @@ use clap::Parser;
 use stream_engine_master::Server as MasterServer;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tracing_subscriber;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
