@@ -15,13 +15,18 @@
 mod bucket;
 mod bulkload;
 mod engine;
-mod master;
+mod env;
 mod sst_builder;
 mod tenant;
 
-pub use object_engine_common::{Error, Result};
+pub use object_engine_common::{async_trait, Error, Result};
 
-use self::master::Master;
+use self::env::{BucketEnv, Env, TenantEnv};
 pub use self::{
-    bucket::Bucket, bulkload::BulkLoad, engine::Engine, sst_builder::SstBuilder, tenant::Tenant,
+    bucket::Bucket,
+    bulkload::BulkLoad,
+    engine::Engine,
+    env::{LocalEnv, RemoteEnv},
+    sst_builder::SstBuilder,
+    tenant::Tenant,
 };

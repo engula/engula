@@ -12,32 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use object_engine_master::{proto::*, FileTenant};
+use object_engine_master::proto::*;
 
-use crate::{Bucket, BulkLoad, Master, Result};
+use crate::{Bucket, BulkLoad, Env, Error, Result, TenantEnv};
 
 #[derive(Clone)]
-pub struct Tenant {
-    name: String,
-    master: Master,
-    file_tenant: FileTenant,
+pub struct Tenant<E: Env> {
+    env: E,
+    tenant: E::TenantEnv,
 }
 
-impl Tenant {
-    pub(crate) fn new(name: String, master: Master, file_tenant: FileTenant) -> Self {
-        Self {
-            name,
-            master,
-            file_tenant,
-        }
+impl<E: Env> Tenant<E> {
+    pub(crate) fn new(env: E, tenant: E::TenantEnv) -> Self {
+        Self { env, tenant }
     }
 
-    pub async fn desc(&self) -> Result<TenantDesc> {
-        self.master.get_tenant(self.name.clone()).await
+    pub fn name(&self) -> &str {
+        self.tenant.name()
     }
 
-    pub fn bucket(&self, name: &str) -> Bucket {
-        Bucket::new(name.to_owned(), self.name.clone(), self.master.clone())
+    pub async fn bucket(&self, name: &str) -> Result<Bucket<E>> {
+        let bucket = self.tenant.bucket(name).await?;
+        Ok(Bucket::new(self.env.clone(), bucket))
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<BucketDesc> {
@@ -45,16 +41,52 @@ impl Tenant {
             name: name.to_owned(),
             ..Default::default()
         };
-        self.master.create_bucket(self.name.clone(), desc).await
+        let req = CreateBucketRequest { desc: Some(desc) };
+        let req = bucket_request_union::Request::CreateBucket(req);
+        let res = self
+            .env
+            .handle_bucket_union(self.name().to_owned(), req)
+            .await?;
+        let desc = if let bucket_response_union::Response::CreateBucket(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
-    pub async fn begin_bulkload(&self) -> Result<BulkLoad> {
-        let token = self.master.begin_bulkload(self.name.clone()).await?;
-        Ok(BulkLoad::new(
-            token,
-            self.name.clone(),
-            self.master.clone(),
-            self.file_tenant.clone(),
-        ))
+    pub async fn describe_bucket(&self, name: &str) -> Result<BucketDesc> {
+        let req = DescribeBucketRequest {
+            name: name.to_owned(),
+        };
+        let req = bucket_request_union::Request::DescribeBucket(req);
+        let res = self
+            .env
+            .handle_bucket_union(self.name().to_owned(), req)
+            .await?;
+        let desc = if let bucket_response_union::Response::DescribeBucket(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
+    }
+
+    pub async fn begin_bulkload(&self) -> Result<BulkLoad<E>> {
+        let req = BeginBulkLoadRequest {};
+        let req = engine_request_union::Request::BeginBulkload(req);
+        let res = self
+            .env
+            .handle_engine_union(self.name().to_owned(), req)
+            .await?;
+        if let engine_response_union::Response::BeginBulkload(res) = res {
+            Ok(BulkLoad::new(
+                self.env.clone(),
+                res.token,
+                self.tenant.clone(),
+            ))
+        } else {
+            Err(Error::internal("missing begin bulkload response"))
+        }
     }
 }

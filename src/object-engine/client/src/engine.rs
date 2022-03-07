@@ -12,45 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
+use object_engine_master::proto::*;
 
-use object_engine_master::{proto::*, FileStore};
-
-use crate::{Master, Result, Tenant};
+use crate::{Env, Error, Result, Tenant};
 
 #[derive(Clone)]
-pub struct Engine {
-    master: Master,
-    file_store: FileStore,
+pub struct Engine<E: Env> {
+    env: E,
 }
 
-impl Engine {
-    async fn new(master: Master) -> Result<Self> {
-        let file_store = master.file_store().await?;
-        Ok(Self { master, file_store })
+impl<E: Env> Engine<E> {
+    pub async fn open(env: E) -> Result<Self> {
+        Ok(Self { env })
     }
 
-    /// Opens a local engine.
-    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let master = Master::open(path).await?;
-        Self::new(master).await
-    }
-
-    /// Connects to a remote engine service.
-    pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let master = Master::connect(url).await?;
-        Self::new(master).await
-    }
-
-    pub fn tenant(&self, name: &str) -> Tenant {
-        let file_tenant = self.file_store.tenant(name);
-        Tenant::new(name.to_owned(), self.master.clone(), file_tenant.into())
+    pub async fn tenant(&self, name: &str) -> Result<Tenant<E>> {
+        let tenant = self.env.tenant(name).await?;
+        Ok(Tenant::new(self.env.clone(), tenant))
     }
 
     pub async fn create_tenant(&self, name: &str) -> Result<TenantDesc> {
         let desc = TenantDesc {
             name: name.to_owned(),
         };
-        self.master.create_tenant(desc).await
+        let req = CreateTenantRequest { desc: Some(desc) };
+        let req = tenant_request_union::Request::CreateTenant(req);
+        let res = self.env.handle_tenant_union(req).await?;
+        let desc = if let tenant_response_union::Response::CreateTenant(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
+    }
+
+    pub async fn describe_tenant(&self, name: &str) -> Result<TenantDesc> {
+        let req = DescribeTenantRequest {
+            name: name.to_owned(),
+        };
+        let req = tenant_request_union::Request::DescribeTenant(req);
+        let res = self.env.handle_tenant_union(req).await?;
+        let desc = if let tenant_response_union::Response::DescribeTenant(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
     }
 }

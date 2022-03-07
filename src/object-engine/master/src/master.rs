@@ -16,7 +16,11 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{fs, proto::*, Error, FileStore, FileTenant, Result};
+use crate::{
+    fs::{self, FileStore},
+    proto::*,
+    Error, Result, Tenant,
+};
 
 #[derive(Clone)]
 pub struct Master {
@@ -32,17 +36,12 @@ impl Master {
         })
     }
 
-    pub async fn file_store(&self) -> FileStore {
-        let inner = self.inner.lock().await;
-        inner.file_store.clone()
-    }
-
-    async fn tenant(&self, name: &str) -> Result<Tenant> {
+    pub async fn tenant(&self, name: &str) -> Result<Tenant> {
         let inner = self.inner.lock().await;
         inner.tenant(name)
     }
 
-    async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
+    pub async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
         let mut inner = self.inner.lock().await;
         inner.create_tenant(desc).await
     }
@@ -63,10 +62,6 @@ impl Master {
             .request
             .ok_or_else(|| Error::invalid_argument("missing tenant request"))?;
         let res = match req {
-            tenant_request_union::Request::GetTenant(req) => {
-                let res = self.handle_get_tenant(req).await?;
-                tenant_response_union::Response::GetTenant(res)
-            }
             tenant_request_union::Request::ListTenants(_req) => {
                 todo!();
             }
@@ -80,16 +75,14 @@ impl Master {
             tenant_request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
+            tenant_request_union::Request::DescribeTenant(req) => {
+                let res = self.handle_describe_tenant(req).await?;
+                tenant_response_union::Response::DescribeTenant(res)
+            }
         };
         Ok(TenantResponseUnion {
             response: Some(res),
         })
-    }
-
-    async fn handle_get_tenant(&self, req: GetTenantRequest) -> Result<GetTenantResponse> {
-        let tenant = self.tenant(&req.name).await?;
-        let desc = tenant.desc().await;
-        Ok(GetTenantResponse { desc: Some(desc) })
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
@@ -98,6 +91,15 @@ impl Master {
             .ok_or_else(|| Error::invalid_argument("missing tenant descriptor"))?;
         let desc = self.create_tenant(desc).await?;
         Ok(CreateTenantResponse { desc: Some(desc) })
+    }
+
+    async fn handle_describe_tenant(
+        &self,
+        req: DescribeTenantRequest,
+    ) -> Result<DescribeTenantResponse> {
+        let tenant = self.tenant(&req.name).await?;
+        let desc = tenant.desc().await;
+        Ok(DescribeTenantResponse { desc: Some(desc) })
     }
 }
 
@@ -121,10 +123,6 @@ impl Master {
             .request
             .ok_or_else(|| Error::invalid_argument("missing bucket request"))?;
         let res = match req {
-            bucket_request_union::Request::GetBucket(req) => {
-                let res = self.handle_get_bucket(tenant, req).await?;
-                bucket_response_union::Response::GetBucket(res)
-            }
             bucket_request_union::Request::ListBuckets(_req) => {
                 todo!();
             }
@@ -138,20 +136,14 @@ impl Master {
             bucket_request_union::Request::DeleteBucket(_req) => {
                 todo!();
             }
+            bucket_request_union::Request::DescribeBucket(req) => {
+                let res = self.handle_describe_bucket(tenant, req).await?;
+                bucket_response_union::Response::DescribeBucket(res)
+            }
         };
         Ok(BucketResponseUnion {
             response: Some(res),
         })
-    }
-
-    async fn handle_get_bucket(
-        &self,
-        tenant: Tenant,
-        req: GetBucketRequest,
-    ) -> Result<GetBucketResponse> {
-        let bucket = tenant.bucket(&req.name).await?;
-        let desc = bucket.desc().await;
-        Ok(GetBucketResponse { desc: Some(desc) })
     }
 
     async fn handle_create_bucket(
@@ -164,6 +156,16 @@ impl Master {
             .ok_or_else(|| Error::invalid_argument("missing bucket descriptor"))?;
         let desc = tenant.create_bucket(desc).await?;
         Ok(CreateBucketResponse { desc: Some(desc) })
+    }
+
+    async fn handle_describe_bucket(
+        &self,
+        tenant: Tenant,
+        req: DescribeBucketRequest,
+    ) -> Result<DescribeBucketResponse> {
+        let bucket = tenant.bucket(&req.name).await?;
+        let desc = bucket.desc().await;
+        Ok(DescribeBucketResponse { desc: Some(desc) })
     }
 }
 
@@ -201,96 +203,5 @@ impl MasterInner {
         let tenant = Tenant::new(desc.clone(), file_tenant.into());
         self.tenants.insert(desc.name.clone(), tenant);
         Ok(desc)
-    }
-}
-
-#[derive(Clone)]
-struct Tenant {
-    inner: Arc<Mutex<TenantInner>>,
-}
-
-impl Tenant {
-    fn new(desc: TenantDesc, file_tenant: FileTenant) -> Self {
-        let inner = TenantInner::new(desc, file_tenant);
-        Self {
-            inner: Arc::new(Mutex::new(inner)),
-        }
-    }
-
-    async fn desc(&self) -> TenantDesc {
-        self.inner.lock().await.desc.clone()
-    }
-
-    async fn bucket(&self, name: &str) -> Result<Bucket> {
-        let inner = self.inner.lock().await;
-        inner.bucket(name)
-    }
-
-    async fn create_bucket(&self, desc: BucketDesc) -> Result<BucketDesc> {
-        let mut inner = self.inner.lock().await;
-        inner.create_bucket(desc).await
-    }
-}
-
-struct TenantInner {
-    desc: TenantDesc,
-    buckets: HashMap<String, Bucket>,
-    file_tenant: FileTenant,
-}
-
-impl TenantInner {
-    fn new(desc: TenantDesc, file_tenant: FileTenant) -> Self {
-        Self {
-            desc,
-            buckets: HashMap::new(),
-            file_tenant,
-        }
-    }
-
-    fn bucket(&self, name: &str) -> Result<Bucket> {
-        self.buckets
-            .get(name)
-            .cloned()
-            .ok_or_else(|| Error::NotFound(format!("bucket {}", name)))
-    }
-
-    async fn create_bucket(&mut self, mut desc: BucketDesc) -> Result<BucketDesc> {
-        if self.buckets.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("bucket {}", desc.name)));
-        }
-        self.file_tenant.create_bucket(&desc.name).await?;
-        desc.tenant = self.desc.name.clone();
-        let bucket = Bucket::new(desc.clone());
-        self.buckets.insert(desc.name.clone(), bucket);
-        Ok(desc)
-    }
-}
-
-#[derive(Clone)]
-struct Bucket {
-    inner: Arc<Mutex<BucketInner>>,
-}
-
-impl Bucket {
-    fn new(desc: BucketDesc) -> Self {
-        let inner = BucketInner::new(desc);
-        Self {
-            inner: Arc::new(Mutex::new(inner)),
-        }
-    }
-
-    async fn desc(&self) -> BucketDesc {
-        self.inner.lock().await.desc.clone()
-    }
-}
-
-#[allow(dead_code)]
-struct BucketInner {
-    desc: BucketDesc,
-}
-
-impl BucketInner {
-    fn new(desc: BucketDesc) -> Self {
-        Self { desc }
     }
 }
