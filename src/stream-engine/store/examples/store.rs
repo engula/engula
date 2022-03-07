@@ -17,7 +17,6 @@ use stream_engine_store::Server as StoreServer;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 
-
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Parser, Debug)]

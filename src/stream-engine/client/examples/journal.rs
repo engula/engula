@@ -22,7 +22,6 @@ use futures::StreamExt;
 use stream_engine_client::{Engine, Error, Role, Tenant};
 use tracing::info;
 
-
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Parser, Debug)]
