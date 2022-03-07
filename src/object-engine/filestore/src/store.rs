@@ -23,20 +23,20 @@ pub trait Store: Send + Sync {
 
 #[async_trait]
 pub trait Tenant: Send + Sync {
-    async fn create_bucket(&self, bucket: &str) -> Result<()>;
+    fn bucket(&self, name: &str) -> Box<dyn Bucket>;
 
-    async fn new_random_reader(&self, bucket: &str, file_name: &str)
-        -> Result<Box<dyn RandomRead>>;
-
-    async fn new_sequential_writer(
-        &self,
-        bucket: &str,
-        file_name: &str,
-    ) -> Result<Box<dyn SequentialWrite>>;
+    async fn create_bucket(&self, name: &str) -> Result<Box<dyn Bucket>>;
 }
 
 #[async_trait]
-pub trait RandomRead {
+pub trait Bucket: Send + Sync {
+    async fn new_random_reader(&self, name: &str) -> Result<Box<dyn RandomRead>>;
+
+    async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>>;
+}
+
+#[async_trait]
+pub trait RandomRead: Send + Sync {
     async fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()>;
 }
 

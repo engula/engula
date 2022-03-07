@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod bucket;
 mod fs;
 mod master;
 pub mod proto;
 mod server;
+mod tenant;
 
 use object_engine_common::{Error, Result};
 
-pub use self::{
-    fs::{FileStore, FileTenant},
-    master::Master,
-    server::Server,
-};
+pub use self::{bucket::Bucket, master::Master, server::Server, tenant::Tenant};
