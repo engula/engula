@@ -139,10 +139,7 @@ impl Server {
 
     async fn handle_list_tenants(&self, _: ListTenantsRequest) -> Result<ListTenantsResponse> {
         let dbs = self.master.tenants().await?;
-        let mut descs = vec![];
-        for db in dbs {
-            descs.push(db.desc().await);
-        }
+        let descs = futures::future::join_all(dbs.iter().map(Tenant::desc)).await;
         Ok(ListTenantsResponse { descs })
     }
 

@@ -972,6 +972,7 @@ name = "stream-engine-master"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures",
  "prost",
  "stream-engine-common",
  "stream-engine-proto",
