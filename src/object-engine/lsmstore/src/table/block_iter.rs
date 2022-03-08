@@ -55,7 +55,7 @@ impl BlockIter {
     }
 
     pub fn seek_to_first(&mut self) {
-        self.decode_next(0);
+        self.decode_from(0);
     }
 
     pub fn seek(&mut self, target: Key<'_>) {
@@ -71,7 +71,7 @@ impl BlockIter {
             }
         }
 
-        self.decode_next(self.restart_offset(l));
+        self.decode_from(self.restart_offset(l));
         while self.valid() {
             if self.key() >= target {
                 break;
@@ -81,14 +81,11 @@ impl BlockIter {
     }
 
     pub fn next(&mut self) {
-        self.decode_next(self.next_offset())
+        debug_assert!(self.valid());
+        self.decode_from(self.value_range.end)
     }
 
-    fn next_offset(&self) -> usize {
-        self.value_range.end
-    }
-
-    fn decode_next(&mut self, offset: usize) {
+    fn decode_from(&mut self, offset: usize) {
         if offset < self.restarts_offset {
             (self.key_range, self.value_range) = decode_entry(&self.block, offset);
         } else {
