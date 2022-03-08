@@ -149,7 +149,7 @@ impl FileReader {
     async fn read_footer(&self, table_size: usize) -> Result<TableFooter> {
         let mut buf = [0; table_footer::ENCODED_SIZE];
         let offset = table_size - buf.len();
-        self.reader.read_exact_at(&mut buf, offset as u64).await?;
+        self.reader.read_exact_at(&mut buf, offset).await?;
         TableFooter::decode_from(&mut buf.as_slice())
     }
 }

@@ -14,8 +14,10 @@
 
 mod store;
 
-pub mod local;
+pub mod fs;
 
 use object_engine_common::{async_trait, Error, Result};
 
-pub use self::store::{Bucket, RandomRead, SequentialWrite, Store, Tenant};
+pub use self::store::{
+    Bucket, FileDesc, Lister, RandomRead, SequentialRead, SequentialWrite, Store, Tenant,
+};

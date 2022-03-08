@@ -135,8 +135,8 @@ impl FileWriter {
 
     async fn write_block(&mut self, block: &[u8]) -> Result<BlockHandle> {
         let handle = BlockHandle {
-            offset: self.offset as u64,
-            length: block.len() as u64,
+            offset: self.offset,
+            length: block.len(),
         };
         self.write(block).await?;
         Ok(handle)

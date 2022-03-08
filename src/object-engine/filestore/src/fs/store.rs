@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use tokio::fs;
 
-use super::Tenant;
+use super::{DirLister, Tenant};
 use crate::{async_trait, Error, Result};
 
 pub struct Store {
@@ -37,6 +37,11 @@ impl crate::Store for Store {
         Box::new(Tenant::new(self.path.join(name)))
     }
 
+    async fn list_tenants(&self) -> Result<Box<dyn crate::Lister<Item = String>>> {
+        let dir = fs::read_dir(&self.path).await?;
+        Ok(Box::new(DirLister::new(dir)))
+    }
+
     async fn create_tenant(&self, name: &str) -> Result<Box<dyn crate::Tenant>> {
         let path = self.path.join(name);
         if path.exists() {
@@ -44,5 +49,11 @@ impl crate::Store for Store {
         }
         fs::create_dir_all(&path).await?;
         Ok(self.tenant(name))
+    }
+
+    async fn delete_tenant(&self, name: &str) -> Result<()> {
+        let path = self.path.join(name);
+        fs::remove_dir_all(&path).await?;
+        Ok(())
     }
 }

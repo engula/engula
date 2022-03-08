@@ -14,9 +14,10 @@
 
 use std::{os::unix::fs::FileExt, path::PathBuf};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{async_trait, Result};
+use super::FileLister;
+use crate::{async_trait, FileDesc, Result};
 
 pub struct Bucket {
     path: PathBuf,
@@ -30,12 +31,23 @@ impl Bucket {
 
 #[async_trait]
 impl crate::Bucket for Bucket {
+    async fn list_files(&self) -> Result<Box<dyn crate::Lister<Item = FileDesc>>> {
+        let dir = tokio::fs::read_dir(&self.path).await?;
+        Ok(Box::new(FileLister::new(dir)))
+    }
+
     async fn new_random_reader(&self, name: &str) -> Result<Box<dyn crate::RandomRead>> {
         let path = self.path.join(name);
         let file = tokio::fs::File::open(&path).await?;
         Ok(Box::new(RandomReader {
             file: file.into_std().await,
         }))
+    }
+
+    async fn new_sequential_reader(&self, name: &str) -> Result<Box<dyn crate::SequentialRead>> {
+        let path = self.path.join(name);
+        let file = tokio::fs::File::open(&path).await?;
+        Ok(Box::new(SequentialReader { file }))
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn crate::SequentialWrite>> {
@@ -56,8 +68,30 @@ pub struct RandomReader {
 
 #[async_trait]
 impl crate::RandomRead for RandomReader {
-    async fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
-        self.file.read_exact_at(buf, offset)?;
+    async fn read_at(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
+        let size = self.file.read_at(buf, offset as u64)?;
+        Ok(size)
+    }
+
+    async fn read_exact_at(&self, buf: &mut [u8], offset: usize) -> Result<()> {
+        self.file.read_exact_at(buf, offset as u64)?;
+        Ok(())
+    }
+}
+
+pub struct SequentialReader {
+    file: tokio::fs::File,
+}
+
+#[async_trait]
+impl crate::SequentialRead for SequentialReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let size = self.file.read(buf).await?;
+        Ok(size)
+    }
+
+    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        self.file.read_exact(buf).await?;
         Ok(())
     }
 }

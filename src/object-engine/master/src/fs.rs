@@ -14,7 +14,7 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use object_engine_filestore::{local, Bucket, SequentialWrite, Store, Tenant};
+use object_engine_filestore::{fs, Bucket, SequentialWrite, Store, Tenant};
 
 use crate::Result;
 
@@ -24,7 +24,7 @@ pub type FileBucket = Arc<dyn Bucket>;
 pub type SequentialWriter = Box<dyn SequentialWrite>;
 
 pub async fn open(path: impl Into<PathBuf>) -> Result<FileStore> {
-    let store = local::Store::open(path).await?;
+    let store = fs::Store::open(path).await?;
     let store: Box<dyn Store> = Box::new(store);
     Ok(store.into())
 }

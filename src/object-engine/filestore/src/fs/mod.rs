@@ -13,7 +13,13 @@
 // limitations under the License.
 
 mod bucket;
+mod lister;
 mod store;
 mod tenant;
 
-pub use self::{bucket::Bucket, store::Store, tenant::Tenant};
+pub use self::store::Store;
+use self::{
+    bucket::Bucket,
+    lister::{DirLister, FileLister},
+    tenant::Tenant,
+};
