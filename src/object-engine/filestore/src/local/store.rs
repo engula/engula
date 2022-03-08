@@ -37,6 +37,11 @@ impl crate::Store for Store {
         Box::new(Tenant::new(self.path.join(name)))
     }
 
+    async fn list_tenants(&self) -> Result<Box<dyn crate::Lister<Item = String>>> {
+        let dir = fs::read_dir(&self.path).await?;
+        Ok(Box::new(Lister { dir }))
+    }
+
     async fn create_tenant(&self, name: &str) -> Result<Box<dyn crate::Tenant>> {
         let path = self.path.join(name);
         if path.exists() {
@@ -44,5 +49,36 @@ impl crate::Store for Store {
         }
         fs::create_dir_all(&path).await?;
         Ok(self.tenant(name))
+    }
+
+    async fn delete_tenant(&self, name: &str) -> Result<()> {
+        let path = self.path.join(name);
+        fs::remove_dir_all(&path).await?;
+        Ok(())
+    }
+}
+
+struct Lister {
+    dir: fs::ReadDir,
+}
+
+#[async_trait]
+impl crate::Lister for Lister {
+    type Item = String;
+
+    async fn next(&mut self, n: usize) -> Result<Vec<Self::Item>> {
+        let mut result = Vec::new();
+        for _i in 0..n {
+            if let Some(ent) = self.dir.next_entry().await? {
+                let file_name = ent
+                    .file_name()
+                    .into_string()
+                    .map_err(|s| Error::Corrupted(format!("invalid name {:?}", s)))?;
+                result.push(file_name);
+            } else {
+                break;
+            }
+        }
+        Ok(result)
     }
 }

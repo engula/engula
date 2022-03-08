@@ -36,6 +36,11 @@ impl crate::Tenant for Tenant {
         Box::new(Bucket::new(path))
     }
 
+    async fn list_buckets(&self) -> Result<Box<dyn crate::Lister<Item = String>>> {
+        let dir = fs::read_dir(&self.path).await?;
+        Ok(Box::new(Lister { dir }))
+    }
+
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn crate::Bucket>> {
         let path = self.path.join(name);
         if path.exists() {
@@ -43,5 +48,36 @@ impl crate::Tenant for Tenant {
         }
         fs::create_dir_all(&path).await?;
         Ok(self.bucket(name))
+    }
+
+    async fn delete_bucket(&self, name: &str) -> Result<()> {
+        let path = self.path.join(name);
+        fs::remove_dir_all(&path).await?;
+        Ok(())
+    }
+}
+
+struct Lister {
+    dir: fs::ReadDir,
+}
+
+#[async_trait]
+impl crate::Lister for Lister {
+    type Item = String;
+
+    async fn next(&mut self, n: usize) -> Result<Vec<Self::Item>> {
+        let mut result = Vec::new();
+        for _i in 0..n {
+            if let Some(ent) = self.dir.next_entry().await? {
+                let file_name = ent
+                    .file_name()
+                    .into_string()
+                    .map_err(|s| Error::Corrupted(format!("invalid name {:?}", s)))?;
+                result.push(file_name);
+            } else {
+                break;
+            }
+        }
+        Ok(result)
     }
 }

@@ -17,16 +17,16 @@ use std::mem::size_of;
 use bytes::{Buf, BufMut};
 
 pub struct BlockHandle {
-    pub offset: u64,
-    pub length: u64,
+    pub offset: usize,
+    pub length: usize,
 }
 
 pub const ENCODED_SIZE: usize = size_of::<u64>() * 2;
 
 impl BlockHandle {
     pub fn encode_to<B: BufMut>(&self, buf: &mut B) {
-        buf.put_u64(self.offset);
-        buf.put_u64(self.length);
+        buf.put_u64(self.offset as u64);
+        buf.put_u64(self.length as u64);
     }
 
     pub fn encode_to_vec(&self) -> Vec<u8> {
@@ -37,8 +37,8 @@ impl BlockHandle {
 
     pub fn decode_from<B: Buf>(buf: &mut B) -> Self {
         BlockHandle {
-            offset: buf.get_u64(),
-            length: buf.get_u64(),
+            offset: buf.get_u64() as usize,
+            length: buf.get_u64() as usize,
         }
     }
 }
