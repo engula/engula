@@ -14,7 +14,7 @@
 
 mod store;
 
-pub mod local;
+pub mod fs;
 
 use object_engine_common::{async_trait, Error, Result};
 

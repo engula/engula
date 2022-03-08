@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use tokio::fs;
 
-use super::Bucket;
+use super::{Bucket, DirLister};
 use crate::{async_trait, Error, Result};
 
 pub struct Tenant {
@@ -38,7 +38,7 @@ impl crate::Tenant for Tenant {
 
     async fn list_buckets(&self) -> Result<Box<dyn crate::Lister<Item = String>>> {
         let dir = fs::read_dir(&self.path).await?;
-        Ok(Box::new(Lister { dir }))
+        Ok(Box::new(DirLister::new(dir)))
     }
 
     async fn create_bucket(&self, name: &str) -> Result<Box<dyn crate::Bucket>> {
@@ -57,12 +57,12 @@ impl crate::Tenant for Tenant {
     }
 }
 
-struct Lister {
+struct BucketLister {
     dir: fs::ReadDir,
 }
 
 #[async_trait]
-impl crate::Lister for Lister {
+impl crate::Lister for BucketLister {
     type Item = String;
 
     async fn next(&mut self, n: usize) -> Result<Vec<Self::Item>> {

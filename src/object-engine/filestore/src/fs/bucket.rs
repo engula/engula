@@ -16,7 +16,8 @@ use std::{os::unix::fs::FileExt, path::PathBuf};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{async_trait, Error, FileDesc, Result};
+use super::FileLister;
+use crate::{async_trait, FileDesc, Result};
 
 pub struct Bucket {
     path: PathBuf,
@@ -32,7 +33,7 @@ impl Bucket {
 impl crate::Bucket for Bucket {
     async fn list_files(&self) -> Result<Box<dyn crate::Lister<Item = FileDesc>>> {
         let dir = tokio::fs::read_dir(&self.path).await?;
-        Ok(Box::new(Lister { dir }))
+        Ok(Box::new(FileLister::new(dir)))
     }
 
     async fn new_random_reader(&self, name: &str) -> Result<Box<dyn crate::RandomRead>> {
@@ -58,36 +59,6 @@ impl crate::Bucket for Bucket {
             .open(&path)
             .await?;
         Ok(Box::new(SequentialWriter { file }))
-    }
-}
-
-struct Lister {
-    dir: tokio::fs::ReadDir,
-}
-
-#[async_trait]
-impl crate::Lister for Lister {
-    type Item = FileDesc;
-
-    async fn next(&mut self, n: usize) -> Result<Vec<Self::Item>> {
-        let mut result = Vec::new();
-        for _i in 0..n {
-            if let Some(ent) = self.dir.next_entry().await? {
-                let file_name = ent
-                    .file_name()
-                    .into_string()
-                    .map_err(|s| Error::Corrupted(format!("invalid name {:?}", s)))?;
-                let metadata = ent.metadata().await?;
-                let desc = FileDesc {
-                    name: file_name,
-                    size: metadata.len() as usize,
-                };
-                result.push(desc);
-            } else {
-                break;
-            }
-        }
-        Ok(result)
     }
 }
 
