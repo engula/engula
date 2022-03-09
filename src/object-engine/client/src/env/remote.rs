@@ -39,18 +39,8 @@ impl super::Env for Env {
         Ok(TenantEnv::new(name.to_owned()))
     }
 
-    async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
-        let res = self.client.clone().tenant(req).await?;
-        Ok(res.into_inner())
-    }
-
-    async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
-        let res = self.client.clone().bucket(req).await?;
-        Ok(res.into_inner())
-    }
-
-    async fn handle_engine(&self, req: EngineRequest) -> Result<EngineResponse> {
-        let res = self.client.clone().engine(req).await?;
+    async fn handle_batch(&self, req: BatchRequest) -> Result<BatchResponse> {
+        let res = self.client.clone().batch(req).await?;
         Ok(res.into_inner())
     }
 }

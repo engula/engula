@@ -16,30 +16,7 @@ syntax = "proto3";
 
 package objectengine.master.v1;
 
-message EngineRequest {
-  string tenant = 1;
-  repeated EngineRequestUnion requests = 2;
-}
-
-message EngineResponse { repeated EngineResponseUnion responses = 1; }
-
-message EngineRequestUnion {
-  oneof request {
-    BeginBulkLoadRequest begin_bulkload = 1;
-    CommitBulkLoadRequest commit_bulkload = 2;
-    AllocateFileNamesRequest allocate_file_names = 3;
-  }
-}
-
-message EngineResponseUnion {
-  oneof response {
-    BeginBulkLoadResponse begin_bulkload = 1;
-    CommitBulkLoadResponse commit_bulkload = 2;
-    AllocateFileNamesResponse allocate_file_names = 3;
-  }
-}
-
-message BeginBulkLoadRequest {}
+message BeginBulkLoadRequest { string tenant = 1; }
 
 message BeginBulkLoadResponse {
   // A unique identifier of this bulkload.

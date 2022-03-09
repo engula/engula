@@ -37,32 +37,17 @@ impl super::Env for Env {
 
     async fn tenant(&self, name: &str) -> Result<Self::TenantEnv> {
         let tenant = self.master.tenant(name).await?;
-        Ok(TenantEnv::new(name.to_owned(), tenant))
+        Ok(TenantEnv { tenant })
     }
 
-    async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
-        self.master.handle_tenant(req).await
-    }
-
-    async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
-        self.master.handle_bucket(req).await
-    }
-
-    async fn handle_engine(&self, req: EngineRequest) -> Result<EngineResponse> {
-        self.master.handle_engine(req).await
+    async fn handle_batch(&self, req: BatchRequest) -> Result<BatchResponse> {
+        self.master.handle_batch(req).await
     }
 }
 
 #[derive(Clone)]
 pub struct TenantEnv {
-    name: String,
     tenant: Tenant,
-}
-
-impl TenantEnv {
-    fn new(name: String, tenant: Tenant) -> Self {
-        Self { name, tenant }
-    }
 }
 
 #[async_trait]
@@ -70,40 +55,28 @@ impl super::TenantEnv for TenantEnv {
     type BucketEnv = BucketEnv;
 
     fn name(&self) -> &str {
-        &self.name
+        self.tenant.name()
     }
 
     async fn bucket(&self, name: &str) -> Result<Self::BucketEnv> {
         let bucket = self.tenant.bucket(name).await?;
-        Ok(BucketEnv::new(name.to_owned(), self.name.clone(), bucket))
+        Ok(BucketEnv { bucket })
     }
 }
 
 #[derive(Clone)]
 pub struct BucketEnv {
-    name: String,
-    tenant: String,
     bucket: Bucket,
-}
-
-impl BucketEnv {
-    fn new(name: String, tenant: String, bucket: Bucket) -> Self {
-        Self {
-            name,
-            tenant,
-            bucket,
-        }
-    }
 }
 
 #[async_trait]
 impl super::BucketEnv for BucketEnv {
     fn name(&self) -> &str {
-        &self.name
+        self.bucket.name()
     }
 
     fn tenant(&self) -> &str {
-        &self.tenant
+        self.bucket.tenant()
     }
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>> {

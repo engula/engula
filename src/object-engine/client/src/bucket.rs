@@ -13,21 +13,42 @@
 // limitations under the License.
 
 use object_engine_filestore::SequentialWrite;
+use object_engine_master::proto::*;
 
-use crate::{BucketEnv, Env, Result, TenantEnv};
+use crate::{BucketEnv, Env, Error, Result, TenantEnv};
 
 #[derive(Clone)]
 pub struct Bucket<E: Env> {
+    env: E,
     bucket: <<E as Env>::TenantEnv as TenantEnv>::BucketEnv,
 }
 
 impl<E: Env> Bucket<E> {
-    pub(crate) fn new(_: E, bucket: <<E as Env>::TenantEnv as TenantEnv>::BucketEnv) -> Self {
-        Self { bucket }
+    pub(crate) fn new(env: E, bucket: <<E as Env>::TenantEnv as TenantEnv>::BucketEnv) -> Self {
+        Self { env, bucket }
     }
 
     pub fn name(&self) -> &str {
         self.bucket.name()
+    }
+
+    pub fn tenant(&self) -> &str {
+        self.bucket.tenant()
+    }
+
+    pub async fn desc(&self) -> Result<BucketDesc> {
+        let req = DescribeBucketRequest {
+            tenant: self.tenant().to_owned(),
+            bucket: self.name().to_owned(),
+        };
+        let req = request_union::Request::DescribeBucket(req);
+        let res = self.env.handle_union(req).await?;
+        let desc = if let response_union::Response::DescribeBucket(res) = res {
+            res.desc
+        } else {
+            None
+        };
+        desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
     pub async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {

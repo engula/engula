@@ -24,7 +24,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Master {
-    inner: Arc<Mutex<MasterInner>>,
+    inner: Arc<MasterInner>,
 }
 
 impl Master {
@@ -32,65 +32,81 @@ impl Master {
         let file_store = fs::open(path).await?;
         let inner = MasterInner::new(file_store);
         Ok(Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         })
     }
 
     pub async fn tenant(&self, name: &str) -> Result<Tenant> {
-        let inner = self.inner.lock().await;
-        inner.tenant(name)
-    }
-
-    pub async fn create_tenant(&self, desc: TenantDesc) -> Result<TenantDesc> {
-        let mut inner = self.inner.lock().await;
-        inner.create_tenant(desc).await
+        self.inner.tenant(name).await
     }
 }
 
 impl Master {
-    pub async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse> {
-        let mut res = TenantResponse::default();
+    pub async fn handle_batch(&self, req: BatchRequest) -> Result<BatchResponse> {
+        let mut res = BatchResponse::default();
         for req_union in req.requests {
-            let res_union = self.handle_tenant_union(req_union).await?;
+            let res_union = self.handle_union(req_union).await?;
             res.responses.push(res_union);
         }
         Ok(res)
     }
 
-    async fn handle_tenant_union(&self, req: TenantRequestUnion) -> Result<TenantResponseUnion> {
+    async fn handle_union(&self, req: RequestUnion) -> Result<ResponseUnion> {
         let req = req
             .request
-            .ok_or_else(|| Error::invalid_argument("missing tenant request"))?;
+            .ok_or_else(|| Error::invalid_argument("missing request"))?;
         let res = match req {
-            tenant_request_union::Request::ListTenants(_req) => {
+            request_union::Request::ListTenants(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::CreateTenant(req) => {
+            request_union::Request::CreateTenant(req) => {
                 let res = self.handle_create_tenant(req).await?;
-                tenant_response_union::Response::CreateTenant(res)
+                response_union::Response::CreateTenant(res)
             }
-            tenant_request_union::Request::UpdateTenant(_req) => {
+            request_union::Request::UpdateTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DeleteTenant(_req) => {
+            request_union::Request::DeleteTenant(_req) => {
                 todo!();
             }
-            tenant_request_union::Request::DescribeTenant(req) => {
+            request_union::Request::DescribeTenant(req) => {
                 let res = self.handle_describe_tenant(req).await?;
-                tenant_response_union::Response::DescribeTenant(res)
+                response_union::Response::DescribeTenant(res)
+            }
+            request_union::Request::ListBuckets(_req) => {
+                todo!();
+            }
+            request_union::Request::CreateBucket(req) => {
+                let res = self.handle_create_bucket(req).await?;
+                response_union::Response::CreateBucket(res)
+            }
+            request_union::Request::UpdateBucket(_req) => {
+                todo!();
+            }
+            request_union::Request::DeleteBucket(_req) => {
+                todo!();
+            }
+            request_union::Request::DescribeBucket(req) => {
+                let res = self.handle_describe_bucket(req).await?;
+                response_union::Response::DescribeBucket(res)
+            }
+            _ => {
+                todo!();
             }
         };
-        Ok(TenantResponseUnion {
+        Ok(ResponseUnion {
             response: Some(res),
         })
     }
 
     async fn handle_create_tenant(&self, req: CreateTenantRequest) -> Result<CreateTenantResponse> {
-        let desc = req
-            .desc
-            .ok_or_else(|| Error::invalid_argument("missing tenant descriptor"))?;
-        let desc = self.create_tenant(desc).await?;
-        Ok(CreateTenantResponse { desc: Some(desc) })
+        let tenant = self
+            .inner
+            .create_tenant(&req.name, req.options.unwrap_or_default())
+            .await?;
+        Ok(CreateTenantResponse {
+            desc: Some(tenant.desc().await),
+        })
     }
 
     async fn handle_describe_tenant(
@@ -98,110 +114,62 @@ impl Master {
         req: DescribeTenantRequest,
     ) -> Result<DescribeTenantResponse> {
         let tenant = self.tenant(&req.name).await?;
-        let desc = tenant.desc().await;
-        Ok(DescribeTenantResponse { desc: Some(desc) })
-    }
-}
-
-impl Master {
-    pub async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse> {
-        let tenant = self.tenant(&req.tenant).await?;
-        let mut res = BucketResponse::default();
-        for req_union in req.requests {
-            let res_union = self.handle_bucket_union(tenant.clone(), req_union).await?;
-            res.responses.push(res_union);
-        }
-        Ok(res)
-    }
-
-    async fn handle_bucket_union(
-        &self,
-        tenant: Tenant,
-        req: BucketRequestUnion,
-    ) -> Result<BucketResponseUnion> {
-        let req = req
-            .request
-            .ok_or_else(|| Error::invalid_argument("missing bucket request"))?;
-        let res = match req {
-            bucket_request_union::Request::ListBuckets(_req) => {
-                todo!();
-            }
-            bucket_request_union::Request::CreateBucket(req) => {
-                let res = self.handle_create_bucket(tenant, req).await?;
-                bucket_response_union::Response::CreateBucket(res)
-            }
-            bucket_request_union::Request::UpdateBucket(_req) => {
-                todo!();
-            }
-            bucket_request_union::Request::DeleteBucket(_req) => {
-                todo!();
-            }
-            bucket_request_union::Request::DescribeBucket(req) => {
-                let res = self.handle_describe_bucket(tenant, req).await?;
-                bucket_response_union::Response::DescribeBucket(res)
-            }
-        };
-        Ok(BucketResponseUnion {
-            response: Some(res),
+        Ok(DescribeTenantResponse {
+            desc: Some(tenant.desc().await),
         })
     }
 
-    async fn handle_create_bucket(
-        &self,
-        tenant: Tenant,
-        req: CreateBucketRequest,
-    ) -> Result<CreateBucketResponse> {
-        let desc = req
-            .desc
-            .ok_or_else(|| Error::invalid_argument("missing bucket descriptor"))?;
-        let desc = tenant.create_bucket(desc).await?;
-        Ok(CreateBucketResponse { desc: Some(desc) })
+    async fn handle_create_bucket(&self, req: CreateBucketRequest) -> Result<CreateBucketResponse> {
+        let tenant = self.tenant(&req.tenant).await?;
+        let bucket = tenant
+            .create_bucket(&req.bucket, req.options.unwrap_or_default())
+            .await?;
+        Ok(CreateBucketResponse {
+            desc: Some(bucket.desc().await),
+        })
     }
 
     async fn handle_describe_bucket(
         &self,
-        tenant: Tenant,
         req: DescribeBucketRequest,
     ) -> Result<DescribeBucketResponse> {
-        let bucket = tenant.bucket(&req.name).await?;
-        let desc = bucket.desc().await;
-        Ok(DescribeBucketResponse { desc: Some(desc) })
-    }
-}
-
-impl Master {
-    pub async fn handle_engine(&self, _: EngineRequest) -> Result<EngineResponse> {
-        todo!();
+        let tenant = self.tenant(&req.tenant).await?;
+        let bucket = tenant.bucket(&req.bucket).await?;
+        Ok(DescribeBucketResponse {
+            desc: Some(bucket.desc().await),
+        })
     }
 }
 
 struct MasterInner {
-    tenants: HashMap<String, Tenant>,
+    tenants: Mutex<HashMap<String, Tenant>>,
     file_store: FileStore,
 }
 
 impl MasterInner {
     fn new(file_store: FileStore) -> Self {
         Self {
-            tenants: HashMap::new(),
+            tenants: Mutex::new(HashMap::new()),
             file_store,
         }
     }
 
-    fn tenant(&self, name: &str) -> Result<Tenant> {
-        self.tenants
+    async fn tenant(&self, name: &str) -> Result<Tenant> {
+        let tenants = self.tenants.lock().await;
+        tenants
             .get(name)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("tenant {}", name)))
     }
 
-    async fn create_tenant(&mut self, desc: TenantDesc) -> Result<TenantDesc> {
-        if self.tenants.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("tenant {}", desc.name)));
+    async fn create_tenant(&self, name: &str, options: TenantOptions) -> Result<Tenant> {
+        let mut tenants = self.tenants.lock().await;
+        if tenants.contains_key(name) {
+            return Err(Error::AlreadyExists(format!("tenant {}", name)));
         }
-        let file_tenant = self.file_store.create_tenant(&desc.name).await?;
-        let tenant = Tenant::new(desc.clone(), file_tenant.into());
-        self.tenants.insert(desc.name.clone(), tenant);
-        Ok(desc)
+        let file_tenant = self.file_store.create_tenant(name).await?;
+        let tenant = Tenant::new(name.to_owned(), options, file_tenant.into());
+        tenants.insert(name.to_owned(), tenant.clone());
+        Ok(tenant)
     }
 }

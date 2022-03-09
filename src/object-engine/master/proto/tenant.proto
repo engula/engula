@@ -16,41 +16,23 @@ syntax = "proto3";
 
 package objectengine.master.v1;
 
-message TenantRequest { repeated TenantRequestUnion requests = 1; }
-
-message TenantResponse { repeated TenantResponseUnion responses = 1; }
-
-message TenantRequestUnion {
-  oneof request {
-    ListTenantsRequest list_tenants = 1;
-    CreateTenantRequest create_tenant = 2;
-    UpdateTenantRequest update_tenant = 3;
-    DeleteTenantRequest delete_tenant = 4;
-    DescribeTenantRequest describe_tenant = 5;
-  }
-}
-
-message TenantResponseUnion {
-  oneof response {
-    ListTenantsResponse list_tenants = 1;
-    CreateTenantResponse create_tenant = 2;
-    UpdateTenantResponse update_tenant = 3;
-    DeleteTenantResponse delete_tenant = 4;
-    DescribeTenantResponse describe_tenant = 5;
-  }
-}
-
 message ListTenantsRequest {}
 
 message ListTenantsResponse { repeated TenantDesc descs = 1; }
 
-message CreateTenantRequest { TenantDesc desc = 1; }
+message CreateTenantRequest {
+  string name = 1;
+  TenantOptions options = 2;
+}
 
 message CreateTenantResponse { TenantDesc desc = 1; }
 
-message UpdateTenantRequest { TenantDesc desc = 1; }
+message UpdateTenantRequest {
+  string name = 1;
+  TenantOptions options = 2;
+}
 
-message UpdateTenantResponse {}
+message UpdateTenantResponse { TenantDesc desc = 1; }
 
 message DeleteTenantRequest { string name = 1; }
 
@@ -60,4 +42,12 @@ message DescribeTenantRequest { string name = 1; }
 
 message DescribeTenantResponse { TenantDesc desc = 1; }
 
-message TenantDesc { string name = 1; }
+message TenantDesc {
+  string name = 1;
+  TenantOptions options = 2;
+  TenantProperties properties = 3;
+}
+
+message TenantOptions {}
+
+message TenantProperties { uint64 num_buckets = 1; }

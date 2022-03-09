@@ -16,54 +16,49 @@ syntax = "proto3";
 
 package objectengine.master.v1;
 
-message BucketRequest {
-  string tenant = 1;
-  repeated BucketRequestUnion requests = 2;
-}
-
-message BucketResponse { repeated BucketResponseUnion responses = 1; }
-
-message BucketRequestUnion {
-  oneof request {
-    ListBucketsRequest list_buckets = 1;
-    CreateBucketRequest create_bucket = 2;
-    UpdateBucketRequest update_bucket = 3;
-    DeleteBucketRequest delete_bucket = 4;
-    DescribeBucketRequest describe_bucket = 5;
-  }
-}
-
-message BucketResponseUnion {
-  oneof response {
-    ListBucketsResponse list_buckets = 1;
-    CreateBucketResponse create_bucket = 2;
-    UpdateBucketResponse update_bucket = 3;
-    DeleteBucketResponse delete_bucket = 4;
-    DescribeBucketResponse describe_bucket = 5;
-  }
-}
-
-message ListBucketsRequest {}
+message ListBucketsRequest { string tenant = 1; }
 
 message ListBucketsResponse { repeated BucketDesc descs = 1; }
 
-message CreateBucketRequest { BucketDesc desc = 1; }
+message CreateBucketRequest {
+  string tenant = 1;
+  string bucket = 2;
+  BucketOptions options = 3;
+}
 
 message CreateBucketResponse { BucketDesc desc = 1; }
 
-message UpdateBucketRequest { BucketDesc desc = 1; }
+message UpdateBucketRequest {
+  string tenant = 1;
+  string bucket = 2;
+  BucketOptions options = 3;
+}
 
-message UpdateBucketResponse {}
+message UpdateBucketResponse { BucketDesc desc = 1; }
 
-message DeleteBucketRequest { string name = 1; }
+message DeleteBucketRequest {
+  string tenant = 1;
+  string bucket = 2;
+}
 
 message DeleteBucketResponse {}
 
-message DescribeBucketRequest { string name = 1; }
+message DescribeBucketRequest {
+  string tenant = 1;
+  string bucket = 2;
+}
 
 message DescribeBucketResponse { BucketDesc desc = 1; }
 
 message BucketDesc {
+  // The name of this bucket.
   string name = 1;
+  // The tenant that this bucket belongs to.
   string tenant = 2;
+  BucketOptions options = 3;
+  BucketProperties properties = 4;
 }
+
+message BucketOptions {}
+
+message BucketProperties {}

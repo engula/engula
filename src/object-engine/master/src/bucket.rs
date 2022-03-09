@@ -14,8 +14,6 @@
 
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
-
 use crate::{
     fs::{FileBucket, SequentialWriter},
     proto::*,
@@ -24,35 +22,62 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Bucket {
-    inner: Arc<Mutex<BucketInner>>,
+    inner: Arc<BucketInner>,
 }
 
 impl Bucket {
-    pub fn new(desc: BucketDesc, file_bucket: FileBucket) -> Self {
-        let inner = BucketInner::new(desc, file_bucket);
+    pub fn new(
+        name: String,
+        tenant: String,
+        options: BucketOptions,
+        file_bucket: FileBucket,
+    ) -> Self {
+        let inner = BucketInner::new(name, tenant, options, file_bucket);
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         }
     }
 
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    pub fn tenant(&self) -> &str {
+        &self.inner.tenant
+    }
+
     pub async fn desc(&self) -> BucketDesc {
-        let inner = self.inner.lock().await;
-        inner.desc.clone()
+        self.inner.desc().await
     }
 
     pub async fn new_sequential_writer(&self, name: &str) -> Result<SequentialWriter> {
-        let inner = self.inner.lock().await;
-        inner.file_bucket.new_sequential_writer(name).await
+        self.inner.file_bucket.new_sequential_writer(name).await
     }
 }
 
 struct BucketInner {
-    desc: BucketDesc,
+    name: String,
+    tenant: String,
+    options: BucketOptions,
     file_bucket: FileBucket,
 }
 
 impl BucketInner {
-    fn new(desc: BucketDesc, file_bucket: FileBucket) -> Self {
-        Self { desc, file_bucket }
+    fn new(name: String, tenant: String, options: BucketOptions, file_bucket: FileBucket) -> Self {
+        Self {
+            name,
+            tenant,
+            options,
+            file_bucket,
+        }
+    }
+
+    async fn desc(&self) -> BucketDesc {
+        BucketDesc {
+            name: self.name.clone(),
+            tenant: self.tenant.clone(),
+            options: Some(self.options.clone()),
+            properties: None,
+        }
     }
 }
