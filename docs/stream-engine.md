@@ -109,6 +109,16 @@ So that each entry records the epoch of the leader who replicated it. Even while
 
 The goal of bridge entry is straightforward. It is used to inform the reader that the segment has come to an end and that they must move on to the next segment. When a leader recovering former segment, it must append a bridge entry to the end of segment.
 
+#### Read and Write
+
+![store data path](images/stream-engine-store-data-path.drawio.svg)
+
+![segment events layout](images/stream-engine-store-events-layout.drawio.svg)
+
+#### Sorted Events Table
+
+![sorted events table file format](images/stream-engine-store-sorted-events-table.drawio.svg)
+
 ### Master
 
 The master is a global decision maker that can detect and replace fault segment stores to ensure data durability. For sealed segments, the master could perform scheduling tasks to add a replica to another segment store while also removing the failed replica from the copy set. For the segment isn't sealed, the master could actively promote the leader, causing it to switch segment and seal the previous segment.
