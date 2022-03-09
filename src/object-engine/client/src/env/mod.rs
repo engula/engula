@@ -28,56 +28,17 @@ pub trait Env: Clone + Sync + Send {
 
     async fn tenant(&self, name: &str) -> Result<Self::TenantEnv>;
 
-    async fn handle_tenant(&self, req: TenantRequest) -> Result<TenantResponse>;
+    async fn handle_batch(&self, req: BatchRequest) -> Result<BatchResponse>;
 
-    async fn handle_bucket(&self, req: BucketRequest) -> Result<BucketResponse>;
-
-    async fn handle_engine(&self, req: EngineRequest) -> Result<EngineResponse>;
-
-    async fn handle_tenant_union(
-        &self,
-        req: tenant_request_union::Request,
-    ) -> Result<tenant_response_union::Response> {
-        let req = TenantRequest {
-            requests: vec![TenantRequestUnion { request: Some(req) }],
+    async fn handle_union(&self, req: request_union::Request) -> Result<response_union::Response> {
+        let req = BatchRequest {
+            requests: vec![RequestUnion { request: Some(req) }],
         };
-        let mut res = self.handle_tenant(req).await?;
+        let mut res = self.handle_batch(req).await?;
         res.responses
             .pop()
             .and_then(|x| x.response)
-            .ok_or_else(|| Error::internal("missing tenant response"))
-    }
-
-    async fn handle_bucket_union(
-        &self,
-        tenant: String,
-        req: bucket_request_union::Request,
-    ) -> Result<bucket_response_union::Response> {
-        let req = BucketRequest {
-            tenant,
-            requests: vec![BucketRequestUnion { request: Some(req) }],
-        };
-        let mut res = self.handle_bucket(req).await?;
-        res.responses
-            .pop()
-            .and_then(|x| x.response)
-            .ok_or_else(|| Error::internal("missing bucket response"))
-    }
-
-    async fn handle_engine_union(
-        &self,
-        tenant: String,
-        req: engine_request_union::Request,
-    ) -> Result<engine_response_union::Response> {
-        let req = EngineRequest {
-            tenant,
-            requests: vec![EngineRequestUnion { request: Some(req) }],
-        };
-        let mut res = self.handle_engine(req).await?;
-        res.responses
-            .pop()
-            .and_then(|x| x.response)
-            .ok_or_else(|| Error::internal("missing engine response"))
+            .ok_or_else(|| Error::internal("missing response"))
     }
 }
 

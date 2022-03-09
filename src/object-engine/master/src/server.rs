@@ -35,21 +35,9 @@ type TonicResult<T> = std::result::Result<T, Status>;
 
 #[tonic::async_trait]
 impl master_server::Master for Server {
-    async fn tenant(&self, req: Request<TenantRequest>) -> TonicResult<Response<TenantResponse>> {
+    async fn batch(&self, req: Request<BatchRequest>) -> TonicResult<Response<BatchResponse>> {
         let req = req.into_inner();
-        let res = self.master.handle_tenant(req).await?;
-        Ok(Response::new(res))
-    }
-
-    async fn bucket(&self, req: Request<BucketRequest>) -> TonicResult<Response<BucketResponse>> {
-        let req = req.into_inner();
-        let res = self.master.handle_bucket(req).await?;
-        Ok(Response::new(res))
-    }
-
-    async fn engine(&self, req: Request<EngineRequest>) -> TonicResult<Response<EngineResponse>> {
-        let req = req.into_inner();
-        let res = self.master.handle_engine(req).await?;
+        let res = self.master.handle_batch(req).await?;
         Ok(Response::new(res))
     }
 }

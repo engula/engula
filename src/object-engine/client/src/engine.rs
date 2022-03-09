@@ -14,7 +14,7 @@
 
 use object_engine_master::proto::*;
 
-use crate::{Env, Error, Result, Tenant};
+use crate::{Env, Result, Tenant};
 
 #[derive(Clone)]
 pub struct Engine<E: Env> {
@@ -31,32 +31,13 @@ impl<E: Env> Engine<E> {
         Ok(Tenant::new(self.env.clone(), tenant))
     }
 
-    pub async fn create_tenant(&self, name: &str) -> Result<TenantDesc> {
-        let desc = TenantDesc {
+    pub async fn create_tenant(&self, name: &str) -> Result<Tenant<E>> {
+        let req = CreateTenantRequest {
             name: name.to_owned(),
+            ..Default::default()
         };
-        let req = CreateTenantRequest { desc: Some(desc) };
-        let req = tenant_request_union::Request::CreateTenant(req);
-        let res = self.env.handle_tenant_union(req).await?;
-        let desc = if let tenant_response_union::Response::CreateTenant(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
-    }
-
-    pub async fn describe_tenant(&self, name: &str) -> Result<TenantDesc> {
-        let req = DescribeTenantRequest {
-            name: name.to_owned(),
-        };
-        let req = tenant_request_union::Request::DescribeTenant(req);
-        let res = self.env.handle_tenant_union(req).await?;
-        let desc = if let tenant_response_union::Response::DescribeTenant(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or_else(|| Error::internal("missing tenant descriptor"))
+        let req = request_union::Request::CreateTenant(req);
+        self.env.handle_union(req).await?;
+        self.tenant(name).await
     }
 }

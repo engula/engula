@@ -15,21 +15,19 @@
 use object_engine_lsmstore::{TableBuilder, TableBuilderOptions};
 use object_engine_master::proto::*;
 
-use crate::{Bucket, Env, Error, Result, SstBuilder, TenantEnv};
+use crate::{Bucket, Env, Error, Result, SstBuilder};
 
 pub struct BulkLoad<E: Env> {
     env: E,
     token: String,
-    tenant: E::TenantEnv,
     output_files: Vec<BulkLoadFileDesc>,
 }
 
 impl<E: Env> BulkLoad<E> {
-    pub(crate) fn new(env: E, token: String, tenant: E::TenantEnv) -> Self {
+    pub(crate) fn new(env: E, token: String) -> Self {
         Self {
             env,
             token,
-            tenant,
             output_files: Vec::new(),
         }
     }
@@ -63,12 +61,9 @@ impl<E: Env> BulkLoad<E> {
             token: self.token,
             files: self.output_files,
         };
-        let req = engine_request_union::Request::CommitBulkload(req);
-        let res = self
-            .env
-            .handle_engine_union(self.tenant.name().to_owned(), req)
-            .await?;
-        if let engine_response_union::Response::CommitBulkload(_) = res {
+        let req = request_union::Request::CommitBulkload(req);
+        let res = self.env.handle_union(req).await?;
+        if let response_union::Response::CommitBulkload(_) = res {
             Ok(())
         } else {
             Err(Error::internal("missing commit bulkload response"))
@@ -80,12 +75,9 @@ impl<E: Env> BulkLoad<E> {
             token: self.token.clone(),
             count: 1,
         };
-        let req = engine_request_union::Request::AllocateFileNames(req);
-        let res = self
-            .env
-            .handle_engine_union(self.tenant.name().to_owned(), req)
-            .await?;
-        if let engine_response_union::Response::AllocateFileNames(mut res) = res {
+        let req = request_union::Request::AllocateFileNames(req);
+        let res = self.env.handle_union(req).await?;
+        if let response_union::Response::AllocateFileNames(mut res) = res {
             res.names
                 .pop()
                 .ok_or_else(|| Error::internal("missing file names"))

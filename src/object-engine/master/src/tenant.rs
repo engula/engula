@@ -20,63 +20,84 @@ use crate::{fs::FileTenant, proto::*, Bucket, Error, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
-    inner: Arc<Mutex<TenantInner>>,
+    inner: Arc<TenantInner>,
 }
 
 impl Tenant {
-    pub fn new(desc: TenantDesc, file_tenant: FileTenant) -> Self {
-        let inner = TenantInner::new(desc, file_tenant);
+    pub fn new(name: String, options: TenantOptions, file_tenant: FileTenant) -> Self {
+        let inner = TenantInner::new(name, options, file_tenant);
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         }
     }
 
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+
     pub async fn desc(&self) -> TenantDesc {
-        let inner = self.inner.lock().await;
-        inner.desc.clone()
+        self.inner.desc().await
     }
 
     pub async fn bucket(&self, name: &str) -> Result<Bucket> {
-        let inner = self.inner.lock().await;
-        inner.bucket(name)
+        self.inner.bucket(name).await
     }
 
-    pub async fn create_bucket(&self, desc: BucketDesc) -> Result<BucketDesc> {
-        let mut inner = self.inner.lock().await;
-        inner.create_bucket(desc).await
+    pub(crate) async fn create_bucket(&self, name: &str, options: BucketOptions) -> Result<Bucket> {
+        self.inner.create_bucket(name, options).await
     }
 }
 
 struct TenantInner {
-    desc: TenantDesc,
-    buckets: HashMap<String, Bucket>,
+    name: String,
+    options: TenantOptions,
+    buckets: Mutex<HashMap<String, Bucket>>,
     file_tenant: FileTenant,
 }
 
 impl TenantInner {
-    fn new(desc: TenantDesc, file_tenant: FileTenant) -> Self {
+    fn new(name: String, options: TenantOptions, file_tenant: FileTenant) -> Self {
         Self {
-            desc,
-            buckets: HashMap::new(),
+            name,
+            options,
+            buckets: Mutex::new(HashMap::new()),
             file_tenant,
         }
     }
 
-    fn bucket(&self, name: &str) -> Result<Bucket> {
-        self.buckets
+    async fn desc(&self) -> TenantDesc {
+        let buckets = self.buckets.lock().await;
+        let properties = TenantProperties {
+            num_buckets: buckets.len() as u64,
+        };
+        TenantDesc {
+            name: self.name.clone(),
+            options: Some(self.options.clone()),
+            properties: Some(properties),
+        }
+    }
+
+    async fn bucket(&self, name: &str) -> Result<Bucket> {
+        let buckets = self.buckets.lock().await;
+        buckets
             .get(name)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("bucket {}", name)))
     }
 
-    async fn create_bucket(&mut self, mut desc: BucketDesc) -> Result<BucketDesc> {
-        if self.buckets.contains_key(&desc.name) {
-            return Err(Error::AlreadyExists(format!("bucket {}", desc.name)));
+    async fn create_bucket(&self, name: &str, options: BucketOptions) -> Result<Bucket> {
+        let mut buckets = self.buckets.lock().await;
+        if buckets.contains_key(name) {
+            return Err(Error::AlreadyExists(format!("bucket {}", name)));
         }
-        desc.tenant = self.desc.name.clone();
-        let file_bucket = self.file_tenant.create_bucket(&desc.name).await?;
-        let bucket = Bucket::new(desc.clone(), file_bucket.into());
-        self.buckets.insert(desc.name.clone(), bucket);
-        Ok(desc)
+        let file_bucket = self.file_tenant.create_bucket(name).await?;
+        let bucket = Bucket::new(
+            name.to_owned(),
+            self.name.clone(),
+            options,
+            file_bucket.into(),
+        );
+        buckets.insert(name.to_owned(), bucket.clone());
+        Ok(bucket)
     }
 }

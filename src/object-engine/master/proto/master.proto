@@ -18,12 +18,48 @@ package objectengine.master.v1;
 
 import "tenant.proto";
 import "bucket.proto";
-import "engine.proto";
+import "ingest.proto";
 
 service Master {
-  rpc Tenant(TenantRequest) returns (TenantResponse) {}
+  rpc Batch(BatchRequest) returns (BatchResponse) {}
+}
 
-  rpc Bucket(BucketRequest) returns (BucketResponse) {}
+message BatchRequest { repeated RequestUnion requests = 1; }
 
-  rpc Engine(EngineRequest) returns (EngineResponse) {}
+message BatchResponse { repeated ResponseUnion responses = 1; }
+
+message RequestUnion {
+  oneof request {
+    ListTenantsRequest list_tenants = 1;
+    CreateTenantRequest create_tenant = 2;
+    UpdateTenantRequest update_tenant = 3;
+    DeleteTenantRequest delete_tenant = 4;
+    DescribeTenantRequest describe_tenant = 5;
+    ListBucketsRequest list_buckets = 6;
+    CreateBucketRequest create_bucket = 7;
+    UpdateBucketRequest update_bucket = 8;
+    DeleteBucketRequest delete_bucket = 9;
+    DescribeBucketRequest describe_bucket = 10;
+    BeginBulkLoadRequest begin_bulkload = 11;
+    CommitBulkLoadRequest commit_bulkload = 12;
+    AllocateFileNamesRequest allocate_file_names = 13;
+  }
+}
+
+message ResponseUnion {
+  oneof response {
+    ListTenantsResponse list_tenants = 1;
+    CreateTenantResponse create_tenant = 2;
+    UpdateTenantResponse update_tenant = 3;
+    DeleteTenantResponse delete_tenant = 4;
+    DescribeTenantResponse describe_tenant = 5;
+    ListBucketsResponse list_buckets = 6;
+    CreateBucketResponse create_bucket = 7;
+    UpdateBucketResponse update_bucket = 8;
+    DeleteBucketResponse delete_bucket = 9;
+    DescribeBucketResponse describe_bucket = 10;
+    BeginBulkLoadResponse begin_bulkload = 11;
+    CommitBulkLoadResponse commit_bulkload = 12;
+    AllocateFileNamesResponse allocate_file_names = 13;
+  }
 }
