@@ -113,9 +113,13 @@ The goal of bridge entry is straightforward. It is used to inform the reader tha
 
 ![store data path](images/stream-engine-store-data-path.drawio.svg)
 
+#### Data Layout
+
+##### Mem Layout
+
 ![segment events layout](images/stream-engine-store-events-layout.drawio.svg)
 
-#### Sorted Events Table
+##### Sorted Events Table
 
 ![sorted events table file format](images/stream-engine-store-sorted-events-table.drawio.svg)
 
