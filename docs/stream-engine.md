@@ -109,19 +109,33 @@ So that each entry records the epoch of the leader who replicated it. Even while
 
 The goal of bridge entry is straightforward. It is used to inform the reader that the segment has come to an end and that they must move on to the next segment. When a leader recovering former segment, it must append a bridge entry to the end of segment.
 
-#### Read and Write
-
-![store data path](images/stream-engine-store-data-path.drawio.svg)
-
 #### Data Layout
 
-##### Mem Layout
+According to the upper-level design, a database (tenant) will only be served by a few cooperator groups (maybe just one). Each cooperator group only uses one stream to store logs for a database. So that we could assume that each segment store only serves a small number of streams.
 
-![segment events layout](images/stream-engine-store-events-layout.drawio.svg)
+##### File Layout
 
-##### Sorted Events Table
+On disk, segments of the same stream are kept in a logical file, and each time a mutate request is received, they are persisted to the file. In order to facilitate file space recycling, the logical file are segmented to multiple physical **segment files** according to a certain size.
 
-![sorted events table file format](images/stream-engine-store-sorted-events-table.drawio.svg)
+> The **segment files** are different to stream's segment.
+
+![store file layout](images/stream-engine-store-file-layout.drawio.svg)
+
+Some fields in mutations, such as the acked index and sealed flags of a stream, need to scan all segment files in recovery. In order to reduce the amount of scanned data, the summaries of there fields are asynchronously saved into a manifest file.
+
+Since all mutate requests are written to the logical file in the order in which they were received, then the item in each segment files are unordered, an index file is generated asynchronous for each segment files.
+
+![not contiguous entries](images/stream-engine-store-unordered-segment.drawio.svg)
+
+In addition to being unordered, segment files do not guarantee that entries are contiguous.
+
+![entry are overwritten](images/stream-engine-store-overwrite.drawio.svg)
+
+During recovery, the new leader will re-propose the entry learned from the segment stores with a larger epoch, and the previous entry will be overwritten.
+
+##### Read
+
+Because the reader of stream engine usually obtains a sequence of events, so store will load entire segment file into memory and access it according to the index file.
 
 ### Master
 
