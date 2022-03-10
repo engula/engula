@@ -38,8 +38,7 @@ body:
   - type: textarea
     attributes:
       label: Solution
-      placeholder: >
-        Describe the proposed solution and add related materials like links if any.
+      description: Describe the proposed solution and add related materials like links if any.
   - type: checkboxes
     attributes:
       label: Are you willing to submit a PR?

@@ -34,8 +34,7 @@ body:
   - type: textarea
     attributes:
       label: Minimal reproduce step
-      placeholder: >
-        Please try to give reproducing steps to facilitate quick location of the problem.
+      description: Please try to give reproducing steps to facilitate quick location of the problem.
     validations:
       required: true
   - type: textarea
@@ -46,7 +45,6 @@ body:
   - type: textarea
     attributes:
       label: What did you see instead
-      description: Describe the bug.
     validations:
       required: true
   - type: textarea
