@@ -13,15 +13,15 @@
 # limitations under the License.
 
 name: Bug report
-description: Problems and issues with the software
+description: Problems with the software
 labels: [ "bug" ]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you very much for submitting feedback to Engula to help Engula develop better.
+        Thank you very much for submitting feedback to Engula.
 
-        If it is an idea or help wanted, please go to [Github Discussion](https://github.com/engula/engula/discussions) forum.
+        If it is an idea or help wanted, please go to [Github Discussion](https://github.com/engula/engula/discussions).
   - type: checkboxes
     attributes:
       label: Search before asking
@@ -44,7 +44,7 @@ body:
       required: true
   - type: textarea
     attributes:
-      label: What did you see instead
+      label: What did you see instead?
     validations:
       required: true
   - type: textarea
