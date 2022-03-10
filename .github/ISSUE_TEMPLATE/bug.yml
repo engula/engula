@@ -36,6 +36,8 @@ body:
       label: Minimal reproduce step
       placeholder: >
         Please try to give reproducing steps to facilitate quick location of the problem.
+    validations:
+      required: true
   - type: textarea
     attributes:
       label: What did you expect to see?
