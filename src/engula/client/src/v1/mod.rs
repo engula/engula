@@ -12,29 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod any;
 mod client;
 mod collection;
 mod database;
 mod error;
-mod expr;
-mod object;
-mod txn;
-mod types;
 mod universe;
-#[allow(dead_code)]
-mod v1;
+
+use client::Client;
 
 pub use self::{
-    any::Any,
     collection::Collection,
     database::Database,
     error::{Error, Result},
-    txn::{CollectionTxn, DatabaseTxn, Txn},
-    types::{Blob, List, Map, I64},
     universe::Universe,
-};
-pub(crate) use self::{
-    client::Client,
-    object::{Object, ObjectValue},
 };

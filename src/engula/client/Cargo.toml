@@ -11,6 +11,7 @@ description = "The Rust client for Engula."
 engula-apis = { version = "0.3", path = "../apis" }
 
 prost = "0.9"
+thiserror = "1.0"
 tokio = { version = "1.15", features = ["full"] }
 tonic = "0.6"
 

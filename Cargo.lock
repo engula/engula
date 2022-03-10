@@ -178,6 +178,7 @@ dependencies = [
  "anyhow",
  "engula-apis",
  "prost",
+ "thiserror",
  "tokio",
  "tonic",
 ]
