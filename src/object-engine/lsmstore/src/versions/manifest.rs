@@ -135,11 +135,15 @@ impl Writer {
         Ok(())
     }
 
-    pub async fn flush_and_sync(&mut self) -> Result<()> {
+    pub async fn flush_and_sync(&mut self, rolleded: bool) -> Result<()> {
         let mut inner = self.inner.lock().await;
         inner.write_pending().await?;
         inner.w.flush().await?;
-        inner.w.sync_all().await?;
+        if rolleded {
+            inner.w.sync_all().await?;
+        } else {
+            inner.w.sync_data().await?;
+        }
         Ok(())
     }
 

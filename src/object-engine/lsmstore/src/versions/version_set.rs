@@ -84,7 +84,7 @@ impl VersionSet {
 
         let mut manifest = inner.manifest.take().unwrap();
         manifest.append(&ve.encode_to_vec()).await?;
-        manifest.flush_and_sync().await?;
+        manifest.flush_and_sync(rolleded).await?;
         inner.manifest = Some(manifest);
         if rolleded {
             inner.update_current(inner.current_file_num).await?;
@@ -148,7 +148,7 @@ impl Inner {
         self.create_manifest(self.current_file_num, next_file_num)
             .await?;
         let mut manifest = self.manifest.take().unwrap();
-        manifest.flush_and_sync().await?;
+        manifest.flush_and_sync(true).await?;
         self.manifest = Some(manifest);
         self.update_current(self.current_file_num).await?;
         Ok(())
