@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use engula_apis::v1::*;
-use tonic::transport::Channel;
 
 use super::{Client, Database, Error, Result};
 
@@ -24,11 +23,7 @@ pub struct Universe {
 
 impl Universe {
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let channel = Channel::from_shared(url.into())
-            .map_err(|e| Error::InvalidArgument(e.to_string()))?
-            .connect()
-            .await?;
-        let client = Client::new(channel);
+        let client = Client::connect(url).await?;
         Ok(Self { client })
     }
 
