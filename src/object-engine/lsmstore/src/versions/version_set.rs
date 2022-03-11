@@ -65,6 +65,7 @@ impl VersionSet {
         inner.current_version()
     }
 
+    #[allow(dead_code)]
     pub async fn log_and_apply(&self, ve: VersionEdit) -> Result<()> {
         let mut inner = self.inner.lock().await;
 

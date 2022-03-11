@@ -53,6 +53,7 @@ use crate::*;
 
 const BLOCK_SIZE: usize = 32 * 1024;
 const HEADER_SIZE: usize = 7;
+#[allow(dead_code)]
 pub const MAX_FILE_SIZE: usize = 128 << 20;
 
 pub const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
@@ -142,6 +143,7 @@ impl Writer {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn accumulated_size(&self) -> usize {
         let inner = self.inner.lock().await;
         inner.written_block_cnt as usize * BLOCK_SIZE + inner.chunk_end
