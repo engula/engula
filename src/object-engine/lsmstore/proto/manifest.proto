@@ -1,0 +1,72 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package objectengine.manifest.v1;
+
+message VersionEdit {
+
+  string tenant = 1;
+
+  message Bucket { string name = 1; };
+
+  repeated Bucket add_buckets = 2;
+  repeated string remove_buckets = 3;
+
+  message Range {
+    uint64 id = 1;
+    string bucket = 2;
+    bytes smallest = 3;
+    bytes largest = 4;
+  }
+
+  message RangeID {
+    uint64 id = 1;
+    string bucket = 2;
+  }
+
+  repeated Range add_ranges = 4;
+  repeated RangeID remove_ranges = 5;
+
+  message File {
+    string bucket = 1;
+    uint64 range_id = 2;
+    string name = 3;
+    uint32 level = 4;
+    bytes smallest = 5;
+    bytes largest = 6;
+  };
+
+  message FileID {
+    string name = 1;
+    string bucket = 2;
+    uint64 range_id = 3;
+  }
+
+  repeated File add_files = 6;
+  repeated FileID remove_files = 7;
+
+  message MetaEntry {
+    string key = 1;
+    string value = 2;
+  }
+
+  repeated MetaEntry add_metas = 8;
+  repeated string remove_metas = 9;
+
+  uint64 next_file_num = 10;
+}
+
+message VersionEditList { repeated VersionEdit edits = 1; }

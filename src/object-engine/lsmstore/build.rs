@@ -12,18 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_iter;
-mod store;
-mod table;
-mod versions;
-
-use object_engine_common::{Error, Result};
-
-pub use self::{
-    bucket_iter::BucketIter,
-    store::{Bucket, Store, Tenant},
-    table::{
-        Key, TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader, Timestamp,
-        ValueType,
-    },
-};
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::configure().compile(&["proto/manifest.proto"], &["proto"])?;
+    Ok(())
+}
