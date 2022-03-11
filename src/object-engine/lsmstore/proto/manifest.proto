@@ -18,59 +18,55 @@ package objectengine.manifest.v1;
 
 message VersionEdit {
 
-	string tenant = 1;
+  string tenant = 1;
 
-	message Bucket {
-		string name = 1;
-	};
+  message Bucket { string name = 1; };
 
-	repeated Bucket add_buckets = 2;
-	repeated string remove_buckets = 3;
+  repeated Bucket add_buckets = 2;
+  repeated string remove_buckets = 3;
 
-	message Range {
-		uint64 id = 1;
-		string bucket = 2;
-		bytes smallest = 3;
-		bytes largest = 4;
-	}
+  message Range {
+    uint64 id = 1;
+    string bucket = 2;
+    bytes smallest = 3;
+    bytes largest = 4;
+  }
 
-	message RangeID {
-		uint64 id = 1;
-		string bucket = 2;
-	}
+  message RangeID {
+    uint64 id = 1;
+    string bucket = 2;
+  }
 
-	repeated Range add_ranges = 4;
-	repeated RangeID remove_ranges = 5;
+  repeated Range add_ranges = 4;
+  repeated RangeID remove_ranges = 5;
 
-	message File {
-		string bucket = 1;
-		uint64 range_id = 2;
-		string name = 3;
-		uint32 level = 4;
-		bytes smallest = 5;
-		bytes largest = 6;
-	};
+  message File {
+    string bucket = 1;
+    uint64 range_id = 2;
+    string name = 3;
+    uint32 level = 4;
+    bytes smallest = 5;
+    bytes largest = 6;
+  };
 
-	message FileID {
-		string name = 1;
-		string bucket = 2;
-		uint64 range_id = 3;
-	}
+  message FileID {
+    string name = 1;
+    string bucket = 2;
+    uint64 range_id = 3;
+  }
 
-	repeated File add_files = 6;
-	repeated FileID remove_files = 7;
+  repeated File add_files = 6;
+  repeated FileID remove_files = 7;
 
-	message MetaEntry {
-		string key = 1;
-		string value = 2;
-	}
+  message MetaEntry {
+    string key = 1;
+    string value = 2;
+  }
 
-	repeated MetaEntry add_metas = 8;
-	repeated string remove_metas = 9;
+  repeated MetaEntry add_metas = 8;
+  repeated string remove_metas = 9;
 
-	uint64 next_file_num = 10;
+  uint64 next_file_num = 10;
 }
 
-message VersionEditList {
-	repeated VersionEdit edits = 1;
-}
+message VersionEditList { repeated VersionEdit edits = 1; }
