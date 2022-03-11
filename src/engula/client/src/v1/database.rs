@@ -14,7 +14,7 @@
 
 use engula_apis::v1::*;
 
-use super::{Client, Collection, Error, Result};
+use super::{Client, Collection, DatabaseTxn, Error, Result};
 
 #[derive(Clone)]
 pub struct Database {
@@ -43,6 +43,10 @@ impl Database {
             None
         };
         desc.ok_or_else(|| Error::internal("missing database descriptor"))
+    }
+
+    pub fn begin(&self) -> DatabaseTxn {
+        DatabaseTxn::new(self.name.clone(), self.client.clone())
     }
 
     pub fn collection(&self, name: &str) -> Collection {

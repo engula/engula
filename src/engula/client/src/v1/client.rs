@@ -36,26 +36,14 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    pub async fn select(&self, req: SelectDatabaseRequest) -> Result<SelectDatabaseResponse> {
+    pub async fn txn(&self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
         let req = BatchTxnRequest {
-            selects: vec![req],
-            ..Default::default()
+            requests: vec![req],
         };
         let mut res = self.batch_txn(req).await?;
-        res.selects
+        res.responses
             .pop()
-            .ok_or_else(|| Error::internal("missing select database response"))
-    }
-
-    pub async fn mutate(&self, req: MutateDatabaseRequest) -> Result<MutateDatabaseResponse> {
-        let req = BatchTxnRequest {
-            mutates: vec![req],
-            ..Default::default()
-        };
-        let mut res = self.batch_txn(req).await?;
-        res.mutates
-            .pop()
-            .ok_or_else(|| Error::internal("missing mutate database response"))
+            .ok_or_else(|| Error::internal("missing database response"))
     }
 
     pub async fn batch_universe(&self, req: BatchUniverseRequest) -> Result<BatchUniverseResponse> {

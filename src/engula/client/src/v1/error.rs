@@ -27,7 +27,7 @@ pub enum Error {
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
-    Unknown(Box<dyn std::error::Error + Send + 'static>),
+    Unknown(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl Error {
@@ -35,11 +35,15 @@ impl Error {
         Self::InvalidArgument(m.into())
     }
 
+    pub fn invalid_conversion() -> Self {
+        Self::invalid_argument("invalid conversion")
+    }
+
     pub fn internal(m: impl Into<String>) -> Self {
         Self::Internal(m.into())
     }
 
-    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
+    pub fn unknown(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Unknown(Box::new(err))
     }
 }

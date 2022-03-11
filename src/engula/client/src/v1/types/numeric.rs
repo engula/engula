@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod client;
-mod collection;
-mod database;
-mod error;
-mod txn;
-mod types;
-mod universe;
+use engula_apis::v1::*;
 
-use client::Client;
+macro_rules! call {
+    ($func:expr, $arg0:expr) => {
+        NumericCallExpr {
+            func: $func as i32,
+            args: vec![$arg0.into().into()],
+        }
+    };
+}
 
-pub use self::{
-    collection::Collection,
-    database::Database,
-    error::{Error, Result},
-    txn::{CollectionTxn, DatabaseTxn},
-    types::I64,
-    universe::Universe,
-};
+pub fn set(v: impl Into<Value>) -> NumericCallExpr {
+    call!(NumericFunction::Set, v)
+}
+
+pub fn add(v: impl Into<Value>) -> NumericCallExpr {
+    call!(NumericFunction::Add, v)
+}
+
+pub fn sub(v: impl Into<Value>) -> NumericCallExpr {
+    call!(NumericFunction::Sub, v)
+}

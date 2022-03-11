@@ -12,21 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod client;
-mod collection;
-mod database;
-mod error;
-mod txn;
-mod types;
-mod universe;
+mod i64;
+mod numeric;
 
-use client::Client;
-
-pub use self::{
-    collection::Collection,
-    database::Database,
-    error::{Error, Result},
-    txn::{CollectionTxn, DatabaseTxn},
-    types::I64,
-    universe::Universe,
-};
+pub use self::i64::I64;
