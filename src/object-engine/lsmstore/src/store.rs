@@ -48,7 +48,7 @@ impl Store {
         match inner.version_sets.entry(name.to_owned()) {
             hash_map::Entry::Occupied(_) => {}
             hash_map::Entry::Vacant(ent) => {
-                ent.insert(VersionSet::new(base_dir, name).await?);
+                ent.insert(VersionSet::open(base_dir, name).await?);
             }
         }
         Ok(Tenant {

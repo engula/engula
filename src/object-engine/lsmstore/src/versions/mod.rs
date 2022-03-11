@@ -29,7 +29,7 @@ mod test_version_set {
     async fn test_new_create() -> Result<()> {
         let tmp = tempdir::TempDir::new("test3")?.into_path();
         print!("{:?}", &tmp);
-        let vs1 = VersionSet::new(&tmp, "t1").await?;
+        let vs1 = VersionSet::open(&tmp, "t1").await?;
 
         for i in 1..200 {
             vs1.log_and_apply(
@@ -42,7 +42,7 @@ mod test_version_set {
             .await?;
         }
 
-        let vs2 = VersionSet::new(&tmp, "t1").await?;
+        let vs2 = VersionSet::open(&tmp, "t1").await?;
         for i in 200..400 {
             vs2.log_and_apply(
                 VersionEditBuilder::default()

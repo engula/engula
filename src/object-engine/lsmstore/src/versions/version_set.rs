@@ -36,7 +36,7 @@ struct Inner {
 }
 
 impl VersionSet {
-    pub async fn new(base_dir: impl Into<PathBuf>, tenant: &str) -> Result<Self> {
+    pub async fn open(base_dir: impl Into<PathBuf>, tenant: &str) -> Result<Self> {
         let mut inner = Inner {
             tenant: tenant.to_owned(),
             base_dir: base_dir.into(),
