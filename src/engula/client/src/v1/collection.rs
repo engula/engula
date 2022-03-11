@@ -14,7 +14,7 @@
 
 use engula_apis::v1::*;
 
-use super::{Client, Error, Result};
+use super::{Client, CollectionTxn, Error, Result};
 
 #[derive(Clone)]
 pub struct Collection {
@@ -53,5 +53,66 @@ impl Collection {
             None
         };
         desc.ok_or_else(|| Error::internal("missing collection descriptor"))
+    }
+
+    pub fn begin(&self) -> CollectionTxn {
+        CollectionTxn::new(self.name.clone(), self.dbname.clone(), self.client.clone())
+    }
+
+    pub async fn object<T: TryFrom<ValueUnion>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
+        self.select(id, None).await
+    }
+
+    pub async fn select<T: TryFrom<ValueUnion>>(
+        &self,
+        id: impl Into<Vec<u8>>,
+        expr: impl Into<SelectExpr>,
+    ) -> Result<T> {
+        let select = SelectCollectionRequest {
+            name: self.name.clone(),
+            ids: vec![id.into()],
+            exprs: vec![expr.into()],
+        };
+        let req = DatabaseTxnRequest {
+            name: self.dbname.clone(),
+            selects: vec![select],
+            ..Default::default()
+        };
+        let mut res = self.client.txn(req).await?;
+        let value = res
+            .mutates
+            .pop()
+            .and_then(|mut x| x.values.pop())
+            .ok_or_else(|| Error::internal("missing select result"))?;
+        value.try_into().map_err(|_| Error::invalid_conversion())
+    }
+
+    pub async fn mutate<T: TryFrom<ValueUnion>>(
+        &self,
+        id: impl Into<Vec<u8>>,
+        expr: impl Into<MutateExpr>,
+    ) -> Result<T> {
+        let mutate = MutateCollectionRequest {
+            name: self.name.clone(),
+            ids: vec![id.into()],
+            exprs: vec![expr.into()],
+        };
+        let req = DatabaseTxnRequest {
+            name: self.dbname.clone(),
+            mutates: vec![mutate],
+            ..Default::default()
+        };
+        let mut res = self.client.txn(req).await?;
+        let value = res
+            .mutates
+            .pop()
+            .and_then(|mut x| x.values.pop())
+            .ok_or_else(|| Error::internal("missing mutate result"))?;
+        value.try_into().map_err(|_| Error::invalid_conversion())
+    }
+
+    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
+        self.mutate(id, None).await?;
+        Ok(())
     }
 }

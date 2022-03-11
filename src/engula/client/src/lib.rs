@@ -23,7 +23,7 @@ mod txn;
 mod types;
 mod universe;
 #[allow(dead_code)]
-mod v1;
+pub mod v1;
 
 pub use self::{
     any::Any,

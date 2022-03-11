@@ -24,9 +24,10 @@ pub struct Universe {
 
 impl Universe {
     pub async fn connect(url: impl Into<String>) -> Result<Self> {
-        let endpoint =
-            Channel::from_shared(url.into()).map_err(|e| Error::InvalidArgument(e.to_string()))?;
-        let channel = endpoint.connect().await?;
+        let channel = Channel::from_shared(url.into())
+            .map_err(|e| Error::InvalidArgument(e.to_string()))?
+            .connect()
+            .await?;
         let client = Client::new(channel);
         Ok(Self { client })
     }
