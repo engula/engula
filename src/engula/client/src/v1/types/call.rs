@@ -31,6 +31,16 @@ macro_rules! call {
     };
 }
 
+macro_rules! range_call {
+    ($func:expr, $range:expr) => {
+        CallExpr {
+            func: $func as i32,
+            args: vec![],
+            range: Some($range.into()),
+        }
+    };
+}
+
 pub fn get() -> CallExpr {
     call!(Function::Get)
 }
@@ -69,4 +79,8 @@ pub fn push_front(v: impl Into<Value>) -> CallExpr {
 
 pub fn len() -> CallExpr {
     call!(Function::Len)
+}
+
+pub fn range(range: impl Into<RangeExpr>) -> CallExpr {
+    range_call!(Function::Get, range)
 }
