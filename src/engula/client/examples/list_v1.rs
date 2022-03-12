@@ -13,29 +13,33 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::v1::{Blob, Universe};
+use engula_client::v1::{List, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.create_database("blob").await?;
-    let co = db.create_collection("blob").await?;
+    let db = uv.create_database("list").await?;
+    let co = db.create_collection("list").await?;
 
-    co.mutate("a", Blob::set("hello")).await?;
-    co.mutate("a", Blob::push_back("world")).await?;
-    let a: Vec<u8> = co.object("a").await?;
+    co.mutate("a", List::set(vec![1, 2])).await?;
+    co.mutate("a", List::push_back(vec![3, 4])).await?;
+    let a: Vec<i64> = co.object("a").await?;
     println!("a = {:?}", a);
-    let len: i64 = co.select("a", Blob::len()).await?;
+    let len: i64 = co.select("a", List::len()).await?;
     println!("a.len = {:?}", len);
-    let a: Vec<u8> = co.select("a", Blob::range(5..)).await?;
-    println!("a.range(5..) = {:?}", a);
-    let a: Vec<u8> = co.mutate("a", Blob::pop_back(5)).await?;
-    println!("a.pop_back(5) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::range(2..)).await?;
+    println!("a.range(2..) = {:?}", a);
+    let a: Vec<i64> = co.mutate("a", List::pop_back(2)).await?;
+    println!("a.pop_back(2) = {:?}", a);
+    let a: i64 = co.select("a", List::element(-1)).await?;
+    println!("a[-1] = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::elements([0, 1])).await?;
+    println!("a[0,1] = {:?}", a);
 
     let mut txn = co.begin();
-    txn.mutate("a", Blob::push_back("hello"));
-    txn.mutate("b", Blob::push_front("world"));
+    txn.mutate("a", List::push_back(vec![1, 2]));
+    txn.mutate("b", List::push_front(vec![3, 4]));
     txn.commit().await?;
     println!("a = {:?}", co.object("a").await?);
     println!("b = {:?}", co.object("b").await?);

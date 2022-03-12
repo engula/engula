@@ -81,6 +81,10 @@ pub fn len() -> CallExpr {
     call!(Function::Len)
 }
 
+pub fn index(index: impl Into<Value>) -> CallExpr {
+    call!(Function::Index, index)
+}
+
 pub fn range(range: impl Into<RangeExpr>) -> CallExpr {
-    range_call!(Function::Get, range)
+    range_call!(Function::Range, range)
 }
