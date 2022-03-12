@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ops::RangeBounds;
+
 use engula_apis::v1::*;
 
 use super::{call, MutateExpr, SelectExpr};
@@ -23,7 +25,11 @@ impl Blob {
         BlobSelect::len()
     }
 
-    pub fn set(value: Vec<u8>) -> BlobMutate {
+    pub fn range(range: impl RangeBounds<i64>) -> BlobSelect {
+        BlobSelect::range(range)
+    }
+
+    pub fn set(value: impl Into<Vec<u8>>) -> BlobMutate {
         BlobMutate::set(value)
     }
 
@@ -35,11 +41,11 @@ impl Blob {
         BlobMutate::pop_front(count)
     }
 
-    pub fn push_back(value: Vec<u8>) -> BlobMutate {
+    pub fn push_back(value: impl Into<Vec<u8>>) -> BlobMutate {
         BlobMutate::push_back(value)
     }
 
-    pub fn push_front(value: Vec<u8>) -> BlobMutate {
+    pub fn push_front(value: impl Into<Vec<u8>>) -> BlobMutate {
         BlobMutate::push_front(value)
     }
 }
@@ -57,6 +63,10 @@ impl BlobSelect {
 
     pub fn len() -> Self {
         Self::new(call::len())
+    }
+
+    pub fn range(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::range(range))
     }
 }
 
@@ -77,8 +87,8 @@ impl BlobMutate {
         }
     }
 
-    pub fn set(value: Vec<u8>) -> Self {
-        Self::new(call::set(value))
+    pub fn set(value: impl Into<Vec<u8>>) -> Self {
+        Self::new(call::set(value.into()))
     }
 
     pub fn pop_back(count: i64) -> Self {
@@ -89,12 +99,12 @@ impl BlobMutate {
         Self::new(call::pop_front(count))
     }
 
-    pub fn push_back(value: Vec<u8>) -> Self {
-        Self::new(call::push_back(value))
+    pub fn push_back(value: impl Into<Vec<u8>>) -> Self {
+        Self::new(call::push_back(value.into()))
     }
 
-    pub fn push_front(value: Vec<u8>) -> Self {
-        Self::new(call::push_front(value))
+    pub fn push_front(value: impl Into<Vec<u8>>) -> Self {
+        Self::new(call::push_front(value.into()))
     }
 }
 
