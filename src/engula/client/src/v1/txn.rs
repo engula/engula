@@ -41,7 +41,6 @@ impl DatabaseTxn {
         let req = DatabaseTxnRequest {
             name: inner.name,
             requests: inner.requests.into_inner().unwrap(),
-            ..Default::default()
         };
         inner.client.mutate(req).await?;
         Ok(())
@@ -124,7 +123,6 @@ impl CollectionTxn {
         let req = DatabaseTxnRequest {
             name: handle.name,
             requests: vec![self.request],
-            ..Default::default()
         };
         handle.client.mutate(req).await?;
         Ok(())
