@@ -12,42 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::v1::{txn_client::TxnClient, universe_client::UniverseClient, *};
+use engula_apis::v1::{engula_client::EngulaClient, *};
 use tonic::transport::Channel;
 
-use crate::{Error, Result};
+use super::{Error, Result};
 
 #[derive(Clone)]
 pub struct Client {
-    txn: TxnClient<Channel>,
-    universe: UniverseClient<Channel>,
+    client: EngulaClient<Channel>,
 }
 
 impl Client {
-    pub fn new(chan: Channel) -> Self {
-        Self {
-            txn: TxnClient::new(chan.clone()),
-            universe: UniverseClient::new(chan),
-        }
+    pub async fn connect(url: impl Into<String>) -> Result<Self> {
+        let client = EngulaClient::connect(url.into()).await?;
+        Ok(Self { client })
     }
 
     pub async fn batch_txn(&self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
-        let res = self.txn.clone().batch(req).await?;
+        let res = self.client.clone().txn(req).await?;
         Ok(res.into_inner())
     }
 
-    pub async fn txn(&self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+    pub async fn select(&self, select: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
         let req = BatchTxnRequest {
-            requests: vec![req],
+            selects: vec![select],
+            ..Default::default()
         };
         let mut res = self.batch_txn(req).await?;
-        res.responses
+        res.selects
             .pop()
-            .ok_or_else(|| Error::internal("missing database response"))
+            .ok_or_else(|| Error::internal("missing select response"))
+    }
+
+    pub async fn mutate(&self, mutate: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+        let req = BatchTxnRequest {
+            mutates: vec![mutate],
+            ..Default::default()
+        };
+        let mut res = self.batch_txn(req).await?;
+        res.mutates
+            .pop()
+            .ok_or_else(|| Error::internal("missing mutate response"))
     }
 
     pub async fn batch_universe(&self, req: BatchUniverseRequest) -> Result<BatchUniverseResponse> {
-        let res = self.universe.clone().batch(req).await?;
+        let res = self.client.clone().universe(req).await?;
         Ok(res.into_inner())
     }
 

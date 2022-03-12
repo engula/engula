@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
 
     let mut txn = co.begin();
     txn.mutate("a", I64::add(1));
-    txn.mutate("b", I64::add(2));
+    txn.mutate("b", I64::sub(2));
     txn.commit().await?;
     println!("a = {:?}", co.object("a").await?);
     println!("b = {:?}", co.object("b").await?);

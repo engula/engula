@@ -23,6 +23,8 @@ pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
     #[error("{0}")]
+    Aborted(String),
+    #[error("{0}")]
     DataLoss(String),
     #[error("{0}")]
     Internal(String),
@@ -37,6 +39,10 @@ impl Error {
 
     pub fn invalid_conversion() -> Self {
         Self::invalid_argument("invalid conversion")
+    }
+
+    pub fn aborted(m: impl Into<String>) -> Self {
+        Self::Aborted(m.into())
     }
 
     pub fn internal(m: impl Into<String>) -> Self {
@@ -54,6 +60,7 @@ impl From<tonic::Status> for Error {
             tonic::Code::NotFound => Error::NotFound(s.message().into()),
             tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
             tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
+            tonic::Code::Aborted => Error::Aborted(s.message().into()),
             tonic::Code::DataLoss => Error::DataLoss(s.message().into()),
             tonic::Code::Internal => Error::Internal(s.message().into()),
             _ => Error::Unknown(Box::new(s)),
@@ -67,6 +74,7 @@ impl From<Error> for tonic::Status {
             Error::NotFound(s) => (tonic::Code::NotFound, s),
             Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
+            Error::Aborted(s) => (tonic::Code::Aborted, s),
             Error::DataLoss(s) => (tonic::Code::DataLoss, s),
             Error::Internal(s) => (tonic::Code::Internal, s),
             Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),

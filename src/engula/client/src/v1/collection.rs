@@ -14,7 +14,7 @@
 
 use engula_apis::v1::*;
 
-use super::{Client, CollectionTxn, Error, Result};
+use super::{Any, Client, CollectionTxn, Error, MutateExpr, Result, SelectExpr};
 
 #[derive(Clone)]
 pub struct Collection {
@@ -59,52 +59,50 @@ impl Collection {
         CollectionTxn::new(self.name.clone(), self.dbname.clone(), self.client.clone())
     }
 
-    pub async fn object<T: TryFrom<ValueUnion>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
-        self.select(id, None).await
+    pub async fn object<T: TryFrom<TypedValue>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
+        self.select(id, Any::get()).await
     }
 
-    pub async fn select<T: TryFrom<ValueUnion>>(
+    pub async fn select<T: TryFrom<TypedValue>>(
         &self,
         id: impl Into<Vec<u8>>,
         expr: impl Into<SelectExpr>,
     ) -> Result<T> {
-        let select = SelectCollectionRequest {
+        let req = CollectionTxnRequest {
             name: self.name.clone(),
             ids: vec![id.into()],
-            exprs: vec![expr.into()],
+            exprs: vec![expr.into().into()],
         };
         let req = DatabaseTxnRequest {
             name: self.dbname.clone(),
-            selects: vec![select],
-            ..Default::default()
+            requests: vec![req],
         };
-        let mut res = self.client.txn(req).await?;
+        let mut res = self.client.select(req).await?;
         let value = res
-            .mutates
+            .responses
             .pop()
             .and_then(|mut x| x.values.pop())
             .ok_or_else(|| Error::internal("missing select result"))?;
         value.try_into().map_err(|_| Error::invalid_conversion())
     }
 
-    pub async fn mutate<T: TryFrom<ValueUnion>>(
+    pub async fn mutate<T: TryFrom<TypedValue>>(
         &self,
         id: impl Into<Vec<u8>>,
         expr: impl Into<MutateExpr>,
     ) -> Result<T> {
-        let mutate = MutateCollectionRequest {
+        let req = CollectionTxnRequest {
             name: self.name.clone(),
             ids: vec![id.into()],
-            exprs: vec![expr.into()],
+            exprs: vec![expr.into().into()],
         };
         let req = DatabaseTxnRequest {
             name: self.dbname.clone(),
-            mutates: vec![mutate],
-            ..Default::default()
+            requests: vec![req],
         };
-        let mut res = self.client.txn(req).await?;
+        let mut res = self.client.mutate(req).await?;
         let value = res
-            .mutates
+            .responses
             .pop()
             .and_then(|mut x| x.values.pop())
             .ok_or_else(|| Error::internal("missing mutate result"))?;
@@ -112,7 +110,7 @@ impl Collection {
     }
 
     pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        self.mutate(id, None).await?;
+        self.mutate(id, Any::delete()).await?;
         Ok(())
     }
 }

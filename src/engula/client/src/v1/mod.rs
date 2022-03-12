@@ -27,6 +27,6 @@ pub use self::{
     database::Database,
     error::{Error, Result},
     txn::{CollectionTxn, DatabaseTxn},
-    types::I64,
+    types::{Any, MutateExpr, SelectExpr, I64},
     universe::Universe,
 };

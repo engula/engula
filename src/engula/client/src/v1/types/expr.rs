@@ -14,23 +14,30 @@
 
 use engula_apis::v1::*;
 
-macro_rules! call {
-    ($func:expr, $arg0:expr) => {
-        NumericCallExpr {
-            func: $func as i32,
-            args: vec![$arg0.into().into()],
-        }
-    };
+pub struct SelectExpr(TypedExpr);
+
+impl From<TypedExpr> for SelectExpr {
+    fn from(v: TypedExpr) -> Self {
+        Self(v)
+    }
 }
 
-pub fn set(v: impl Into<Value>) -> NumericCallExpr {
-    call!(NumericFunction::Set, v)
+impl From<SelectExpr> for TypedExpr {
+    fn from(v: SelectExpr) -> Self {
+        v.0
+    }
 }
 
-pub fn add(v: impl Into<Value>) -> NumericCallExpr {
-    call!(NumericFunction::Add, v)
+pub struct MutateExpr(TypedExpr);
+
+impl From<TypedExpr> for MutateExpr {
+    fn from(v: TypedExpr) -> Self {
+        Self(v)
+    }
 }
 
-pub fn sub(v: impl Into<Value>) -> NumericCallExpr {
-    call!(NumericFunction::Sub, v)
+impl From<MutateExpr> for TypedExpr {
+    fn from(v: MutateExpr) -> Self {
+        v.0
+    }
 }

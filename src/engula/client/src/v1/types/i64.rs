@@ -14,52 +14,50 @@
 
 use engula_apis::v1::*;
 
-use super::numeric;
+use super::{call, MutateExpr};
 
 pub struct I64 {}
 
 impl I64 {
-    pub fn set(v: i64) -> I64Mutate {
-        I64Mutate::set(v)
+    pub fn set(value: i64) -> I64Mutate {
+        I64Mutate::set(value)
     }
 
-    pub fn add(v: i64) -> I64Mutate {
-        I64Mutate::add(v)
+    pub fn add(value: i64) -> I64Mutate {
+        I64Mutate::add(value)
     }
 
-    pub fn sub(v: i64) -> I64Mutate {
-        I64Mutate::sub(v)
+    pub fn sub(value: i64) -> I64Mutate {
+        I64Mutate::sub(value)
     }
 }
 
 pub struct I64Mutate {
-    expr: I64MutateExpr,
+    expr: I64Expr,
 }
 
 impl I64Mutate {
-    fn new(call: NumericCallExpr) -> Self {
+    fn new(call: CallExpr) -> Self {
         Self {
-            expr: I64MutateExpr { call: Some(call) },
+            expr: I64Expr { call: Some(call) },
         }
     }
 
-    pub fn set(v: i64) -> Self {
-        Self::new(numeric::set(v))
+    pub fn set(value: i64) -> Self {
+        Self::new(call::set(value))
     }
 
-    pub fn add(v: i64) -> Self {
-        Self::new(numeric::add(v))
+    pub fn add(value: i64) -> Self {
+        Self::new(call::add(value))
     }
 
-    pub fn sub(v: i64) -> Self {
-        Self::new(numeric::sub(v))
+    pub fn sub(value: i64) -> Self {
+        Self::new(call::sub(value))
     }
 }
 
 impl From<I64Mutate> for MutateExpr {
     fn from(v: I64Mutate) -> Self {
-        Self {
-            expr: Some(mutate_expr::Expr::I64Expr(v.expr)),
-        }
+        TypedExpr::from(v.expr).into()
     }
 }
