@@ -20,6 +20,7 @@ mod f64;
 mod i64;
 mod list;
 mod map;
+mod text;
 
 pub use self::{
     any::Any,
@@ -29,4 +30,5 @@ pub use self::{
     i64::I64,
     list::List,
     map::Map,
+    text::Text,
 };
