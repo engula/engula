@@ -17,10 +17,12 @@ mod blob;
 mod call;
 mod expr;
 mod i64;
+mod list;
 
 pub use self::{
     any::Any,
     blob::Blob,
     expr::{MutateExpr, SelectExpr},
     i64::I64,
+    list::List,
 };
