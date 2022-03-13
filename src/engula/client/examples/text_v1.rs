@@ -13,34 +13,34 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::v1::{Blob, Universe};
+use engula_client::v1::{Text, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
-    let db = uv.create_database("blob").await?;
-    let co = db.create_collection("blob").await?;
+    let db = uv.create_database("text").await?;
+    let co = db.create_collection("text").await?;
 
-    co.set("a", Blob::new([1, 2])).await?;
+    co.set("a", Text::new("hello")).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a = {:?}", a);
 
-    co.mutate("a", Blob::rpush([3, 4])).await?;
+    co.mutate("a", Text::rpush("world")).await?;
     let a: Vec<u8> = co.get("a").await?;
-    println!("a.rpush([3, 4]) = {:?}", a);
+    println!("a.rpush(\"world\") = {:?}", a);
 
-    let a: Vec<u8> = co.mutate("a", Blob::lpop(2)).await?;
-    println!("a.lpop(2) = {:?}", a);
+    let a: Vec<u8> = co.mutate("a", Text::lpop(5)).await?;
+    println!("a.lpop(5) = {:?}", a);
 
-    let len: i64 = co.select("a", Blob::len()).await?;
+    let len: i64 = co.select("a", Text::len()).await?;
     println!("a.len() = {:?}", len);
-    let a: Vec<u8> = co.select("a", Blob::range(5..)).await?;
+    let a: Vec<u8> = co.select("a", Text::range(5..)).await?;
     println!("a.range(5..) = {:?}", a);
 
     let mut txn = co.begin();
-    txn.mutate("a", Blob::lpush([1, 2]));
-    txn.mutate("b", Blob::rpush([3, 4]));
+    txn.mutate("a", Text::lpush("hello"));
+    txn.mutate("b", Text::rpush("world"));
     txn.commit().await?;
     println!("a = {:?}", co.get("a").await?);
     println!("b = {:?}", co.get("b").await?);
