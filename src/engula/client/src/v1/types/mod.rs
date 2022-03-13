@@ -16,6 +16,7 @@ mod any;
 mod blob;
 mod call;
 mod expr;
+mod f64;
 mod i64;
 mod list;
 mod map;
@@ -24,6 +25,7 @@ pub use self::{
     any::Any,
     blob::Blob,
     expr::{MutateExpr, SelectExpr},
+    f64::F64,
     i64::I64,
     list::List,
     map::Map,

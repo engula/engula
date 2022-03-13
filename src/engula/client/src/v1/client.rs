@@ -28,47 +28,32 @@ impl Client {
         Ok(Self { client })
     }
 
-    pub async fn batch_txn(&self, req: BatchTxnRequest) -> Result<BatchTxnResponse> {
-        let res = self.client.clone().txn(req).await?;
+    pub async fn batch(&self, req: BatchRequest) -> Result<BatchResponse> {
+        let res = self.client.clone().batch(req).await?;
         Ok(res.into_inner())
     }
 
-    pub async fn select(&self, select: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
-        let req = BatchTxnRequest {
-            selects: vec![select],
+    pub async fn database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
+        let req = BatchRequest {
+            databases: vec![req],
             ..Default::default()
         };
-        let mut res = self.batch_txn(req).await?;
-        res.selects
+        let mut res = self.batch(req).await?;
+        res.databases
             .pop()
-            .ok_or_else(|| Error::internal("missing select response"))
-    }
-
-    pub async fn mutate(&self, mutate: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
-        let req = BatchTxnRequest {
-            mutates: vec![mutate],
-            ..Default::default()
-        };
-        let mut res = self.batch_txn(req).await?;
-        res.mutates
-            .pop()
-            .ok_or_else(|| Error::internal("missing mutate response"))
-    }
-
-    pub async fn batch_universe(&self, req: BatchUniverseRequest) -> Result<BatchUniverseResponse> {
-        let res = self.client.clone().universe(req).await?;
-        Ok(res.into_inner())
+            .ok_or_else(|| Error::internal("missing database response"))
     }
 
     pub async fn universe(
         &self,
         req: universe_request::Request,
     ) -> Result<universe_response::Response> {
-        let req = BatchUniverseRequest {
-            requests: vec![UniverseRequest { request: Some(req) }],
+        let req = BatchRequest {
+            universes: vec![UniverseRequest { request: Some(req) }],
+            ..Default::default()
         };
-        let mut res = self.batch_universe(req).await?;
-        res.responses
+        let mut res = self.batch(req).await?;
+        res.universes
             .pop()
             .and_then(|x| x.response)
             .ok_or_else(|| Error::internal("missing universe response"))
