@@ -18,27 +18,29 @@ use engula_apis::v1::*;
 
 use super::{call, MutateExpr, SelectExpr};
 
-pub struct List {}
+pub struct List(ListValue);
+
+impl From<List> for Value {
+    fn from(v: List) -> Self {
+        v.0.into()
+    }
+}
 
 impl List {
+    pub fn new(value: impl Into<ListValue>) -> Self {
+        Self(value.into())
+    }
+
     pub fn len() -> ListSelect {
         ListSelect::len()
     }
 
+    pub fn index(index: impl Into<ListValue>) -> ListSelect {
+        ListSelect::index(index)
+    }
+
     pub fn range(range: impl RangeBounds<i64>) -> ListSelect {
         ListSelect::range(range)
-    }
-
-    pub fn element(index: i64) -> ListSelect {
-        ListSelect::element(index)
-    }
-
-    pub fn elements(indexs: impl Into<Vec<i64>>) -> ListSelect {
-        ListSelect::elements(indexs)
-    }
-
-    pub fn set(value: impl Into<ListValue>) -> ListMutate {
-        ListMutate::set(value)
     }
 
     pub fn pop_back(count: i64) -> ListMutate {
@@ -73,22 +75,18 @@ impl ListSelect {
         Self::new(call::len())
     }
 
+    pub fn index(index: impl Into<ListValue>) -> Self {
+        Self::new(call::get_index(index.into()))
+    }
+
     pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::range(range))
-    }
-
-    pub fn element(index: i64) -> Self {
-        Self::elements(vec![index])
-    }
-
-    pub fn elements(indexs: impl Into<Vec<i64>>) -> Self {
-        Self::new(call::index(ListValue::from(indexs.into())))
+        Self::new(call::get_range(call::range(range)))
     }
 }
 
 impl From<ListSelect> for SelectExpr {
     fn from(v: ListSelect) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }
 
@@ -101,10 +99,6 @@ impl ListMutate {
         Self {
             expr: ListExpr { call: Some(call) },
         }
-    }
-
-    pub fn set(value: impl Into<ListValue>) -> Self {
-        Self::new(call::set(value.into()))
     }
 
     pub fn pop_back(count: i64) -> Self {
@@ -126,6 +120,6 @@ impl ListMutate {
 
 impl From<ListMutate> for MutateExpr {
     fn from(v: ListMutate) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }

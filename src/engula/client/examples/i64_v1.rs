@@ -22,19 +22,23 @@ async fn main() -> Result<()> {
     let db = uv.create_database("i64").await?;
     let co = db.create_collection("i64").await?;
 
-    co.mutate("a", I64::set(1)).await?;
-    let a: i64 = co.object("a").await?;
-    println!("a = {:?}", a);
+    co.set("a", 1).await?;
     co.mutate("a", I64::add(2)).await?;
-    let a: i64 = co.object("a").await?;
+    let a: i64 = co.get("a").await?;
+    println!("a = {:?}", a);
+    co.delete("a").await?;
+    let a: Option<i64> = co.get("a").await?;
     println!("a = {:?}", a);
 
     let mut txn = co.begin();
     txn.mutate("a", I64::add(1));
     txn.mutate("b", I64::sub(2));
     txn.commit().await?;
-    println!("a = {:?}", co.object("a").await?);
-    println!("b = {:?}", co.object("b").await?);
+    println!("a = {:?}", co.get("a").await?);
+    println!("b = {:?}", co.get("b").await?);
 
     Ok(())
 }
+
+// I64: get,set,delete,add,sub
+// Blob: get,len,range,set,delete,pop_back,pop

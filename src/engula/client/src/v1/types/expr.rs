@@ -14,29 +14,29 @@
 
 use engula_apis::v1::*;
 
-pub struct SelectExpr(TypedExpr);
+pub struct SelectExpr(Expr);
 
-impl From<TypedExpr> for SelectExpr {
-    fn from(v: TypedExpr) -> Self {
+impl From<Expr> for SelectExpr {
+    fn from(v: Expr) -> Self {
         Self(v)
     }
 }
 
-impl From<SelectExpr> for TypedExpr {
+impl From<SelectExpr> for Expr {
     fn from(v: SelectExpr) -> Self {
         v.0
     }
 }
 
-pub struct MutateExpr(TypedExpr);
+pub struct MutateExpr(Expr);
 
-impl From<TypedExpr> for MutateExpr {
-    fn from(v: TypedExpr) -> Self {
+impl From<Expr> for MutateExpr {
+    fn from(v: Expr) -> Self {
         Self(v)
     }
 }
 
-impl From<MutateExpr> for TypedExpr {
+impl From<MutateExpr> for Expr {
     fn from(v: MutateExpr) -> Self {
         v.0
     }
