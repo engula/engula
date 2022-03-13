@@ -59,8 +59,17 @@ impl Collection {
         CollectionTxn::new(self.name.clone(), self.dbname.clone(), self.client.clone())
     }
 
-    pub async fn object<T: TryFrom<TypedValue>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
+    pub async fn get<T: TryFrom<TypedValue>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
         self.select(id, Any::get()).await
+    }
+
+    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Result<()> {
+        self.mutate(id, Any::set(value)).await
+    }
+
+    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
+        self.mutate(id, Any::delete()).await?;
+        Ok(())
     }
 
     pub async fn select<T: TryFrom<TypedValue>>(
@@ -107,10 +116,5 @@ impl Collection {
             .and_then(|mut x| x.values.pop())
             .ok_or_else(|| Error::internal("missing mutate result"))?;
         value.try_into().map_err(|_| Error::invalid_conversion())
-    }
-
-    pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        self.mutate(id, Any::delete()).await?;
-        Ok(())
     }
 }

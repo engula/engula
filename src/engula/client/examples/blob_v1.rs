@@ -22,9 +22,9 @@ async fn main() -> Result<()> {
     let db = uv.create_database("blob").await?;
     let co = db.create_collection("blob").await?;
 
-    co.mutate("a", Blob::set("hello")).await?;
+    co.set("a", Blob::new("hello")).await?;
     co.mutate("a", Blob::push_back("world")).await?;
-    let a: Vec<u8> = co.object("a").await?;
+    let a: Vec<u8> = co.get("a").await?;
     println!("a = {:?}", a);
     let len: i64 = co.select("a", Blob::len()).await?;
     println!("a.len = {:?}", len);
@@ -37,8 +37,8 @@ async fn main() -> Result<()> {
     txn.mutate("a", Blob::push_back("hello"));
     txn.mutate("b", Blob::push_front("world"));
     txn.commit().await?;
-    println!("a = {:?}", co.object("a").await?);
-    println!("b = {:?}", co.object("b").await?);
+    println!("a = {:?}", co.get("a").await?);
+    println!("b = {:?}", co.get("b").await?);
 
     Ok(())
 }

@@ -18,19 +18,25 @@ use engula_apis::v1::*;
 
 use super::{call, MutateExpr, SelectExpr};
 
-pub struct Blob {}
+pub struct Blob(Vec<u8>);
+
+impl From<Blob> for Value {
+    fn from(v: Blob) -> Self {
+        v.0.into()
+    }
+}
 
 impl Blob {
+    pub fn new(value: impl Into<Vec<u8>>) -> Self {
+        Self(value.into())
+    }
+
     pub fn len() -> BlobSelect {
         BlobSelect::len()
     }
 
     pub fn range(range: impl RangeBounds<i64>) -> BlobSelect {
         BlobSelect::range(range)
-    }
-
-    pub fn set(value: impl Into<Vec<u8>>) -> BlobMutate {
-        BlobMutate::set(value)
     }
 
     pub fn pop_back(count: i64) -> BlobMutate {
@@ -66,13 +72,13 @@ impl BlobSelect {
     }
 
     pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::range(range))
+        Self::new(call::get_range(call::range(range)))
     }
 }
 
 impl From<BlobSelect> for SelectExpr {
     fn from(v: BlobSelect) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }
 
@@ -85,10 +91,6 @@ impl BlobMutate {
         Self {
             expr: BlobExpr { call: Some(call) },
         }
-    }
-
-    pub fn set(value: impl Into<Vec<u8>>) -> Self {
-        Self::new(call::set(value.into()))
     }
 
     pub fn pop_back(count: i64) -> Self {
@@ -110,6 +112,6 @@ impl BlobMutate {
 
 impl From<BlobMutate> for MutateExpr {
     fn from(v: BlobMutate) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }

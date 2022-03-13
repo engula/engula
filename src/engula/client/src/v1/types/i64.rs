@@ -16,11 +16,17 @@ use engula_apis::v1::*;
 
 use super::{call, MutateExpr};
 
-pub struct I64 {}
+pub struct I64(i64);
+
+impl From<I64> for Value {
+    fn from(v: I64) -> Self {
+        v.0.into()
+    }
+}
 
 impl I64 {
-    pub fn set(value: i64) -> I64Mutate {
-        I64Mutate::set(value)
+    pub fn new(value: i64) -> Self {
+        Self(value)
     }
 
     pub fn add(value: i64) -> I64Mutate {
@@ -43,10 +49,6 @@ impl I64Mutate {
         }
     }
 
-    pub fn set(value: i64) -> Self {
-        Self::new(call::set(value))
-    }
-
     pub fn add(value: i64) -> Self {
         Self::new(call::add(value))
     }
@@ -58,6 +60,6 @@ impl I64Mutate {
 
 impl From<I64Mutate> for MutateExpr {
     fn from(v: I64Mutate) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }

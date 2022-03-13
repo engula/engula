@@ -18,6 +18,7 @@ mod call;
 mod expr;
 mod i64;
 mod list;
+mod map;
 
 pub use self::{
     any::Any,
@@ -25,4 +26,5 @@ pub use self::{
     expr::{MutateExpr, SelectExpr},
     i64::I64,
     list::List,
+    map::Map,
 };

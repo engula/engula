@@ -23,6 +23,10 @@ impl Any {
         AnySelect::get()
     }
 
+    pub fn set(value: impl Into<Value>) -> AnyMutate {
+        AnyMutate::set(value)
+    }
+
     pub fn delete() -> AnyMutate {
         AnyMutate::delete()
     }
@@ -46,7 +50,7 @@ impl AnySelect {
 
 impl From<AnySelect> for SelectExpr {
     fn from(v: AnySelect) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }
 
@@ -61,6 +65,10 @@ impl AnyMutate {
         }
     }
 
+    pub fn set(value: impl Into<Value>) -> Self {
+        Self::new(call::set(value))
+    }
+
     pub fn delete() -> Self {
         Self::new(call::delete())
     }
@@ -68,6 +76,6 @@ impl AnyMutate {
 
 impl From<AnyMutate> for MutateExpr {
     fn from(v: AnyMutate) -> Self {
-        TypedExpr::from(v.expr).into()
+        Expr::from(v.expr).into()
     }
 }
