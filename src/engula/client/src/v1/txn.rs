@@ -38,11 +38,12 @@ impl DatabaseTxn {
     pub async fn commit(self) -> Result<()> {
         let inner =
             Arc::try_unwrap(self.inner).map_err(|_| Error::aborted("pending transactions"))?;
-        let req = DatabaseTxnRequest {
+        let req = DatabaseRequest {
             name: inner.name,
-            requests: inner.requests.into_inner().unwrap(),
+            mutates: inner.mutates.into_inner().unwrap(),
+            ..Default::default()
         };
-        inner.client.mutate(req).await?;
+        inner.client.database(req).await?;
         Ok(())
     }
 }
@@ -50,7 +51,7 @@ impl DatabaseTxn {
 struct DatabaseInner {
     name: String,
     client: Client,
-    requests: Mutex<Vec<CollectionTxnRequest>>,
+    mutates: Mutex<Vec<CollectionRequest>>,
 }
 
 struct DatabaseHandle {
@@ -63,20 +64,20 @@ impl DatabaseInner {
         Self {
             name,
             client,
-            requests: Mutex::new(Vec::new()),
+            mutates: Mutex::new(Vec::new()),
         }
     }
 
-    fn add_collection(&self, req: CollectionTxnRequest) {
-        let mut requests = self.requests.lock().unwrap();
-        requests.push(req);
+    fn add_mutate(&self, req: CollectionRequest) {
+        let mut mutates = self.mutates.lock().unwrap();
+        mutates.push(req);
     }
 }
 
 pub struct CollectionTxn {
     handle: Option<DatabaseHandle>,
     parent: Option<Arc<DatabaseInner>>,
-    request: CollectionTxnRequest,
+    mutate: CollectionRequest,
 }
 
 impl CollectionTxn {
@@ -100,7 +101,7 @@ impl CollectionTxn {
         Self {
             handle,
             parent,
-            request: CollectionTxnRequest {
+            mutate: CollectionRequest {
                 name,
                 ..Default::default()
             },
@@ -108,23 +109,24 @@ impl CollectionTxn {
     }
 
     pub fn mutate(&mut self, id: impl Into<Vec<u8>>, expr: impl Into<MutateExpr>) -> &mut Self {
-        self.request.ids.push(id.into());
-        self.request.exprs.push(expr.into().into());
+        self.mutate.ids.push(id.into());
+        self.mutate.exprs.push(expr.into().into());
         self
     }
 
     pub fn submit(self) {
         let parent = self.parent.unwrap();
-        parent.add_collection(self.request);
+        parent.add_mutate(self.mutate);
     }
 
     pub async fn commit(self) -> Result<()> {
         let handle = self.handle.unwrap();
-        let req = DatabaseTxnRequest {
+        let req = DatabaseRequest {
             name: handle.name,
-            requests: vec![self.request],
+            mutates: vec![self.mutate],
+            ..Default::default()
         };
-        handle.client.mutate(req).await?;
+        handle.client.database(req).await?;
         Ok(())
     }
 }

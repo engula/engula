@@ -77,18 +77,19 @@ impl Collection {
         id: impl Into<Vec<u8>>,
         expr: impl Into<SelectExpr>,
     ) -> Result<T> {
-        let req = CollectionTxnRequest {
+        let select = CollectionRequest {
             name: self.name.clone(),
             ids: vec![id.into()],
             exprs: vec![expr.into().into()],
         };
-        let req = DatabaseTxnRequest {
+        let req = DatabaseRequest {
             name: self.dbname.clone(),
-            requests: vec![req],
+            selects: vec![select],
+            ..Default::default()
         };
-        let mut res = self.client.select(req).await?;
+        let mut res = self.client.database(req).await?;
         let value = res
-            .responses
+            .selects
             .pop()
             .and_then(|mut x| x.values.pop())
             .ok_or_else(|| Error::internal("missing select result"))?;
@@ -100,18 +101,19 @@ impl Collection {
         id: impl Into<Vec<u8>>,
         expr: impl Into<MutateExpr>,
     ) -> Result<T> {
-        let req = CollectionTxnRequest {
+        let mutate = CollectionRequest {
             name: self.name.clone(),
             ids: vec![id.into()],
             exprs: vec![expr.into().into()],
         };
-        let req = DatabaseTxnRequest {
+        let req = DatabaseRequest {
             name: self.dbname.clone(),
-            requests: vec![req],
+            mutates: vec![mutate],
+            ..Default::default()
         };
-        let mut res = self.client.mutate(req).await?;
+        let mut res = self.client.database(req).await?;
         let value = res
-            .responses
+            .mutates
             .pop()
             .and_then(|mut x| x.values.pop())
             .ok_or_else(|| Error::internal("missing mutate result"))?;
