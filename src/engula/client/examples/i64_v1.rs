@@ -23,12 +23,16 @@ async fn main() -> Result<()> {
     let co = db.create_collection("i64").await?;
 
     co.set("a", 1).await?;
-    co.mutate("a", I64::add(2)).await?;
     let a: i64 = co.get("a").await?;
     println!("a = {:?}", a);
-    co.delete("a").await?;
-    let a: Option<i64> = co.get("a").await?;
-    println!("a = {:?}", a);
+
+    co.mutate("a", I64::add(2)).await?;
+    let a: i64 = co.get("a").await?;
+    println!("a.add(2) = {:?}", a);
+
+    co.mutate("a", I64::sub(3)).await?;
+    let a: i64 = co.get("a").await?;
+    println!("a.sub(3) = {:?}", a);
 
     let mut txn = co.begin();
     txn.mutate("a", I64::add(1));

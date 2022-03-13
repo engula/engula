@@ -26,20 +26,27 @@ async fn main() -> Result<()> {
 
     let va = [(0, 0), (1, 1), (2, 2)];
     let vb = [(3, 3), (4, 4), (5, 5)];
+
     co.set("a", Map::new(va)).await?;
     let a: HashMap<i64, i64> = co.get("a").await?;
     println!("a = {:?}", a);
+
+    co.mutate("a", Map::extend(vb)).await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    println!("a.extend({:?}) = {:?}", vb, a);
+
+    co.mutate("a", Map::delete([0, 1])).await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    println!("a.delete([0, 1]) = {:?}", a);
+
     let len: i64 = co.select("a", Map::len()).await?;
     println!("a.len = {:?}", len);
     let a: i64 = co.select("a", Map::field(0)).await?;
-    println!("a[0] = {:?}", a);
+    println!("a.field(0) = {:?}", a);
     let a: HashMap<i64, i64> = co.select("a", Map::field([1, 2])).await?;
-    println!("a[1,2] = {:?}", a);
-    let a: HashMap<i64, i64> = co.select("a", Map::range(1..)).await?;
-    println!("a[1..] = {:?}", a);
-    co.mutate("a", Map::delete([0, 1])).await?;
-    co.mutate("a", Map::extend(vb)).await?;
-    println!("a = {:?}", a);
+    println!("a.field([1,2]) = {:?}", a);
+    let a: HashMap<i64, i64> = co.select("a", Map::range(2..)).await?;
+    println!("a.range(2..) = {:?}", a);
 
     let mut txn = co.begin();
     txn.mutate("a", Map::extend(va));

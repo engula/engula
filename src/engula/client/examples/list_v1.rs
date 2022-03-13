@@ -23,23 +23,29 @@ async fn main() -> Result<()> {
     let co = db.create_collection("list").await?;
 
     co.set("a", List::new([1, 2])).await?;
-    co.mutate("a", List::push_back([3, 4])).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a = {:?}", a);
+
+    co.mutate("a", List::rpush([3, 4])).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.rpush([3, 4]) = {:?}", a);
+
+    co.mutate("a", List::lpop(2)).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.lpop(2) = {:?}", a);
+
     let len: i64 = co.select("a", List::len()).await?;
-    println!("a.len = {:?}", len);
+    println!("a.len() = {:?}", len);
+    let a: i64 = co.select("a", List::index(-1)).await?;
+    println!("a.index(-1) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::index([0, 1])).await?;
+    println!("a.index([0,1]) = {:?}", a);
     let a: Vec<i64> = co.select("a", List::range(2..)).await?;
     println!("a.range(2..) = {:?}", a);
-    let a: Vec<i64> = co.mutate("a", List::pop_back(2)).await?;
-    println!("a.pop_back(2) = {:?}", a);
-    let a: i64 = co.select("a", List::index(-1)).await?;
-    println!("a[-1] = {:?}", a);
-    let a: Vec<i64> = co.select("a", List::index([0, 1])).await?;
-    println!("a[0,1] = {:?}", a);
 
     let mut txn = co.begin();
-    txn.mutate("a", List::push_back([1, 2]));
-    txn.mutate("b", List::push_front([3, 4]));
+    txn.mutate("a", List::lpush([1, 2]));
+    txn.mutate("b", List::rpush([3, 4]));
     txn.commit().await?;
     println!("a = {:?}", co.get("a").await?);
     println!("b = {:?}", co.get("b").await?);

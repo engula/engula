@@ -43,20 +43,24 @@ impl List {
         ListSelect::range(range)
     }
 
-    pub fn pop_back(count: i64) -> ListMutate {
-        ListMutate::pop_back(count)
+    pub fn trim(range: impl RangeBounds<i64>) -> ListMutate {
+        ListMutate::trim(range)
     }
 
-    pub fn pop_front(count: i64) -> ListMutate {
-        ListMutate::pop_front(count)
+    pub fn lpop(count: i64) -> ListMutate {
+        ListMutate::lpop(count)
     }
 
-    pub fn push_back(value: impl Into<ListValue>) -> ListMutate {
-        ListMutate::push_back(value)
+    pub fn rpop(count: i64) -> ListMutate {
+        ListMutate::rpop(count)
     }
 
-    pub fn push_front(value: impl Into<ListValue>) -> ListMutate {
-        ListMutate::push_front(value)
+    pub fn lpush(value: impl Into<ListValue>) -> ListMutate {
+        ListMutate::lpush(value)
+    }
+
+    pub fn rpush(value: impl Into<ListValue>) -> ListMutate {
+        ListMutate::rpush(value)
     }
 }
 
@@ -101,20 +105,24 @@ impl ListMutate {
         }
     }
 
-    pub fn pop_back(count: i64) -> Self {
-        Self::new(call::pop_back(count))
+    pub fn trim(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::trim(call::range(range)))
     }
 
-    pub fn pop_front(count: i64) -> Self {
-        Self::new(call::pop_front(count))
+    pub fn lpop(count: i64) -> Self {
+        Self::new(call::lpop(count))
     }
 
-    pub fn push_back(value: impl Into<ListValue>) -> Self {
-        Self::new(call::push_back(value.into()))
+    pub fn rpop(count: i64) -> Self {
+        Self::new(call::rpop(count))
     }
 
-    pub fn push_front(value: impl Into<ListValue>) -> Self {
-        Self::new(call::push_front(value.into()))
+    pub fn lpush(value: impl Into<ListValue>) -> Self {
+        Self::new(call::lpush(value.into()))
+    }
+
+    pub fn rpush(value: impl Into<ListValue>) -> Self {
+        Self::new(call::rpush(value.into()))
     }
 }
 
