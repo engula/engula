@@ -57,12 +57,12 @@ pub fn get() -> CallExpr {
     call!(Function::Get)
 }
 
-pub fn get_index(index: impl Into<TypedValue>) -> CallExpr {
-    index_call!(Function::Get, index)
+pub fn get_index(i: impl Into<TypedValue>) -> CallExpr {
+    index_call!(Function::Get, i)
 }
 
-pub fn get_range(range: impl Into<TypedRange>) -> CallExpr {
-    range_call!(Function::Get, range)
+pub fn get_range(r: impl Into<TypedRange>) -> CallExpr {
+    range_call!(Function::Get, r)
 }
 
 pub fn set(v: impl Into<TypedValue>) -> CallExpr {
@@ -73,8 +73,8 @@ pub fn delete() -> CallExpr {
     call!(Function::Delete)
 }
 
-pub fn delete_index(index: impl Into<TypedValue>) -> CallExpr {
-    index_call!(Function::Delete, index)
+pub fn delete_index(i: impl Into<TypedValue>) -> CallExpr {
+    index_call!(Function::Delete, i)
 }
 
 pub fn add(v: impl Into<TypedValue>) -> CallExpr {
@@ -85,36 +85,40 @@ pub fn sub(v: impl Into<TypedValue>) -> CallExpr {
     call!(Function::Sub, v)
 }
 
-pub fn pop_back(n: impl Into<TypedValue>) -> CallExpr {
-    call!(Function::PopBack, n)
+pub fn trim(r: impl Into<TypedRange>) -> CallExpr {
+    range_call!(Function::Trim, r)
 }
 
-pub fn pop_front(n: impl Into<TypedValue>) -> CallExpr {
-    call!(Function::PopFront, n)
+pub fn lpop(n: impl Into<TypedValue>) -> CallExpr {
+    call!(Function::Lpop, n)
 }
 
-pub fn push_back(v: impl Into<TypedValue>) -> CallExpr {
-    call!(Function::PushBack, v)
+pub fn rpop(n: impl Into<TypedValue>) -> CallExpr {
+    call!(Function::Rpop, n)
 }
 
-pub fn push_front(v: impl Into<TypedValue>) -> CallExpr {
-    call!(Function::PushFront, v)
+pub fn lpush(v: impl Into<TypedValue>) -> CallExpr {
+    call!(Function::Lpush, v)
+}
+
+pub fn rpush(v: impl Into<TypedValue>) -> CallExpr {
+    call!(Function::Rpush, v)
 }
 
 pub fn len() -> CallExpr {
     call!(Function::Len)
 }
 
-pub fn extend(value: impl Into<TypedValue>) -> CallExpr {
-    call!(Function::Extend, value)
+pub fn extend(v: impl Into<TypedValue>) -> CallExpr {
+    call!(Function::Extend, v)
 }
 
-pub fn range<T>(range: impl RangeBounds<T>) -> TypedRange
+pub fn range<T>(r: impl RangeBounds<T>) -> TypedRange
 where
     T: Clone + Into<TypedValue>,
 {
     let mut expr = TypedRange::default();
-    match range.start_bound().cloned() {
+    match r.start_bound().cloned() {
         Bound::Included(start) => {
             expr.start = Some(start.into());
             expr.start_bound = RangeBound::Included as i32;
@@ -127,7 +131,7 @@ where
             expr.start_bound = RangeBound::Unbounded as i32;
         }
     }
-    match range.end_bound().cloned() {
+    match r.end_bound().cloned() {
         Bound::Included(end) => {
             expr.end = Some(end.into());
             expr.end_bound = RangeBound::Included as i32;
