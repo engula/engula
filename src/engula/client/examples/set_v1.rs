@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use anyhow::Result;
-use engula_client::v1::{Map, Universe};
+use engula_client::v1::{Set, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,35 +24,31 @@ async fn main() -> Result<()> {
     let db = uv.create_database("map").await?;
     let co = db.create_collection("map").await?;
 
-    let va = [(0, 0), (1, 1), (2, 2)];
-    let vb = [(3, 3), (4, 4), (5, 5)];
+    let va = [0, 1, 2];
+    let vb = [3, 4, 5];
 
-    co.set("a", Map::new(va)).await?;
-    let a: HashMap<i64, i64> = co.get("a").await?;
+    co.set("a", Set::new(va)).await?;
+    let a: HashSet<i64> = co.get("a").await?;
     println!("a = {:?}", a);
 
-    co.mutate("a", Map::extend(vb)).await?;
-    let a: HashMap<i64, i64> = co.get("a").await?;
+    co.mutate("a", Set::extend(vb)).await?;
+    let a: HashSet<i64> = co.get("a").await?;
     println!("a.extend({:?}) = {:?}", vb, a);
 
-    co.mutate("a", Map::remove([0, 1])).await?;
-    let a: HashMap<i64, i64> = co.get("a").await?;
-    println!("a.delete([0, 1]) = {:?}", a);
+    co.mutate("a", Set::remove([0, 1])).await?;
+    let a: HashSet<i64> = co.get("a").await?;
+    println!("a.remove([0, 1]) = {:?}", a);
 
-    let len: i64 = co.select("a", Map::len()).await?;
+    let len: i64 = co.select("a", Set::len()).await?;
     println!("a.len = {:?}", len);
-    let a: i64 = co.select("a", Map::index(0)).await?;
-    println!("a.index(0) = {:?}", a);
-    let a: HashMap<i64, i64> = co.select("a", Map::index([1, 2])).await?;
-    println!("a.index([1,2]) = {:?}", a);
-    let a: HashMap<i64, i64> = co.select("a", Map::range(2..)).await?;
+    let a: HashSet<i64> = co.select("a", Set::range(2..)).await?;
     println!("a.range(2..) = {:?}", a);
-    let a: HashMap<i64, bool> = co.select("a", Map::contains([1, 2, 3])).await?;
-    println!("a.range(2..) = {:?}", a);
+    let a: bool = co.select("a", Set::contains(3)).await?;
+    println!("a.contains(3) = {:?}", a);
 
     let mut txn = co.begin();
-    txn.mutate("a", Map::extend(va));
-    txn.mutate("b", Map::extend(vb));
+    txn.mutate("a", Set::extend(va));
+    txn.mutate("b", Set::extend(vb));
     txn.commit().await?;
     println!("a = {:?}", co.get("a").await?);
     println!("b = {:?}", co.get("b").await?);

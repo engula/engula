@@ -29,9 +29,7 @@ async fn main() -> Result<()> {
     co.mutate("a", List::rpush([3, 4])).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a.rpush([3, 4]) = {:?}", a);
-
-    co.mutate("a", List::lpop(2)).await?;
-    let a: Vec<i64> = co.get("a").await?;
+    let a: Vec<i64> = co.mutate("a", List::lpop(2)).await?;
     println!("a.lpop(2) = {:?}", a);
 
     let len: i64 = co.select("a", List::len()).await?;

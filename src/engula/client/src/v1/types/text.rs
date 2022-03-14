@@ -76,7 +76,7 @@ impl TextSelect {
     }
 
     pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::get_range(call::range(range)))
+        Self::new(call::range(range_value(range)))
     }
 }
 
@@ -98,7 +98,7 @@ impl TextMutate {
     }
 
     pub fn trim(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::trim(call::range(range)))
+        Self::new(call::trim(range_value(range)))
     }
 
     pub fn lpop(count: i64) -> Self {

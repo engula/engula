@@ -29,7 +29,6 @@ async fn main() -> Result<()> {
     co.mutate("a", Blob::rpush([3, 4])).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a.rpush([3, 4]) = {:?}", a);
-
     let a: Vec<u8> = co.mutate("a", Blob::lpop(2)).await?;
     println!("a.lpop(2) = {:?}", a);
 
