@@ -13,12 +13,14 @@
 // limitations under the License.
 
 use engula_apis::v1::*;
+use engula_cooperator::v1::Cooperator;
 use engula_supervisor::v1::Supervisor;
 
 use super::Result;
 
 #[derive(Clone)]
 pub struct Transactor {
+    cooperator: Cooperator,
     supervisor: Supervisor,
 }
 
@@ -30,15 +32,21 @@ impl Default for Transactor {
 
 impl Transactor {
     pub fn new() -> Self {
+        let cooperator = Cooperator::new();
         let supervisor = Supervisor::new();
-        Self { supervisor }
+        Self {
+            cooperator,
+            supervisor,
+        }
     }
 
     pub async fn batch(&self, mut batch_req: BatchRequest) -> Result<BatchResponse> {
         let mut batch_res = BatchResponse::default();
         let databases = std::mem::take(&mut batch_req.databases);
         if !databases.is_empty() {
-            todo!();
+            let req = engula_cooperator::v1::apis::v1::BatchRequest { databases };
+            let mut res = self.cooperator.batch(req).await?;
+            batch_res.databases = std::mem::take(&mut res.databases);
         }
         let universes = std::mem::take(&mut batch_req.universes);
         if !universes.is_empty() {

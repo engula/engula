@@ -15,6 +15,13 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .extern_path(".engula.v1", "::engula_apis")
-        .compile(&["engula/cooperator/v1/cooperator.proto"], &["."])?;
+        .extern_path(".engula.v1alpha", "::engula_apis::v1")
+        .compile(
+            &[
+                "engula/cooperator/v1/cooperator.proto",
+                "engula/cooperator/v1alpha/cooperator.proto",
+            ],
+            &["."],
+        )?;
     Ok(())
 }
