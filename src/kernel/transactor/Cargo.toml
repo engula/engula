@@ -8,7 +8,7 @@ repository = "https://github.com/engula/engula"
 description = "The Engula Transactor."
 
 [dependencies]
-engula-apis = { version = "0.3", path = "../apis" }
+engula-apis = { version = "0.3", path = "../../apis" }
 engula-cooperator = { version = "0.3", path = "../cooperator" }
 engula-supervisor = { version = "0.3", path = "../supervisor" }
 
