@@ -23,6 +23,10 @@ impl Any {
         AnySelect::get()
     }
 
+    pub fn exists() -> AnySelect {
+        AnySelect::exists()
+    }
+
     pub fn set(value: impl Into<Value>) -> AnyMutate {
         AnyMutate::set(value)
     }
@@ -45,6 +49,10 @@ impl AnySelect {
 
     pub fn get() -> Self {
         Self::new(call::get())
+    }
+
+    pub fn exists() -> Self {
+        Self::new(call::exists())
     }
 }
 

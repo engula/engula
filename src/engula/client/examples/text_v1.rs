@@ -29,7 +29,6 @@ async fn main() -> Result<()> {
     co.mutate("a", Text::rpush("world")).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a.rpush(\"world\") = {:?}", a);
-
     let a: Vec<u8> = co.mutate("a", Text::lpop(5)).await?;
     println!("a.lpop(5) = {:?}", a);
 

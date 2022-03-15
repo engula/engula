@@ -80,11 +80,11 @@ impl ListSelect {
     }
 
     pub fn index(index: impl Into<ListValue>) -> Self {
-        Self::new(call::get_index(index.into()))
+        Self::new(call::index(index.into()))
     }
 
     pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::get_range(call::range(range)))
+        Self::new(call::range(range_value(range)))
     }
 }
 
@@ -106,7 +106,7 @@ impl ListMutate {
     }
 
     pub fn trim(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::trim(call::range(range)))
+        Self::new(call::trim(range_value(range)))
     }
 
     pub fn lpop(count: i64) -> Self {

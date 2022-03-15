@@ -18,68 +18,60 @@ use engula_apis::v1::*;
 
 use super::{call, MutateExpr, SelectExpr};
 
-pub struct Map(MapValue);
+pub struct Set(SetValue);
 
-impl From<Map> for Value {
-    fn from(v: Map) -> Self {
+impl From<Set> for Value {
+    fn from(v: Set) -> Self {
         v.0.into()
     }
 }
 
-impl Map {
-    pub fn new(value: impl Into<MapValue>) -> Self {
+impl Set {
+    pub fn new(value: impl Into<SetValue>) -> Self {
         Self(value.into())
     }
 
-    pub fn len() -> MapSelect {
-        MapSelect::len()
+    pub fn len() -> SetSelect {
+        SetSelect::len()
     }
 
-    pub fn index(index: impl Into<ListValue>) -> MapSelect {
-        MapSelect::index(index)
-    }
-
-    pub fn range<T>(range: impl RangeBounds<T>) -> MapSelect
+    pub fn range<T>(range: impl RangeBounds<T>) -> SetSelect
     where
         T: Clone + Into<Value>,
     {
-        MapSelect::range(range)
+        SetSelect::range(range)
     }
 
-    pub fn contains(index: impl Into<ListValue>) -> MapSelect {
-        MapSelect::contains(index)
+    pub fn contains(index: impl Into<ListValue>) -> SetSelect {
+        SetSelect::contains(index)
     }
 
-    pub fn clear() -> MapMutate {
-        MapMutate::clear()
+    pub fn clear() -> SetMutate {
+        SetMutate::clear()
     }
 
-    pub fn extend(value: impl Into<MapValue>) -> MapMutate {
-        MapMutate::extend(value)
+    pub fn extend(value: impl Into<SetValue>) -> SetMutate {
+        SetMutate::extend(value)
     }
 
-    pub fn remove(index: impl Into<ListValue>) -> MapMutate {
-        MapMutate::remove(index)
+    pub fn remove(index: impl Into<ListValue>) -> SetMutate {
+        SetMutate::remove(index)
     }
 }
 
-pub struct MapSelect {
-    expr: MapExpr,
+pub struct SetSelect {
+    expr: SetExpr,
 }
 
-impl MapSelect {
+impl SetSelect {
     fn new(call: CallExpr) -> Self {
         Self {
-            expr: MapExpr { call: Some(call) },
+            expr: SetExpr { call: Some(call) },
         }
     }
 
     pub fn len() -> Self {
         Self::new(call::len())
-    }
-
-    pub fn index(index: impl Into<ListValue>) -> Self {
-        Self::new(call::index(index.into()))
     }
 
     pub fn range<T>(range: impl RangeBounds<T>) -> Self
@@ -94,20 +86,20 @@ impl MapSelect {
     }
 }
 
-impl From<MapSelect> for SelectExpr {
-    fn from(v: MapSelect) -> Self {
+impl From<SetSelect> for SelectExpr {
+    fn from(v: SetSelect) -> Self {
         Expr::from(v.expr).into()
     }
 }
 
-pub struct MapMutate {
-    expr: MapExpr,
+pub struct SetMutate {
+    expr: SetExpr,
 }
 
-impl MapMutate {
+impl SetMutate {
     fn new(call: CallExpr) -> Self {
         Self {
-            expr: MapExpr { call: Some(call) },
+            expr: SetExpr { call: Some(call) },
         }
     }
 
@@ -115,7 +107,7 @@ impl MapMutate {
         Self::new(call::clear())
     }
 
-    pub fn extend(value: impl Into<MapValue>) -> Self {
+    pub fn extend(value: impl Into<SetValue>) -> Self {
         Self::new(call::extend(value.into()))
     }
 
@@ -124,8 +116,8 @@ impl MapMutate {
     }
 }
 
-impl From<MapMutate> for MutateExpr {
-    fn from(v: MapMutate) -> Self {
+impl From<SetMutate> for MutateExpr {
+    fn from(v: SetMutate) -> Self {
         Expr::from(v.expr).into()
     }
 }

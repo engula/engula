@@ -72,6 +72,10 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn exists(&self, id: impl Into<Vec<u8>>) -> Result<bool> {
+        self.select(id, Any::exists()).await
+    }
+
     pub async fn select<T: TryFrom<TypedValue>>(
         &self,
         id: impl Into<Vec<u8>>,
