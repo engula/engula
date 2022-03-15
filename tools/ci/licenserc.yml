@@ -17,5 +17,6 @@ header:
     spdx-id: Apache-2.0
     copyright-owner: The Engula Authors
   paths:
-    - src/**/*.rs
-    - src/**/*.proto
+    - '**/*.rs'
+    - '**/*.proto'
+    - '**/*.yml'
