@@ -16,6 +16,7 @@ mod apis;
 mod server;
 mod supervisor;
 mod universe;
+pub mod v1;
 
 use engula_common::{Error, Result};
 

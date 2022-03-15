@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::configure()
-        .extern_path(".engula.v1", "::engula_apis")
-        .extern_path(".engula.v1alpha", "::engula_apis::v1")
-        .compile(
-            &[
-                "engula/supervisor/v1/supervisor.proto",
-                "engula/supervisor/v1alpha/supervisor.proto",
-            ],
-            &["."],
-        )?;
-    Ok(())
+syntax = "proto3";
+
+package engula.supervisor.v1alpha;
+
+import "engula/v1alpha/universe.proto";
+
+service Supervisor {
+  rpc Batch(BatchRequest) returns (BatchResponse) {}
+}
+
+message BatchRequest { repeated engula.v1alpha.UniverseRequest universes = 1; }
+
+message BatchResponse {
+  repeated engula.v1alpha.UniverseResponse universes = 2;
 }
