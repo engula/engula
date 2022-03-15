@@ -12,30 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_apis::v1::*;
 use tonic::{Request, Response, Status};
 
-use super::{apis::v1::*, Supervisor};
+use super::Transactor;
 
 #[derive(Clone)]
 pub struct Server {
-    supervisor: Supervisor,
+    transactor: Transactor,
 }
 
 impl Server {
-    pub fn new(supervisor: Supervisor) -> Self {
-        Self { supervisor }
+    pub fn new(transactor: Transactor) -> Self {
+        Self { transactor }
     }
 
-    pub fn into_service(self) -> supervisor_server::SupervisorServer<Self> {
-        supervisor_server::SupervisorServer::new(self)
+    pub fn into_service(self) -> engula_server::EngulaServer<Self> {
+        engula_server::EngulaServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl supervisor_server::Supervisor for Server {
+impl engula_server::Engula for Server {
     async fn batch(&self, req: Request<BatchRequest>) -> Result<Response<BatchResponse>, Status> {
         let req = req.into_inner();
-        let res = self.supervisor.batch(req).await?;
+        let res = self.transactor.batch(req).await?;
         Ok(Response::new(res))
     }
 }

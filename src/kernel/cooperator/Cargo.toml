@@ -5,7 +5,7 @@ edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
-description = "The Engula Cooperator."
+description = "The Engula cooperator."
 
 [dependencies]
 engula-apis = { version = "0.3", path = "../../apis" }
