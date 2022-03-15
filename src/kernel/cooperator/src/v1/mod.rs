@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod apis;
-mod args;
-mod collection;
+pub mod apis;
 mod cooperator;
-mod database;
 mod server;
-mod universe;
-pub mod v1;
-mod write_cache;
 
-use engula_common::{Error, Result};
+use engula_common::Result;
 
-use self::{args::Args, collection::Collection, database::Database, universe::Universe};
 pub use self::{cooperator::Cooperator, server::Server};
