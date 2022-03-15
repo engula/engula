@@ -16,17 +16,6 @@ header:
   license:
     spdx-id: Apache-2.0
     copyright-owner: The Engula Authors
-  paths-ignore:
-    - 'docs'
-    - '**/*.md'
-    - '.dockerignore'
-    - '.gitignore'
-    - '.gitmodules'
-    - 'Cargo.lock'
-    - 'Cargo.toml'
-    - 'LICENSE'
-    - 'rust-toolchain.toml'
-    - 'rustfmt.toml'
-    - 'taplo.toml'
-    - src/engula/cooperator/engula/v1
-    - src/engula/supervisor/engula/v1
+  paths:
+    - src/**/*.rs
+    - src/**/*.proto
