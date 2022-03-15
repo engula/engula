@@ -11,7 +11,11 @@ Dependencies:
 ```
 engula
   ||
-supervisor/transactor/cooperator
+transactor
+  ||
+cooperator
+  ||
+supervisor
   ||
 common
   ||
