@@ -19,14 +19,12 @@ macro_rules! call {
         CallExpr {
             func: $func as i32,
             args: vec![],
-            ..Default::default()
         }
     };
     ($func:expr, $arg0:expr) => {
         CallExpr {
             func: $func as i32,
             args: vec![$arg0.into().into()],
-            ..Default::default()
         }
     };
 }
