@@ -12,18 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    apis::{
-        supervisor::v1::*,
-        v1::{
-            universe_request, universe_response, CreateCollectionRequest, CreateCollectionResponse,
-            CreateDatabaseRequest, CreateDatabaseResponse, DescribeCollectionRequest,
-            DescribeCollectionResponse, DescribeDatabaseRequest, DescribeDatabaseResponse,
-            UniverseRequest, UniverseResponse,
-        },
-    },
-    Error, Result, Universe,
-};
+use super::{apis::v1::*, Error, Result, Universe};
 
 #[derive(Clone)]
 pub struct Supervisor {

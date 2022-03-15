@@ -236,6 +236,7 @@ name = "engula-transactor"
 version = "0.3.0"
 dependencies = [
  "engula-apis",
+ "engula-common",
  "engula-cooperator",
  "engula-supervisor",
  "prost",

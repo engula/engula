@@ -23,13 +23,13 @@ pub enum Error {
     #[error("{0}")]
     InvalidArgument(String),
     #[error("{0}")]
-    Corrupted(String),
+    DataLoss(String),
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Unknown(Box<dyn std::error::Error + Send>),
+    Unknown(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl Error {
@@ -37,15 +37,15 @@ impl Error {
         Self::InvalidArgument(m.into())
     }
 
-    pub fn corrupted(m: impl Into<String>) -> Self {
-        Self::Corrupted(m.into())
+    pub fn dataloss(m: impl Into<String>) -> Self {
+        Self::DataLoss(m.into())
     }
 
     pub fn internal(m: impl Into<String>) -> Self {
         Self::Internal(m.into())
     }
 
-    pub fn unknown(err: impl std::error::Error + Send + 'static) -> Self {
+    pub fn unknown(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Unknown(Box::new(err))
     }
 }
@@ -56,7 +56,7 @@ impl From<tonic::Status> for Error {
             tonic::Code::NotFound => Error::NotFound(s.message().into()),
             tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
             tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
-            tonic::Code::DataLoss => Error::Corrupted(s.message().into()),
+            tonic::Code::DataLoss => Error::DataLoss(s.message().into()),
             tonic::Code::Internal => Error::Internal(s.message().into()),
             _ => Error::Unknown(Box::new(s)),
         }
@@ -75,7 +75,7 @@ impl From<Error> for tonic::Status {
             Error::NotFound(s) => (tonic::Code::NotFound, s),
             Error::AlreadyExists(s) => (tonic::Code::AlreadyExists, s),
             Error::InvalidArgument(s) => (tonic::Code::InvalidArgument, s),
-            Error::Corrupted(s) => (tonic::Code::DataLoss, s),
+            Error::DataLoss(s) => (tonic::Code::DataLoss, s),
             Error::Internal(s) => (tonic::Code::Internal, s),
             Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
             Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),

@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::all)]
+mod server;
+mod transactor;
 
-pub mod v1 {
-    pub use engula_apis::v1::{
-        universe_request, universe_response, CollectionDesc, CollectionOptions,
-        CollectionProperties, CreateCollectionRequest, CreateCollectionResponse,
-        CreateDatabaseRequest, CreateDatabaseResponse, DatabaseDesc, DatabaseOptions,
-        DatabaseProperties, DescribeCollectionRequest, DescribeCollectionResponse,
-        DescribeDatabaseRequest, DescribeDatabaseResponse, UniverseRequest, UniverseResponse,
-    };
+use engula_common::Result;
 
-    tonic::include_proto!("engula.supervisor.v1alpha");
-}
+pub use self::{server::Server, transactor::Transactor};
