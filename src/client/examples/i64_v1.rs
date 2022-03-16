@@ -38,11 +38,10 @@ async fn main() -> Result<()> {
     txn.mutate("a", I64::add(1));
     txn.mutate("b", I64::sub(2));
     txn.commit().await?;
-    println!("a = {:?}", co.get("a").await?);
-    println!("b = {:?}", co.get("b").await?);
+    let a: i64 = co.get("a").await?;
+    let b: i64 = co.get("b").await?;
+    println!("a.add(1) = {:?}", a);
+    println!("b.sub(2) = {:?}", b);
 
     Ok(())
 }
-
-// I64: get,set,delete,add,sub
-// Blob: get,len,range,set,delete,pop_back,pop

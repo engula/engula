@@ -12,32 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{apis::v1::*, Result};
+use engula_supervisor::v1::Supervisor;
+
+use super::{apis::v1::*, Result, Universe};
 
 #[derive(Clone)]
-pub struct Cooperator {}
-
-impl Default for Cooperator {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct Cooperator {
+    uv: Universe,
 }
 
 impl Cooperator {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(sv: Supervisor) -> Self {
+        let uv = Universe::new(sv);
+        Self { uv }
     }
 
     pub async fn batch(&self, batch_req: BatchRequest) -> Result<BatchResponse> {
         let mut batch_res = BatchResponse::default();
         for req in batch_req.databases {
-            let res = self.database(req).await?;
+            let db = self.uv.database(&req.name).await?;
+            let res = db.execute(req).await?;
             batch_res.databases.push(res);
         }
         Ok(batch_res)
-    }
-
-    async fn database(&self, _: DatabaseRequest) -> Result<DatabaseResponse> {
-        todo!();
     }
 }

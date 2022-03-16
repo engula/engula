@@ -20,8 +20,8 @@ use super::Result;
 
 #[derive(Clone)]
 pub struct Transactor {
-    cooperator: Cooperator,
     supervisor: Supervisor,
+    cooperator: Cooperator,
 }
 
 impl Default for Transactor {
@@ -32,27 +32,27 @@ impl Default for Transactor {
 
 impl Transactor {
     pub fn new() -> Self {
-        let cooperator = Cooperator::new();
         let supervisor = Supervisor::new();
+        let cooperator = Cooperator::new(supervisor.clone());
         Self {
-            cooperator,
             supervisor,
+            cooperator,
         }
     }
 
     pub async fn batch(&self, mut batch_req: BatchRequest) -> Result<BatchResponse> {
         let mut batch_res = BatchResponse::default();
-        let databases = std::mem::take(&mut batch_req.databases);
-        if !databases.is_empty() {
-            let req = engula_cooperator::v1::apis::v1::BatchRequest { databases };
-            let mut res = self.cooperator.batch(req).await?;
-            batch_res.databases = std::mem::take(&mut res.databases);
-        }
         let universes = std::mem::take(&mut batch_req.universes);
         if !universes.is_empty() {
             let req = engula_supervisor::v1::apis::v1::BatchRequest { universes };
             let mut res = self.supervisor.batch(req).await?;
             batch_res.universes = std::mem::take(&mut res.universes);
+        }
+        let databases = std::mem::take(&mut batch_req.databases);
+        if !databases.is_empty() {
+            let req = engula_cooperator::v1::apis::v1::BatchRequest { databases };
+            let mut res = self.cooperator.batch(req).await?;
+            batch_res.databases = std::mem::take(&mut res.databases);
         }
         Ok(batch_res)
     }

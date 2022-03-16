@@ -22,6 +22,13 @@ pub struct Server {
     transactor: Transactor,
 }
 
+impl Default for Server {
+    fn default() -> Self {
+        let transactor = Transactor::default();
+        Self::new(transactor)
+    }
+}
+
 impl Server {
     pub fn new(transactor: Transactor) -> Self {
         Self { transactor }
