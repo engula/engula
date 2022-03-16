@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     co.set("b", "hello").await?;
     let b: String = co.get("b").await?;
     println!("b = {:?}", b);
-    co.delete("a").await?;
+    co.delete("b").await?;
     let b: Option<String> = co.get("b").await?;
     println!("delete(b) = {:?}", b);
     let b: bool = co.exists("b").await?;

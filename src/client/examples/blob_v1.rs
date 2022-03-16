@@ -22,27 +22,39 @@ async fn main() -> Result<()> {
     let db = uv.create_database("blob").await?;
     let co = db.create_collection("blob").await?;
 
-    co.set("a", Blob::new([1, 2])).await?;
+    co.set("a", Blob::new([1, 2, 3, 4])).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a = {:?}", a);
 
-    co.mutate("a", Blob::rpush([3, 4])).await?;
+    co.mutate("a", Blob::rpush([5, 6, 7, 8])).await?;
     let a: Vec<u8> = co.get("a").await?;
-    println!("a.rpush([3, 4]) = {:?}", a);
+    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
+    let a: Vec<u8> = co.mutate("a", Blob::rpop(2)).await?;
+    println!("a.rpop(2) = {:?}", a);
     let a: Vec<u8> = co.mutate("a", Blob::lpop(2)).await?;
     println!("a.lpop(2) = {:?}", a);
+    co.mutate("a", Blob::lpush([1, 2])).await?;
+    let a: Vec<u8> = co.get("a").await?;
+    println!("a.lpush([1, 2]) = {:?}", a);
+    co.mutate("a", Blob::trim(2..)).await?;
+    let a: Vec<u8> = co.get("a").await?;
+    println!("a.trim(2..) = {:?}", a);
 
-    let len: i64 = co.select("a", Blob::len()).await?;
-    println!("a.len() = {:?}", len);
-    let a: Vec<u8> = co.select("a", Blob::range(5..)).await?;
-    println!("a.range(5..) = {:?}", a);
+    let a: i64 = co.select("a", Blob::len()).await?;
+    println!("a.len() = {:?}", a);
+    let a: Vec<u8> = co.select("a", Blob::range(1..)).await?;
+    println!("a.range(1..) = {:?}", a);
+    let a: Vec<u8> = co.select("a", Blob::range(..-1)).await?;
+    println!("a.range(..-1) = {:?}", a);
 
     let mut txn = co.begin();
     txn.mutate("a", Blob::lpush([1, 2]));
     txn.mutate("b", Blob::rpush([3, 4]));
     txn.commit().await?;
-    println!("a = {:?}", co.get("a").await?);
-    println!("b = {:?}", co.get("b").await?);
+    let a: Vec<u8> = co.get("a").await?;
+    let b: Vec<u8> = co.get("b").await?;
+    println!("a.lpush([1, 2]) = {:?}", a);
+    println!("b.rpush([3, 4]) = {:?}", b);
 
     Ok(())
 }
