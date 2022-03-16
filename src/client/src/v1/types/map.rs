@@ -41,7 +41,7 @@ impl Map {
 
     pub fn range<T>(range: impl RangeBounds<T>) -> MapSelect
     where
-        T: Clone + Into<Value>,
+        T: Clone + Into<range_bound::Value>,
     {
         MapSelect::range(range)
     }
@@ -84,7 +84,7 @@ impl MapSelect {
 
     pub fn range<T>(range: impl RangeBounds<T>) -> Self
     where
-        T: Clone + Into<Value>,
+        T: Clone + Into<range_bound::Value>,
     {
         Self::new(call::range(range_value(range)))
     }

@@ -37,7 +37,7 @@ impl Set {
 
     pub fn range<T>(range: impl RangeBounds<T>) -> SetSelect
     where
-        T: Clone + Into<Value>,
+        T: Clone + Into<range_bound::Value>,
     {
         SetSelect::range(range)
     }
@@ -76,7 +76,7 @@ impl SetSelect {
 
     pub fn range<T>(range: impl RangeBounds<T>) -> Self
     where
-        T: Clone + Into<Value>,
+        T: Clone + Into<range_bound::Value>,
     {
         Self::new(call::range(range_value(range)))
     }

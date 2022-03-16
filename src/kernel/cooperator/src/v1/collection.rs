@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Bound, sync::Arc};
 
 use engula_apis::v1::*;
 use tokio::sync::Mutex;
@@ -101,11 +101,11 @@ impl Collection {
             Function::Set => {
                 let value: TypedValue = args.take()?;
                 wb.put(id, value);
-                Ok(TypedValue::default())
+                Ok(().into())
             }
             Function::Delete => {
                 wb.delete(id);
-                Ok(TypedValue::default())
+                Ok(().into())
             }
             Function::Exists => {
                 let ob: TypedValue = self.get(&id).await?;
@@ -133,7 +133,7 @@ impl Collection {
                     _ => unreachable!(),
                 };
                 wb.put(id, new_value.into());
-                Ok(TypedValue::default())
+                Ok(().into())
             }
             _ => Err(Error::invalid_argument("unsupported i64 function")),
         }
@@ -141,14 +141,72 @@ impl Collection {
 
     async fn execute_blob_expr(
         &self,
-        _: &mut WriteBatch,
+        wb: &mut WriteBatch,
         id: Vec<u8>,
         expr: BlobExpr,
     ) -> Result<TypedValue> {
-        let (func, _) = parse_call_expr(expr.call)?;
-        let object: Option<Vec<u8>> = self.get(&id).await?;
+        let (func, mut args) = parse_call_expr(expr.call)?;
+        let ob: Option<Vec<u8>> = self.get(&id).await?;
         match func {
-            Function::Len => Ok(object.map(|v| v.len() as i64).into()),
+            Function::Len => Ok(ob.map(|v| v.len() as i64).into()),
+            Function::Range => {
+                if let Some(value) = ob {
+                    let range: (Bound<i64>, Bound<i64>) = args.take()?;
+                    let range = adjust_range_bounds(range, value.len())?;
+                    Ok(value[range].into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Trim => {
+                if let Some(value) = ob {
+                    let range: (Bound<i64>, Bound<i64>) = args.take()?;
+                    let range = adjust_range_bounds(range, value.len())?;
+                    wb.put(id, value[range].into());
+                }
+                Ok(().into())
+            }
+            Function::Lpop => {
+                let count: i64 = args.take()?;
+                if let Some(mut value) = ob {
+                    let suffix = if value.len() > count as usize {
+                        value.split_off(count as usize)
+                    } else {
+                        Vec::new()
+                    };
+                    wb.put(id, suffix.into());
+                    Ok(value.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Rpop => {
+                let count: i64 = args.take()?;
+                if let Some(mut value) = ob {
+                    let suffix = if value.len() > count as usize {
+                        value.split_off(value.len() - count as usize)
+                    } else {
+                        std::mem::take(&mut value)
+                    };
+                    wb.put(id, value.into());
+                    Ok(suffix.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Lpush => {
+                let mut new_value: Vec<u8> = args.take()?;
+                new_value.extend(ob.unwrap_or_default());
+                wb.put(id, new_value.into());
+                Ok(().into())
+            }
+            Function::Rpush => {
+                let suffix: Vec<u8> = args.take()?;
+                let mut new_value = ob.unwrap_or_default();
+                new_value.extend(suffix);
+                wb.put(id, new_value.into());
+                Ok(().into())
+            }
             _ => Err(Error::invalid_argument("unsupported blob function")),
         }
     }
@@ -160,4 +218,46 @@ fn parse_call_expr(call: Option<CallExpr>) -> Result<(Function, Args)> {
         Function::from_i32(call.func).ok_or_else(|| Error::invalid_argument("unknown function"))?;
     let args = Args::new(call.args);
     Ok((func, args))
+}
+
+fn adjust_range_value(v: i64, len: i64) -> Result<usize> {
+    let v = if v < 0 {
+        if let Some(v) = v.checked_add(len) {
+            if v < 0 {
+                0
+            } else {
+                v
+            }
+        } else {
+            return Err(Error::invalid_argument("i64 range bound overflow"));
+        }
+    } else {
+        v
+    };
+    usize::try_from(v).map_err(|_| Error::invalid_argument("convert i64 to usize"))
+}
+
+fn adjust_range_bound(bound: Bound<i64>, len: usize) -> Result<Bound<usize>> {
+    let len = i64::try_from(len).map_err(|_| Error::internal("convert usize to i64"))?;
+    let bound = match bound {
+        Bound::Included(v) => {
+            let v = adjust_range_value(v, len)?;
+            Bound::Included(v)
+        }
+        Bound::Excluded(v) => {
+            let v = adjust_range_value(v, len)?;
+            Bound::Excluded(v)
+        }
+        Bound::Unbounded => Bound::Unbounded,
+    };
+    Ok(bound)
+}
+
+fn adjust_range_bounds(
+    range: (Bound<i64>, Bound<i64>),
+    len: usize,
+) -> Result<(Bound<usize>, Bound<usize>)> {
+    let start = adjust_range_bound(range.0, len)?;
+    let end = adjust_range_bound(range.1, len)?;
+    Ok((start, end))
 }
