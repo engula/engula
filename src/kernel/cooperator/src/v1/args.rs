@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod apis;
-mod args;
-mod collection;
-mod cooperator;
-mod database;
-mod server;
-mod universe;
-mod write_batch;
+use std::collections::VecDeque;
 
-use engula_common::Result;
+use engula_apis::v1::*;
 
-use self::{
-    args::Args,
-    collection::Collection,
-    database::Database,
-    universe::Universe,
-    write_batch::{Write, WriteBatch},
-};
-pub use self::{cooperator::Cooperator, server::Server};
+use crate::{Error, Result};
+
+pub struct Args(VecDeque<TypedValue>);
+
+impl Args {
+    pub fn new(args: Vec<TypedValue>) -> Self {
+        Self(args.into())
+    }
+
+    pub fn take<T: TryFrom<TypedValue>>(&mut self) -> Result<T> {
+        let v = self
+            .0
+            .pop_front()
+            .ok_or_else(|| Error::invalid_argument("missing argument"))?;
+        v.try_into()
+            .map_err(|_| Error::invalid_argument("argument type mismatch"))
+    }
+}

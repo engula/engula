@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod apis;
-mod args;
-mod collection;
-mod cooperator;
-mod database;
-mod server;
-mod universe;
-mod write_batch;
+use engula_apis::v1::*;
 
-use engula_common::Result;
+pub enum Write {
+    Put(Vec<u8>, TypedValue),
+    Delete(Vec<u8>),
+}
 
-use self::{
-    args::Args,
-    collection::Collection,
-    database::Database,
-    universe::Universe,
-    write_batch::{Write, WriteBatch},
-};
-pub use self::{cooperator::Cooperator, server::Server};
+#[derive(Default)]
+pub struct WriteBatch {
+    pub writes: Vec<Write>,
+}
+
+impl WriteBatch {
+    pub fn put(&mut self, id: Vec<u8>, value: TypedValue) {
+        self.writes.push(Write::Put(id, value))
+    }
+
+    pub fn delete(&mut self, id: Vec<u8>) {
+        self.writes.push(Write::Delete(id))
+    }
+}

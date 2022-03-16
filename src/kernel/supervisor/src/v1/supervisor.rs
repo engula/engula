@@ -74,7 +74,10 @@ impl Supervisor {
         })
     }
 
-    async fn create_database(&self, req: CreateDatabaseRequest) -> Result<CreateDatabaseResponse> {
+    pub async fn create_database(
+        &self,
+        req: CreateDatabaseRequest,
+    ) -> Result<CreateDatabaseResponse> {
         let db = self
             .uv
             .create_database(&req.name, req.options.unwrap_or_default())
@@ -83,7 +86,7 @@ impl Supervisor {
         Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
 
-    async fn describe_database(
+    pub async fn describe_database(
         &self,
         req: DescribeDatabaseRequest,
     ) -> Result<DescribeDatabaseResponse> {
@@ -92,7 +95,7 @@ impl Supervisor {
         Ok(DescribeDatabaseResponse { desc: Some(desc) })
     }
 
-    async fn create_collection(
+    pub async fn create_collection(
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
@@ -104,7 +107,7 @@ impl Supervisor {
         Ok(CreateCollectionResponse { desc: Some(desc) })
     }
 
-    async fn describe_collection(
+    pub async fn describe_collection(
         &self,
         req: DescribeCollectionRequest,
     ) -> Result<DescribeCollectionResponse> {
