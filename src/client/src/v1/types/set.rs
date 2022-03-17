@@ -78,7 +78,7 @@ impl SetSelect {
     where
         T: Clone + Into<range_bound::Value>,
     {
-        Self::new(call::range(range_value(range)))
+        Self::new(call::range(range_bounds(range)))
     }
 
     pub fn contains(index: impl Into<ListValue>) -> Self {

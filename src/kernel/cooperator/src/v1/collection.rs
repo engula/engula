@@ -82,6 +82,7 @@ impl Collection {
             Expr::AnyExpr(expr) => self.execute_any_expr(wb, id, expr).await,
             Expr::I64Expr(expr) => self.execute_i64_expr(wb, id, expr).await,
             Expr::BlobExpr(expr) => self.execute_blob_expr(wb, id, expr).await,
+            Expr::ListExpr(expr) => self.execute_list_expr(wb, id, expr).await,
             _ => todo!(),
         }
     }
@@ -169,12 +170,12 @@ impl Collection {
             Function::Lpop => {
                 let count: i64 = args.take()?;
                 if let Some(mut value) = ob {
-                    let suffix = if value.len() > count as usize {
+                    let new_value = if value.len() > count as usize {
                         value.split_off(count as usize)
                     } else {
                         Vec::new()
                     };
-                    wb.put(id, suffix.into());
+                    wb.put(id, new_value.into());
                     Ok(value.into())
                 } else {
                     Ok(().into())
@@ -183,13 +184,13 @@ impl Collection {
             Function::Rpop => {
                 let count: i64 = args.take()?;
                 if let Some(mut value) = ob {
-                    let suffix = if value.len() > count as usize {
+                    let ret_value = if value.len() > count as usize {
                         value.split_off(value.len() - count as usize)
                     } else {
                         std::mem::take(&mut value)
                     };
                     wb.put(id, value.into());
-                    Ok(suffix.into())
+                    Ok(ret_value.into())
                 } else {
                     Ok(().into())
                 }
@@ -201,13 +202,271 @@ impl Collection {
                 Ok(().into())
             }
             Function::Rpush => {
-                let suffix: Vec<u8> = args.take()?;
+                let operand: Vec<u8> = args.take()?;
                 let mut new_value = ob.unwrap_or_default();
-                new_value.extend(suffix);
+                new_value.extend(operand);
                 wb.put(id, new_value.into());
                 Ok(().into())
             }
             _ => Err(Error::invalid_argument("unsupported blob function")),
+        }
+    }
+
+    async fn execute_list_expr(
+        &self,
+        wb: &mut WriteBatch,
+        id: Vec<u8>,
+        expr: ListExpr,
+    ) -> Result<TypedValue> {
+        let (func, mut args) = parse_call_expr(expr.call)?;
+        let ob: Option<ListValue> = self.get(&id).await?;
+        match func {
+            Function::Len => {
+                if let Some(value) = ob {
+                    let len = if !value.i64_value.is_empty() {
+                        value.i64_value.len()
+                    } else if !value.f64_value.is_empty() {
+                        value.f64_value.len()
+                    } else if !value.blob_value.is_empty() {
+                        value.blob_value.len()
+                    } else if !value.text_value.is_empty() {
+                        value.text_value.len()
+                    } else {
+                        0
+                    };
+                    let len =
+                        i64::try_from(len).map_err(|_| Error::internal("convert usize to i64"))?;
+                    Ok(len.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Index => {
+                if let Some(value) = ob {
+                    let indexs: Vec<i64> = args.take()?;
+                    let ret_value = if !value.i64_value.is_empty() {
+                        let value = value.i64_value;
+                        let mut ret_value = Vec::new();
+                        for index in indexs {
+                            let index = adjust_index_value(index, value.len())?;
+                            ret_value.push(value[index]);
+                        }
+                        ret_value.into()
+                    } else if !value.f64_value.is_empty() {
+                        let value = value.f64_value;
+                        let mut ret_value = Vec::new();
+                        for index in indexs {
+                            let index = adjust_index_value(index, value.len())?;
+                            ret_value.push(value[index]);
+                        }
+                        ret_value.into()
+                    } else if !value.blob_value.is_empty() {
+                        let value = value.blob_value;
+                        let mut ret_value = Vec::new();
+                        for index in indexs {
+                            let index = adjust_index_value(index, value.len())?;
+                            ret_value.push(value[index].clone());
+                        }
+                        ret_value.into()
+                    } else if !value.text_value.is_empty() {
+                        let value = value.text_value;
+                        let mut ret_value = Vec::new();
+                        for index in indexs {
+                            let index = adjust_index_value(index, value.len())?;
+                            ret_value.push(value[index].clone());
+                        }
+                        ret_value.into()
+                    } else {
+                        ListValue::default()
+                    };
+                    Ok(ret_value.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Range => {
+                if let Some(value) = ob {
+                    let range: (Bound<i64>, Bound<i64>) = args.take()?;
+                    let ret_value = if !value.i64_value.is_empty() {
+                        let value = value.i64_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.f64_value.is_empty() {
+                        let value = value.f64_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.blob_value.is_empty() {
+                        let value = value.blob_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.text_value.is_empty() {
+                        let value = value.text_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else {
+                        ListValue::default()
+                    };
+                    Ok(ret_value.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Trim => {
+                if let Some(value) = ob {
+                    let range: (Bound<i64>, Bound<i64>) = args.take()?;
+                    let new_value = if !value.i64_value.is_empty() {
+                        let value = value.i64_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.f64_value.is_empty() {
+                        let value = value.f64_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.blob_value.is_empty() {
+                        let value = value.blob_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else if !value.text_value.is_empty() {
+                        let value = value.text_value;
+                        let range = adjust_range_bounds(range, value.len())?;
+                        value[range].into()
+                    } else {
+                        ListValue::default()
+                    };
+                    wb.put(id, new_value.into());
+                }
+                Ok(().into())
+            }
+            Function::Lpop => {
+                let count: i64 = args.take()?;
+                if let Some(mut value) = ob {
+                    let new_value = if !value.i64_value.is_empty() {
+                        let value = &mut value.i64_value;
+                        if value.len() > count as usize {
+                            value.split_off(count as usize).into()
+                        } else {
+                            ListValue::default()
+                        }
+                    } else if !value.f64_value.is_empty() {
+                        let value = &mut value.f64_value;
+                        if value.len() > count as usize {
+                            value.split_off(count as usize).into()
+                        } else {
+                            ListValue::default()
+                        }
+                    } else if !value.blob_value.is_empty() {
+                        let value = &mut value.blob_value;
+                        if value.len() > count as usize {
+                            value.split_off(count as usize).into()
+                        } else {
+                            ListValue::default()
+                        }
+                    } else if !value.text_value.is_empty() {
+                        let value = &mut value.text_value;
+                        if value.len() > count as usize {
+                            value.split_off(count as usize).into()
+                        } else {
+                            ListValue::default()
+                        }
+                    } else {
+                        ListValue::default()
+                    };
+                    wb.put(id, new_value.into());
+                    Ok(value.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Rpop => {
+                let count: i64 = args.take()?;
+                if let Some(mut value) = ob {
+                    let ret_value = if !value.i64_value.is_empty() {
+                        let value = &mut value.i64_value;
+                        if value.len() > count as usize {
+                            value.split_off(value.len() - count as usize).into()
+                        } else {
+                            std::mem::take(value).into()
+                        }
+                    } else if !value.f64_value.is_empty() {
+                        let value = &mut value.f64_value;
+                        if value.len() > count as usize {
+                            value.split_off(value.len() - count as usize).into()
+                        } else {
+                            std::mem::take(value).into()
+                        }
+                    } else if !value.blob_value.is_empty() {
+                        let value = &mut value.blob_value;
+                        if value.len() > count as usize {
+                            value.split_off(value.len() - count as usize).into()
+                        } else {
+                            std::mem::take(value).into()
+                        }
+                    } else if !value.text_value.is_empty() {
+                        let value = &mut value.text_value;
+                        if value.len() > count as usize {
+                            value.split_off(value.len() - count as usize).into()
+                        } else {
+                            std::mem::take(value).into()
+                        }
+                    } else {
+                        ListValue::default()
+                    };
+                    wb.put(id, value.into());
+                    Ok(ret_value.into())
+                } else {
+                    Ok(().into())
+                }
+            }
+            Function::Lpush => {
+                let new_value = if let Some(value) = ob {
+                    if !value.i64_value.is_empty() {
+                        let mut new_value: Vec<i64> = args.take()?;
+                        new_value.extend(value.i64_value);
+                        new_value.into()
+                    } else if !value.f64_value.is_empty() {
+                        let mut new_value: Vec<f64> = args.take()?;
+                        new_value.extend(value.f64_value);
+                        new_value.into()
+                    } else if !value.blob_value.is_empty() {
+                        let mut new_value: Vec<Vec<u8>> = args.take()?;
+                        new_value.extend(value.blob_value);
+                        new_value.into()
+                    } else if !value.text_value.is_empty() {
+                        let mut new_value: Vec<String> = args.take()?;
+                        new_value.extend(value.text_value);
+                        new_value.into()
+                    } else {
+                        ListValue::default()
+                    }
+                } else {
+                    args.take()?
+                };
+                wb.put(id, new_value.into());
+                Ok(().into())
+            }
+            Function::Rpush => {
+                let new_value = if let Some(mut value) = ob {
+                    if !value.i64_value.is_empty() {
+                        let operand: Vec<i64> = args.take()?;
+                        value.i64_value.extend(operand);
+                    } else if !value.f64_value.is_empty() {
+                        let operand: Vec<f64> = args.take()?;
+                        value.f64_value.extend(operand);
+                    } else if !value.blob_value.is_empty() {
+                        let operand: Vec<Vec<u8>> = args.take()?;
+                        value.blob_value.extend(operand);
+                    } else if !value.text_value.is_empty() {
+                        let operand: Vec<String> = args.take()?;
+                        value.text_value.extend(operand);
+                    }
+                    value
+                } else {
+                    args.take()?
+                };
+                wb.put(id, new_value.into());
+                Ok(().into())
+            }
+            _ => Err(Error::invalid_argument("unsupported list function")),
         }
     }
 }
@@ -220,33 +479,50 @@ fn parse_call_expr(call: Option<CallExpr>) -> Result<(Function, Args)> {
     Ok((func, args))
 }
 
-fn adjust_range_value(v: i64, len: i64) -> Result<usize> {
-    let v = if v < 0 {
-        if let Some(v) = v.checked_add(len) {
-            if v < 0 {
-                0
-            } else {
-                v
-            }
+fn adjust_index_value(i: i64, len: usize) -> Result<usize> {
+    let len = i64::try_from(len).map_err(|_| Error::internal("convert usize to i64"))?;
+    let i = if i < 0 {
+        if let Some(i) = i.checked_add(len) {
+            i
         } else {
-            return Err(Error::invalid_argument("i64 range bound overflow"));
+            return Err(Error::invalid_argument("index overflow"));
         }
     } else {
-        v
+        i
     };
-    usize::try_from(v).map_err(|_| Error::invalid_argument("convert i64 to usize"))
+    if i < 0 || i >= len {
+        return Err(Error::invalid_argument("index out of range"));
+    };
+    usize::try_from(i).map_err(|_| Error::invalid_argument("convert i64 to usize"))
+}
+
+fn adjust_bound_value(i: i64, len: i64) -> Result<usize> {
+    let i = if i < 0 {
+        if let Some(i) = i.checked_add(len) {
+            if i < 0 {
+                0
+            } else {
+                i
+            }
+        } else {
+            return Err(Error::invalid_argument("range bound overflow"));
+        }
+    } else {
+        i
+    };
+    usize::try_from(i).map_err(|_| Error::invalid_argument("convert i64 to usize"))
 }
 
 fn adjust_range_bound(bound: Bound<i64>, len: usize) -> Result<Bound<usize>> {
     let len = i64::try_from(len).map_err(|_| Error::internal("convert usize to i64"))?;
     let bound = match bound {
-        Bound::Included(v) => {
-            let v = adjust_range_value(v, len)?;
-            Bound::Included(v)
+        Bound::Included(i) => {
+            let i = adjust_bound_value(i, len)?;
+            Bound::Included(i)
         }
-        Bound::Excluded(v) => {
-            let v = adjust_range_value(v, len)?;
-            Bound::Excluded(v)
+        Bound::Excluded(i) => {
+            let i = adjust_bound_value(i, len)?;
+            Bound::Excluded(i)
         }
         Bound::Unbounded => Bound::Unbounded,
     };
