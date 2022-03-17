@@ -84,7 +84,7 @@ impl ListSelect {
     }
 
     pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::range(range_value(range)))
+        Self::new(call::range(range_bounds(range)))
     }
 }
 
@@ -106,7 +106,7 @@ impl ListMutate {
     }
 
     pub fn trim(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::trim(range_value(range)))
+        Self::new(call::trim(range_bounds(range)))
     }
 
     pub fn lpop(count: i64) -> Self {
