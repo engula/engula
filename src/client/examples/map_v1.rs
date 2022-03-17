@@ -37,25 +37,27 @@ async fn main() -> Result<()> {
 
     co.mutate("a", Map::remove([0, 1])).await?;
     let a: HashMap<i64, i64> = co.get("a").await?;
-    println!("a.delete([0, 1]) = {:?}", a);
+    println!("a.remove([0, 1]) = {:?}", a);
 
-    let len: i64 = co.select("a", Map::len()).await?;
-    println!("a.len = {:?}", len);
-    let a: i64 = co.select("a", Map::index(0)).await?;
+    let a: i64 = co.select("a", Map::len()).await?;
+    println!("a.len = {:?}", a);
+    let a: HashMap<i64, i64> = co.select("a", Map::index(0)).await?;
     println!("a.index(0) = {:?}", a);
     let a: HashMap<i64, i64> = co.select("a", Map::index([1, 2])).await?;
-    println!("a.index([1,2]) = {:?}", a);
+    println!("a.index([1, 2]) = {:?}", a);
     let a: HashMap<i64, i64> = co.select("a", Map::range(2..)).await?;
     println!("a.range(2..) = {:?}", a);
-    let a: HashMap<i64, bool> = co.select("a", Map::contains([1, 2, 3])).await?;
-    println!("a.range(2..) = {:?}", a);
+    let a: Vec<i64> = co.select("a", Map::contains([1, 2, 3])).await?;
+    println!("a.contains([1, 2, 3]) = {:?}", a);
 
     let mut txn = co.begin();
     txn.mutate("a", Map::extend(va));
     txn.mutate("b", Map::extend(vb));
     txn.commit().await?;
-    println!("a = {:?}", co.get("a").await?);
-    println!("b = {:?}", co.get("b").await?);
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    let b: HashMap<i64, i64> = co.get("b").await?;
+    println!("a.extend([0, 1, 2]) = {:?}", a);
+    println!("b.extend([3, 4, 5]) = {:?}", b);
 
     Ok(())
 }
