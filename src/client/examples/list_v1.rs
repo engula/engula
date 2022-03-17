@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 
     let len: i64 = co.select("a", List::len()).await?;
     println!("a.len() = {:?}", len);
-    let a: i64 = co.select("a", List::index(2)).await?;
+    let a: Vec<i64> = co.select("a", List::index(2)).await?;
     println!("a.index(2) = {:?}", a);
     let a: Vec<i64> = co.select("a", List::index([0, -1])).await?;
     println!("a.index([0, -1]) = {:?}", a);
