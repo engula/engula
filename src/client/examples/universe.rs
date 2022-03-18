@@ -19,15 +19,25 @@ use engula_client::Universe;
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
+
     let db = uv.create_database("db").await?;
-    let co1 = db.create_collection("co1").await?;
+    println!("created {:?}", db.desc().await?);
+    let db2 = uv.create_database("db2").await?;
+    println!("created {:?}", db2.desc().await?);
+
+    let co = db.create_collection("co").await?;
+    println!("created {:?}", co.desc().await?);
     let co2 = db.create_collection("co2").await?;
-    println!("{:?}", db.desc().await?);
-    println!("{:?}", co1.desc().await?);
-    println!("{:?}", co2.desc().await?);
-    db.delete_collection(co1.name()).await?;
+    println!("created {:?}", co2.desc().await?);
+
+    println!("list databases {:?}", uv.list_databases().collect().await?);
+    println!(
+        "list collections {:?}",
+        db.list_collections().collect().await?
+    );
+
+    uv.delete_database(db2.name()).await?;
     db.delete_collection(co2.name()).await?;
-    println!("{:?}", db.desc().await?);
 
     Ok(())
 }

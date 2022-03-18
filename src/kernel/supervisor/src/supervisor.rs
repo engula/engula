@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use futures::future::join_all;
+
 use crate::{apis::*, Error, Result, Universe};
 
 #[derive(Clone, Default)]
@@ -34,8 +36,9 @@ impl Supervisor {
             .request
             .ok_or_else(|| Error::invalid_argument("missing request"))?;
         let res = match req {
-            universe_request::Request::ListDatabases(_) => {
-                todo!();
+            universe_request::Request::ListDatabases(req) => {
+                let res = self.list_databases(req).await?;
+                universe_response::Response::ListDatabases(res)
             }
             universe_request::Request::CreateDatabase(req) => {
                 let res = self.create_database(req).await?;
@@ -48,6 +51,10 @@ impl Supervisor {
             universe_request::Request::DescribeDatabase(req) => {
                 let res = self.describe_database(req).await?;
                 universe_response::Response::DescribeDatabase(res)
+            }
+            universe_request::Request::ListCollections(req) => {
+                let res = self.list_collections(req).await?;
+                universe_response::Response::ListCollections(res)
             }
             universe_request::Request::CreateCollection(req) => {
                 let res = self.create_collection(req).await?;
@@ -67,6 +74,18 @@ impl Supervisor {
         };
         Ok(UniverseResponse {
             response: Some(res),
+        })
+    }
+
+    pub async fn list_databases(&self, req: ListDatabasesRequest) -> Result<ListDatabasesResponse> {
+        let (dbs, next_token) = self
+            .uv
+            .list_databases(req.page_size as usize, Some(req.page_token))
+            .await?;
+        let descs = join_all(dbs.iter().map(|db| db.desc())).await;
+        Ok(ListDatabasesResponse {
+            descs,
+            next_page_token: next_token.unwrap_or_default(),
         })
     }
 
@@ -97,6 +116,21 @@ impl Supervisor {
         let db = self.uv.database(&req.name).await?;
         let desc = db.desc().await;
         Ok(DescribeDatabaseResponse { desc: Some(desc) })
+    }
+
+    pub async fn list_collections(
+        &self,
+        req: ListCollectionsRequest,
+    ) -> Result<ListCollectionsResponse> {
+        let db = self.uv.database(&req.name).await?;
+        let (cos, next_token) = db
+            .list_collections(req.page_size as usize, Some(req.page_token))
+            .await?;
+        let descs = join_all(cos.iter().map(|co| co.desc())).await;
+        Ok(ListCollectionsResponse {
+            descs,
+            next_page_token: next_token.unwrap_or_default(),
+        })
     }
 
     pub async fn create_collection(

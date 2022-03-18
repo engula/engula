@@ -57,31 +57,50 @@ impl Universe {
 
 pub struct DatabaseList {
     client: Client,
-    next_page_token: String,
+    next_page_token: Option<String>,
 }
 
 impl DatabaseList {
     fn new(client: Client) -> Self {
         Self {
             client,
-            next_page_token: String::new(),
+            next_page_token: Some(String::new()),
         }
     }
 }
 
 impl DatabaseList {
+    pub async fn collect(mut self) -> Result<Vec<DatabaseDesc>> {
+        let mut descs = Vec::new();
+        loop {
+            let page = self.next_page(100).await?;
+            if page.is_empty() {
+                break;
+            }
+            descs.extend(page);
+        }
+        Ok(descs)
+    }
+
     pub async fn next_page(&mut self, size: usize) -> Result<Vec<DatabaseDesc>> {
-        let req = ListDatabasesRequest {
-            page_size: size as u64,
-            page_token: self.next_page_token.clone(),
-        };
-        let req = universe_request::Request::ListDatabases(req);
-        let res = self.client.universe(req).await?;
-        if let universe_response::Response::ListDatabases(mut res) = res {
-            self.next_page_token = std::mem::take(&mut res.next_page_token);
-            Ok(std::mem::take(&mut res.descs))
+        if let Some(page_token) = self.next_page_token.take() {
+            let req = ListDatabasesRequest {
+                page_size: size as u64,
+                page_token,
+            };
+            let req = universe_request::Request::ListDatabases(req);
+            let res = self.client.universe(req).await?;
+            if let universe_response::Response::ListDatabases(mut res) = res {
+                let next_page_token = std::mem::take(&mut res.next_page_token);
+                if !next_page_token.is_empty() {
+                    self.next_page_token = Some(next_page_token);
+                }
+                Ok(std::mem::take(&mut res.descs))
+            } else {
+                Err(Error::internal("missing list databases response"))
+            }
         } else {
-            Err(Error::internal("missing list databases response"))
+            Ok(Vec::new())
         }
     }
 }
