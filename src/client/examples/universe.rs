@@ -25,6 +25,9 @@ async fn main() -> Result<()> {
     println!("{:?}", db.desc().await?);
     println!("{:?}", co1.desc().await?);
     println!("{:?}", co2.desc().await?);
+    db.delete_collection(co1.name()).await?;
+    db.delete_collection(co2.name()).await?;
+    println!("{:?}", db.desc().await?);
 
     Ok(())
 }

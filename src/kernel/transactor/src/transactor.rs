@@ -32,7 +32,7 @@ impl Default for Transactor {
 
 impl Transactor {
     pub fn new() -> Self {
-        let supervisor = Supervisor::new();
+        let supervisor = Supervisor::default();
         let cooperator = Cooperator::new(supervisor.clone());
         Self {
             supervisor,

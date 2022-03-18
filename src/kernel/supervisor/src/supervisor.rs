@@ -14,24 +14,12 @@
 
 use crate::{apis::*, Error, Result, Universe};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Supervisor {
     uv: Universe,
 }
 
-impl Default for Supervisor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Supervisor {
-    pub fn new() -> Self {
-        Self {
-            uv: Universe::new(),
-        }
-    }
-
     pub async fn batch(&self, batch_req: BatchRequest) -> Result<BatchResponse> {
         let mut batch_res = BatchResponse::default();
         for req in batch_req.universes {
@@ -53,6 +41,10 @@ impl Supervisor {
                 let res = self.create_database(req).await?;
                 universe_response::Response::CreateDatabase(res)
             }
+            universe_request::Request::DeleteDatabase(req) => {
+                let res = self.delete_database(req).await?;
+                universe_response::Response::DeleteDatabase(res)
+            }
             universe_request::Request::DescribeDatabase(req) => {
                 let res = self.describe_database(req).await?;
                 universe_response::Response::DescribeDatabase(res)
@@ -60,6 +52,10 @@ impl Supervisor {
             universe_request::Request::CreateCollection(req) => {
                 let res = self.create_collection(req).await?;
                 universe_response::Response::CreateCollection(res)
+            }
+            universe_request::Request::DeleteCollection(req) => {
+                let res = self.delete_collection(req).await?;
+                universe_response::Response::DeleteCollection(res)
             }
             universe_request::Request::DescribeCollection(req) => {
                 let res = self.describe_collection(req).await?;
@@ -86,6 +82,14 @@ impl Supervisor {
         Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
 
+    pub async fn delete_database(
+        &self,
+        req: DeleteDatabaseRequest,
+    ) -> Result<DeleteDatabaseResponse> {
+        self.uv.delete_database(&req.name).await?;
+        Ok(DeleteDatabaseResponse {})
+    }
+
     pub async fn describe_database(
         &self,
         req: DescribeDatabaseRequest,
@@ -105,6 +109,15 @@ impl Supervisor {
             .await?;
         let desc = co.desc().await;
         Ok(CreateCollectionResponse { desc: Some(desc) })
+    }
+
+    pub async fn delete_collection(
+        &self,
+        req: DeleteCollectionRequest,
+    ) -> Result<DeleteCollectionResponse> {
+        let db = self.uv.database(&req.dbname).await?;
+        db.delete_collection(&req.name).await?;
+        Ok(DeleteCollectionResponse {})
     }
 
     pub async fn describe_collection(
