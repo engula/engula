@@ -17,16 +17,9 @@ use tonic::{Request, Response, Status};
 
 use crate::Transactor;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Server {
     transactor: Transactor,
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        let transactor = Transactor::default();
-        Self::new(transactor)
-    }
 }
 
 impl Server {

@@ -18,8 +18,9 @@ pub use engula_apis::v1::{
     universe_request, universe_response, CollectionDesc, CollectionOptions, CollectionProperties,
     CreateCollectionRequest, CreateCollectionResponse, CreateDatabaseRequest,
     CreateDatabaseResponse, DatabaseDesc, DatabaseOptions, DatabaseProperties,
-    DescribeCollectionRequest, DescribeCollectionResponse, DescribeDatabaseRequest,
-    DescribeDatabaseResponse, UniverseRequest, UniverseResponse,
+    DeleteCollectionRequest, DeleteCollectionResponse, DeleteDatabaseRequest,
+    DeleteDatabaseResponse, DescribeCollectionRequest, DescribeCollectionResponse,
+    DescribeDatabaseRequest, DescribeDatabaseResponse, UniverseRequest, UniverseResponse,
 };
 
 tonic::include_proto!("engula.supervisor.v1");

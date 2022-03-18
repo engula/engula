@@ -29,6 +29,12 @@ pub struct Universe {
     inner: Arc<Mutex<UniverseInner>>,
 }
 
+impl Default for Universe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Universe {
     pub fn new() -> Self {
         let inner = UniverseInner::new();
@@ -45,6 +51,11 @@ impl Universe {
     pub async fn create_database(&self, name: &str, options: DatabaseOptions) -> Result<Database> {
         let mut inner = self.inner.lock().await;
         inner.create_database(name, options)
+    }
+
+    pub async fn delete_database(&self, name: &str) -> Result<()> {
+        let mut inner = self.inner.lock().await;
+        inner.delete_database(name)
     }
 }
 
@@ -77,6 +88,11 @@ impl UniverseInner {
         self.databases.insert(name.to_owned(), db.clone());
         Ok(db)
     }
+
+    fn delete_database(&mut self, name: &str) -> Result<()> {
+        self.databases.remove(name);
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -108,6 +124,11 @@ impl Database {
     ) -> Result<Collection> {
         let mut inner = self.inner.lock().await;
         inner.create_collection(name, options)
+    }
+
+    pub async fn delete_collection(&self, name: &str) -> Result<()> {
+        let mut inner = self.inner.lock().await;
+        inner.delete_collection(name)
     }
 }
 
@@ -157,6 +178,11 @@ impl DatabaseInner {
         let co = Collection::new(id, name.to_owned(), options);
         self.collections.insert(name.to_owned(), co.clone());
         Ok(co)
+    }
+
+    fn delete_collection(&mut self, name: &str) -> Result<()> {
+        self.collections.remove(name);
+        Ok(())
     }
 }
 
