@@ -12,64 +12,85 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use engula_apis::*;
+use engula_apis::v1::*;
 use engula_supervisor::Supervisor;
 use tokio::sync::Mutex;
 
-use crate::{Collection, Result};
+use crate::{Collection, Error, Result, WriteBatch};
 
 #[derive(Clone)]
 pub struct Database {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<DatabaseInner>>,
 }
 
 impl Database {
-    pub fn new(desc: DatabaseDesc, supervisor: Supervisor) -> Self {
-        let inner = Inner::new(desc, supervisor);
+    pub fn new(desc: DatabaseDesc, sv: Supervisor) -> Self {
+        let inner = DatabaseInner::new(desc, sv);
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
     }
 
-    pub async fn execute(&self, req: DatabaseTxnRequest) -> Result<DatabaseTxnResponse> {
+    pub async fn execute(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
         let mut inner = self.inner.lock().await;
-        let mut res = DatabaseTxnResponse::default();
-        for coreq in req.requests {
+        let mut res = DatabaseResponse::default();
+        let mut cx = DatabaseContext::default();
+        for coreq in req.selects {
             let co = inner.collection(&coreq.name).await?;
-            let cores = co.execute(coreq).await?;
-            res.responses.push(cores);
+            let mut wb = WriteBatch::default();
+            let cores = co.execute(&mut wb, coreq).await?;
+            res.selects.push(cores);
+            cx.collections.push((co, wb));
+        }
+        for coreq in req.mutates {
+            let co = inner.collection(&coreq.name).await?;
+            let mut wb = WriteBatch::default();
+            let cores = co.execute(&mut wb, coreq).await?;
+            res.mutates.push(cores);
+            cx.collections.push((co, wb));
+        }
+        for (co, wb) in cx.collections {
+            co.write(wb).await;
         }
         Ok(res)
     }
 }
 
-struct Inner {
-    sp: Supervisor,
+struct DatabaseInner {
+    sv: Supervisor,
     desc: DatabaseDesc,
-    collections: BTreeMap<u64, Collection>,
+    collections: HashMap<u64, Collection>,
 }
 
-impl Inner {
-    fn new(desc: DatabaseDesc, supervisor: Supervisor) -> Self {
+impl DatabaseInner {
+    fn new(desc: DatabaseDesc, sv: Supervisor) -> Self {
         Self {
-            sp: supervisor,
+            sv,
             desc,
-            collections: BTreeMap::new(),
+            collections: HashMap::new(),
         }
     }
 
     async fn collection(&mut self, name: &str) -> Result<Collection> {
-        let desc = self
-            .sp
-            .describe_collection(self.desc.name.clone(), name.to_owned())
-            .await?;
+        let req = DescribeCollectionRequest {
+            name: name.to_owned(),
+            dbname: self.desc.name.clone(),
+        };
+        let res = self.sv.describe_collection(req).await?;
+        let desc = res
+            .desc
+            .ok_or_else(|| Error::internal("missing collection descriptor"))?;
         let co = self
             .collections
             .entry(desc.id)
-            .or_insert_with(Collection::new)
-            .clone();
-        Ok(co)
+            .or_insert_with(|| Collection::new(desc));
+        Ok(co.clone())
     }
+}
+
+#[derive(Default)]
+struct DatabaseContext {
+    collections: Vec<(Collection, WriteBatch)>,
 }

@@ -14,67 +14,23 @@
 
 use std::collections::VecDeque;
 
-use engula_apis::*;
+use engula_apis::v1::*;
 
 use crate::{Error, Result};
 
-pub struct Args(VecDeque<ValueUnion>);
+pub struct Args(VecDeque<TypedValue>);
 
 impl Args {
-    pub fn new(args: Vec<ValueUnion>) -> Self {
+    pub fn new(args: Vec<TypedValue>) -> Self {
         Self(args.into())
     }
 
-    pub fn take(&mut self) -> Result<Value> {
-        self.0
+    pub fn take<T: TryFrom<TypedValue>>(&mut self) -> Result<T> {
+        let v = self
+            .0
             .pop_front()
-            .and_then(|v| v.value)
-            .ok_or_else(|| Error::invalid_argument("missing argument"))
-    }
-
-    pub fn take_i64(&mut self) -> Result<i64> {
-        match self.take()? {
-            Value::I64Value(v) => Ok(v),
-            _ => Err(Error::invalid_argument("require i64")),
-        }
-    }
-
-    pub fn take_numeric(&mut self) -> Result<Value> {
-        let v = self.take()?;
-        match v {
-            Value::I64Value(_) => Ok(v),
-            _ => Err(Error::invalid_argument("require numeric")),
-        }
-    }
-
-    pub fn take_blob(&mut self) -> Result<Vec<u8>> {
-        match self.take()? {
-            Value::BlobValue(v) => Ok(v),
-            _ => Err(Error::invalid_argument("require blob")),
-        }
-    }
-
-    pub fn take_text(&mut self) -> Result<String> {
-        match self.take()? {
-            Value::TextValue(v) => Ok(v),
-            _ => Err(Error::invalid_argument("require text")),
-        }
-    }
-
-    pub fn take_list(&mut self) -> Result<ListValue> {
-        match self.take()? {
-            Value::ListValue(v) => Ok(v),
-            _ => Err(Error::invalid_argument("require list")),
-        }
-    }
-
-    pub fn take_sequence(&mut self) -> Result<Value> {
-        let v = self.take()?;
-        match v {
-            Value::BlobValue(_) => Ok(v),
-            Value::TextValue(_) => Ok(v),
-            Value::ListValue(_) => Ok(v),
-            _ => Err(Error::invalid_argument("require sequence")),
-        }
+            .ok_or_else(|| Error::invalid_argument("missing argument"))?;
+        v.try_into()
+            .map_err(|_| Error::invalid_argument("argument type mismatch"))
     }
 }

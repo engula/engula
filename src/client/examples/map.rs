@@ -12,48 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
-use engula_client::{Any, Blob, Map, Universe, I64};
+use engula_client::{Map, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.create_database("map").await?;
+    let co = db.create_collection("map").await?;
 
-    let (k1, k2, k3) = (vec![1], vec![2], vec![3]);
+    let va = [(0, 0), (1, 1), (2, 2)];
+    let vb = [(3, 3), (4, 4), (5, 5)];
 
-    {
-        let c = db.create_collection::<Map<Any>>("map<any>").await?;
-        println!("{}", c.name());
-        let mut txn = c.object("o").begin();
-        txn.store([(k1.clone(), 1.into()), (k2.clone(), "2".into())]);
-        txn.set(k3.clone(), 3).delete(k2.clone());
-        txn.commit().await?;
-        println!("o = {:?}", c.get("o").await?);
-    }
+    co.set("a", Map::new(va)).await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    println!("a = {:?}", a);
 
-    {
-        let c = db.create_collection::<Map<I64>>("map<i64>").await?;
-        println!("{}", c.name());
-        c.set("o", [(k1.clone(), 1), (k2.clone(), 2)]).await?;
-        println!("o = {:?}", c.get("o").await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-        c.object("o").set(k3.clone(), 3).await?;
-        c.object("o").delete(k2.clone()).await?;
-        println!("o = {:?}", c.object("o").load().await?);
-    }
+    co.mutate("a", Map::extend(vb)).await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    println!("a.extend({:?}) = {:?}", vb, a);
 
-    {
-        let c = db.create_collection::<Map<Blob>>("map<blob>").await?;
-        println!("{}", c.name());
-        c.set("o", [(k1.clone(), k1.clone()), (k2.clone(), k2.clone())])
-            .await?;
-        println!("o = {:?}", c.get("o").await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-        println!("o[k1] = {:?}", c.object("o").get(k1.clone()).await?);
-        println!("o[k2] = {:?}", c.object("o").get(k2.clone()).await?);
-    }
+    co.mutate("a", Map::remove([0, 1])).await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    println!("a.remove([0, 1]) = {:?}", a);
+
+    let a: i64 = co.select("a", Map::len()).await?;
+    println!("a.len = {:?}", a);
+    let a: HashMap<i64, i64> = co.select("a", Map::index(0)).await?;
+    println!("a.index(0) = {:?}", a);
+    let a: HashMap<i64, i64> = co.select("a", Map::index([1, 2])).await?;
+    println!("a.index([1, 2]) = {:?}", a);
+    let a: HashMap<i64, i64> = co.select("a", Map::range(2..)).await?;
+    println!("a.range(2..) = {:?}", a);
+    let a: Vec<i64> = co.select("a", Map::contains([1, 2, 3])).await?;
+    println!("a.contains([1, 2, 3]) = {:?}", a);
+
+    let mut txn = co.begin();
+    txn.mutate("a", Map::extend(va));
+    txn.mutate("b", Map::extend(vb));
+    txn.commit().await?;
+    let a: HashMap<i64, i64> = co.get("a").await?;
+    let b: HashMap<i64, i64> = co.get("b").await?;
+    println!("a.extend([0, 1, 2]) = {:?}", a);
+    println!("b.extend([3, 4, 5]) = {:?}", b);
 
     Ok(())
 }

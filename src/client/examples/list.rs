@@ -13,47 +13,50 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::{Any, Blob, List, Universe, I64};
+use engula_client::{List, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.create_database("list").await?;
+    let co = db.create_collection("list").await?;
 
-    {
-        let c = db.create_collection::<List<Any>>("list<any>").await?;
-        println!("{}", c.name());
-        let mut txn = c.object("o").begin();
-        txn.store(vec![1.into(), 2.into()])
-            .push_back("3")
-            .push_front("0");
-        txn.commit().await?;
-        println!("o = {:?}", c.object("o").load().await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-    }
+    co.set("a", List::new([1, 2, 3, 4])).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a = {:?}", a);
 
-    {
-        let c = db.create_collection::<List<I64>>("list<i64>").await?;
-        println!("{}", c.name());
-        c.set("o", [1, 2]).await?;
-        println!("o = {:?}", c.get("o").await?);
-        c.object("o").push_back(3).await?;
-        c.object("o").push_front(0).await?;
-        println!("o = {:?}", c.object("o").load().await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-    }
+    co.mutate("a", List::rpush([5, 6, 7, 8])).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
+    let a: Vec<i64> = co.mutate("a", List::rpop(2)).await?;
+    println!("a.rpop(2) = {:?}", a);
+    let a: Vec<i64> = co.mutate("a", List::lpop(2)).await?;
+    println!("a.lpop(2) = {:?}", a);
+    co.mutate("a", List::lpush([1, 2])).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.lpush([1, 2]) = {:?}", a);
+    co.mutate("a", List::trim(2..)).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.trim(2..) = {:?}", a);
 
-    {
-        let c = db.create_collection::<List<Blob>>("list<blob>").await?;
-        println!("{}", c.name());
-        c.set("o", [vec![1, 2], vec![3, 4]]).await?;
-        println!("o = {:?}", c.get("o").await?);
-        c.object("o").push_back(vec![5, 6]).await?;
-        c.object("o").push_front(vec![0]).await?;
-        println!("o = {:?}", c.object("o").load().await?);
-        println!("o.len = {:?}", c.object("o").len().await?);
-    }
+    let len: i64 = co.select("a", List::len()).await?;
+    println!("a.len() = {:?}", len);
+    let a: Vec<i64> = co.select("a", List::index(2)).await?;
+    println!("a.index(2) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::index([0, -1])).await?;
+    println!("a.index([0, -1]) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::range(1..-1)).await?;
+    println!("a.range(1..-1) = {:?}", a);
+
+    let mut txn = co.begin();
+    txn.mutate("a", List::lpush([1, 2]));
+    txn.mutate("b", List::rpush([3, 4]));
+    txn.commit().await?;
+    let a: Vec<i64> = co.get("a").await?;
+    let b: Vec<i64> = co.get("b").await?;
+    println!("a.lpush([1, 2]) = {:?}", a);
+    println!("b.rpush([3, 4]) = {:?}", b);
 
     Ok(())
 }

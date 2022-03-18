@@ -14,4 +14,8 @@
 
 #![allow(clippy::all)]
 
+pub use engula_apis::v1::{
+    CollectionRequest, CollectionResponse, DatabaseRequest, DatabaseResponse,
+};
+
 tonic::include_proto!("engula.cooperator.v1");

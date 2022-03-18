@@ -12,22 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::*;
-use engula_supervisor::Supervisor;
 use tonic::{Request, Response, Status};
 
-use crate::{apis::*, Universe};
+use crate::{apis::*, Cooperator};
 
 #[derive(Clone)]
 pub struct Server {
-    uv: Universe,
+    cooperator: Cooperator,
 }
 
 impl Server {
-    pub fn new(supervisor: Supervisor) -> Self {
-        Self {
-            uv: Universe::new(supervisor),
-        }
+    pub fn new(cooperator: Cooperator) -> Self {
+        Self { cooperator }
     }
 
     pub fn into_service(self) -> cooperator_server::CooperatorServer<Self> {
@@ -37,9 +33,9 @@ impl Server {
 
 #[tonic::async_trait]
 impl cooperator_server::Cooperator for Server {
-    async fn txn(&self, req: Request<TxnRequest>) -> Result<Response<TxnResponse>, Status> {
+    async fn batch(&self, req: Request<BatchRequest>) -> Result<Response<BatchResponse>, Status> {
         let req = req.into_inner();
-        let res = self.uv.execute(req).await?;
+        let res = self.cooperator.batch(req).await?;
         Ok(Response::new(res))
     }
 }

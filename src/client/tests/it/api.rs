@@ -22,22 +22,17 @@ use crate::create_universe;
 async fn test_apis() -> Result<()> {
     let uv = create_universe().await?;
     let db = uv.create_database("blob").await?;
-    let co = db.create_collection::<Blob>("blob").await?;
+    let co = db.create_collection("blob").await?;
 
-    co.set("o", vec![1, 2]).await?;
-    assert_eq!(Some(vec![1, 2]), co.get("o").await?);
+    co.set("o", Blob::new([1, 2])).await?;
+    let o: Vec<u8> = co.get("o").await?;
+    assert_eq!(vec![1, 2], o);
 
-    co.object("o").append(vec![3, 4]).await?;
-    assert_eq!(Some(vec![1, 2, 3, 4]), co.get("o").await?);
-    assert_eq!(Some(4), co.object("o").len().await?);
-
-    let mut txn = co.object("o").begin();
-    txn.append(vec![5, 6]).append(vec![7, 8]);
-    txn.commit().await?;
-    assert_eq!(
-        Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-        co.object("o").load().await?
-    );
+    co.mutate("o", Blob::rpush([3, 4])).await?;
+    let o: Vec<u8> = co.get("o").await?;
+    assert_eq!(vec![1, 2, 3, 4], o);
+    let len: i64 = co.select("o", Blob::len()).await?;
+    assert_eq!(4, len);
 
     Ok(())
 }

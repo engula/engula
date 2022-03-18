@@ -12,73 +12,114 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, ObjectValue, Result, Txn};
+use std::ops::RangeBounds;
 
-pub struct Blob(Any);
+use engula_apis::v1::*;
 
-impl Object for Blob {
-    type Txn = BlobTxn;
-    type Value = Vec<u8>;
-}
+use super::{call, MutateExpr, SelectExpr};
 
-impl From<Any> for Blob {
-    fn from(ob: Any) -> Self {
-        Self(ob)
+pub struct Blob(Vec<u8>);
+
+impl From<Blob> for Value {
+    fn from(v: Blob) -> Self {
+        v.0.into()
     }
 }
 
 impl Blob {
-    pub fn begin(self) -> BlobTxn {
-        self.0.begin().into()
+    pub fn new(value: impl Into<Vec<u8>>) -> Self {
+        Self(value.into())
     }
 
-    pub async fn load(self) -> Result<Option<Vec<u8>>> {
-        let value = self.0.load().await?;
-        Vec::cast_from_option(value)
+    pub fn len() -> BlobSelect {
+        BlobSelect::len()
     }
 
-    pub async fn store(self, value: impl Into<Vec<u8>>) -> Result<()> {
-        self.0.store(value.into()).await
+    pub fn range(range: impl RangeBounds<i64>) -> BlobSelect {
+        BlobSelect::range(range)
     }
 
-    pub async fn reset(self) -> Result<()> {
-        self.0.reset().await
+    pub fn trim(range: impl RangeBounds<i64>) -> BlobMutate {
+        BlobMutate::trim(range)
     }
 
-    pub async fn len(self) -> Result<Option<i64>> {
-        self.0.len().await
+    pub fn lpop(count: i64) -> BlobMutate {
+        BlobMutate::lpop(count)
     }
 
-    pub async fn append(self, value: Vec<u8>) -> Result<()> {
-        self.0.append(value).await
+    pub fn rpop(count: i64) -> BlobMutate {
+        BlobMutate::rpop(count)
+    }
+
+    pub fn lpush(value: impl Into<Vec<u8>>) -> BlobMutate {
+        BlobMutate::lpush(value)
+    }
+
+    pub fn rpush(value: impl Into<Vec<u8>>) -> BlobMutate {
+        BlobMutate::rpush(value)
     }
 }
 
-pub struct BlobTxn(Txn);
+pub struct BlobSelect {
+    expr: BlobExpr,
+}
 
-impl From<Txn> for BlobTxn {
-    fn from(txn: Txn) -> Self {
-        Self(txn)
+impl BlobSelect {
+    fn new(call: CallExpr) -> Self {
+        Self {
+            expr: BlobExpr { call: Some(call) },
+        }
+    }
+
+    pub fn len() -> Self {
+        Self::new(call::len())
+    }
+
+    pub fn range(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::range(range_bounds(range)))
     }
 }
 
-impl BlobTxn {
-    pub fn store(&mut self, value: impl Into<Vec<u8>>) -> &mut Self {
-        self.0.store(value.into());
-        self
+impl From<BlobSelect> for SelectExpr {
+    fn from(v: BlobSelect) -> Self {
+        Expr::from(v.expr).into()
+    }
+}
+
+pub struct BlobMutate {
+    expr: BlobExpr,
+}
+
+impl BlobMutate {
+    fn new(call: CallExpr) -> Self {
+        Self {
+            expr: BlobExpr { call: Some(call) },
+        }
     }
 
-    pub fn reset(&mut self) -> &mut Self {
-        self.0.reset();
-        self
+    pub fn trim(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::trim(range_bounds(range)))
     }
 
-    pub fn append(&mut self, value: impl Into<Vec<u8>>) -> &mut Self {
-        self.0.append(value.into());
-        self
+    pub fn lpop(count: i64) -> Self {
+        Self::new(call::lpop(count))
     }
 
-    pub async fn commit(self) -> Result<()> {
-        self.0.commit().await
+    pub fn rpop(count: i64) -> Self {
+        Self::new(call::rpop(count))
+    }
+
+    pub fn lpush(value: impl Into<Vec<u8>>) -> Self {
+        Self::new(call::lpush(value.into()))
+    }
+
+    pub fn rpush(value: impl Into<Vec<u8>>) -> Self {
+        Self::new(call::rpush(value.into()))
+    }
+}
+
+impl From<BlobMutate> for MutateExpr {
+    fn from(v: BlobMutate) -> Self {
+        Expr::from(v.expr).into()
     }
 }

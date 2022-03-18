@@ -20,19 +20,28 @@ async fn main() -> Result<()> {
     let url = "http://localhost:21716";
     let uv = Universe::connect(url).await?;
     let db = uv.create_database("i64").await?;
-    let co = db.create_collection::<I64>("i64").await?;
+    let co = db.create_collection("i64").await?;
 
-    co.set("o", 1).await?;
-    println!("o = {:?}", co.get("o").await?);
-    co.object("o").add(2).await?;
-    println!("o = {:?}", co.get("o").await?);
-    co.object("o").sub(3).await?;
-    println!("o = {:?}", co.get("o").await?);
+    co.set("a", 1).await?;
+    let a: i64 = co.get("a").await?;
+    println!("a = {:?}", a);
 
-    let mut txn = co.object("o").begin();
-    txn.add(1).add(2).sub(1);
+    co.mutate("a", I64::add(2)).await?;
+    let a: i64 = co.get("a").await?;
+    println!("a.add(2) = {:?}", a);
+
+    co.mutate("a", I64::sub(3)).await?;
+    let a: i64 = co.get("a").await?;
+    println!("a.sub(3) = {:?}", a);
+
+    let mut txn = co.begin();
+    txn.mutate("a", I64::add(1));
+    txn.mutate("b", I64::sub(2));
     txn.commit().await?;
-    println!("o = {:?}", co.object("o").load().await?);
+    let a: i64 = co.get("a").await?;
+    let b: i64 = co.get("b").await?;
+    println!("a.add(1) = {:?}", a);
+    println!("b.sub(2) = {:?}", b);
 
     Ok(())
 }

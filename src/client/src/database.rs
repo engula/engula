@@ -12,93 +12,103 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use engula_apis::v1::*;
 
-use engula_apis::*;
-
-use crate::{Client, Collection, DatabaseTxn, Error, Object, Result};
+use crate::{Client, Collection, DatabaseTxn, Error, Result};
 
 #[derive(Clone)]
 pub struct Database {
-    inner: Arc<DatabaseInner>,
+    name: String,
+    client: Client,
 }
 
 impl Database {
-    pub fn new(name: String, client: Client) -> Self {
-        let inner = DatabaseInner { name, client };
-        Self {
-            inner: Arc::new(inner),
-        }
+    pub(crate) fn new(name: String, client: Client) -> Self {
+        Self { name, client }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub async fn desc(&self) -> Result<DatabaseDesc> {
         let req = DescribeDatabaseRequest {
-            name: self.inner.name.clone(),
+            name: self.name.clone(),
         };
-        let req = database_request_union::Request::DescribeDatabase(req);
-        let res = self.inner.database_union_call(req).await?;
-        let desc = if let database_response_union::Response::DescribeDatabase(res) = res {
+        let req = universe_request::Request::DescribeDatabase(req);
+        let res = self.client.universe(req).await?;
+        let desc = if let universe_response::Response::DescribeDatabase(res) = res {
             res.desc
         } else {
             None
         };
-        desc.ok_or_else(|| Error::internal("missing database description"))
+        desc.ok_or_else(|| Error::internal("missing database descriptor"))
     }
 
     pub fn begin(&self) -> DatabaseTxn {
-        self.inner.new_txn()
+        DatabaseTxn::new(self.name.clone(), self.client.clone())
     }
 
-    pub fn collection<T: Object>(&self, name: &str) -> Collection<T> {
-        self.inner.new_collection(name.to_owned())
+    pub fn collection(&self, name: &str) -> Collection {
+        Collection::new(name.to_owned(), self.name.clone(), self.client.clone())
     }
 
-    pub async fn create_collection<T: Object>(&self, name: &str) -> Result<Collection<T>> {
-        let desc = CollectionDesc {
+    pub fn list_collections(&self) -> CollectionList {
+        CollectionList::new(self.name.clone(), self.client.clone())
+    }
+
+    pub async fn create_collection(&self, name: &str) -> Result<Collection> {
+        let req = CreateCollectionRequest {
             name: name.to_owned(),
+            dbname: self.name.clone(),
             ..Default::default()
         };
-        let req = CreateCollectionRequest { desc: Some(desc) };
-        let req = collection_request_union::Request::CreateCollection(req);
-        self.inner.collection_union_call(req).await?;
+        let req = universe_request::Request::CreateCollection(req);
+        self.client.universe(req).await?;
         Ok(self.collection(name))
     }
 
     pub async fn delete_collection(&self, name: &str) -> Result<()> {
         let req = DeleteCollectionRequest {
             name: name.to_owned(),
+            dbname: self.name.clone(),
         };
-        let req = collection_request_union::Request::DeleteCollection(req);
-        self.inner.collection_union_call(req).await?;
+        let req = universe_request::Request::DeleteCollection(req);
+        self.client.universe(req).await?;
         Ok(())
     }
 }
 
-struct DatabaseInner {
+pub struct CollectionList {
     name: String,
     client: Client,
+    next_page_token: String,
 }
 
-impl DatabaseInner {
-    fn new_txn(&self) -> DatabaseTxn {
-        DatabaseTxn::new(self.name.clone(), self.client.clone())
+impl CollectionList {
+    fn new(name: String, client: Client) -> Self {
+        Self {
+            name,
+            client,
+            next_page_token: String::new(),
+        }
     }
+}
 
-    fn new_collection<T: Object>(&self, name: String) -> Collection<T> {
-        Collection::new(name, self.name.clone(), self.client.clone())
-    }
-
-    async fn database_union_call(
-        &self,
-        req: database_request_union::Request,
-    ) -> Result<database_response_union::Response> {
-        self.client.database_union(req).await
-    }
-
-    async fn collection_union_call(
-        &self,
-        req: collection_request_union::Request,
-    ) -> Result<collection_response_union::Response> {
-        self.client.collection_union(self.name.clone(), req).await
+impl CollectionList {
+    pub async fn next_page(&mut self, size: usize) -> Result<Vec<CollectionDesc>> {
+        let req = ListCollectionsRequest {
+            name: self.name.clone(),
+            page_size: size as u64,
+            page_token: self.next_page_token.clone(),
+        };
+        let req = universe_request::Request::ListCollections(req);
+        let res = self.client.universe(req).await?;
+        if let universe_response::Response::ListCollections(mut res) = res {
+            self.next_page_token = std::mem::take(&mut res.next_page_token);
+            Ok(std::mem::take(&mut res.descs))
+        } else {
+            Err(Error::internal("missing list collections response"))
+        }
     }
 }

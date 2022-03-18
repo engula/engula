@@ -12,27 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::*;
-use tonic::{Request, Response};
+use tonic::{Request, Response, Status};
 
-use crate::{apis::*, Database, Error, Result, Universe};
+use crate::{apis::*, Supervisor};
 
 #[derive(Clone)]
 pub struct Server {
-    uv: Universe,
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Self::new()
-    }
+    supervisor: Supervisor,
 }
 
 impl Server {
-    pub fn new() -> Self {
-        Self {
-            uv: Universe::new(),
-        }
+    pub fn new(supervisor: Supervisor) -> Self {
+        Self { supervisor }
     }
 
     pub fn into_service(self) -> supervisor_server::SupervisorServer<Self> {
@@ -40,151 +31,11 @@ impl Server {
     }
 }
 
-impl Server {
-    async fn handle_database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
-        let mut res = DatabaseResponse::default();
-        for req_union in req.requests {
-            let res_union = self.handle_database_union(req_union).await?;
-            res.responses.push(res_union);
-        }
-        Ok(res)
-    }
-
-    async fn handle_database_union(
-        &self,
-        req: DatabaseRequestUnion,
-    ) -> Result<DatabaseResponseUnion> {
-        let req = req
-            .request
-            .ok_or_else(|| Error::invalid_argument("missing database request"))?;
-        let res = match req {
-            database_request_union::Request::ListDatabases(_) => {
-                todo!();
-            }
-            database_request_union::Request::CreateDatabase(req) => {
-                let res = self.handle_create_database(req).await?;
-                database_response_union::Response::CreateDatabase(res)
-            }
-            database_request_union::Request::UpdateDatabase(_) => {
-                todo!();
-            }
-            database_request_union::Request::DeleteDatabase(_) => {
-                todo!();
-            }
-            database_request_union::Request::DescribeDatabase(req) => {
-                let res = self.handle_describe_database(req).await?;
-                database_response_union::Response::DescribeDatabase(res)
-            }
-        };
-        Ok(DatabaseResponseUnion {
-            response: Some(res),
-        })
-    }
-
-    async fn handle_create_database(
-        &self,
-        req: CreateDatabaseRequest,
-    ) -> Result<CreateDatabaseResponse> {
-        let desc = req
-            .desc
-            .ok_or_else(|| Error::invalid_argument("missing database description"))?;
-        let desc = self.uv.create_database(desc).await?;
-        Ok(CreateDatabaseResponse { desc: Some(desc) })
-    }
-
-    async fn handle_describe_database(
-        &self,
-        req: DescribeDatabaseRequest,
-    ) -> Result<DescribeDatabaseResponse> {
-        let db = self.uv.database(&req.name).await?;
-        let desc = db.desc().await;
-        Ok(DescribeDatabaseResponse { desc: Some(desc) })
-    }
-
-    async fn handle_collection(&self, req: CollectionRequest) -> Result<CollectionResponse> {
-        let db = self.uv.database(&req.dbname).await?;
-        let mut res = CollectionResponse::default();
-        for req_union in req.requests {
-            let res_union = self.handle_collection_union(db.clone(), req_union).await?;
-            res.responses.push(res_union);
-        }
-        Ok(res)
-    }
-
-    async fn handle_collection_union(
-        &self,
-        db: Database,
-        req: CollectionRequestUnion,
-    ) -> Result<CollectionResponseUnion> {
-        let req = req
-            .request
-            .ok_or_else(|| Error::invalid_argument("missing collection request"))?;
-        let res = match req {
-            collection_request_union::Request::ListCollections(_) => {
-                todo!();
-            }
-            collection_request_union::Request::CreateCollection(req) => {
-                let res = self.handle_create_collection(db, req).await?;
-                collection_response_union::Response::CreateCollection(res)
-            }
-            collection_request_union::Request::UpdateCollection(_) => {
-                todo!();
-            }
-            collection_request_union::Request::DeleteCollection(_) => {
-                todo!();
-            }
-            collection_request_union::Request::DescribeCollection(req) => {
-                let res = self.handle_describe_collection(db, req).await?;
-                collection_response_union::Response::DescribeCollection(res)
-            }
-        };
-        Ok(CollectionResponseUnion {
-            response: Some(res),
-        })
-    }
-
-    async fn handle_create_collection(
-        &self,
-        db: Database,
-        req: CreateCollectionRequest,
-    ) -> Result<CreateCollectionResponse> {
-        let desc = req
-            .desc
-            .ok_or_else(|| Error::invalid_argument("missing collection description"))?;
-        let desc = db.create_collection(desc).await?;
-        Ok(CreateCollectionResponse { desc: Some(desc) })
-    }
-
-    async fn handle_describe_collection(
-        &self,
-        db: Database,
-        req: DescribeCollectionRequest,
-    ) -> Result<DescribeCollectionResponse> {
-        let co = db.collection(&req.name).await?;
-        let desc = co.desc().await;
-        Ok(DescribeCollectionResponse { desc: Some(desc) })
-    }
-}
-
-type TonicResult<T> = std::result::Result<T, tonic::Status>;
-
 #[tonic::async_trait]
 impl supervisor_server::Supervisor for Server {
-    async fn database(
-        &self,
-        req: Request<DatabaseRequest>,
-    ) -> TonicResult<Response<DatabaseResponse>> {
+    async fn batch(&self, req: Request<BatchRequest>) -> Result<Response<BatchResponse>, Status> {
         let req = req.into_inner();
-        let res = self.handle_database(req).await?;
-        Ok(Response::new(res))
-    }
-
-    async fn collection(
-        &self,
-        req: Request<CollectionRequest>,
-    ) -> TonicResult<Response<CollectionResponse>> {
-        let req = req.into_inner();
-        let res = self.handle_collection(req).await?;
+        let res = self.supervisor.batch(req).await?;
         Ok(Response::new(res))
     }
 }

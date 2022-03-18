@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::*;
-use tonic::Request;
-
-use crate::{apis::supervisor_server::Supervisor as _, Error, Result, Server};
+use crate::{apis::*, Error, Result, Universe};
 
 #[derive(Clone)]
 pub struct Supervisor {
-    server: Server,
+    uv: Universe,
 }
 
 impl Default for Supervisor {
@@ -31,77 +28,92 @@ impl Default for Supervisor {
 impl Supervisor {
     pub fn new() -> Self {
         Self {
-            server: Server::new(),
+            uv: Universe::new(),
         }
     }
 
-    pub async fn database(&self, req: DatabaseRequest) -> Result<DatabaseResponse> {
-        let req = Request::new(req);
-        let res = self.server.database(req).await?;
-        Ok(res.into_inner())
+    pub async fn batch(&self, batch_req: BatchRequest) -> Result<BatchResponse> {
+        let mut batch_res = BatchResponse::default();
+        for req in batch_req.universes {
+            let res = self.universe(req).await?;
+            batch_res.universes.push(res);
+        }
+        Ok(batch_res)
     }
 
-    async fn database_union(
+    async fn universe(&self, req: UniverseRequest) -> Result<UniverseResponse> {
+        let req = req
+            .request
+            .ok_or_else(|| Error::invalid_argument("missing request"))?;
+        let res = match req {
+            universe_request::Request::ListDatabases(_) => {
+                todo!();
+            }
+            universe_request::Request::CreateDatabase(req) => {
+                let res = self.create_database(req).await?;
+                universe_response::Response::CreateDatabase(res)
+            }
+            universe_request::Request::DescribeDatabase(req) => {
+                let res = self.describe_database(req).await?;
+                universe_response::Response::DescribeDatabase(res)
+            }
+            universe_request::Request::CreateCollection(req) => {
+                let res = self.create_collection(req).await?;
+                universe_response::Response::CreateCollection(res)
+            }
+            universe_request::Request::DescribeCollection(req) => {
+                let res = self.describe_collection(req).await?;
+                universe_response::Response::DescribeCollection(res)
+            }
+            _ => {
+                todo!();
+            }
+        };
+        Ok(UniverseResponse {
+            response: Some(res),
+        })
+    }
+
+    pub async fn create_database(
         &self,
-        req: database_request_union::Request,
-    ) -> Result<database_response_union::Response> {
-        let req = DatabaseRequest {
-            requests: vec![DatabaseRequestUnion { request: Some(req) }],
-        };
-        let mut res = self.database(req).await?;
-        res.responses
-            .pop()
-            .and_then(|x| x.response)
-            .ok_or_else(|| Error::internal("missing database response"))
+        req: CreateDatabaseRequest,
+    ) -> Result<CreateDatabaseResponse> {
+        let db = self
+            .uv
+            .create_database(&req.name, req.options.unwrap_or_default())
+            .await?;
+        let desc = db.desc().await;
+        Ok(CreateDatabaseResponse { desc: Some(desc) })
     }
 
-    pub async fn describe_database(&self, name: String) -> Result<DatabaseDesc> {
-        let req = DescribeDatabaseRequest { name };
-        let req = database_request_union::Request::DescribeDatabase(req);
-        let res = self.database_union(req).await?;
-        let desc = if let database_response_union::Response::DescribeDatabase(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or_else(|| Error::internal("missing database description"))
-    }
-
-    pub async fn collection(&self, req: CollectionRequest) -> Result<CollectionResponse> {
-        let req = Request::new(req);
-        let res = self.server.collection(req).await?;
-        Ok(res.into_inner())
-    }
-
-    async fn collection_union(
+    pub async fn describe_database(
         &self,
-        dbname: String,
-        req: collection_request_union::Request,
-    ) -> Result<collection_response_union::Response> {
-        let req = CollectionRequest {
-            dbname,
-            requests: vec![CollectionRequestUnion { request: Some(req) }],
-        };
-        let mut res = self.collection(req).await?;
-        res.responses
-            .pop()
-            .and_then(|x| x.response)
-            .ok_or_else(|| Error::internal("missing collection response"))
+        req: DescribeDatabaseRequest,
+    ) -> Result<DescribeDatabaseResponse> {
+        let db = self.uv.database(&req.name).await?;
+        let desc = db.desc().await;
+        Ok(DescribeDatabaseResponse { desc: Some(desc) })
+    }
+
+    pub async fn create_collection(
+        &self,
+        req: CreateCollectionRequest,
+    ) -> Result<CreateCollectionResponse> {
+        let db = self.uv.database(&req.dbname).await?;
+        let co = db
+            .create_collection(&req.name, req.options.unwrap_or_default())
+            .await?;
+        let desc = co.desc().await;
+        Ok(CreateCollectionResponse { desc: Some(desc) })
     }
 
     pub async fn describe_collection(
         &self,
-        dbname: String,
-        coname: String,
-    ) -> Result<CollectionDesc> {
-        let req = DescribeCollectionRequest { name: coname };
-        let req = collection_request_union::Request::DescribeCollection(req);
-        let res = self.collection_union(dbname, req).await?;
-        let desc = if let collection_response_union::Response::DescribeCollection(res) = res {
-            res.desc
-        } else {
-            None
-        };
-        desc.ok_or_else(|| Error::internal("missing collection description"))
+        req: DescribeCollectionRequest,
+    ) -> Result<DescribeCollectionResponse> {
+        let db = self.uv.database(&req.dbname).await?;
+        let co = db.collection(&req.name).await?;
+        let desc = co.desc().await;
+        Ok(DescribeCollectionResponse { desc: Some(desc) })
     }
 }

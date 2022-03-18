@@ -12,109 +12,120 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::ops::RangeBounds;
 
-use crate::{Any, Object, ObjectValue, Result, Txn};
+use engula_apis::v1::*;
 
-pub struct Map<T> {
-    ob: Any,
-    _marker: PhantomData<T>,
+use super::{call, MutateExpr, SelectExpr};
+
+pub struct Map(MapValue);
+
+impl From<Map> for Value {
+    fn from(v: Map) -> Self {
+        v.0.into()
+    }
 }
 
-impl<T> From<Any> for Map<T> {
-    fn from(ob: Any) -> Self {
+impl Map {
+    pub fn new(value: impl Into<MapValue>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn len() -> MapSelect {
+        MapSelect::len()
+    }
+
+    pub fn index(index: impl Into<ListValue>) -> MapSelect {
+        MapSelect::index(index)
+    }
+
+    pub fn range<T>(range: impl RangeBounds<T>) -> MapSelect
+    where
+        T: Clone + Into<range_bound::Value>,
+    {
+        MapSelect::range(range)
+    }
+
+    pub fn contains(index: impl Into<ListValue>) -> MapSelect {
+        MapSelect::contains(index)
+    }
+
+    pub fn clear() -> MapMutate {
+        MapMutate::clear()
+    }
+
+    pub fn extend(value: impl Into<MapValue>) -> MapMutate {
+        MapMutate::extend(value)
+    }
+
+    pub fn remove(index: impl Into<ListValue>) -> MapMutate {
+        MapMutate::remove(index)
+    }
+}
+
+pub struct MapSelect {
+    expr: MapExpr,
+}
+
+impl MapSelect {
+    fn new(call: CallExpr) -> Self {
         Self {
-            ob,
-            _marker: PhantomData,
+            expr: MapExpr { call: Some(call) },
         }
     }
-}
 
-impl<T> Object for Map<T>
-where
-    T: Object,
-    HashMap<Vec<u8>, T::Value>: ObjectValue,
-{
-    type Txn = MapTxn<T>;
-    type Value = HashMap<Vec<u8>, T::Value>;
-}
-
-impl<T> Map<T>
-where
-    T: Object,
-    HashMap<Vec<u8>, T::Value>: ObjectValue,
-{
-    pub fn begin(self) -> MapTxn<T> {
-        self.ob.begin().into()
+    pub fn len() -> Self {
+        Self::new(call::len())
     }
 
-    pub async fn load(self) -> Result<Option<HashMap<Vec<u8>, T::Value>>> {
-        let value = self.ob.load().await?;
-        HashMap::cast_from_option(value)
+    pub fn index(index: impl Into<ListValue>) -> Self {
+        Self::new(call::index(index.into()))
     }
 
-    pub async fn store(self, value: impl Into<HashMap<Vec<u8>, T::Value>>) -> Result<()> {
-        self.ob.store(value.into()).await
+    pub fn range<T>(range: impl RangeBounds<T>) -> Self
+    where
+        T: Clone + Into<range_bound::Value>,
+    {
+        Self::new(call::range(range_bounds(range)))
     }
 
-    pub async fn reset(self) -> Result<()> {
-        self.ob.reset().await
-    }
-
-    pub async fn len(self) -> Result<Option<i64>> {
-        self.ob.len().await
-    }
-
-    pub async fn get(self, key: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
-        let value = self.ob.index(key.into()).load().await?;
-        T::Value::cast_from_option(value)
-    }
-
-    pub async fn set(self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.index(key.into()).store(value.into()).await
-    }
-
-    pub async fn delete(self, key: impl Into<Vec<u8>>) -> Result<()> {
-        self.ob.index(key.into()).reset().await
+    pub fn contains(index: impl Into<ListValue>) -> Self {
+        Self::new(call::contains(index.into()))
     }
 }
 
-pub struct MapTxn<T> {
-    txn: Txn,
-    _marker: PhantomData<T>,
+impl From<MapSelect> for SelectExpr {
+    fn from(v: MapSelect) -> Self {
+        Expr::from(v.expr).into()
+    }
 }
 
-impl<T> From<Txn> for MapTxn<T> {
-    fn from(txn: Txn) -> Self {
+pub struct MapMutate {
+    expr: MapExpr,
+}
+
+impl MapMutate {
+    fn new(call: CallExpr) -> Self {
         Self {
-            txn,
-            _marker: PhantomData,
+            expr: MapExpr { call: Some(call) },
         }
     }
+
+    pub fn clear() -> Self {
+        Self::new(call::clear())
+    }
+
+    pub fn extend(value: impl Into<MapValue>) -> Self {
+        Self::new(call::extend(value.into()))
+    }
+
+    pub fn remove(index: impl Into<ListValue>) -> Self {
+        Self::new(call::remove(index.into()))
+    }
 }
 
-impl<T: Object> MapTxn<T> {
-    pub fn store(&mut self, value: impl Into<HashMap<Vec<u8>, T::Value>>) -> &mut Self {
-        self.txn.store(value.into());
-        self
-    }
-
-    pub fn reset(&mut self) -> &mut Self {
-        self.txn.reset();
-        self
-    }
-
-    pub fn set(&mut self, key: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.set(key.into(), value.into());
-        self
-    }
-
-    pub fn delete(&mut self, key: impl Into<Vec<u8>>) -> &mut Self {
-        self.txn.delete(key.into());
-        self
-    }
-
-    pub async fn commit(self) -> Result<()> {
-        self.txn.commit().await
+impl From<MapMutate> for MutateExpr {
+    fn from(v: MapMutate) -> Self {
+        Expr::from(v.expr).into()
     }
 }

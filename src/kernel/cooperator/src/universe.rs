@@ -12,59 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use engula_apis::*;
+use engula_apis::v1::*;
 use engula_supervisor::Supervisor;
 use tokio::sync::Mutex;
 
-use crate::{Database, Result};
+use crate::{Database, Error, Result};
 
 #[derive(Clone)]
 pub struct Universe {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<UniverseInner>>,
 }
 
 impl Universe {
-    pub fn new(supervisor: Supervisor) -> Self {
-        let inner = Inner::new(supervisor);
+    pub fn new(sv: Supervisor) -> Self {
+        let inner = UniverseInner::new(sv);
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
     }
 
-    pub async fn execute(&self, req: TxnRequest) -> Result<TxnResponse> {
+    pub async fn database(&self, name: &str) -> Result<Database> {
         let mut inner = self.inner.lock().await;
-        let mut res = TxnResponse::default();
-        for dbreq in req.requests {
-            let db = inner.database(&dbreq.name).await?;
-            let dbres = db.execute(dbreq).await?;
-            res.responses.push(dbres);
-        }
-        Ok(res)
+        inner.database(name).await
     }
 }
 
-struct Inner {
-    sp: Supervisor,
-    databases: BTreeMap<u64, Database>,
+struct UniverseInner {
+    sv: Supervisor,
+    databases: HashMap<u64, Database>,
 }
 
-impl Inner {
-    fn new(supervisor: Supervisor) -> Self {
+impl UniverseInner {
+    fn new(sv: Supervisor) -> Self {
         Self {
-            sp: supervisor,
-            databases: BTreeMap::new(),
+            sv,
+            databases: HashMap::new(),
         }
     }
 
     async fn database(&mut self, name: &str) -> Result<Database> {
-        let desc = self.sp.describe_database(name.to_owned()).await?;
+        let req = DescribeDatabaseRequest {
+            name: name.to_owned(),
+        };
+        let res = self.sv.describe_database(req).await?;
+        let desc = res
+            .desc
+            .ok_or_else(|| Error::internal("missing database descriptor"))?;
         let db = self
             .databases
             .entry(desc.id)
-            .or_insert_with(|| Database::new(desc, self.sp.clone()))
-            .clone();
-        Ok(db)
+            .or_insert_with(|| Database::new(desc, self.sv.clone()));
+        Ok(db.clone())
     }
 }

@@ -12,30 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_apis::*;
-use engula_cooperator::Cooperator;
-use engula_supervisor::Supervisor;
-use tonic::{Request, Response};
+use engula_apis::v1::*;
+use tonic::{Request, Response, Status};
 
+use crate::Transactor;
+
+#[derive(Clone)]
 pub struct Server {
-    supervisor: Supervisor,
-    cooperator: Cooperator,
+    transactor: Transactor,
 }
 
 impl Default for Server {
     fn default() -> Self {
-        Self::new()
+        let transactor = Transactor::default();
+        Self::new(transactor)
     }
 }
 
 impl Server {
-    pub fn new() -> Self {
-        let supervisor = Supervisor::new();
-        let cooperator = Cooperator::new(supervisor.clone());
-        Self {
-            supervisor,
-            cooperator,
-        }
+    pub fn new(transactor: Transactor) -> Self {
+        Self { transactor }
     }
 
     pub fn into_service(self) -> engula_server::EngulaServer<Self> {
@@ -43,31 +39,11 @@ impl Server {
     }
 }
 
-type TonicResult<T> = std::result::Result<T, tonic::Status>;
-
 #[tonic::async_trait]
 impl engula_server::Engula for Server {
-    async fn txn(&self, req: Request<TxnRequest>) -> TonicResult<Response<TxnResponse>> {
+    async fn batch(&self, req: Request<BatchRequest>) -> Result<Response<BatchResponse>, Status> {
         let req = req.into_inner();
-        let res = self.cooperator.txn(req).await?;
-        Ok(Response::new(res))
-    }
-
-    async fn database(
-        &self,
-        req: Request<DatabaseRequest>,
-    ) -> TonicResult<Response<DatabaseResponse>> {
-        let req = req.into_inner();
-        let res = self.supervisor.database(req).await?;
-        Ok(Response::new(res))
-    }
-
-    async fn collection(
-        &self,
-        req: Request<CollectionRequest>,
-    ) -> TonicResult<Response<CollectionResponse>> {
-        let req = req.into_inner();
-        let res = self.supervisor.collection(req).await?;
+        let res = self.transactor.batch(req).await?;
         Ok(Response::new(res))
     }
 }

@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use engula_apis::v1::*;
-use engula_cooperator::v1::Cooperator;
-use engula_supervisor::v1::Supervisor;
+use engula_cooperator::Cooperator;
+use engula_supervisor::Supervisor;
 
-use super::Result;
+use crate::Result;
 
 #[derive(Clone)]
 pub struct Transactor {
@@ -44,13 +44,13 @@ impl Transactor {
         let mut batch_res = BatchResponse::default();
         let universes = std::mem::take(&mut batch_req.universes);
         if !universes.is_empty() {
-            let req = engula_supervisor::v1::apis::v1::BatchRequest { universes };
+            let req = engula_supervisor::apis::BatchRequest { universes };
             let mut res = self.supervisor.batch(req).await?;
             batch_res.universes = std::mem::take(&mut res.universes);
         }
         let databases = std::mem::take(&mut batch_req.databases);
         if !databases.is_empty() {
-            let req = engula_cooperator::v1::apis::v1::BatchRequest { databases };
+            let req = engula_cooperator::apis::BatchRequest { databases };
             let mut res = self.cooperator.batch(req).await?;
             batch_res.databases = std::mem::take(&mut res.databases);
         }

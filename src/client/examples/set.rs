@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use engula_client::v1::{Set, Universe};
+use engula_client::{Set, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {

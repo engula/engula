@@ -12,117 +12,122 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::marker::PhantomData;
+use std::ops::RangeBounds;
 
-use crate::{Any, Object, ObjectValue, Result, Txn};
+use engula_apis::v1::*;
 
-pub struct List<T> {
-    ob: Any,
-    _marker: PhantomData<T>,
+use super::{call, MutateExpr, SelectExpr};
+
+pub struct List(ListValue);
+
+impl From<List> for Value {
+    fn from(v: List) -> Self {
+        v.0.into()
+    }
 }
 
-impl<T> From<Any> for List<T> {
-    fn from(ob: Any) -> Self {
+impl List {
+    pub fn new(value: impl Into<ListValue>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn len() -> ListSelect {
+        ListSelect::len()
+    }
+
+    pub fn index(index: impl Into<ListValue>) -> ListSelect {
+        ListSelect::index(index)
+    }
+
+    pub fn range(range: impl RangeBounds<i64>) -> ListSelect {
+        ListSelect::range(range)
+    }
+
+    pub fn trim(range: impl RangeBounds<i64>) -> ListMutate {
+        ListMutate::trim(range)
+    }
+
+    pub fn lpop(count: i64) -> ListMutate {
+        ListMutate::lpop(count)
+    }
+
+    pub fn rpop(count: i64) -> ListMutate {
+        ListMutate::rpop(count)
+    }
+
+    pub fn lpush(value: impl Into<ListValue>) -> ListMutate {
+        ListMutate::lpush(value)
+    }
+
+    pub fn rpush(value: impl Into<ListValue>) -> ListMutate {
+        ListMutate::rpush(value)
+    }
+}
+
+pub struct ListSelect {
+    expr: ListExpr,
+}
+
+impl ListSelect {
+    fn new(call: CallExpr) -> Self {
         Self {
-            ob,
-            _marker: PhantomData,
+            expr: ListExpr { call: Some(call) },
         }
     }
-}
 
-impl<T> Object for List<T>
-where
-    T: Object,
-    Vec<T::Value>: ObjectValue,
-{
-    type Txn = ListTxn<T>;
-    type Value = Vec<T::Value>;
-}
-
-impl<T> List<T>
-where
-    T: Object,
-    Vec<T::Value>: ObjectValue,
-{
-    pub fn begin(self) -> ListTxn<T> {
-        self.ob.begin().into()
+    pub fn len() -> Self {
+        Self::new(call::len())
     }
 
-    pub async fn load(self) -> Result<Option<Vec<T::Value>>> {
-        let value = self.ob.load().await?;
-        Vec::cast_from_option(value)
+    pub fn index(index: impl Into<ListValue>) -> Self {
+        Self::new(call::index(index.into()))
     }
 
-    pub async fn store(self, value: impl Into<Vec<T::Value>>) -> Result<()> {
-        self.ob.store(value.into()).await
-    }
-
-    pub async fn reset(self) -> Result<()> {
-        self.ob.reset().await
-    }
-
-    pub async fn len(self) -> Result<Option<i64>> {
-        self.ob.len().await
-    }
-
-    pub async fn append(self, value: impl Into<Vec<T::Value>>) -> Result<()> {
-        self.ob.append(value.into()).await
-    }
-
-    pub async fn push_back(self, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.push_back(value.into()).await
-    }
-
-    pub async fn push_front(self, value: impl Into<T::Value>) -> Result<()> {
-        self.ob.push_front(value.into()).await
+    pub fn range(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::range(range_bounds(range)))
     }
 }
 
-pub struct ListTxn<T> {
-    txn: Txn,
-    _marker: PhantomData<T>,
+impl From<ListSelect> for SelectExpr {
+    fn from(v: ListSelect) -> Self {
+        Expr::from(v.expr).into()
+    }
 }
 
-impl<T> From<Txn> for ListTxn<T> {
-    fn from(txn: Txn) -> Self {
+pub struct ListMutate {
+    expr: ListExpr,
+}
+
+impl ListMutate {
+    fn new(call: CallExpr) -> Self {
         Self {
-            txn,
-            _marker: PhantomData,
+            expr: ListExpr { call: Some(call) },
         }
     }
+
+    pub fn trim(range: impl RangeBounds<i64>) -> Self {
+        Self::new(call::trim(range_bounds(range)))
+    }
+
+    pub fn lpop(count: i64) -> Self {
+        Self::new(call::lpop(count))
+    }
+
+    pub fn rpop(count: i64) -> Self {
+        Self::new(call::rpop(count))
+    }
+
+    pub fn lpush(value: impl Into<ListValue>) -> Self {
+        Self::new(call::lpush(value.into()))
+    }
+
+    pub fn rpush(value: impl Into<ListValue>) -> Self {
+        Self::new(call::rpush(value.into()))
+    }
 }
 
-impl<T> ListTxn<T>
-where
-    T: Object,
-    Vec<T::Value>: ObjectValue,
-{
-    pub fn store(&mut self, value: impl Into<Vec<T::Value>>) -> &mut Self {
-        self.txn.store(value.into());
-        self
-    }
-
-    pub fn reset(&mut self) -> &mut Self {
-        self.txn.reset();
-        self
-    }
-
-    pub fn append(&mut self, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.append(value.into());
-        self
-    }
-
-    pub fn push_back(&mut self, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.push_back(value.into());
-        self
-    }
-
-    pub fn push_front(&mut self, value: impl Into<T::Value>) -> &mut Self {
-        self.txn.push_front(value.into());
-        self
-    }
-
-    pub async fn commit(self) -> Result<()> {
-        self.txn.commit().await
+impl From<ListMutate> for MutateExpr {
+    fn from(v: ListMutate) -> Self {
+        Expr::from(v.expr).into()
     }
 }
