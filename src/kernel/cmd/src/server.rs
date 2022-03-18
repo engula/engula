@@ -56,7 +56,7 @@ impl StartCommand {
         let addr = listener.local_addr()?;
         info!(message = "The server is running at", %addr);
 
-        let transactor = engula_transactor::Server::new().into_service();
+        let transactor = engula_transactor::Server::default().into_service();
         tonic::transport::Server::builder()
             .add_service(transactor)
             .serve_with_incoming(TcpListenerStream::new(listener))

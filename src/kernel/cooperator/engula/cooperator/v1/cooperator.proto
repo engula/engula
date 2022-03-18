@@ -16,8 +16,12 @@ syntax = "proto3";
 
 package engula.cooperator.v1;
 
-import "engula/v1/txn.proto";
+import "engula/v1/database.proto";
 
 service Cooperator {
-  rpc txn(engula.v1.TxnRequest) returns (engula.v1.TxnResponse) {}
+  rpc Batch(BatchRequest) returns (BatchResponse) {}
 }
+
+message BatchRequest { repeated engula.v1.DatabaseRequest databases = 1; }
+
+message BatchResponse { repeated engula.v1.DatabaseResponse databases = 1; }

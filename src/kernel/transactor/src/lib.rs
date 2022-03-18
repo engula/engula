@@ -13,6 +13,8 @@
 // limitations under the License.
 
 mod server;
-pub mod v1;
+mod transactor;
 
-pub use self::server::Server;
+use engula_common::Result;
+
+pub use self::{server::Server, transactor::Transactor};

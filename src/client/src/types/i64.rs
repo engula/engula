@@ -12,78 +12,54 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Any, Object, ObjectValue, Result, Txn};
+use engula_apis::v1::*;
 
-pub struct I64(Any);
+use super::{call, MutateExpr};
 
-impl Object for I64 {
-    type Txn = I64Txn;
-    type Value = i64;
-}
+pub struct I64(i64);
 
-impl From<Any> for I64 {
-    fn from(ob: Any) -> Self {
-        Self(ob)
+impl From<I64> for Value {
+    fn from(v: I64) -> Self {
+        v.0.into()
     }
 }
 
 impl I64 {
-    pub fn begin(self) -> I64Txn {
-        self.0.begin().into()
+    pub fn new(value: i64) -> Self {
+        Self(value)
     }
 
-    pub async fn load(self) -> Result<Option<i64>> {
-        let value = self.0.load().await?;
-        i64::cast_from_option(value)
+    pub fn add(value: i64) -> I64Mutate {
+        I64Mutate::add(value)
     }
 
-    pub async fn store(self, value: i64) -> Result<()> {
-        self.0.store(value).await
-    }
-
-    pub async fn reset(self) -> Result<()> {
-        self.0.reset().await
-    }
-
-    pub async fn add(self, value: i64) -> Result<()> {
-        self.0.add(value).await
-    }
-
-    pub async fn sub(self, value: i64) -> Result<()> {
-        self.0.sub(value).await
+    pub fn sub(value: i64) -> I64Mutate {
+        I64Mutate::sub(value)
     }
 }
 
-pub struct I64Txn(Txn);
+pub struct I64Mutate {
+    expr: I64Expr,
+}
 
-impl From<Txn> for I64Txn {
-    fn from(txn: Txn) -> Self {
-        Self(txn)
+impl I64Mutate {
+    fn new(call: CallExpr) -> Self {
+        Self {
+            expr: I64Expr { call: Some(call) },
+        }
+    }
+
+    pub fn add(value: i64) -> Self {
+        Self::new(call::add(value))
+    }
+
+    pub fn sub(value: i64) -> Self {
+        Self::new(call::sub(value))
     }
 }
 
-impl I64Txn {
-    pub fn store(&mut self, value: i64) -> &mut Self {
-        self.0.store(value);
-        self
-    }
-
-    pub fn reset(&mut self) -> &mut Self {
-        self.0.reset();
-        self
-    }
-
-    pub fn add(&mut self, value: i64) -> &mut Self {
-        self.0.add(value);
-        self
-    }
-
-    pub fn sub(&mut self, value: i64) -> &mut Self {
-        self.0.sub(value);
-        self
-    }
-
-    pub async fn commit(self) -> Result<()> {
-        self.0.commit().await
+impl From<I64Mutate> for MutateExpr {
+    fn from(v: I64Mutate) -> Self {
+        Expr::from(v.expr).into()
     }
 }

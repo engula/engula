@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use engula_client::v1::{Text, Universe};
+use engula_client::{Text, Universe};
 
 #[tokio::main]
 async fn main() -> Result<()> {

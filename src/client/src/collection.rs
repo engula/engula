@@ -12,111 +12,115 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{marker::PhantomData, sync::Arc};
+use engula_apis::v1::*;
 
-use engula_apis::*;
-
-use crate::{Any, Client, CollectionTxn, DatabaseTxn, Error, Object, ObjectValue, Result};
+use crate::{Any, Client, CollectionTxn, Error, MutateExpr, Result, SelectExpr};
 
 #[derive(Clone)]
-pub struct Collection<T> {
-    inner: Arc<CollectionInner>,
-    _marker: PhantomData<T>,
+pub struct Collection {
+    name: String,
+    dbname: String,
+    client: Client,
 }
 
-impl<T: Object> Collection<T> {
-    pub(crate) fn new(coname: String, dbname: String, client: Client) -> Self {
-        let inner = CollectionInner {
-            dbname,
-            coname,
-            client,
-        };
+impl Collection {
+    pub(crate) fn new(name: String, dbname: String, client: Client) -> Self {
         Self {
-            inner: Arc::new(inner),
-            _marker: PhantomData,
+            name,
+            dbname,
+            client,
         }
     }
 
     pub fn name(&self) -> &str {
-        &self.inner.coname
+        &self.name
+    }
+
+    pub fn dbname(&self) -> &str {
+        &self.dbname
     }
 
     pub async fn desc(&self) -> Result<CollectionDesc> {
         let req = DescribeCollectionRequest {
-            name: self.inner.coname.clone(),
+            name: self.name.clone(),
+            dbname: self.dbname.clone(),
         };
-        let req = collection_request_union::Request::DescribeCollection(req);
-        let res = self.inner.collection_union_call(req).await?;
-        let desc = if let collection_response_union::Response::DescribeCollection(res) = res {
+        let req = universe_request::Request::DescribeCollection(req);
+        let res = self.client.universe(req).await?;
+        let desc = if let universe_response::Response::DescribeCollection(res) = res {
             res.desc
         } else {
             None
         };
-        desc.ok_or_else(|| Error::internal("missing collection description"))
+        desc.ok_or_else(|| Error::internal("missing collection descriptor"))
     }
 
-    pub fn begin(&self) -> CollectionTxn<T> {
-        self.inner.new_txn()
+    pub fn begin(&self) -> CollectionTxn {
+        CollectionTxn::new(self.name.clone(), self.dbname.clone(), self.client.clone())
     }
 
-    pub fn begin_with(&self, parent: DatabaseTxn) -> CollectionTxn<T> {
-        parent.collection(self.inner.coname.clone())
+    pub async fn get<T: TryFrom<TypedValue>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
+        self.select(id, Any::get()).await
     }
 
-    pub fn object(&self, id: impl Into<Vec<u8>>) -> T {
-        self.inner.new_object(id.into())
-    }
-}
-
-// Provides common interfaces for convenience.
-impl<T: Object> Collection<T> {
-    fn any(&self, id: impl Into<Vec<u8>>) -> Any {
-        self.inner.new_object(id.into())
-    }
-
-    pub async fn get(&self, id: impl Into<Vec<u8>>) -> Result<Option<T::Value>> {
-        let value = self.any(id).load().await?;
-        T::Value::cast_from_option(value)
-    }
-
-    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<T::Value>) -> Result<()> {
-        self.any(id).store(value.into()).await
+    pub async fn set(&self, id: impl Into<Vec<u8>>, value: impl Into<Value>) -> Result<()> {
+        self.mutate(id, Any::set(value)).await
     }
 
     pub async fn delete(&self, id: impl Into<Vec<u8>>) -> Result<()> {
-        self.any(id).reset().await
-    }
-}
-
-pub struct CollectionInner {
-    dbname: String,
-    coname: String,
-    client: Client,
-}
-
-impl CollectionInner {
-    fn new_txn<T: Object>(&self) -> CollectionTxn<T> {
-        CollectionTxn::new(
-            self.dbname.clone(),
-            self.coname.clone(),
-            self.client.clone(),
-        )
+        self.mutate(id, Any::delete()).await?;
+        Ok(())
     }
 
-    fn new_object<T: Object>(&self, id: Vec<u8>) -> T {
-        Any::new(
-            id,
-            self.dbname.clone(),
-            self.coname.clone(),
-            self.client.clone(),
-        )
-        .into()
+    pub async fn exists(&self, id: impl Into<Vec<u8>>) -> Result<bool> {
+        self.select(id, Any::exists()).await
     }
 
-    async fn collection_union_call(
+    pub async fn select<T: TryFrom<TypedValue>>(
         &self,
-        req: collection_request_union::Request,
-    ) -> Result<collection_response_union::Response> {
-        self.client.collection_union(self.dbname.clone(), req).await
+        id: impl Into<Vec<u8>>,
+        expr: impl Into<SelectExpr>,
+    ) -> Result<T> {
+        let select = CollectionRequest {
+            name: self.name.clone(),
+            ids: vec![id.into()],
+            exprs: vec![expr.into().into()],
+        };
+        let req = DatabaseRequest {
+            name: self.dbname.clone(),
+            selects: vec![select],
+            ..Default::default()
+        };
+        let mut res = self.client.database(req).await?;
+        let value = res
+            .selects
+            .pop()
+            .and_then(|mut x| x.values.pop())
+            .ok_or_else(|| Error::internal("missing select result"))?;
+        value.try_into().map_err(|_| Error::invalid_conversion())
+    }
+
+    pub async fn mutate<T: TryFrom<TypedValue>>(
+        &self,
+        id: impl Into<Vec<u8>>,
+        expr: impl Into<MutateExpr>,
+    ) -> Result<T> {
+        let mutate = CollectionRequest {
+            name: self.name.clone(),
+            ids: vec![id.into()],
+            exprs: vec![expr.into().into()],
+        };
+        let req = DatabaseRequest {
+            name: self.dbname.clone(),
+            mutates: vec![mutate],
+            ..Default::default()
+        };
+        let mut res = self.client.database(req).await?;
+        let value = res
+            .mutates
+            .pop()
+            .and_then(|mut x| x.values.pop())
+            .ok_or_else(|| Error::internal("missing mutate result"))?;
+        value.try_into().map_err(|_| Error::invalid_conversion())
     }
 }

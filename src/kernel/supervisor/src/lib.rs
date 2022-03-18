@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod apis;
+pub mod apis;
 mod server;
 mod supervisor;
 mod universe;
-pub mod v1;
 
 use engula_common::{Error, Result};
 
-use self::universe::{Database, Universe};
+use self::universe::Universe;
 pub use self::{server::Server, supervisor::Supervisor};

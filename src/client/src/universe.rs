@@ -12,38 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use engula_apis::v1::*;
 
-use engula_apis::*;
-
-use crate::{Client, Database, Result};
+use crate::{Client, Database, Error, Result};
 
 #[derive(Clone)]
 pub struct Universe {
-    inner: Arc<UniverseInner>,
+    client: Client,
 }
 
 impl Universe {
-    pub async fn connect(url: impl Into<String>) -> Result<Universe> {
-        let client = Client::connect(url.into()).await?;
-        let inner = UniverseInner { client };
-        Ok(Universe {
-            inner: Arc::new(inner),
-        })
+    pub async fn connect(url: impl Into<String>) -> Result<Self> {
+        let client = Client::connect(url).await?;
+        Ok(Self { client })
     }
 
     pub fn database(&self, name: &str) -> Database {
-        self.inner.new_database(name.to_owned())
+        Database::new(name.to_owned(), self.client.clone())
+    }
+
+    pub fn list_databases(&self) -> DatabaseList {
+        DatabaseList::new(self.client.clone())
     }
 
     pub async fn create_database(&self, name: &str) -> Result<Database> {
-        let desc = DatabaseDesc {
+        let req = CreateDatabaseRequest {
             name: name.to_owned(),
             ..Default::default()
         };
-        let req = CreateDatabaseRequest { desc: Some(desc) };
-        let req = database_request_union::Request::CreateDatabase(req);
-        self.inner.database_union_call(req).await?;
+        let req = universe_request::Request::CreateDatabase(req);
+        self.client.universe(req).await?;
         Ok(self.database(name))
     }
 
@@ -51,25 +49,39 @@ impl Universe {
         let req = DeleteDatabaseRequest {
             name: name.to_owned(),
         };
-        let req = database_request_union::Request::DeleteDatabase(req);
-        self.inner.database_union_call(req).await?;
+        let req = universe_request::Request::DeleteDatabase(req);
+        self.client.universe(req).await?;
         Ok(())
     }
 }
 
-struct UniverseInner {
+pub struct DatabaseList {
     client: Client,
+    next_page_token: String,
 }
 
-impl UniverseInner {
-    fn new_database(&self, name: String) -> Database {
-        Database::new(name, self.client.clone())
+impl DatabaseList {
+    fn new(client: Client) -> Self {
+        Self {
+            client,
+            next_page_token: String::new(),
+        }
     }
+}
 
-    async fn database_union_call(
-        &self,
-        req: database_request_union::Request,
-    ) -> Result<database_response_union::Response> {
-        self.client.database_union(req).await
+impl DatabaseList {
+    pub async fn next_page(&mut self, size: usize) -> Result<Vec<DatabaseDesc>> {
+        let req = ListDatabasesRequest {
+            page_size: size as u64,
+            page_token: self.next_page_token.clone(),
+        };
+        let req = universe_request::Request::ListDatabases(req);
+        let res = self.client.universe(req).await?;
+        if let universe_response::Response::ListDatabases(mut res) = res {
+            self.next_page_token = std::mem::take(&mut res.next_page_token);
+            Ok(std::mem::take(&mut res.descs))
+        } else {
+            Err(Error::internal("missing list databases response"))
+        }
     }
 }

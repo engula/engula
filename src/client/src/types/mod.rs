@@ -12,9 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod any;
 mod blob;
+mod call;
+mod expr;
+mod f64;
 mod i64;
 mod list;
 mod map;
+mod set;
+mod text;
 
-pub use self::{blob::Blob, i64::I64, list::List, map::Map};
+pub use self::{
+    any::Any,
+    blob::Blob,
+    expr::{MutateExpr, SelectExpr},
+    f64::F64,
+    i64::I64,
+    list::List,
+    map::Map,
+    set::Set,
+    text::Text,
+};
