@@ -36,27 +36,16 @@ async fn main() -> Result<()> {
     co.mutate("a", List::lpush([1, 2])).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a.lpush([1, 2]) = {:?}", a);
-    co.mutate("a", List::trim(2..)).await?;
+    co.mutate("a", List::trim(1..-1)).await?;
     let a: Vec<i64> = co.get("a").await?;
-    println!("a.trim(2..) = {:?}", a);
+    println!("a.trim(1..-1) = {:?}", a);
 
     let len: i64 = co.select("a", List::len()).await?;
     println!("a.len() = {:?}", len);
-    let a: Vec<i64> = co.select("a", List::index(2)).await?;
-    println!("a.index(2) = {:?}", a);
     let a: Vec<i64> = co.select("a", List::index([0, -1])).await?;
     println!("a.index([0, -1]) = {:?}", a);
     let a: Vec<i64> = co.select("a", List::range(1..-1)).await?;
     println!("a.range(1..-1) = {:?}", a);
-
-    let mut txn = co.begin();
-    txn.mutate("a", List::lpush([1, 2]));
-    txn.mutate("b", List::rpush([3, 4]));
-    txn.commit().await?;
-    let a: Vec<i64> = co.get("a").await?;
-    let b: Vec<i64> = co.get("b").await?;
-    println!("a.lpush([1, 2]) = {:?}", a);
-    println!("b.rpush([3, 4]) = {:?}", b);
 
     Ok(())
 }

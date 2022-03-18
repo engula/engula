@@ -36,25 +36,14 @@ async fn main() -> Result<()> {
     co.mutate("a", Blob::lpush([1, 2])).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a.lpush([1, 2]) = {:?}", a);
-    co.mutate("a", Blob::trim(2..)).await?;
+    co.mutate("a", Blob::trim(1..-1)).await?;
     let a: Vec<u8> = co.get("a").await?;
-    println!("a.trim(2..) = {:?}", a);
+    println!("a.trim(1..-1) = {:?}", a);
 
     let a: i64 = co.select("a", Blob::len()).await?;
     println!("a.len() = {:?}", a);
-    let a: Vec<u8> = co.select("a", Blob::range(1..)).await?;
-    println!("a.range(1..) = {:?}", a);
-    let a: Vec<u8> = co.select("a", Blob::range(..-1)).await?;
-    println!("a.range(..-1) = {:?}", a);
-
-    let mut txn = co.begin();
-    txn.mutate("a", Blob::lpush([1, 2]));
-    txn.mutate("b", Blob::rpush([3, 4]));
-    txn.commit().await?;
-    let a: Vec<u8> = co.get("a").await?;
-    let b: Vec<u8> = co.get("b").await?;
-    println!("a.lpush([1, 2]) = {:?}", a);
-    println!("b.rpush([3, 4]) = {:?}", b);
+    let a: Vec<u8> = co.select("a", Blob::range(1..-1)).await?;
+    println!("a.range(1..-1) = {:?}", a);
 
     Ok(())
 }

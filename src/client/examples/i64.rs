@@ -34,14 +34,5 @@ async fn main() -> Result<()> {
     let a: i64 = co.get("a").await?;
     println!("a.sub(3) = {:?}", a);
 
-    let mut txn = co.begin();
-    txn.mutate("a", I64::add(1));
-    txn.mutate("b", I64::sub(2));
-    txn.commit().await?;
-    let a: i64 = co.get("a").await?;
-    let b: i64 = co.get("b").await?;
-    println!("a.add(1) = {:?}", a);
-    println!("b.sub(2) = {:?}", b);
-
     Ok(())
 }
