@@ -225,6 +225,7 @@ version = "0.3.0"
 dependencies = [
  "engula-apis",
  "engula-common",
+ "futures",
  "prost",
  "tokio",
  "tonic",

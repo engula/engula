@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -48,6 +48,15 @@ impl Universe {
         inner.database(name)
     }
 
+    pub async fn list_databases(
+        &self,
+        count: usize,
+        token: Option<String>,
+    ) -> Result<(Vec<Database>, Option<String>)> {
+        let inner = self.inner.lock().await;
+        inner.list_databases(count, token).await
+    }
+
     pub async fn create_database(&self, name: &str, options: DatabaseOptions) -> Result<Database> {
         let mut inner = self.inner.lock().await;
         inner.create_database(name, options)
@@ -61,14 +70,14 @@ impl Universe {
 
 struct UniverseInner {
     next_id: AtomicU64,
-    databases: HashMap<String, Database>,
+    databases: BTreeMap<String, Database>,
 }
 
 impl UniverseInner {
     fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),
-            databases: HashMap::new(),
+            databases: BTreeMap::new(),
         }
     }
 
@@ -77,6 +86,26 @@ impl UniverseInner {
             .get(name)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("database {}", name)))
+    }
+
+    async fn list_databases(
+        &self,
+        count: usize,
+        token: Option<String>,
+    ) -> Result<(Vec<Database>, Option<String>)> {
+        let token = token.unwrap_or_default();
+        let dbs = self
+            .databases
+            .range(token.clone()..)
+            .take(count)
+            .map(|(_, db)| db.clone())
+            .collect();
+        let next_token = self
+            .databases
+            .range(token..)
+            .nth(count)
+            .map(|(name, _)| name.to_owned());
+        Ok((dbs, next_token))
     }
 
     fn create_database(&mut self, name: &str, options: DatabaseOptions) -> Result<Database> {
@@ -117,6 +146,15 @@ impl Database {
         inner.collection(name)
     }
 
+    pub async fn list_collections(
+        &self,
+        count: usize,
+        token: Option<String>,
+    ) -> Result<(Vec<Collection>, Option<String>)> {
+        let inner = self.inner.lock().await;
+        inner.list_collections(count, token).await
+    }
+
     pub async fn create_collection(
         &self,
         name: &str,
@@ -137,7 +175,7 @@ struct DatabaseInner {
     name: String,
     options: DatabaseOptions,
     next_id: AtomicU64,
-    collections: HashMap<String, Collection>,
+    collections: BTreeMap<String, Collection>,
 }
 
 impl DatabaseInner {
@@ -147,7 +185,7 @@ impl DatabaseInner {
             name,
             options,
             next_id: AtomicU64::new(1),
-            collections: HashMap::new(),
+            collections: BTreeMap::new(),
         }
     }
 
@@ -168,6 +206,26 @@ impl DatabaseInner {
             .get(name)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("collection {}", name)))
+    }
+
+    pub async fn list_collections(
+        &self,
+        count: usize,
+        token: Option<String>,
+    ) -> Result<(Vec<Collection>, Option<String>)> {
+        let token = token.unwrap_or_default();
+        let cos = self
+            .collections
+            .range(token.clone()..)
+            .take(count)
+            .map(|(_, co)| co.clone())
+            .collect();
+        let next_token = self
+            .collections
+            .range(token..)
+            .nth(count)
+            .map(|(name, _)| name.to_owned());
+        Ok((cos, next_token))
     }
 
     fn create_collection(&mut self, name: &str, options: CollectionOptions) -> Result<Collection> {
