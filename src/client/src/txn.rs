@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use engula_apis::v1::*;
 
-use crate::{Client, Error, MutateExpr, Result};
+use crate::{Any, Client, Error, MutateExpr, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -108,13 +108,20 @@ impl CollectionTxn {
         }
     }
 
-    pub fn mutate(&mut self, id: impl Into<Vec<u8>>, expr: impl Into<MutateExpr>) -> &mut Self {
-        self.mutate.ids.push(id.into());
-        self.mutate.exprs.push(expr.into().into());
-        self
+    pub fn set(&mut self, id: impl Into<Vec<u8>>, value: impl Into<Value>) {
+        self.mutate(id, Any::set(value));
     }
 
-    pub fn submit(self) {
+    pub fn delete(&mut self, id: impl Into<Vec<u8>>) {
+        self.mutate(id, Any::delete());
+    }
+
+    pub fn mutate(&mut self, id: impl Into<Vec<u8>>, expr: impl Into<MutateExpr>) {
+        self.mutate.ids.push(id.into());
+        self.mutate.exprs.push(expr.into().into());
+    }
+
+    pub fn stage(self) {
         let parent = self.parent.unwrap();
         parent.add_mutate(self.mutate);
     }
