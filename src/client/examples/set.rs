@@ -40,18 +40,11 @@ async fn main() -> Result<()> {
     println!("a.remove([0, 1]) = {:?}", a);
 
     let len: i64 = co.select("a", Set::len()).await?;
-    println!("a.len = {:?}", len);
+    println!("a.len() = {:?}", len);
     let a: HashSet<i64> = co.select("a", Set::range(2..)).await?;
     println!("a.range(2..) = {:?}", a);
-    let a: bool = co.select("a", Set::contains(3)).await?;
-    println!("a.contains(3) = {:?}", a);
-
-    let mut txn = co.begin();
-    txn.mutate("a", Set::extend(va));
-    txn.mutate("b", Set::extend(vb));
-    txn.commit().await?;
-    println!("a = {:?}", co.get("a").await?);
-    println!("b = {:?}", co.get("b").await?);
+    let a: bool = co.select("a", Set::contains([1, 2])).await?;
+    println!("a.contains([1, 2]) = {:?}", a);
 
     Ok(())
 }
