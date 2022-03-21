@@ -63,11 +63,11 @@ impl FileExt for File {
             }
         }
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
         {
             use std::os::unix::io::AsRawFd;
 
-            let retval = libc::posix_fallocate(self.as_raw_fd(), 0, len);
+            let retval = libc::ftruncate(self.as_raw_fd(), len);
             if retval != 0 {
                 return Err(std::io::Error::from_raw_os_error(retval));
             }
