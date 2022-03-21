@@ -52,7 +52,7 @@ pub fn parse_file_name<P: AsRef<Path>>(path: P) -> Result<FileType> {
         return Err(Error::InvalidArgument("target isn't a file".to_string()));
     }
 
-    let name = path.file_name().map(|s| s.to_str()).flatten().unwrap();
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap();
     if name == "CURRENT" {
         Ok(FileType::Current)
     } else if name.starts_with("MANIFEST-") {

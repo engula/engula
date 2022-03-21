@@ -50,13 +50,10 @@ impl Writer {
         let block_offset = initial_offset % MAX_BLOCK_SIZE;
 
         if initial_offset > max_file_size {
-            return Err(Error::InvalidArgument(
-                format!(
-                    "too large initial offset, limitation {}, but got {}",
-                    max_file_size, initial_offset
-                )
-                .to_string(),
-            ));
+            return Err(Error::InvalidArgument(format!(
+                "too large initial offset, limitation {}, but got {}",
+                max_file_size, initial_offset
+            )));
         }
 
         let synced_offset = initial_offset - (initial_offset % PAGE_SIZE);
@@ -122,7 +119,7 @@ impl Writer {
             header.extend_from_slice(&crc32.to_le_bytes());
             consumed += size;
 
-            let slices = &mut [IoSlice::new(&header), IoSlice::new(&payload)];
+            let slices = &mut [IoSlice::new(&header), IoSlice::new(payload)];
             self.file.write_all_vectored(slices)?;
             self.block_offset += RECORD_HEADER_SIZE + size;
 

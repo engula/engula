@@ -193,10 +193,8 @@ impl Reader {
                 continue;
             }
 
-            if self.checksum {
-                if crc32fast::hash(content) != crc32 {
-                    return Ok(Some((RECORD_BAD_CRC32, vec![])));
-                }
+            if self.checksum && crc32fast::hash(content) != crc32 {
+                return Ok(Some((RECORD_BAD_CRC32, vec![])));
             }
 
             return Ok(Some((kind, content.to_owned())));

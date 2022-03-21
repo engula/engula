@@ -14,7 +14,9 @@
 
 #![feature(write_all_vectored)]
 
+#[allow(dead_code)]
 mod fs;
+#[allow(dead_code)]
 mod log;
 mod server;
 

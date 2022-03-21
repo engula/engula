@@ -18,7 +18,10 @@ pub mod writer;
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, path::PathBuf};
+    use std::{
+        fs::File,
+        path::{Path, PathBuf},
+    };
 
     use rand::prelude::*;
 
@@ -33,11 +36,11 @@ mod tests {
         Ok(dir)
     }
 
-    fn new_writer(dir: &PathBuf, log_number: u64) -> Result<LogWriter> {
+    fn new_writer(dir: &Path, log_number: u64) -> Result<LogWriter> {
         new_writer_with_offset(dir, log_number, 0)
     }
 
-    fn new_writer_with_offset(dir: &PathBuf, log_number: u64, offset: usize) -> Result<LogWriter> {
+    fn new_writer_with_offset(dir: &Path, log_number: u64, offset: usize) -> Result<LogWriter> {
         let mut file = File::options()
             .write(true)
             .create(true)
@@ -47,7 +50,7 @@ mod tests {
         Ok(writer)
     }
 
-    fn new_reader(dir: &PathBuf, log_number: u64) -> Result<LogReader> {
+    fn new_reader(dir: &Path, log_number: u64) -> Result<LogReader> {
         let filename = dir.join(format!("{}.log", log_number));
         assert!(filename.exists());
         let file = File::open(filename).unwrap();
@@ -104,7 +107,7 @@ mod tests {
         let mut expect = vec![];
         for case in &tests {
             for content in &case.group {
-                writer.add_record(&content)?;
+                writer.add_record(content)?;
                 expect.push(content.clone());
             }
             writer.flush()?;
