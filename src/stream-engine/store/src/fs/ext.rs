@@ -67,7 +67,7 @@ impl FileExt for File {
         {
             use std::os::unix::io::AsRawFd;
 
-            let retval = libc::ftruncate(self.as_raw_fd(), len);
+            let retval = libc::ftruncate(self.as_raw_fd(), len as i64);
             if retval != 0 {
                 return Err(std::io::Error::from_raw_os_error(retval));
             }
