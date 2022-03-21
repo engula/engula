@@ -49,6 +49,13 @@ impl FileExt for File {
                 return Err(std::io::Error::last_os_error());
             }
         }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = offset;
+            let _ = len;
+        }
+
         Ok(())
     }
 
