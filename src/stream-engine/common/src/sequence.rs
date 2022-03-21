@@ -24,6 +24,10 @@ impl Sequence {
     pub fn new(epoch: u32, index: u32) -> Self {
         Sequence { epoch, index }
     }
+
+    pub fn is_continuously(lhs: &Sequence, rhs: &Sequence) -> bool {
+        lhs.epoch == rhs.epoch && lhs.index + 1 == rhs.index
+    }
 }
 
 impl From<u64> for Sequence {
