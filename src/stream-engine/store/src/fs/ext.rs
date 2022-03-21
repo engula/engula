@@ -71,7 +71,7 @@ impl FileExt for File {
         }
 
         #[cfg(target_os = "macos")]
-        {
+        unsafe {
             use std::os::unix::io::AsRawFd;
 
             let retval = libc::ftruncate(self.as_raw_fd(), len as i64);
