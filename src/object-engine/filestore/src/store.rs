@@ -80,3 +80,20 @@ pub trait SequentialWrite: Send {
 
     async fn finish(&mut self) -> Result<()>;
 }
+
+const COPY_BUFFER_SIZE: usize = 8 * 1024;
+
+pub async fn copy_all(
+    mut r: Box<dyn SequentialRead>,
+    mut w: Box<dyn SequentialWrite>,
+) -> Result<()> {
+    let mut buf = vec![0; COPY_BUFFER_SIZE];
+    loop {
+        let n = r.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        w.write(&buf[..n]).await?;
+    }
+    Ok(())
+}

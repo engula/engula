@@ -28,8 +28,8 @@ message VersionEdit {
   message Range {
     uint64 id = 1;
     string bucket = 2;
-    bytes smallest = 3;
-    bytes largest = 4;
+    bytes lower_bound = 3;
+    bytes upper_bound = 4;
   }
 
   message RangeID {
@@ -41,12 +41,14 @@ message VersionEdit {
   repeated RangeID remove_ranges = 5;
 
   message File {
-    string bucket = 1;
-    uint64 range_id = 2;
-    string name = 3;
-    uint32 level = 4;
-    bytes smallest = 5;
-    bytes largest = 6;
+    string tenant = 1;
+    string bucket = 2;
+    uint64 range_id = 3;
+    string name = 4;
+    uint32 level = 5;
+    bytes lower_bound = 6;
+    bytes upper_bound = 7;
+    uint64 file_size = 8;
   };
 
   message FileID {

@@ -13,44 +13,61 @@
 // limitations under the License.
 
 use std::{
-    collections::{btree_map, BTreeMap},
+    cmp::Ordering,
+    collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap},
+    ops::Deref,
     sync::Arc,
 };
 
 use tokio::sync::Mutex;
 
-use crate::{versions::proto::*, *};
+use crate::{iterator::ManifestIter, versions::proto::*, *};
 
 const NUM_LEVELS: usize = 7;
 
-type Key = Vec<u8>;
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FileMetadata {
     pub name: String,
     pub bucket: String,
+    pub tenant: String,
     pub level: u32,
-    pub smallest: Key,
-    pub largest: Key,
+    pub lower_bound: Vec<u8>,
+    pub upper_bound: Vec<u8>,
+    pub file_size: u64,
 }
 
-type LevelFiles = BTreeMap<Key, FileMetadata>; // smallest_key => FileMetadata
-type BucketLevels = Vec<LevelFiles>; // level -> level files
+#[derive(Clone, Default)]
+pub struct LevelFiles<T>
+where
+    T: Ord + Clone + PartialOrd + PartialEq + Deref + From<FileMetadata>,
+{
+    pub files: BTreeSet<T>, // ordered FileMetadata
+}
+
+impl LevelFiles<OrdByUpperBound> {
+    pub fn iter(&self) -> ManifestIter {
+        ManifestIter::new(self.files.clone())
+    }
+}
 
 #[derive(Clone)]
 pub struct BucketVersion {
-    pub levels: BucketLevels,                  // level + key -> file (for read)
-    pub files: BTreeMap<String, FileMetadata>, // filename -> file (for delete)
+    pub l0_level: Vec<FileMetadata>,
+    pub non_l0_levels: Vec<LevelFiles<OrdByUpperBound>>,
+    pub files: HashMap<String, FileMetadata>, // filename -> file (for delete)
 }
 
 impl Default for BucketVersion {
     fn default() -> Self {
-        let levels = (0..NUM_LEVELS)
+        let non_l0_levels = (1..NUM_LEVELS)
             .into_iter()
-            .map(|_| BTreeMap::new())
+            .map(|_| LevelFiles::default())
             .collect();
-        let files = BTreeMap::new();
-        Self { levels, files }
+        Self {
+            non_l0_levels,
+            files: HashMap::new(),
+            l0_level: Vec::new(),
+        }
     }
 }
 
@@ -103,36 +120,40 @@ impl Inner {
                 let file_meta = FileMetadata {
                     name: add_file.name.to_owned(),
                     bucket: add_file.bucket.to_owned(),
+                    tenant: add_file.tenant.to_owned(),
                     level: add_file.level,
-                    smallest: add_file.smallest.to_owned(),
-                    largest: add_file.largest.to_owned(),
+                    lower_bound: add_file.lower_bound.to_owned(),
+                    upper_bound: add_file.upper_bound.to_owned(),
+                    file_size: add_file.file_size.to_owned(),
                 };
 
                 match bucket.files.entry(add_file.name.to_owned()) {
-                    btree_map::Entry::Vacant(ent) => {
+                    hash_map::Entry::Vacant(ent) => {
                         ent.insert(file_meta.to_owned());
                     }
-                    btree_map::Entry::Occupied(_) => {
+                    hash_map::Entry::Occupied(_) => {
                         return Err(Error::AlreadyExists(format!(
                             "bucket {}, file {}",
                             &add_file.bucket, &add_file.name
                         )))
                     }
                 };
-                let files = bucket
-                    .levels
-                    .get_mut(add_file.level as usize)
-                    .ok_or_else(|| Error::Internal("current version not found".to_string()))?;
-                match files.entry(add_file.smallest.to_owned()) {
-                    btree_map::Entry::Vacant(ent) => {
-                        ent.insert(file_meta);
-                    }
-                    btree_map::Entry::Occupied(_) => {
-                        return Err(Error::AlreadyExists(format!(
-                            "bucket {}, level {}, key {:?}",
-                            &add_file.bucket, &add_file.level, &add_file.smallest
-                        )))
-                    }
+
+                let has_dup = if add_file.level == 0 {
+                    bucket.l0_level.push(file_meta);
+                    false
+                } else {
+                    let level_files = bucket
+                        .non_l0_levels
+                        .get_mut((add_file.level - 1) as usize)
+                        .ok_or_else(|| Error::Internal("current version not found".to_string()))?;
+                    !level_files.files.insert(OrdByUpperBound(file_meta))
+                };
+                if has_dup {
+                    return Err(Error::AlreadyExists(format!(
+                        "bucket {}, level {}, key {:?}",
+                        &add_file.bucket, &add_file.level, &add_file.lower_bound
+                    )));
                 }
             } else {
                 return Err(Error::NotFound(format!("bucket {}", &add_file.bucket)));
@@ -142,7 +163,16 @@ impl Inner {
             if let Some(bucket) = self.buckets.get_mut(&file.bucket) {
                 let removed = bucket.files.remove(&file.name);
                 if let Some(f) = removed {
-                    bucket.levels[f.level as usize].remove(&f.smallest);
+                    if f.level == 0 {
+                        bucket.l0_level.retain(|e| e.lower_bound != f.lower_bound)
+                    } else {
+                        bucket.non_l0_levels[(f.level - 1) as usize].files.remove(
+                            &OrdByUpperBound(FileMetadata {
+                                lower_bound: f.lower_bound,
+                                ..Default::default()
+                            }),
+                        );
+                    }
                 }
             }
         }
@@ -161,10 +191,12 @@ impl Inner {
                 b.add_files(vec![version_edit::File {
                     range_id: 1,
                     bucket: file.bucket.to_owned(),
+                    tenant: file.tenant.to_owned(),
                     name: file.name.to_owned(),
                     level: file.level,
-                    smallest: file.smallest.to_owned(),
-                    largest: file.largest.to_owned(),
+                    lower_bound: file.lower_bound.to_owned(),
+                    upper_bound: file.upper_bound.to_owned(),
+                    file_size: file.file_size.to_owned(),
                 }]);
             }
         }
@@ -172,3 +204,40 @@ impl Inner {
         b.build()
     }
 }
+
+#[derive(Clone, Default)]
+pub struct OrdByUpperBound(pub FileMetadata);
+
+impl From<FileMetadata> for OrdByUpperBound {
+    fn from(m: FileMetadata) -> Self {
+        Self(m)
+    }
+}
+
+impl Deref for OrdByUpperBound {
+    type Target = FileMetadata;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Ord for OrdByUpperBound {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Key::from(self.0.upper_bound.as_slice()).cmp(&Key::from(other.0.upper_bound.as_slice()))
+    }
+}
+
+impl PartialOrd for OrdByUpperBound {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for OrdByUpperBound {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.lower_bound == other.0.lower_bound
+    }
+}
+
+impl Eq for OrdByUpperBound {}

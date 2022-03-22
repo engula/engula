@@ -73,7 +73,7 @@ impl TableIter {
     pub fn valid(&self) -> bool {
         self.block_iter
             .as_ref()
-            .map(|x| x.valid())
+            .map(|e| e.valid())
             .unwrap_or_default()
     }
 
@@ -89,11 +89,11 @@ impl TableIter {
         Ok(())
     }
 
-    pub async fn seek(&mut self, target: Key<'_>) -> Result<()> {
-        self.index_iter.seek(target);
+    pub async fn seek(&mut self, key: Key<'_>) -> Result<()> {
+        self.index_iter.seek(key);
         self.block_iter = if self.index_iter.valid() {
             let mut iter = self.read_block_iter().await?;
-            iter.seek(target);
+            iter.seek(key);
             Some(iter)
         } else {
             None
@@ -141,7 +141,7 @@ impl FileReader {
     }
 
     async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<[u8]>> {
-        let mut buf = Vec::with_capacity(handle.length as usize);
+        let mut buf = vec![0u8; handle.length as usize];
         self.reader.read_exact_at(&mut buf, handle.offset).await?;
         Ok(buf.into())
     }

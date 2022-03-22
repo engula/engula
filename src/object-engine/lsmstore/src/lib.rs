@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bucket_iter;
+#![feature(map_first_last)]
+
+mod iterator;
 mod store;
 mod table;
 mod versions;
@@ -20,10 +22,13 @@ mod versions;
 use object_engine_common::{Error, Result};
 
 pub use self::{
-    bucket_iter::BucketIter,
+    iterator::MergingIterator,
     store::{Bucket, Store, Tenant},
     table::{
         Key, TableBuilder, TableBuilderOptions, TableDesc, TableIter, TableReader, Timestamp,
         ValueType,
+    },
+    versions::{
+        Bucket as VersionEditBucket, File as VersionEditFile, VersionEditBuilder, VersionSet,
     },
 };
