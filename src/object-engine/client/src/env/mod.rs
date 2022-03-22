@@ -58,4 +58,23 @@ pub trait BucketEnv: Clone + Sync + Send {
     fn tenant(&self) -> &str;
 
     async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>>;
+
+    async fn get(&self, k: &[u8]) -> Result<Option<Vec<u8>>>;
+
+    async fn iter(&self) -> Result<Box<dyn Iter>>;
+}
+
+#[async_trait]
+pub trait Iter {
+    fn key(&self) -> Vec<u8>;
+
+    fn value(&self) -> &[u8];
+
+    fn valid(&self) -> bool;
+
+    async fn seek_to_first(&mut self) -> Result<()>;
+
+    async fn seek(&mut self, target: &[u8]) -> Result<()>;
+
+    async fn next(&mut self) -> Result<()>;
 }

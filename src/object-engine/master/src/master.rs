@@ -14,13 +14,10 @@
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use object_engine_lsmstore::Store;
 use tokio::sync::Mutex;
 
-use crate::{
-    fs::{self, FileStore},
-    proto::*,
-    Error, Result, Tenant,
-};
+use crate::{fs, proto::*, Error, Result, Tenant};
 
 #[derive(Clone)]
 pub struct Master {
@@ -29,8 +26,10 @@ pub struct Master {
 
 impl Master {
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let file_store = fs::open(path).await?;
-        let inner = MasterInner::new(file_store);
+        let path = path.into();
+        let file_store = fs::open(path.to_owned()).await?;
+        let lsm_store = Store::new(path.to_owned(), None, file_store).await?;
+        let inner = MasterInner::new(lsm_store);
         Ok(Self {
             inner: Arc::new(inner),
         })
@@ -90,8 +89,17 @@ impl Master {
                 let res = self.handle_describe_bucket(req).await?;
                 response_union::Response::DescribeBucket(res)
             }
-            _ => {
-                todo!();
+            request_union::Request::BeginBulkload(req) => {
+                let res = self.handle_begin_bulk_load(req).await?;
+                response_union::Response::BeginBulkload(res)
+            }
+            request_union::Request::CommitBulkload(req) => {
+                let res = self.handle_commit_bulk_load(req).await?;
+                response_union::Response::CommitBulkload(res)
+            }
+            request_union::Request::AllocateFileNames(req) => {
+                let res = self.handle_allocate_filenames(req).await?;
+                response_union::Response::AllocateFileNames(res)
             }
         };
         Ok(ResponseUnion {
@@ -121,9 +129,11 @@ impl Master {
 
     async fn handle_create_bucket(&self, req: CreateBucketRequest) -> Result<CreateBucketResponse> {
         let tenant = self.tenant(&req.tenant).await?;
+
         let bucket = tenant
             .create_bucket(&req.bucket, req.options.unwrap_or_default())
             .await?;
+
         Ok(CreateBucketResponse {
             desc: Some(bucket.desc().await),
         })
@@ -139,18 +149,95 @@ impl Master {
             desc: Some(bucket.desc().await),
         })
     }
+
+    async fn handle_begin_bulk_load(
+        &self,
+        req: BeginBulkLoadRequest,
+    ) -> Result<BeginBulkLoadResponse> {
+        let tenant = req.tenant;
+        let uid = uuid::Uuid::new_v4().to_string();
+        let token = tenant.to_owned() + &uid;
+        let mut in_progress = self.inner.in_progress.lock().await;
+        in_progress.insert(token.to_owned(), TokenCtx { tenant });
+        Ok(BeginBulkLoadResponse { token })
+    }
+
+    async fn handle_commit_bulk_load(
+        &self,
+        req: CommitBulkLoadRequest,
+    ) -> Result<CommitBulkLoadResponse> {
+        let token = req.token;
+        let tenant = self
+            .inner
+            .in_progress
+            .lock()
+            .await
+            .get(&token)
+            .ok_or_else(|| Error::NotFound("bulk load token".to_string()))?
+            .tenant
+            .to_owned();
+
+        let mut files = Vec::new();
+        for desc in req.files {
+            let version_edit = object_engine_lsmstore::VersionEditFile {
+                bucket: desc.bucket.to_owned(),
+                lower_bound: desc.lower_bound.to_owned(),
+                upper_bound: desc.upper_bound.to_owned(),
+                name: desc.file_name.to_owned(),
+                tenant: tenant.to_owned(),
+                file_size: desc.file_size.to_owned(),
+                range_id: 0,
+                level: 0,
+            };
+            files.push(version_edit);
+        }
+        let tenant = self.tenant(&tenant).await?;
+        tenant.add_files(files).await?;
+        Ok(CommitBulkLoadResponse {})
+    }
+
+    async fn handle_allocate_filenames(
+        &self,
+        req: AllocateFileNamesRequest,
+    ) -> Result<AllocateFileNamesResponse> {
+        let token = req.token;
+        let count = req.count;
+        let tenant = self
+            .inner
+            .in_progress
+            .lock()
+            .await
+            .get(&token)
+            .ok_or_else(|| Error::NotFound("bulk load token".to_string()))?
+            .tenant
+            .to_owned();
+
+        let mut names = Vec::with_capacity(count as usize);
+        let file_nums = self.tenant(&tenant).await?.get_next_file_num(count).await?;
+        for num in file_nums {
+            names.push(format!("{:0>6}.sst", num));
+        }
+
+        Ok(AllocateFileNamesResponse { names })
+    }
 }
 
 struct MasterInner {
     tenants: Mutex<HashMap<String, Tenant>>,
-    file_store: FileStore,
+    in_progress: Mutex<HashMap<String, TokenCtx>>,
+    store: Store,
+}
+
+struct TokenCtx {
+    tenant: String,
 }
 
 impl MasterInner {
-    fn new(file_store: FileStore) -> Self {
+    fn new(store: Store) -> Self {
         Self {
             tenants: Mutex::new(HashMap::new()),
-            file_store,
+            in_progress: Mutex::new(HashMap::new()),
+            store,
         }
     }
 
@@ -167,8 +254,10 @@ impl MasterInner {
         if tenants.contains_key(name) {
             return Err(Error::AlreadyExists(format!("tenant {}", name)));
         }
-        let file_tenant = self.file_store.create_tenant(name).await?;
-        let tenant = Tenant::new(name.to_owned(), options, file_tenant.into());
+        self.store.create_tenant(name).await?;
+        let versions_tenant = self.store.tenant(name).await?;
+
+        let tenant = Tenant::new(name.to_owned(), options, versions_tenant);
         tenants.insert(name.to_owned(), tenant.clone());
         Ok(tenant)
     }

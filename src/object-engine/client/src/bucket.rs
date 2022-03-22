@@ -15,7 +15,7 @@
 use object_engine_filestore::SequentialWrite;
 use object_engine_master::proto::*;
 
-use crate::{BucketEnv, Env, Error, Result, TenantEnv};
+use crate::{env::Iter, BucketEnv, Env, Error, Result, TenantEnv};
 
 #[derive(Clone)]
 pub struct Bucket<E: Env> {
@@ -51,12 +51,12 @@ impl<E: Env> Bucket<E> {
         desc.ok_or_else(|| Error::internal("missing bucket descriptor"))
     }
 
-    pub async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
-        todo!();
+    pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.bucket.get(key).await
     }
 
-    pub fn iter(&self) {
-        todo!();
+    pub async fn iter(&self) -> Result<Box<dyn Iter>> {
+        self.bucket.iter().await
     }
 
     pub(crate) async fn new_sequential_writer(

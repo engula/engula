@@ -14,14 +14,11 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use object_engine_filestore::{fs, Bucket, SequentialWrite, Store, Tenant};
+use object_engine_filestore::{fs, Store};
 
 use crate::Result;
 
 pub type FileStore = Arc<dyn Store>;
-pub type FileTenant = Arc<dyn Tenant>;
-pub type FileBucket = Arc<dyn Bucket>;
-pub type SequentialWriter = Box<dyn SequentialWrite>;
 
 pub async fn open(path: impl Into<PathBuf>) -> Result<FileStore> {
     let store = fs::Store::open(path).await?;

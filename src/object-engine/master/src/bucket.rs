@@ -14,11 +14,10 @@
 
 use std::sync::Arc;
 
-use crate::{
-    fs::{FileBucket, SequentialWriter},
-    proto::*,
-    Result,
-};
+use object_engine_filestore::SequentialWrite;
+use object_engine_lsmstore::{Bucket as VersionBucket, MergingIterator};
+
+use crate::{proto::*, Result};
 
 #[derive(Clone)]
 pub struct Bucket {
@@ -30,9 +29,9 @@ impl Bucket {
         name: String,
         tenant: String,
         options: BucketOptions,
-        file_bucket: FileBucket,
+        version_bucket: VersionBucket,
     ) -> Self {
-        let inner = BucketInner::new(name, tenant, options, file_bucket);
+        let inner = BucketInner::new(name, tenant, options, version_bucket);
         Self {
             inner: Arc::new(inner),
         }
@@ -50,8 +49,16 @@ impl Bucket {
         self.inner.desc().await
     }
 
-    pub async fn new_sequential_writer(&self, name: &str) -> Result<SequentialWriter> {
-        self.inner.file_bucket.new_sequential_writer(name).await
+    pub async fn new_sequential_writer(&self, name: &str) -> Result<Box<dyn SequentialWrite>> {
+        self.inner.version_bucket.new_sequential_writer(name).await
+    }
+
+    pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.inner.version_bucket.get(key).await
+    }
+
+    pub async fn iter(&self) -> Result<MergingIterator> {
+        self.inner.version_bucket.iter().await
     }
 }
 
@@ -59,16 +66,21 @@ struct BucketInner {
     name: String,
     tenant: String,
     options: BucketOptions,
-    file_bucket: FileBucket,
+    version_bucket: VersionBucket,
 }
 
 impl BucketInner {
-    fn new(name: String, tenant: String, options: BucketOptions, file_bucket: FileBucket) -> Self {
+    fn new(
+        name: String,
+        tenant: String,
+        options: BucketOptions,
+        version_bucket: VersionBucket,
+    ) -> Self {
         Self {
             name,
             tenant,
             options,
-            file_bucket,
+            version_bucket,
         }
     }
 

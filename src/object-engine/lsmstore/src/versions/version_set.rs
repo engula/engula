@@ -96,6 +96,24 @@ impl VersionSet {
 
         Ok(())
     }
+
+    pub async fn get_next_file_num(&self, count: u64) -> Result<Vec<u64>> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let mut inner = self.inner.lock().await;
+        let mut res = Vec::new();
+        for _ in 0..count {
+            res.push(inner.get_next_file_num());
+        }
+        let ve = VersionEditBuilder::default()
+            .set_next_file_num(inner.next_file_num)
+            .build();
+        let mut new_version = inner.current_version().to_owned();
+        new_version.apply(&ve).await?;
+        inner.versions.push_back(new_version);
+        Ok(res)
+    }
 }
 
 impl VersionSetInner {
@@ -134,7 +152,8 @@ impl VersionSetInner {
     }
 
     fn file_path(&self, manifest_file_name: u64) -> PathBuf {
-        self.path.join(format!("MANIFEST-{}", manifest_file_name))
+        self.path
+            .join(format!("MANIFEST-{:0>6}", manifest_file_name))
     }
 
     async fn create(&mut self) -> Result<()> {
@@ -226,7 +245,7 @@ impl VersionSetInner {
                 .open(&tmp_path)
                 .await?;
             tmp_w
-                .write_all(format!("MANIFEST-{}\n", file_num).as_bytes())
+                .write_all(format!("MANIFEST-{:0>6}\n", file_num).as_bytes())
                 .await?;
             tmp_w.sync_all().await?;
         }

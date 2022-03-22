@@ -143,6 +143,17 @@ impl Tenant {
 
         Ok(())
     }
+
+    pub async fn get_next_file_nums(&self, count: u64) -> Result<Vec<u64>> {
+        self.inner
+            .lock()
+            .await
+            .version_sets
+            .get(&self.tenant)
+            .ok_or_else(|| Error::NotFound(format!("tenant {}", &self.tenant)))?
+            .get_next_file_num(count)
+            .await
+    }
 }
 
 pub struct Bucket {
