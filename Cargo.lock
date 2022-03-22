@@ -627,7 +627,7 @@ dependencies = [
  "object-engine-lsmstore",
  "object-engine-master",
  "prost",
- "tempdir",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic",

@@ -38,7 +38,7 @@ mod testmode {
 
     #[tokio::test]
     async fn test_get_iter_put() -> Result<()> {
-        let p = tempdir::TempDir::new("test4")?;
+        let p = tempfile::tempdir()?;
         println!("{:?}", p.path());
         let env1 = LocalEnv::open(p.path()).await?;
 
@@ -104,7 +104,7 @@ mod testmode {
 
     #[tokio::test]
     async fn test_get_iter_delete() -> Result<()> {
-        let p = tempdir::TempDir::new("test4")?;
+        let p = tempfile::tempdir()?;
         println!("{:?}", p.path());
         let env1 = LocalEnv::open(p.path()).await?;
         let eng = Engine::open(env1).await?;
