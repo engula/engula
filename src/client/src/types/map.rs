@@ -12,120 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ops::RangeBounds;
-
 use engula_apis::v1::*;
 
-use super::{call, MutateExpr, SelectExpr};
+use super::{Mutate, Select};
 
-pub struct Map(MapValue);
-
-impl From<Map> for Value {
-    fn from(v: Map) -> Self {
-        v.0.into()
-    }
-}
+pub struct Map;
 
 impl Map {
-    pub fn new(value: impl Into<MapValue>) -> Self {
-        Self(value.into())
+    pub fn value(value: impl Into<MapValue>) -> MapValue {
+        value.into()
     }
 
-    pub fn len() -> MapSelect {
-        MapSelect::len()
+    pub fn index(index: impl Into<Value>) -> Select {
+        Select::default().index(index)
     }
 
-    pub fn index(index: impl Into<ListValue>) -> MapSelect {
-        MapSelect::index(index)
+    pub fn len() -> Select {
+        Select::default().len()
     }
 
-    pub fn range<T>(range: impl RangeBounds<T>) -> MapSelect
-    where
-        T: Clone + Into<range_bound::Value>,
-    {
-        MapSelect::range(range)
+    pub fn clear() -> Mutate {
+        Mutate::default().clear()
     }
 
-    pub fn contains(index: impl Into<ListValue>) -> MapSelect {
-        MapSelect::contains(index)
+    pub fn extend(value: impl Into<MapValue>) -> Mutate {
+        Mutate::default().extend(value.into())
     }
 
-    pub fn clear() -> MapMutate {
-        MapMutate::clear()
-    }
-
-    pub fn extend(value: impl Into<MapValue>) -> MapMutate {
-        MapMutate::extend(value)
-    }
-
-    pub fn remove(index: impl Into<ListValue>) -> MapMutate {
-        MapMutate::remove(index)
-    }
-}
-
-pub struct MapSelect {
-    expr: MapExpr,
-}
-
-impl MapSelect {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: MapExpr { call: Some(call) },
-        }
-    }
-
-    pub fn len() -> Self {
-        Self::new(call::len())
-    }
-
-    pub fn index(index: impl Into<ListValue>) -> Self {
-        Self::new(call::index(index.into()))
-    }
-
-    pub fn range<T>(range: impl RangeBounds<T>) -> Self
-    where
-        T: Clone + Into<range_bound::Value>,
-    {
-        Self::new(call::range(range_bounds(range)))
-    }
-
-    pub fn contains(index: impl Into<ListValue>) -> Self {
-        Self::new(call::contains(index.into()))
-    }
-}
-
-impl From<MapSelect> for SelectExpr {
-    fn from(v: MapSelect) -> Self {
-        Expr::from(v.expr).into()
-    }
-}
-
-pub struct MapMutate {
-    expr: MapExpr,
-}
-
-impl MapMutate {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: MapExpr { call: Some(call) },
-        }
-    }
-
-    pub fn clear() -> Self {
-        Self::new(call::clear())
-    }
-
-    pub fn extend(value: impl Into<MapValue>) -> Self {
-        Self::new(call::extend(value.into()))
-    }
-
-    pub fn remove(index: impl Into<ListValue>) -> Self {
-        Self::new(call::remove(index.into()))
-    }
-}
-
-impl From<MapMutate> for MutateExpr {
-    fn from(v: MapMutate) -> Self {
-        Expr::from(v.expr).into()
+    pub fn remove(index: impl Into<Value>) -> Mutate {
+        Mutate::default().remove(index)
     }
 }

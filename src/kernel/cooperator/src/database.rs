@@ -37,18 +37,11 @@ impl Database {
         let mut inner = self.inner.lock().await;
         let mut res = DatabaseResponse::default();
         let mut cx = DatabaseContext::default();
-        for coreq in req.selects {
+        for coreq in req.requests {
             let co = inner.collection(&coreq.name).await?;
             let mut wb = WriteBatch::default();
             let cores = co.execute(&mut wb, coreq).await?;
-            res.selects.push(cores);
-            cx.collections.push((co, wb));
-        }
-        for coreq in req.mutates {
-            let co = inner.collection(&coreq.name).await?;
-            let mut wb = WriteBatch::default();
-            let cores = co.execute(&mut wb, coreq).await?;
-            res.mutates.push(cores);
+            res.responses.push(cores);
             cx.collections.push((co, wb));
         }
         for (co, wb) in cx.collections {

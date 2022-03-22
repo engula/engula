@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use engula_apis::v1::*;
 
-use crate::{Any, Client, Error, MutateExpr, Result};
+use crate::{Any, Client, Error, Result};
 
 #[derive(Clone)]
 pub struct DatabaseTxn {
@@ -40,8 +40,7 @@ impl DatabaseTxn {
             Arc::try_unwrap(self.inner).map_err(|_| Error::aborted("pending transactions"))?;
         let req = DatabaseRequest {
             name: inner.name,
-            mutates: inner.mutates.into_inner().unwrap(),
-            ..Default::default()
+            requests: inner.requests.into_inner().unwrap(),
         };
         inner.client.database(req).await?;
         Ok(())
@@ -51,7 +50,7 @@ impl DatabaseTxn {
 struct DatabaseInner {
     name: String,
     client: Client,
-    mutates: Mutex<Vec<CollectionRequest>>,
+    requests: Mutex<Vec<CollectionRequest>>,
 }
 
 struct DatabaseHandle {
@@ -64,20 +63,19 @@ impl DatabaseInner {
         Self {
             name,
             client,
-            mutates: Mutex::new(Vec::new()),
+            requests: Mutex::new(Vec::new()),
         }
     }
 
-    fn add_mutate(&self, req: CollectionRequest) {
-        let mut mutates = self.mutates.lock().unwrap();
-        mutates.push(req);
+    fn add_request(&self, req: CollectionRequest) {
+        self.requests.lock().unwrap().push(req);
     }
 }
 
 pub struct CollectionTxn {
     handle: Option<DatabaseHandle>,
     parent: Option<Arc<DatabaseInner>>,
-    mutate: CollectionRequest,
+    request: CollectionRequest,
 }
 
 impl CollectionTxn {
@@ -101,7 +99,7 @@ impl CollectionTxn {
         Self {
             handle,
             parent,
-            mutate: CollectionRequest {
+            request: CollectionRequest {
                 name,
                 ..Default::default()
             },
@@ -116,22 +114,25 @@ impl CollectionTxn {
         self.mutate(id, Any::delete());
     }
 
-    pub fn mutate(&mut self, id: impl Into<Vec<u8>>, expr: impl Into<MutateExpr>) {
-        self.mutate.ids.push(id.into());
-        self.mutate.exprs.push(expr.into().into());
+    pub fn mutate(&mut self, id: impl Into<Vec<u8>>, mutate: impl Into<MutateExpr>) {
+        let expr = ObjectExpr {
+            batch: vec![id.into()],
+            mutate: Some(mutate.into()),
+            ..Default::default()
+        };
+        self.request.exprs.push(expr);
     }
 
-    pub fn stage(self) {
+    pub fn submit(self) {
         let parent = self.parent.unwrap();
-        parent.add_mutate(self.mutate);
+        parent.add_request(self.request);
     }
 
     pub async fn commit(self) -> Result<()> {
         let handle = self.handle.unwrap();
         let req = DatabaseRequest {
             name: handle.name,
-            mutates: vec![self.mutate],
-            ..Default::default()
+            requests: vec![self.request],
         };
         handle.client.database(req).await?;
         Ok(())

@@ -22,17 +22,13 @@ async fn main() -> Result<()> {
     let db = uv.create_database("i64").await?;
     let co = db.create_collection("i64").await?;
 
-    co.set("a", 1).await?;
+    co.set("a", I64::value(1)).await?;
     let a: i64 = co.get("a").await?;
     println!("a = {:?}", a);
 
     co.mutate("a", I64::add(2)).await?;
     let a: i64 = co.get("a").await?;
     println!("a.add(2) = {:?}", a);
-
-    co.mutate("a", I64::sub(3)).await?;
-    let a: i64 = co.get("a").await?;
-    println!("a.sub(3) = {:?}", a);
 
     Ok(())
 }

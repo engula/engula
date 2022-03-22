@@ -18,14 +18,14 @@ use engula_apis::v1::*;
 
 use crate::{Error, Result};
 
-pub struct Args(VecDeque<TypedValue>);
+pub struct Args(VecDeque<Value>);
 
 impl Args {
-    pub fn new(args: Vec<TypedValue>) -> Self {
+    pub fn new(args: Vec<Value>) -> Self {
         Self(args.into())
     }
 
-    pub fn take<T: TryFrom<TypedValue>>(&mut self) -> Result<T> {
+    pub fn take<T: TryFrom<Value>>(&mut self) -> Result<T> {
         let v = self
             .0
             .pop_front()

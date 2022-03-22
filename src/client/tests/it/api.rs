@@ -24,7 +24,7 @@ async fn test_apis() -> Result<()> {
     let db = uv.create_database("blob").await?;
     let co = db.create_collection("blob").await?;
 
-    co.set("o", Blob::new([1, 2])).await?;
+    co.set("o", Blob::value([1, 2])).await?;
     let o: Vec<u8> = co.get("o").await?;
     assert_eq!(vec![1, 2], o);
 

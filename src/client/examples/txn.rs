@@ -29,14 +29,14 @@ async fn main() -> Result<()> {
     {
         let mut t = txn.collection("co1");
         t.set("a", 1);
-        t.set("b", Blob::new([1, 2]));
-        t.stage();
+        t.set("b", Blob::value([1, 2]));
+        t.submit();
     }
     {
         let mut t = txn.collection("co2");
-        t.set("c", List::new([3, 4]));
-        t.set("d", Map::new([(5, 5), (6, 6)]));
-        t.stage();
+        t.set("c", List::value([3, 4]));
+        t.set("d", Map::value([(5, 5), (6, 6)]));
+        t.submit();
     }
     txn.commit().await?;
 
