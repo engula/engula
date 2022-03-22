@@ -22,13 +22,13 @@ use crate::{
     *,
 };
 
+#[derive(Clone)]
 pub struct VersionSet {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<VersionSetInner>>,
 }
 
-struct Inner {
-    tenant: String,
-    base_dir: PathBuf,
+struct VersionSetInner {
+    path: PathBuf,
     versions: VecDeque<Version>,
     manifest: Option<manifest::Writer>,
     next_file_num: u64,
@@ -36,10 +36,9 @@ struct Inner {
 }
 
 impl VersionSet {
-    pub async fn open(base_dir: impl Into<PathBuf>, tenant: &str) -> Result<Self> {
-        let mut inner = Inner {
-            tenant: tenant.to_owned(),
-            base_dir: base_dir.into(),
+    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        let mut inner = VersionSetInner {
+            path: path.into(),
             versions: VecDeque::new(),
             manifest: None,
             next_file_num: 0,
@@ -99,7 +98,7 @@ impl VersionSet {
     }
 }
 
-impl Inner {
+impl VersionSetInner {
     fn get_next_file_num(&mut self) -> u64 {
         let num = self.next_file_num;
         self.next_file_num += 1;
@@ -135,9 +134,7 @@ impl Inner {
     }
 
     fn file_path(&self, manifest_file_name: u64) -> PathBuf {
-        self.base_dir
-            .join(&self.tenant)
-            .join(format!("MANIFEST-{}", manifest_file_name))
+        self.path.join(format!("MANIFEST-{}", manifest_file_name))
     }
 
     async fn create(&mut self) -> Result<()> {
@@ -192,7 +189,7 @@ impl Inner {
     }
 
     async fn find_current_manifest(&self) -> Result<Option<u64>> {
-        let path = self.base_dir.join(&self.tenant).join("CURRENT");
+        let path = self.path.join("CURRENT");
         let res = fs::read_to_string(&path).await;
         if let Err(io_err) = &res {
             if io_err.kind() == std::io::ErrorKind::NotFound {
@@ -219,11 +216,8 @@ impl Inner {
     }
 
     async fn update_current(&self, file_num: u64) -> Result<()> {
-        let tmp_path = self
-            .base_dir
-            .join(&self.tenant)
-            .join(format!("CURRENT.{}.dbtmp", file_num));
-        let curr_path = self.base_dir.join(&self.tenant).join("CURRENT");
+        let tmp_path = self.path.join(format!("CURRENT.{}.dbtmp", file_num));
+        let curr_path = self.path.join("CURRENT");
         let _ = fs::remove_file(&tmp_path).await;
         {
             let mut tmp_w = fs::OpenOptions::new()

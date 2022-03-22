@@ -18,6 +18,10 @@ pub mod fs;
 
 use object_engine_common::{async_trait, Error, Result};
 
-pub use self::store::{
-    Bucket, FileDesc, Lister, RandomRead, SequentialRead, SequentialWrite, Store, Tenant,
+pub use self::{
+    fs::Store as FsFileStore,
+    store::{
+        copy_all, Bucket, FileDesc, Lister, RandomRead, SequentialRead, SequentialWrite, Store,
+        Tenant,
+    },
 };

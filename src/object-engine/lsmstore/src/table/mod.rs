@@ -20,10 +20,8 @@ mod table_builder;
 mod table_footer;
 mod table_reader;
 
-use self::{
-    block_builder::BlockBuilder, block_handle::BlockHandle, block_iter::BlockIter,
-    table_footer::TableFooter,
-};
+pub(crate) use self::block_iter::BlockIter;
+use self::{block_builder::BlockBuilder, block_handle::BlockHandle, table_footer::TableFooter};
 pub use self::{
     format::{Key, Timestamp, ValueType},
     table_builder::{TableBuilder, TableBuilderOptions, TableDesc},

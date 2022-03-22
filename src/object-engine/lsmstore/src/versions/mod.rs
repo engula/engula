@@ -13,15 +13,21 @@
 // limitations under the License.
 
 mod manifest;
-mod proto;
+pub mod proto;
 mod version;
 mod version_set;
 
-pub use self::{version::Version, version_set::VersionSet};
+pub use self::{
+    proto::{
+        version_edit::{Bucket, File},
+        VersionEditBuilder,
+    },
+    version::{BucketVersion, FileMetadata, OrdByUpperBound, Version},
+    version_set::VersionSet,
+};
 
 #[cfg(test)]
 mod test_version_set {
-
     use super::*;
     use crate::{versions::proto::*, *};
 
@@ -29,7 +35,7 @@ mod test_version_set {
     async fn test_new_create() -> Result<()> {
         let tmp = tempdir::TempDir::new("test3")?.into_path();
         print!("{:?}", &tmp);
-        let vs1 = VersionSet::open(&tmp, "t1").await?;
+        let vs1 = VersionSet::open(&tmp).await?;
 
         for i in 1..200 {
             vs1.log_and_apply(
@@ -42,7 +48,7 @@ mod test_version_set {
             .await?;
         }
 
-        let vs2 = VersionSet::open(&tmp, "t1").await?;
+        let vs2 = VersionSet::open(&tmp).await?;
         for i in 200..400 {
             vs2.log_and_apply(
                 VersionEditBuilder::default()
