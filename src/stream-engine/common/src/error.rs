@@ -15,9 +15,10 @@
 use futures::channel::oneshot;
 use thiserror::Error;
 
-pub type IoResult<T> = std::result::Result<T, std::io::ErrorKind>;
+pub type IoResult<T> = std::result::Result<T, std::io::Error>;
+pub type IoKindResult<T> = std::result::Result<T, std::io::ErrorKind>;
 
-/// Errors for all store engine operations.
+/// Errors for all stream engine operations.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("{0} is not found")]
@@ -53,6 +54,12 @@ impl From<oneshot::Canceled> for Error {
             io::ErrorKind::TimedOut,
             "task has been canceled",
         ))
+    }
+}
+
+impl From<prost::DecodeError> for Error {
+    fn from(err: prost::DecodeError) -> Self {
+        Error::Corruption(err.to_string())
     }
 }
 

@@ -14,11 +14,11 @@
 
 use std::{
     fs::File,
-    io::{IoSlice, Seek, SeekFrom, Write},
+    io::{Error, ErrorKind, IoSlice, Seek, SeekFrom, Write},
 };
 
 use super::format::*;
-use crate::{fs::FileExt, Error, Result};
+use crate::{fs::FileExt, IoResult as Result};
 
 const EMPTY_RECORD_HEADER: [u8; RECORD_HEADER_SIZE] = [0u8; RECORD_HEADER_SIZE];
 
@@ -50,10 +50,13 @@ impl Writer {
         let block_offset = initial_offset % MAX_BLOCK_SIZE;
 
         if initial_offset > max_file_size {
-            return Err(Error::InvalidArgument(format!(
-                "too large initial offset, limitation {}, but got {}",
-                max_file_size, initial_offset
-            )));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "too large initial offset, limitation {}, but got {}",
+                    max_file_size, initial_offset
+                ),
+            ));
         }
 
         let synced_offset = initial_offset - (initial_offset % PAGE_SIZE);

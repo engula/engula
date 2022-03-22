@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod engine;
 mod format;
+pub mod manager;
 pub mod reader;
 pub mod writer;
+
+pub use engine::LogEngine;
+pub use manager::LogFileManager;
 
 #[cfg(test)]
 mod tests {

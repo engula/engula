@@ -27,6 +27,7 @@ pub(crate) struct Reader {
     eof: bool,
 
     consumed_bytes: usize,
+    next_read_offset: usize,
     next_record_offset: usize,
 
     buf_start: usize,
@@ -43,6 +44,7 @@ impl Reader {
             checksum,
             eof: false,
             consumed_bytes: 0,
+            next_read_offset: 0,
             next_record_offset: 0,
             buf_start: 0,
             buf_size: 0,
@@ -127,9 +129,6 @@ impl Reader {
             if self.buf_size <= RECORD_HEADER_SIZE {
                 if !self.eof {
                     // Skip the trailing padding, if buf_size isn't zero.
-                    self.buf_size = 0;
-                    self.buf_start = 0;
-                    self.consumed_bytes += MAX_BLOCK_SIZE;
                     self.read_block()?;
                     continue;
                 } else {
@@ -204,7 +203,8 @@ impl Reader {
     /// Reads a block from file, if there no enough data to read, the [`eof`] is
     /// set to [`true`].
     fn read_block(&mut self) -> Result<()> {
-        debug_assert_eq!(self.buf_start, 0);
+        self.buf_size = 0;
+        self.buf_start = 0;
         while self.buf_size < MAX_BLOCK_SIZE {
             let read_size = match self.file.read(&mut self.buffer[self.buf_size..]) {
                 Ok(size) => size,
@@ -222,6 +222,8 @@ impl Reader {
 
             self.buf_size += read_size;
         }
+        self.consumed_bytes = self.next_read_offset;
+        self.next_read_offset += self.buf_size;
         Ok(())
     }
 }

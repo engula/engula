@@ -14,19 +14,9 @@
 
 syntax = "proto3";
 
+import public "store-meta.proto";
+
 package streamengine.store.v1;
-
-enum EntryType {
-    HOLE = 0;
-    EVENT = 1;
-    BRIDGE = 2;
-}
-
-message Entry {
-    EntryType entry_type = 1;
-    uint32 epoch = 2;
-    bytes event = 3;
-}
 
 service Store {
     // Read some entries from a segment.
@@ -74,7 +64,7 @@ message WriteRequest {
 
     uint32 first_index = 3;
 
-    repeated Entry entries = 4;
+    repeated meta.v1.Entry entries = 4;
 }
 
 message WriteResponse {
@@ -95,7 +85,7 @@ message ReadRequest {
 
 message ReadResponse {
     uint32 index = 1;
-    Entry entry = 2;
+    meta.v1.Entry entry = 2;
 }
 
 message SealRequest {
