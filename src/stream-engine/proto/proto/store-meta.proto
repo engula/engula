@@ -12,34 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::all)]
+syntax = "proto3";
 
-mod cast;
+package streamengine.store.meta.v1;
 
-pub mod master {
-    pub use v1::*;
-
-    pub mod v1 {
-        tonic::include_proto!("streamengine.master.v1");
-    }
+enum EntryType {
+    HOLE = 0;
+    EVENT = 1;
+    BRIDGE = 2;
 }
 
-pub use master::*;
-
-pub mod store {
-    pub use v1::*;
-
-    pub mod meta {
-        pub use v1::*;
-
-        pub mod v1 {
-            tonic::include_proto!("streamengine.store.meta.v1");
-        }
-    }
-
-    pub mod v1 {
-        tonic::include_proto!("streamengine.store.v1");
-    }
+message Entry {
+    EntryType entry_type = 1;
+    uint32 epoch = 2;
+    bytes event = 3;
 }
 
-pub use store::{meta::v1::*, v1::*};
+message Record {
+    uint64 stream_id = 1;
+    uint32 epoch = 2;
+    optional uint32 writer_epoch = 3;
+    optional uint64 acked_seq = 4;
+    optional uint32 first_index = 5;
+    repeated Entry entries = 6;
+}
+
+message RecordGroup {
+    repeated Record records = 1;
+}

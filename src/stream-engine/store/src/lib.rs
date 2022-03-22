@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(drain_filter)]
 #![feature(write_all_vectored)]
 
 #[allow(dead_code)]
 mod fs;
 #[allow(dead_code)]
 mod log;
+mod opt;
 mod server;
 
+pub use opt::DbOption;
 pub use server::Server;
 use stream_engine_common::{
-    error::{Error, Result},
+    error::{Error, IoResult, Result},
     Entry, Sequence,
 };
 #[cfg(debug_assertions)]
