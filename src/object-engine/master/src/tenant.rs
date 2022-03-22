@@ -14,9 +14,10 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use object_engine_lsmstore::{Tenant as VersionTenant, VersionEditFile};
 use tokio::sync::Mutex;
 
-use crate::{fs::FileTenant, proto::*, Bucket, Error, Result};
+use crate::{proto::*, Bucket, Error, Result};
 
 #[derive(Clone)]
 pub struct Tenant {
@@ -24,8 +25,8 @@ pub struct Tenant {
 }
 
 impl Tenant {
-    pub fn new(name: String, options: TenantOptions, file_tenant: FileTenant) -> Self {
-        let inner = TenantInner::new(name, options, file_tenant);
+    pub fn new(name: String, options: TenantOptions, versions_tenant: VersionTenant) -> Self {
+        let inner = TenantInner::new(name, options, versions_tenant);
         Self {
             inner: Arc::new(inner),
         }
@@ -46,22 +47,30 @@ impl Tenant {
     pub(crate) async fn create_bucket(&self, name: &str, options: BucketOptions) -> Result<Bucket> {
         self.inner.create_bucket(name, options).await
     }
+
+    pub async fn add_files(&self, files: Vec<VersionEditFile>) -> Result<()> {
+        self.inner.versions_tenant.add_files(files).await
+    }
+
+    pub async fn get_next_file_num(&self, count: u64) -> Result<Vec<u64>> {
+        self.inner.versions_tenant.get_next_file_nums(count).await
+    }
 }
 
 struct TenantInner {
     name: String,
     options: TenantOptions,
     buckets: Mutex<HashMap<String, Bucket>>,
-    file_tenant: FileTenant,
+    versions_tenant: VersionTenant,
 }
 
 impl TenantInner {
-    fn new(name: String, options: TenantOptions, file_tenant: FileTenant) -> Self {
+    fn new(name: String, options: TenantOptions, versions_tenant: VersionTenant) -> Self {
         Self {
             name,
             options,
             buckets: Mutex::new(HashMap::new()),
-            file_tenant,
+            versions_tenant,
         }
     }
 
@@ -90,13 +99,9 @@ impl TenantInner {
         if buckets.contains_key(name) {
             return Err(Error::AlreadyExists(format!("bucket {}", name)));
         }
-        let file_bucket = self.file_tenant.create_bucket(name).await?;
-        let bucket = Bucket::new(
-            name.to_owned(),
-            self.name.clone(),
-            options,
-            file_bucket.into(),
-        );
+        self.versions_tenant.create_bucket(name).await?;
+        let versioin_bucket = self.versions_tenant.bucket(name).await?;
+        let bucket = Bucket::new(name.to_owned(), self.name.clone(), options, versioin_bucket);
         buckets.insert(name.to_owned(), bucket.clone());
         Ok(bucket)
     }

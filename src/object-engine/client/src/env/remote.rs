@@ -15,6 +15,7 @@
 use object_engine_filestore::SequentialWrite;
 use object_engine_master::proto::*;
 
+use super::Iter;
 use crate::{async_trait, Result};
 
 type Client = master_client::MasterClient<tonic::transport::Channel>;
@@ -92,6 +93,14 @@ impl super::BucketEnv for BucketEnv {
     }
 
     async fn new_sequential_writer(&self, _name: &str) -> Result<Box<dyn SequentialWrite>> {
+        todo!();
+    }
+
+    async fn get(&self, _k: &[u8]) -> Result<Option<Vec<u8>>> {
+        todo!();
+    }
+
+    async fn iter(&self) -> Result<Box<dyn Iter>> {
         todo!();
     }
 }

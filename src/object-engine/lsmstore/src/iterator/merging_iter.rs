@@ -17,7 +17,7 @@ use std::{
     collections::BinaryHeap,
 };
 
-use crate::{iterator::LevelIter, Key, Result, Timestamp, ValueType};
+use crate::{iterator::LevelIter, Key, Result, Timestamp};
 
 pub struct MergingIterator {
     pub levels: Vec<LevelIter>,
@@ -138,10 +138,7 @@ impl MergingIterator {
             let key = Key::from(level.key.as_slice());
 
             if self.check_key_visible(key) {
-                match key.tp() {
-                    ValueType::Put | ValueType::Merge => return Ok(()),
-                    ValueType::Delete => {}
-                }
+                return Ok(());
             }
             self.next_entry().await?;
         }
