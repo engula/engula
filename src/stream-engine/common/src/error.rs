@@ -15,7 +15,9 @@
 use futures::channel::oneshot;
 use thiserror::Error;
 
-/// Errors for all journal operations.
+pub type IoResult<T> = std::result::Result<T, std::io::ErrorKind>;
+
+/// Errors for all store engine operations.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("{0} is not found")]
@@ -32,6 +34,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("{0} is staled")]
     Staled(String),
+    #[error("{0}")]
+    Corruption(String),
     #[error(transparent)]
     Unknown(Box<dyn std::error::Error + Send>),
 }
@@ -59,6 +63,7 @@ impl From<tonic::Status> for Error {
             tonic::Code::AlreadyExists => Error::AlreadyExists(s.message().into()),
             tonic::Code::InvalidArgument => Error::InvalidArgument(s.message().into()),
             tonic::Code::FailedPrecondition => Error::Staled(s.message().into()),
+            tonic::Code::DataLoss => Error::Corruption(s.message().into()),
             _ => Error::Unknown(Box::new(s)),
         }
     }
@@ -81,7 +86,14 @@ impl From<Error> for tonic::Status {
             Error::Io(s) => (tonic::Code::Unknown, s.to_string()),
             Error::Unknown(s) => (tonic::Code::Unknown, s.to_string()),
             Error::Staled(s) => (tonic::Code::FailedPrecondition, s),
+            Error::Corruption(s) => (tonic::Code::DataLoss, s),
         };
         tonic::Status::new(code, message)
+    }
+}
+
+impl From<std::io::ErrorKind> for Error {
+    fn from(kind: std::io::ErrorKind) -> Self {
+        Error::Io(kind.into())
     }
 }

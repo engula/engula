@@ -12,10 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(write_all_vectored)]
+
+#[allow(dead_code)]
+mod fs;
+#[allow(dead_code)]
+mod log;
 mod server;
 
 pub use server::Server;
-use stream_engine_common::{error::Result, Entry, Sequence};
+use stream_engine_common::{
+    error::{Error, Result},
+    Entry, Sequence,
+};
 #[cfg(debug_assertions)]
 pub use tests::build_store;
 
