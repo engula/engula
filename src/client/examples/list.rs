@@ -22,30 +22,30 @@ async fn main() -> Result<()> {
     let db = uv.create_database("list").await?;
     let co = db.create_collection("list").await?;
 
-    co.set("a", List::new([1, 2, 3, 4])).await?;
+    co.set("a", List::value([1, 2, 3, 4])).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a = {:?}", a);
 
-    co.mutate("a", List::rpush([5, 6, 7, 8])).await?;
-    let a: Vec<i64> = co.get("a").await?;
-    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
-    let a: Vec<i64> = co.mutate("a", List::rpop(2)).await?;
-    println!("a.rpop(2) = {:?}", a);
     let a: Vec<i64> = co.mutate("a", List::lpop(2)).await?;
     println!("a.lpop(2) = {:?}", a);
     co.mutate("a", List::lpush([1, 2])).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a.lpush([1, 2]) = {:?}", a);
+    let a: Vec<i64> = co.mutate("a", List::rpop(2)).await?;
+    println!("a.rpop(2) = {:?}", a);
+    co.mutate("a", List::rpush([5, 6, 7, 8])).await?;
+    let a: Vec<i64> = co.get("a").await?;
+    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
     co.mutate("a", List::trim(1..-1)).await?;
     let a: Vec<i64> = co.get("a").await?;
     println!("a.trim(1..-1) = {:?}", a);
 
     let len: i64 = co.select("a", List::len()).await?;
     println!("a.len() = {:?}", len);
-    let a: Vec<i64> = co.select("a", List::index([0, -1])).await?;
-    println!("a.index([0, -1]) = {:?}", a);
-    let a: Vec<i64> = co.select("a", List::range(1..-1)).await?;
-    println!("a.range(1..-1) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::index(1..-1)).await?;
+    println!("a.index(1..-1) = {:?}", a);
+    let a: Vec<i64> = co.select("a", List::index([1, -1])).await?;
+    println!("a.index([1, -1]) = {:?}", a);
 
     Ok(())
 }

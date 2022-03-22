@@ -14,76 +14,20 @@
 
 use engula_apis::v1::*;
 
-use super::{call, MutateExpr, SelectExpr};
+use super::{Mutate, Select};
 
-pub struct Any {}
+pub struct Any;
 
 impl Any {
-    pub fn get() -> AnySelect {
-        AnySelect::get()
+    pub fn get() -> Select {
+        Select::default().get()
     }
 
-    pub fn exists() -> AnySelect {
-        AnySelect::exists()
+    pub fn set(value: impl Into<Value>) -> Mutate {
+        Mutate::default().set(value)
     }
 
-    pub fn set(value: impl Into<Value>) -> AnyMutate {
-        AnyMutate::set(value)
-    }
-
-    pub fn delete() -> AnyMutate {
-        AnyMutate::delete()
-    }
-}
-
-pub struct AnySelect {
-    expr: AnyExpr,
-}
-
-impl AnySelect {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: AnyExpr { call: Some(call) },
-        }
-    }
-
-    pub fn get() -> Self {
-        Self::new(call::get())
-    }
-
-    pub fn exists() -> Self {
-        Self::new(call::exists())
-    }
-}
-
-impl From<AnySelect> for SelectExpr {
-    fn from(v: AnySelect) -> Self {
-        Expr::from(v.expr).into()
-    }
-}
-
-pub struct AnyMutate {
-    expr: AnyExpr,
-}
-
-impl AnyMutate {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: AnyExpr { call: Some(call) },
-        }
-    }
-
-    pub fn set(value: impl Into<Value>) -> Self {
-        Self::new(call::set(value))
-    }
-
-    pub fn delete() -> Self {
-        Self::new(call::delete())
-    }
-}
-
-impl From<AnyMutate> for MutateExpr {
-    fn from(v: AnyMutate) -> Self {
-        Expr::from(v.expr).into()
+    pub fn delete() -> Mutate {
+        Mutate::default().delete()
     }
 }

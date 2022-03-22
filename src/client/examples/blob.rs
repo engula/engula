@@ -22,20 +22,20 @@ async fn main() -> Result<()> {
     let db = uv.create_database("blob").await?;
     let co = db.create_collection("blob").await?;
 
-    co.set("a", Blob::new([1, 2, 3, 4])).await?;
+    co.set("a", Blob::value([1, 2, 3, 4])).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a = {:?}", a);
 
-    co.mutate("a", Blob::rpush([5, 6, 7, 8])).await?;
-    let a: Vec<u8> = co.get("a").await?;
-    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
-    let a: Vec<u8> = co.mutate("a", Blob::rpop(2)).await?;
-    println!("a.rpop(2) = {:?}", a);
     let a: Vec<u8> = co.mutate("a", Blob::lpop(2)).await?;
     println!("a.lpop(2) = {:?}", a);
     co.mutate("a", Blob::lpush([1, 2])).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a.lpush([1, 2]) = {:?}", a);
+    let a: Vec<u8> = co.mutate("a", Blob::rpop(2)).await?;
+    println!("a.rpop(2) = {:?}", a);
+    co.mutate("a", Blob::rpush([5, 6, 7, 8])).await?;
+    let a: Vec<u8> = co.get("a").await?;
+    println!("a.rpush([5, 6, 7, 8]) = {:?}", a);
     co.mutate("a", Blob::trim(1..-1)).await?;
     let a: Vec<u8> = co.get("a").await?;
     println!("a.trim(1..-1) = {:?}", a);

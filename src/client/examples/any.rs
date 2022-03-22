@@ -22,23 +22,19 @@ async fn main() -> Result<()> {
     let db = uv.create_database("any").await?;
     let co = db.create_collection("any").await?;
 
-    let a: Option<i64> = co.get("a").await?;
-    println!("a = {:?}", a);
     co.set("a", 1).await?;
     let a: i64 = co.get("a").await?;
     println!("a = {:?}", a);
     co.delete("a").await?;
-    let a: bool = co.exists("a").await?;
-    println!("exists(a) = {:?}", a);
+    let a: Option<i64> = co.get("a").await?;
+    println!("delete(a) = {:?}", a);
 
-    let a: Option<String> = co.get("a").await?;
-    println!("a = {:?}", a);
-    co.set("a", "hello").await?;
-    let a: String = co.get("a").await?;
+    co.set("a", [1.0, 2.0]).await?;
+    let a: Vec<f64> = co.get("a").await?;
     println!("a = {:?}", a);
     co.delete("a").await?;
-    let a: bool = co.exists("a").await?;
-    println!("exists(a) = {:?}", a);
+    let a: Option<Vec<f64>> = co.get("a").await?;
+    println!("delete(a) = {:?}", a);
 
     Ok(())
 }

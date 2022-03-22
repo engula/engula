@@ -16,118 +16,41 @@ use std::ops::RangeBounds;
 
 use engula_apis::v1::*;
 
-use super::{call, MutateExpr, SelectExpr};
+use super::{Mutate, Select};
 
-pub struct List(ListValue);
-
-impl From<List> for Value {
-    fn from(v: List) -> Self {
-        v.0.into()
-    }
-}
+pub struct List;
 
 impl List {
-    pub fn new(value: impl Into<ListValue>) -> Self {
-        Self(value.into())
+    pub fn value(value: impl Into<ListValue>) -> ListValue {
+        value.into()
     }
 
-    pub fn len() -> ListSelect {
-        ListSelect::len()
+    pub fn index(index: impl Into<Value>) -> Select {
+        Select::default().index(index.into())
     }
 
-    pub fn index(index: impl Into<ListValue>) -> ListSelect {
-        ListSelect::index(index)
+    pub fn len() -> Select {
+        Select::default().len()
     }
 
-    pub fn range(range: impl RangeBounds<i64>) -> ListSelect {
-        ListSelect::range(range)
+    pub fn trim(range: impl RangeBounds<i64>) -> Mutate {
+        let index = RangeValue::from_bounds(range);
+        Mutate::default().trim(index)
     }
 
-    pub fn trim(range: impl RangeBounds<i64>) -> ListMutate {
-        ListMutate::trim(range)
+    pub fn lpop(count: i64) -> Mutate {
+        Mutate::default().lpop(count)
     }
 
-    pub fn lpop(count: i64) -> ListMutate {
-        ListMutate::lpop(count)
+    pub fn rpop(count: i64) -> Mutate {
+        Mutate::default().rpop(count)
     }
 
-    pub fn rpop(count: i64) -> ListMutate {
-        ListMutate::rpop(count)
+    pub fn lpush(value: impl Into<ListValue>) -> Mutate {
+        Mutate::default().lpush(value.into())
     }
 
-    pub fn lpush(value: impl Into<ListValue>) -> ListMutate {
-        ListMutate::lpush(value)
-    }
-
-    pub fn rpush(value: impl Into<ListValue>) -> ListMutate {
-        ListMutate::rpush(value)
-    }
-}
-
-pub struct ListSelect {
-    expr: ListExpr,
-}
-
-impl ListSelect {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: ListExpr { call: Some(call) },
-        }
-    }
-
-    pub fn len() -> Self {
-        Self::new(call::len())
-    }
-
-    pub fn index(index: impl Into<ListValue>) -> Self {
-        Self::new(call::index(index.into()))
-    }
-
-    pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::range(range_bounds(range)))
-    }
-}
-
-impl From<ListSelect> for SelectExpr {
-    fn from(v: ListSelect) -> Self {
-        Expr::from(v.expr).into()
-    }
-}
-
-pub struct ListMutate {
-    expr: ListExpr,
-}
-
-impl ListMutate {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: ListExpr { call: Some(call) },
-        }
-    }
-
-    pub fn trim(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::trim(range_bounds(range)))
-    }
-
-    pub fn lpop(count: i64) -> Self {
-        Self::new(call::lpop(count))
-    }
-
-    pub fn rpop(count: i64) -> Self {
-        Self::new(call::rpop(count))
-    }
-
-    pub fn lpush(value: impl Into<ListValue>) -> Self {
-        Self::new(call::lpush(value.into()))
-    }
-
-    pub fn rpush(value: impl Into<ListValue>) -> Self {
-        Self::new(call::rpush(value.into()))
-    }
-}
-
-impl From<ListMutate> for MutateExpr {
-    fn from(v: ListMutate) -> Self {
-        Expr::from(v.expr).into()
+    pub fn rpush(value: impl Into<ListValue>) -> Mutate {
+        Mutate::default().rpush(value.into())
     }
 }

@@ -15,7 +15,7 @@
 use engula_apis::v1::*;
 
 pub enum Write {
-    Put(Vec<u8>, TypedValue),
+    Put(Vec<u8>, Value),
     Delete(Vec<u8>),
 }
 
@@ -25,7 +25,7 @@ pub struct WriteBatch {
 }
 
 impl WriteBatch {
-    pub fn put(&mut self, id: Vec<u8>, value: TypedValue) {
+    pub fn put(&mut self, id: Vec<u8>, value: Value) {
         self.writes.push(Write::Put(id, value))
     }
 

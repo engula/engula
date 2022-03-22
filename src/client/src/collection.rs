@@ -14,7 +14,7 @@
 
 use engula_apis::v1::*;
 
-use crate::{Any, Client, CollectionTxn, Error, MutateExpr, Result, SelectExpr};
+use crate::{Any, Client, CollectionTxn, Error, Result};
 
 #[derive(Clone)]
 pub struct Collection {
@@ -59,7 +59,7 @@ impl Collection {
         CollectionTxn::new(self.name.clone(), self.dbname.clone(), self.client.clone())
     }
 
-    pub async fn get<T: TryFrom<TypedValue>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
+    pub async fn get<T: TryFrom<Value>>(&self, id: impl Into<Vec<u8>>) -> Result<T> {
         self.select(id, Any::get()).await
     }
 
@@ -72,55 +72,51 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn exists(&self, id: impl Into<Vec<u8>>) -> Result<bool> {
-        self.select(id, Any::exists()).await
-    }
-
-    pub async fn select<T: TryFrom<TypedValue>>(
+    pub async fn select<T: TryFrom<Value>>(
         &self,
         id: impl Into<Vec<u8>>,
-        expr: impl Into<SelectExpr>,
+        select: impl Into<SelectExpr>,
     ) -> Result<T> {
-        let select = CollectionRequest {
+        let expr = ObjectExpr {
+            batch: vec![id.into()],
+            select: Some(select.into()),
+            ..Default::default()
+        };
+        self.object(expr).await
+    }
+
+    pub async fn mutate<T: TryFrom<Value>>(
+        &self,
+        id: impl Into<Vec<u8>>,
+        mutate: impl Into<MutateExpr>,
+    ) -> Result<T> {
+        let expr = ObjectExpr {
+            batch: vec![id.into()],
+            mutate: Some(mutate.into()),
+            ..Default::default()
+        };
+        self.object(expr).await
+    }
+
+    async fn object<T: TryFrom<Value>>(&self, expr: ObjectExpr) -> Result<T> {
+        let req = CollectionRequest {
             name: self.name.clone(),
-            ids: vec![id.into()],
-            exprs: vec![expr.into().into()],
+            exprs: vec![expr],
         };
         let req = DatabaseRequest {
             name: self.dbname.clone(),
-            selects: vec![select],
-            ..Default::default()
+            requests: vec![req],
         };
         let mut res = self.client.database(req).await?;
-        let value = res
-            .selects
+        let mut res = res
+            .responses
             .pop()
-            .and_then(|mut x| x.values.pop())
-            .ok_or_else(|| Error::internal("missing select result"))?;
-        value.try_into().map_err(|_| Error::invalid_conversion())
-    }
-
-    pub async fn mutate<T: TryFrom<TypedValue>>(
-        &self,
-        id: impl Into<Vec<u8>>,
-        expr: impl Into<MutateExpr>,
-    ) -> Result<T> {
-        let mutate = CollectionRequest {
-            name: self.name.clone(),
-            ids: vec![id.into()],
-            exprs: vec![expr.into().into()],
-        };
-        let req = DatabaseRequest {
-            name: self.dbname.clone(),
-            mutates: vec![mutate],
-            ..Default::default()
-        };
-        let mut res = self.client.database(req).await?;
+            .ok_or_else(|| Error::internal("missing collection response"))?;
         let value = res
-            .mutates
+            .results
             .pop()
-            .and_then(|mut x| x.values.pop())
-            .ok_or_else(|| Error::internal("missing mutate result"))?;
+            .and_then(|mut r| r.values.pop())
+            .ok_or_else(|| Error::internal("missing expression result"))?;
         value.try_into().map_err(|_| Error::invalid_conversion())
     }
 }

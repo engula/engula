@@ -16,110 +16,42 @@ use std::ops::RangeBounds;
 
 use engula_apis::v1::*;
 
-use super::{call, MutateExpr, SelectExpr};
+use super::{Mutate, Select};
 
-pub struct Blob(Vec<u8>);
-
-impl From<Blob> for Value {
-    fn from(v: Blob) -> Self {
-        v.0.into()
-    }
-}
+pub struct Blob;
 
 impl Blob {
-    pub fn new(value: impl Into<Vec<u8>>) -> Self {
-        Self(value.into())
+    pub fn value(value: impl Into<Vec<u8>>) -> Vec<u8> {
+        value.into()
     }
 
-    pub fn len() -> BlobSelect {
-        BlobSelect::len()
+    pub fn range(range: impl RangeBounds<i64>) -> Select {
+        let index = RangeValue::from_bounds(range);
+        Select::default().index(index)
     }
 
-    pub fn range(range: impl RangeBounds<i64>) -> BlobSelect {
-        BlobSelect::range(range)
+    pub fn len() -> Select {
+        Select::default().len()
     }
 
-    pub fn trim(range: impl RangeBounds<i64>) -> BlobMutate {
-        BlobMutate::trim(range)
+    pub fn trim(range: impl RangeBounds<i64>) -> Mutate {
+        let index = RangeValue::from_bounds(range);
+        Mutate::default().trim(index)
     }
 
-    pub fn lpop(count: i64) -> BlobMutate {
-        BlobMutate::lpop(count)
+    pub fn lpop(count: i64) -> Mutate {
+        Mutate::default().lpop(count)
     }
 
-    pub fn rpop(count: i64) -> BlobMutate {
-        BlobMutate::rpop(count)
+    pub fn rpop(count: i64) -> Mutate {
+        Mutate::default().rpop(count)
     }
 
-    pub fn lpush(value: impl Into<Vec<u8>>) -> BlobMutate {
-        BlobMutate::lpush(value)
+    pub fn lpush(value: impl Into<Vec<u8>>) -> Mutate {
+        Mutate::default().lpush(value.into())
     }
 
-    pub fn rpush(value: impl Into<Vec<u8>>) -> BlobMutate {
-        BlobMutate::rpush(value)
-    }
-}
-
-pub struct BlobSelect {
-    expr: BlobExpr,
-}
-
-impl BlobSelect {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: BlobExpr { call: Some(call) },
-        }
-    }
-
-    pub fn len() -> Self {
-        Self::new(call::len())
-    }
-
-    pub fn range(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::range(range_bounds(range)))
-    }
-}
-
-impl From<BlobSelect> for SelectExpr {
-    fn from(v: BlobSelect) -> Self {
-        Expr::from(v.expr).into()
-    }
-}
-
-pub struct BlobMutate {
-    expr: BlobExpr,
-}
-
-impl BlobMutate {
-    fn new(call: CallExpr) -> Self {
-        Self {
-            expr: BlobExpr { call: Some(call) },
-        }
-    }
-
-    pub fn trim(range: impl RangeBounds<i64>) -> Self {
-        Self::new(call::trim(range_bounds(range)))
-    }
-
-    pub fn lpop(count: i64) -> Self {
-        Self::new(call::lpop(count))
-    }
-
-    pub fn rpop(count: i64) -> Self {
-        Self::new(call::rpop(count))
-    }
-
-    pub fn lpush(value: impl Into<Vec<u8>>) -> Self {
-        Self::new(call::lpush(value.into()))
-    }
-
-    pub fn rpush(value: impl Into<Vec<u8>>) -> Self {
-        Self::new(call::rpush(value.into()))
-    }
-}
-
-impl From<BlobMutate> for MutateExpr {
-    fn from(v: BlobMutate) -> Self {
-        Expr::from(v.expr).into()
+    pub fn rpush(value: impl Into<Vec<u8>>) -> Mutate {
+        Mutate::default().rpush(value.into())
     }
 }

@@ -14,30 +14,28 @@
 
 use engula_apis::v1::*;
 
-pub struct SelectExpr(Expr);
+#[derive(Default)]
+pub struct Select(SelectExpr);
 
-impl From<Expr> for SelectExpr {
-    fn from(v: Expr) -> Self {
-        Self(v)
+impl Select {
+    pub fn index(mut self, index: impl Into<Value>) -> Self {
+        self.0.index = Some(index.into());
+        self
+    }
+
+    pub fn get(mut self) -> Self {
+        self.0.func = SelectFunction::Get as i32;
+        self
+    }
+
+    pub fn len(mut self) -> Self {
+        self.0.func = SelectFunction::Len as i32;
+        self
     }
 }
 
-impl From<SelectExpr> for Expr {
-    fn from(v: SelectExpr) -> Self {
-        v.0
-    }
-}
-
-pub struct MutateExpr(Expr);
-
-impl From<Expr> for MutateExpr {
-    fn from(v: Expr) -> Self {
-        Self(v)
-    }
-}
-
-impl From<MutateExpr> for Expr {
-    fn from(v: MutateExpr) -> Self {
+impl From<Select> for SelectExpr {
+    fn from(v: Select) -> Self {
         v.0
     }
 }

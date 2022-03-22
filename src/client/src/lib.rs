@@ -27,6 +27,6 @@ pub use self::{
     database::Database,
     error::{Error, Result},
     txn::{CollectionTxn, DatabaseTxn},
-    types::{Any, Blob, List, Map, MutateExpr, SelectExpr, Set, Text, F64, I64},
+    types::{Any, Blob, List, Map, I64},
     universe::Universe,
 };
