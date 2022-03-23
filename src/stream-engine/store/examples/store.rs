@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
+
 use clap::Parser;
-use stream_engine_store::Server as StoreServer;
+use stream_engine_store::{DbOption, Server as StoreServer, StreamDb};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 
@@ -24,13 +26,16 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 struct Args {
     #[clap(short, long, default_value_t = String::from("0.0.0.0:21718"))]
     endpoint: String,
+
+    #[clap(long, required = true)]
+    db: PathBuf,
 }
 
-async fn bootstrap_service(endpoint: &str) -> Result<()> {
+async fn bootstrap_service(endpoint: &str, db: StreamDb) -> Result<()> {
     use tonic::transport::Server;
 
     let listener = TcpListener::bind(endpoint).await?;
-    let store_server = StoreServer::new();
+    let store_server = StoreServer::new(db);
     Server::builder()
         .add_service(store_server.into_service())
         .serve_with_incoming(TcpListenerStream::new(listener))
@@ -44,7 +49,10 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
-    bootstrap_service(&args.endpoint).await?;
+    let mut opt = DbOption::default();
+    opt.create_if_missing = true;
+    let db = StreamDb::open(args.db, opt)?;
+    bootstrap_service(&args.endpoint, db).await?;
 
     println!("Bye");
 

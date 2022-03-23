@@ -101,6 +101,12 @@ impl From<Error> for tonic::Status {
 
 impl From<std::io::ErrorKind> for Error {
     fn from(kind: std::io::ErrorKind) -> Self {
-        Error::Io(kind.into())
+        // [`ErrorKind::Other`] is not used by the standard library, we use it
+        // to express failed preconditions.
+        if kind == std::io::ErrorKind::Other {
+            Error::Staled("from std::io::ErrorKind::others".to_string())
+        } else {
+            Error::Io(kind.into())
+        }
     }
 }

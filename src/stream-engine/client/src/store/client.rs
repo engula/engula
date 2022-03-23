@@ -203,7 +203,7 @@ mod tests {
                 seg_epoch: 1,
                 start_index: test.from,
                 limit: test.limit,
-                include_pending_entries: false,
+                require_acked: true,
             };
             let mut stream = client.read(req).await?;
             let mut got = Vec::<Entry>::new();
@@ -286,7 +286,7 @@ mod tests {
                 limit: 5,
                 expect: &entries[..],
             },
-            // include_pending_entries don't wait any entries
+            // require_acked is false, don't wait any entries
             Test {
                 from: 1,
                 limit: u32::MAX,
@@ -305,7 +305,7 @@ mod tests {
                 seg_epoch: 1,
                 start_index: test.from,
                 limit: test.limit,
-                include_pending_entries: true,
+                require_acked: false,
             };
             let mut stream = client.read(req).await?;
             let mut got = Vec::<Entry>::new();
@@ -396,7 +396,7 @@ mod tests {
             seg_epoch: 1,
             start_index: 1,
             limit: u32::MAX,
-            include_pending_entries: true,
+            require_acked: false,
         };
         let mut stream = client.read(req).await?;
         let mut got = Vec::<Entry>::new();
@@ -431,7 +431,7 @@ mod tests {
             seg_epoch: 1,
             start_index: 1,
             limit: u32::MAX,
-            include_pending_entries: true,
+            require_acked: false,
         };
         let mut stream = client.read(req).await?;
         let mut got = Vec::<Entry>::new();

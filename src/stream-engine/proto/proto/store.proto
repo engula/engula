@@ -80,7 +80,7 @@ message ReadRequest {
     uint32 start_index = 3;
     uint32 limit = 4;
 
-    bool include_pending_entries = 5;
+    bool require_acked = 5;
 }
 
 message ReadResponse {

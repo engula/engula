@@ -234,7 +234,6 @@ pub(crate) mod tests {
             acked_seq: Sequence::new(1, 0),
         };
         let commands = stream.heartbeat(observer_meta).await?;
-        println!("commands {:?}", commands);
         let promote = commands
             .iter()
             .find(|cmd| expect_promote_command(cmd, Role::Leader, 1));
