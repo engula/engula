@@ -66,7 +66,7 @@ impl Transport {
             seg_epoch,
             start_index,
             limit: u32::MAX,
-            include_pending_entries: !only_include_acked,
+            require_acked: only_include_acked,
         };
         client.read(req).await
     }

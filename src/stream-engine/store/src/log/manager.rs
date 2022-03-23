@@ -24,6 +24,12 @@ use crate::{
     DbOption, IoResult,
 };
 
+pub(crate) trait ReleaseReferringLogFile {
+    /// All entries in the corresponding log file are acked or over written, so
+    /// release the reference of the log file.
+    fn release(&self, stream_id: u64, log_number: u64);
+}
+
 #[derive(Clone)]
 pub struct LogFileManager {
     opt: Arc<DbOption>,
@@ -51,12 +57,6 @@ impl LogFileManager {
         }
     }
 
-    pub fn recycle(&self, log_number: u64) {
-        let mut inner = self.inner.lock().unwrap();
-        assert!(log_number < inner.next_log_number);
-        inner.recycled_log_files.push_back(log_number);
-    }
-
     pub fn recycle_all(&self, log_numbers: Vec<u64>) {
         let mut inner = self.inner.lock().unwrap();
         inner.recycled_log_files.extend(log_numbers.into_iter());
@@ -75,20 +75,15 @@ impl LogFileManager {
             layout::log(&self.base_dir, prev_log_number)
         } else {
             let tmp = layout::temp(&self.base_dir, log_number);
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open(&tmp)
-                .unwrap();
+            let mut file = OpenOptions::new().write(true).create(true).open(&tmp)?;
             file.preallocate(self.opt.log.log_file_size)?;
             tmp
         };
-        std::fs::rename(prev_file_name, &log_file_name).unwrap();
+        std::fs::rename(prev_file_name, &log_file_name)?;
         let file = OpenOptions::new()
             .write(true)
             .truncate(false)
-            .open(log_file_name)
-            .unwrap();
+            .open(log_file_name)?;
 
         // See `man 2 fsync`:
         //
@@ -113,9 +108,13 @@ impl LogFileManager {
         );
     }
 
-    /// All entries in the corresponding log file are acked or over written, so
-    /// release the reference of the log file.
-    pub fn release(&self, stream_id: u64, log_number: u64) {
+    pub fn option(&self) -> Arc<DbOption> {
+        self.opt.clone()
+    }
+}
+
+impl ReleaseReferringLogFile for LogFileManager {
+    fn release(&self, stream_id: u64, log_number: u64) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(stream_set) = inner.refer_streams.get_mut(&log_number) {
             stream_set.remove(&stream_id);
@@ -125,9 +124,5 @@ impl LogFileManager {
                 // recycled log files.
             }
         }
-    }
-
-    pub fn option(&self) -> Arc<DbOption> {
-        self.opt.clone()
     }
 }

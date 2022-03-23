@@ -32,6 +32,7 @@ pub fn manifest(file_number: u64) -> String {
     format!("MANIFEST-{:06}", file_number)
 }
 
+#[allow(dead_code)]
 pub fn descriptor<P: AsRef<Path>>(base_dir: P, file_number: u64) -> PathBuf {
     base_dir.as_ref().join(&manifest(file_number))
 }

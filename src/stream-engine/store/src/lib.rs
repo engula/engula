@@ -12,20 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(btree_drain_filter)]
 #![feature(drain_filter)]
+#![feature(hash_drain_filter)]
+#![feature(path_try_exists)]
 #![feature(write_all_vectored)]
 
-#[allow(dead_code)]
+mod db;
 mod fs;
-#[allow(dead_code)]
 mod log;
 mod opt;
 mod server;
 
-pub use opt::DbOption;
+pub use db::StreamDb;
+pub use opt::*;
 pub use server::Server;
 use stream_engine_common::{
-    error::{Error, IoResult, Result},
+    error::{Error, IoKindResult, IoResult, Result},
     Entry, Sequence,
 };
 #[cfg(debug_assertions)]
@@ -39,10 +42,18 @@ mod tests {
     use super::*;
 
     pub async fn build_store() -> Result<String> {
+        let tmp = tempfile::tempdir()?;
+        std::fs::create_dir_all(&tmp)?;
+        let db_opt = DbOption {
+            create_if_missing: true,
+            ..Default::default()
+        };
+        let db = StreamDb::open(tmp, db_opt)?;
+
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         tokio::task::spawn(async move {
-            let server = Server::new();
+            let server = Server::new(db);
             tonic::transport::Server::builder()
                 .add_service(server.into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
