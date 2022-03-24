@@ -44,6 +44,9 @@ message MutateRequestUnion {
 
         // Seal the corresponding segment so that any request with small epoch will be rejected.
         SealRequest seal = 2;
+
+        // Truncate the corresponding stream up to a sequence.
+        TruncateRequest truncate = 3;
     }
 }
 
@@ -51,6 +54,7 @@ message MutateResponseUnion {
     oneof response {
         WriteResponse write = 1;
         SealResponse seal = 2;
+        TruncateResponse truncate = 3;
     }
 }
 
@@ -97,3 +101,9 @@ message SealResponse {
     // determine the starting position of log entries that need recovery.
     uint32 acked_index = 1;
 }
+
+message TruncateRequest {
+    uint64 keep_seq = 1;
+}
+
+message TruncateResponse {}

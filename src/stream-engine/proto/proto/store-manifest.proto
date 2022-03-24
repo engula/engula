@@ -1,0 +1,75 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package streamengine.store.manifest.v1;
+
+// A range express [start, end).
+message EpochRange {
+    uint32 epoch = 1;
+    uint32 start = 2;
+    uint32 end = 3;
+}
+
+message SetFile {
+    uint64 file_number = 1;
+
+    // The ranges is contained in this file.
+    repeated EpochRange ranges = 2;
+}
+
+message RecycleLog {
+    uint64 log_number = 1;
+    repeated StreamMeta updated_streams = 2;
+}
+
+message VersionEdit {
+    // Only used in snapshot.
+    repeated StreamMeta streams = 1;
+
+    // All references of the corresponding log are released, now it is free to reuse.
+    repeated RecycleLog recycled_logs = 2;
+
+    // All log files before this log number are freed to reuse.
+    optional uint64 min_log_number = 3;
+}
+
+message ReplicaMeta {
+    uint32 epoch = 1;
+
+    /// The sealing writer epoch.
+    optional uint32 promised_epoch = 2;
+
+    repeated SetFile set_files = 3;
+}
+
+message StreamMeta {
+    uint64 stream_id = 1;
+
+    // The entries before (inclusive) this seq are acked.
+    uint64 acked_seq = 2;
+
+    // The entries before (exclusive) this seq are truncated.
+    uint64 initial_seq = 3;
+
+    repeated ReplicaMeta replicas = 4;
+}
+
+message Manifest {
+    repeated StreamMeta streams = 1;
+
+    // Indicates that all log files list in below has been recycled and can be reused.
+    repeated uint64 recycled_log_numbers = 2;
+}

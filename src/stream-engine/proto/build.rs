@@ -13,6 +13,13 @@
 // limitations under the License.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::configure().compile(&["proto/master.proto", "proto/store.proto"], &["proto"])?;
+    tonic_build::configure().compile(
+        &[
+            "proto/master.proto",
+            "proto/store.proto",
+            "proto/store-manifest.proto",
+        ],
+        &["proto"],
+    )?;
     Ok(())
 }

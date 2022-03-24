@@ -37,9 +37,17 @@ pub mod store {
         }
     }
 
+    pub mod manifest {
+        pub use v1::*;
+
+        pub mod v1 {
+            tonic::include_proto!("streamengine.store.manifest.v1");
+        }
+    }
+
     pub mod v1 {
         tonic::include_proto!("streamengine.store.v1");
     }
 }
 
-pub use store::{meta::v1::*, v1::*};
+pub use store::{manifest, meta::v1::*, v1::*};
