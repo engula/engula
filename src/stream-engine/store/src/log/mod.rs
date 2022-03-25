@@ -169,9 +169,9 @@ mod tests {
 
     #[test]
     fn log_writer_and_reader_randomly() -> Result<()> {
-        let issue_643 = 10859556100552729381;
+        let seed_causes_issue_643 = 10859556100552729381;
         let rand_seed = rand::thread_rng().gen::<u64>();
-        log_writer_and_reader_randomly_with_seed(issue_643)?;
+        log_writer_and_reader_randomly_with_seed(seed_causes_issue_643)?;
         log_writer_and_reader_randomly_with_seed(rand_seed)
     }
 
