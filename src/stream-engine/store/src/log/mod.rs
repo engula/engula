@@ -169,18 +169,25 @@ mod tests {
 
     #[test]
     fn log_writer_and_reader_randomly() -> Result<()> {
+        let issue_643 = 10859556100552729381;
+        let rand_seed = rand::thread_rng().gen::<u64>();
+        log_writer_and_reader_randomly_with_seed(issue_643)?;
+        log_writer_and_reader_randomly_with_seed(rand_seed)
+    }
+
+    fn log_writer_and_reader_randomly_with_seed(seed: u64) -> Result<()> {
         let dir = new_tempdir()?;
 
         let mut log_number = 123;
         let mut writer = new_writer(&dir, log_number)?;
 
         let random_bytes: Vec<u8> = (0..1024).map(|_| rand::random::<u8>()).collect();
-
+        let mut r = StdRng::seed_from_u64(seed);
         let mut files = vec![];
         let mut expect_contents = vec![];
         loop {
-            let start = rand::thread_rng().gen::<usize>() % 512;
-            let end = start + rand::thread_rng().gen::<usize>() % 512;
+            let start = r.gen::<usize>() % 512;
+            let end = start + r.gen::<usize>() % 512;
 
             let content = &random_bytes[start..end];
             if writer.avail_space() < content.len() {
@@ -206,9 +213,13 @@ mod tests {
             }
         }
 
-        assert_eq!(read_contents.len(), expect_contents.len());
+        assert_eq!(read_contents.len(), expect_contents.len(), "seed {}", seed);
         for i in 0..read_contents.len() {
-            assert_eq!(read_contents[i], expect_contents[i], "index {}", i);
+            assert_eq!(
+                read_contents[i], expect_contents[i],
+                "seed {} index {}",
+                seed, i
+            );
         }
 
         Ok(())
@@ -219,11 +230,12 @@ mod tests {
         let dir = new_tempdir()?;
 
         let random_bytes: Vec<u8> = (0..1024).map(|_| rand::random::<u8>()).collect();
-
+        let seed = rand::thread_rng().gen::<u64>();
+        let mut r = StdRng::seed_from_u64(seed);
         let mut writer = new_writer(&dir, 1)?;
         loop {
-            let start = rand::thread_rng().gen::<usize>() % 512;
-            let end = start + rand::thread_rng().gen::<usize>() % 512;
+            let start = r.gen::<usize>() % 512;
+            let end = start + r.gen::<usize>() % 512;
 
             let content = &random_bytes[start..end];
             if writer.avail_space() < content.len() {
@@ -250,9 +262,13 @@ mod tests {
             read_contents.push(content);
         }
 
-        assert_eq!(read_contents.len(), expect_contents.len());
+        assert_eq!(read_contents.len(), expect_contents.len(), "seed {}", seed);
         for i in 0..read_contents.len() {
-            assert_eq!(read_contents[i], expect_contents[i], "index {}", i);
+            assert_eq!(
+                read_contents[i], expect_contents[i],
+                "seed {} index {}",
+                seed, i
+            );
         }
 
         Ok(())

@@ -91,6 +91,11 @@ impl Writer {
             content.len()
         );
 
+        if MAX_BLOCK_SIZE - self.block_offset == RECORD_HEADER_SIZE && !content.is_empty() {
+            // Skip zero header.
+            self.switch_block(false)?;
+        }
+
         let mut consumed = 0;
         loop {
             debug_assert!(
