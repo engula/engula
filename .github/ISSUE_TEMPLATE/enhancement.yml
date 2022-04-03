@@ -24,7 +24,7 @@ body:
     attributes:
       label: Search before asking
       description: >
-        Please make sure to search in the [issues](https://github.com/engula/engula/issues) first to see whether the same issue was reported already.
+        Please search in the [issues](https://github.com/engula/engula/issues) first to see whether the same issue has been reported before.
       options:
         - label: >
             I had searched in the [issues](https://github.com/engula/engula/issues) and found no similar issues.
@@ -43,7 +43,7 @@ body:
     attributes:
       label: Are you willing to submit a PR?
       description: >
-        We very much look forward to developers or users to help solve Engula problems together. If you are willing to submit a PR to fix this problem, please tick it.
+        We very much look forward for your help to improve Engula together. If you are willing to submit a PR for this enhancement, please tick it.
       options:
         - label: I'm willing to submit a PR!
   - type: markdown

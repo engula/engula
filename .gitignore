@@ -1,6 +1,6 @@
-# Rust or Cargo
+# Rust
 /target
 
-# IDE or Editor
+# Editor
 .idea/
 .vscode/

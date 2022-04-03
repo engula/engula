@@ -18,5 +18,4 @@ header:
     copyright-owner: The Engula Authors
   paths:
     - '**/*.rs'
-    - '**/*.proto'
     - '**/*.yml'
