@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/bin", "src/runtime"]
+members = ["src/bin", "src/runtime", "src/server"]

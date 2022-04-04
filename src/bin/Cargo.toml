@@ -7,7 +7,10 @@ homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
 keywords = ["cache", "database"]
 categories = ["caching", "database", "data-structures"]
-description = "A low-latency, high-performance data structure store, used as a cache and database."
+description = "A low-latency, high-performance data structure store."
 
 [dependencies]
+engula-server = { version = "0.3", path = "../server" }
+
 clap = { version = "3.0", features = ["derive"] }
+anyhow = "1.0"

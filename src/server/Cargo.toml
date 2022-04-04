@@ -1,0 +1,13 @@
+[package]
+name = "engula-server"
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "The Engula server."
+
+[dependencies]
+engula-runtime = { version = "0.3", path = "../runtime" }
+
+thiserror = "1.0"

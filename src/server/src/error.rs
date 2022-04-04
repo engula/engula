@@ -12,31 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
+use std::io;
 
-pub struct TcpListener {}
+use thiserror::Error;
 
-impl TcpListener {
-    pub fn bind<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpListener> {
-        todo!();
-    }
-
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        todo!();
-    }
-
-    pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-        todo!();
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
-pub struct TcpStream {}
-
-impl TcpStream {
-    pub fn connect<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpStream> {
-        todo!();
-    }
-}
+pub type Result<T> = std::result::Result<T, Error>;

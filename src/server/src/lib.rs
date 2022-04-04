@@ -12,31 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
+mod error;
+pub use error::{Error, Result};
 
-pub struct TcpListener {}
-
-impl TcpListener {
-    pub fn bind<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpListener> {
-        todo!();
-    }
-
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        todo!();
-    }
-
-    pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-        todo!();
-    }
-}
-
-pub struct TcpStream {}
-
-impl TcpStream {
-    pub fn connect<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpStream> {
-        todo!();
-    }
-}
+mod server;
+pub use server::Server;

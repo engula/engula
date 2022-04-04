@@ -12,31 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod server;
-
 use anyhow::Result;
 use clap::Parser;
+use engula_server::Server;
 
 #[derive(Parser)]
-struct Command {
+pub struct Command {
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 impl Command {
-    fn run(self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self.subcmd {
-            SubCommand::Server(cmd) => cmd.run(),
+            SubCommand::Start(cmd) => cmd.run(),
         }
     }
 }
 
 #[derive(Parser)]
 enum SubCommand {
-    Server(server::Command),
+    Start(StartCommand),
 }
 
-fn main() -> Result<()> {
-    let cmd: Command = Command::parse();
-    cmd.run()
+#[derive(Parser)]
+struct StartCommand {
+    #[clap(long, default_value = "localhost:21716")]
+    addr: String,
+}
+
+impl StartCommand {
+    fn run(self) -> Result<()> {
+        let server = Server::bind(self.addr)?;
+        let addr = server.local_addr()?;
+        println!("Server is running at {}", addr);
+        Ok(())
+    }
 }

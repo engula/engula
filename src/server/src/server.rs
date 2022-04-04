@@ -12,31 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
+use std::net::{SocketAddr, ToSocketAddrs};
 
-pub struct TcpListener {}
+use engula_runtime::net::TcpListener;
 
-impl TcpListener {
-    pub fn bind<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpListener> {
-        todo!();
-    }
+use crate::Result;
 
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        todo!();
-    }
-
-    pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-        todo!();
-    }
+pub struct Server {
+    listener: TcpListener,
 }
 
-pub struct TcpStream {}
+impl Server {
+    pub fn bind<A: ToSocketAddrs>(addr: A) -> Result<Server> {
+        let listener = TcpListener::bind(addr)?;
+        Ok(Self { listener })
+    }
 
-impl TcpStream {
-    pub fn connect<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpStream> {
-        todo!();
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        let addr = self.listener.local_addr()?;
+        Ok(addr)
     }
 }
