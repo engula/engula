@@ -11,3 +11,4 @@ description = "The Engula server."
 engula-runtime = { version = "0.3", path = "../runtime" }
 
 thiserror = "1.0"
+tracing = "0.1"

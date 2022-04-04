@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod net;
+use std::future::Future;
 
-mod runtime;
-pub use runtime::spawn;
+pub fn spawn(_: impl Future) {
+    todo!();
+}

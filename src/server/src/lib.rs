@@ -16,4 +16,7 @@ mod error;
 pub use error::{Error, Result};
 
 mod server;
-pub use server::Server;
+pub use server::{run, Server};
+
+mod connection;
+pub use connection::Connection;

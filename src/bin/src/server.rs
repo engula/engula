@@ -14,7 +14,6 @@
 
 use anyhow::Result;
 use clap::Parser;
-use engula_server::Server;
 
 #[derive(Parser)]
 pub struct Command {
@@ -43,9 +42,7 @@ struct StartCommand {
 
 impl StartCommand {
     fn run(self) -> Result<()> {
-        let server = Server::bind(self.addr)?;
-        let addr = server.local_addr()?;
-        println!("Server is running at {}", addr);
+        engula_server::run(self.addr)?;
         Ok(())
     }
 }

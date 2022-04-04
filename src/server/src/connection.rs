@@ -12,7 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod net;
+use engula_runtime::net::TcpStream;
 
-mod runtime;
-pub use runtime::spawn;
+pub struct Connection {
+    _stream: TcpStream,
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Connection {
+        Self { _stream: stream }
+    }
+
+    pub async fn run(&self) {
+        todo!();
+    }
+}
