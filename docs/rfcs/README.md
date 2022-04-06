@@ -12,7 +12,7 @@ A hastily-proposed RFC can hurt its chances of acceptance. Low quality proposals
 
 It is generally a good idea to pursue feedback from other project developers beforehand, to ascertain that the RFC may be desirable; having a consistent impact on the project requires concerted effort toward consensus-building.
 
-The most common preparations for writing and submitting an RFC include talking the idea over on [Zulip](https://engula.zulipchat.com/) or posting "pre-RFCs" on the [GitHub Discussions](https://github.com/engula/engula/discussions).
+The most common preparations for writing and submitting an RFC include talking the idea over on [Zulip](https://engula.zulipchat.com/) or posting "pre-RFCs" on [GitHub Discussions](https://github.com/engula/engula/discussions).
 
 ## What the process is
 

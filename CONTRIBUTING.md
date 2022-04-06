@@ -22,12 +22,12 @@ cargo build
 Run and explore the `engula` binary:
 
 ```sh
-cargo run
+cargo run -p engula
 ```
 
 ## Contribute
 
-Engula is developed by an open and friendly community. Everybody is cordially welcome to join the community and contribute to Engula. We value all forms of contributions, including, but not limited to:
+Engula is developed by an open and friendly community. Everybody is welcome to join the community and contribute to Engula. We value all forms of contributions, including, but not limited to:
 
 * Code reviewing of the existing patches
 * Code contribution for improvements, bug fixes, or new features
@@ -48,7 +48,7 @@ Here are guidelines for contributing to various aspect of the project:
 
 Engula community aims to provide a harassment-free, welcome and friendly experience for everyone. The first and most important thing for any participant in the community is to be friendly and respectful to others. Improper behaviors will be warned and punished. We refuse any kind of harmful behavior to the community or community members. Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and maintain proper behavior while participating in the community.
 
-Engula community is a community of peers. All individuals are given the opportunity to participate, but their influence is based on publicly earned merit – what they contribute to the community. The merit lies with the individual, does not expire, is not influenced by employment status or employer, and is non-transferable (merit earned in one project cannot be applied to another).
+Engula community is a community of peers. All individuals are given the opportunity to participate, but their influence is based on publicly earned merit – what they contribute to the community. The merit lies with the individual, does not expire, is not influenced by employment status or employer, and is non-transferable (the merit earned in one project cannot be applied to another).
 
 Engula community requires all communications related to code and decision-making to be publicly accessible to ensure asynchronous collaboration, as necessitated by a globally-distributed community. We adopt GitHub as the single source of truth for all topics, including its [issue tracker](https://github.com/engula/engula/issues), [pull requests](http://github.com/engula/engula/pulls), and [discussions](https://github.com/engula/engula/discussions). Besides, we use [Zulip](https://engula.zulipchat.com) as an auxiliary communication tool.
 
