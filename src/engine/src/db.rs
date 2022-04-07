@@ -43,7 +43,7 @@ impl Db {
         table.insert(key, value);
     }
 
-    pub fn del(&self, keys: &Vec<String>) -> u64 {
+    pub fn del(&self, keys: &[String]) -> u64 {
         let mut table = self.table.lock().unwrap();
         let mut res = 0;
         for key in keys.iter() {
