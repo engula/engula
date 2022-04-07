@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    cmp::Ordering,
     collections::{btree_map::Range, BTreeMap, HashMap, VecDeque},
     io::ErrorKind,
     iter::Peekable,
@@ -20,6 +21,7 @@ use std::{
 
 use tracing::warn;
 
+use super::version::StreamVersion;
 use crate::{log::manager::ReleaseReferringLogFile, Entry, IoKindResult, Result, Sequence};
 
 #[derive(Clone)]
@@ -40,6 +42,7 @@ pub enum TxnContext {
 
 pub(crate) struct PartialStream<R> {
     stream_id: u64,
+    version: StreamVersion,
 
     /// segment epoch => writer epoch.
     sealed: HashMap<u32, u32>,
@@ -49,6 +52,9 @@ pub(crate) struct PartialStream<R> {
     stabled_tables: HashMap<u64, BTreeMap<Sequence, Entry>>,
     active_table: Option<(u64, BTreeMap<Sequence, Entry>)>,
 
+    /// All previous entries (exclusive) are not accessable.
+    initial_seq: Sequence,
+    /// All previous entries (inclusive) are acked.
     acked_seq: Sequence,
 
     log_file_releaser: R,
@@ -58,17 +64,40 @@ impl<R> PartialStream<R>
 where
     R: ReleaseReferringLogFile,
 {
-    pub fn new(stream_id: u64, log_file_releaser: R) -> Self {
+    pub fn new(version: StreamVersion, log_file_releaser: R) -> Self {
+        let stream_id = version.stream_id;
+        let stream_meta = &version.stream_meta;
+        let acked_seq = stream_meta.acked_seq.into();
+        let initial_seq = stream_meta.initial_seq.into();
+        let sealed = stream_meta
+            .replicas
+            .iter()
+            .filter(|r| r.promised_epoch.is_some())
+            .map(|r| (r.epoch, r.promised_epoch.unwrap()))
+            .collect::<HashMap<_, _>>();
+
         PartialStream {
             stream_id,
+            version,
 
-            sealed: HashMap::new(),
+            sealed,
             stabled_tables: HashMap::new(),
             active_table: None,
 
-            acked_seq: Sequence::new(0, 0),
+            acked_seq,
+            initial_seq,
             log_file_releaser,
         }
+    }
+
+    #[inline(always)]
+    pub fn acked_seq(&self) -> Sequence {
+        self.acked_seq
+    }
+
+    #[inline(always)]
+    pub fn sealed_epochs(&self) -> HashMap<u32, u32> {
+        self.sealed.clone()
     }
 
     pub fn write(
@@ -79,6 +108,7 @@ where
         first_index: u32,
         entries: Vec<Entry>,
     ) -> IoKindResult<Option<TxnContext>> {
+        self.refresh_versions();
         self.reject_staled(segment_epoch, writer_epoch)?;
 
         if entries.is_empty() && self.acked_seq >= acked_seq {
@@ -101,6 +131,7 @@ where
         segment_epoch: u32,
         writer_epoch: u32,
     ) -> IoKindResult<Option<TxnContext>> {
+        self.refresh_versions();
         self.reject_staled(segment_epoch, writer_epoch)?;
 
         let prev_epoch = self.sealed.get(&segment_epoch).cloned();
@@ -167,7 +198,6 @@ where
     }
 
     pub fn acked_index(&self, epoch: u32) -> u32 {
-        use std::cmp::Ordering;
         match self.acked_seq.epoch.cmp(&epoch) {
             Ordering::Less => 0,
             Ordering::Equal => self.acked_seq.index,
@@ -317,6 +347,14 @@ where
     R: ReleaseReferringLogFile,
 {
     fn reject_staled(&mut self, segment_epoch: u32, writer_epoch: u32) -> IoKindResult<()> {
+        if segment_epoch < self.initial_seq.epoch {
+            warn!(
+                "stream {} seg {} reject staled request, initial epoch is {}",
+                self.stream_id, segment_epoch, self.initial_seq.epoch
+            );
+            return Err(ErrorKind::Other);
+        }
+
         if let Some(sealed_epoch) = self.sealed.get(&segment_epoch) {
             if writer_epoch < *sealed_epoch {
                 warn!(
@@ -385,6 +423,40 @@ where
     }
 }
 
+impl<R> PartialStream<R>
+where
+    R: ReleaseReferringLogFile,
+{
+    pub fn refresh_versions(&mut self) {
+        if !self.version.try_apply_edits() {
+            return;
+        }
+
+        // Might update local initial seq, and release useless entries.
+        let actual_initial_seq: Sequence = self.version.stream_meta.initial_seq.into();
+        if self.initial_seq < actual_initial_seq {
+            self.initial_seq = actual_initial_seq;
+            self.truncate_entries();
+        }
+    }
+
+    fn truncate_entries(&mut self) {
+        let initial_seq = self.initial_seq;
+        for mem_table in self.stabled_tables.values_mut() {
+            let mut left = mem_table.split_off(&initial_seq);
+            std::mem::swap(&mut left, mem_table);
+        }
+        let recycled_logs = self
+            .stabled_tables
+            .drain_filter(|_, mem_table| mem_table.is_empty())
+            .map(|v| v.0)
+            .collect::<Vec<_>>();
+        for log_number in recycled_logs {
+            self.log_file_releaser.release(self.stream_id, log_number)
+        }
+    }
+}
+
 struct MemTableIter<'a> {
     next_seq: Sequence,
     /// Iterators in reverse order.
@@ -401,7 +473,6 @@ impl<'a> std::iter::Iterator for MemTableIter<'a> {
     type Item = (&'a Sequence, &'a Entry);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use std::cmp::Ordering;
         let mut cached: Option<(&'a Sequence, &'a Entry)> = None;
 
         'OUTER: for iter in self.iters.iter_mut().rev() {
@@ -483,7 +554,7 @@ mod tests {
 
     #[test]
     fn partial_stream_iter() {
-        let mut stream = PartialStream::new(1, MockReleaser {});
+        let mut stream = PartialStream::new(StreamVersion::new(1), MockReleaser {});
         // log 1 => [2, 6)  [10, 15)
         submit(&mut stream, 1, 1, 2, 4);
         submit(&mut stream, 1, 1, 10, 4);
@@ -617,7 +688,7 @@ mod tests {
         ];
 
         for case in cases {
-            let mut stream = PartialStream::new(1, MockReleaser {});
+            let mut stream = PartialStream::new(StreamVersion::new(1), MockReleaser {});
             for (seq, len) in case.input {
                 submit(&mut stream, 1, seq.epoch, seq.index, len);
             }

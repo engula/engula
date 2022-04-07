@@ -88,6 +88,9 @@ impl Server {
             Request::Seal(req) => {
                 Response::Seal(self.handle_seal(stream_id, writer_epoch, req).await?)
             }
+            Request::Truncate(req) => {
+                Response::Truncate(self.handle_truncate(stream_id, req).await?)
+            }
         };
         Ok(MutateResponseUnion {
             response: Some(res),
@@ -129,5 +132,14 @@ impl Server {
             .seal(stream_id, req.segment_epoch, writer_epoch)
             .await?;
         Ok(SealResponse { acked_index })
+    }
+
+    async fn handle_truncate(
+        &self,
+        stream_id: u64,
+        req: TruncateRequest,
+    ) -> Result<TruncateResponse> {
+        self.db.truncate(stream_id, req.keep_seq.into()).await?;
+        Ok(TruncateResponse {})
     }
 }

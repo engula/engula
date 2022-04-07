@@ -23,6 +23,7 @@ mod fs;
 mod log;
 mod opt;
 mod server;
+mod sync;
 
 pub use db::StreamDb;
 pub use opt::*;
@@ -43,7 +44,6 @@ mod tests {
 
     pub async fn build_store() -> Result<String> {
         let tmp = tempfile::tempdir()?;
-        std::fs::create_dir_all(&tmp)?;
         let db_opt = DbOption {
             create_if_missing: true,
             ..Default::default()
