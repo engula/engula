@@ -42,7 +42,7 @@ impl Del {
             }
         }
 
-        if keys.len() > 0 {
+        if !keys.is_empty() {
             Ok(Del { keys })
         } else {
             Err(Error::from("Del without keys"))
