@@ -42,6 +42,12 @@ impl Worker {
                     continue;
                 }
             };
+
+            if let Err(err) = stream.set_nodelay(true) {
+                error!(%err, "tcp stream set nodelay");
+                continue;
+            }
+
             let mut session = Session::new(stream, self.db.clone());
             task::spawn_local(async move {
                 if let Err(err) = session.run().await {
