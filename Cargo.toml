@@ -1,2 +1,5 @@
 [workspace]
 members = ["src/bin", "src/engine", "src/server"]
+
+[profile.release]
+debug = true

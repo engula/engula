@@ -44,8 +44,7 @@ struct StartCommand {
 }
 
 impl StartCommand {
-    #[tokio::main]
-    async fn run(self) -> Result<()> {
+    fn run(self) -> Result<()> {
         let config = Config {
             addr: self.addr,
             num_threads: self.num_threads,

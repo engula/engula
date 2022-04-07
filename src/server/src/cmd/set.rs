@@ -37,7 +37,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Set {
     /// the lookup key
-    key: String,
+    key: Bytes,
 
     /// the value to be stored
     value: Bytes,
@@ -51,16 +51,12 @@ impl Set {
     ///
     /// If `expire` is `Some`, the value should expire after the specified
     /// duration.
-    pub fn new(key: impl ToString, value: Bytes, expire: Option<Duration>) -> Set {
-        Set {
-            key: key.to_string(),
-            value,
-            expire,
-        }
+    pub fn new(key: Bytes, value: Bytes, expire: Option<Duration>) -> Set {
+        Set { key, value, expire }
     }
 
     /// Get the key
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
@@ -98,7 +94,7 @@ impl Set {
         use ParseError::EndOfStream;
 
         // Read the key to set. This is a required field
-        let key = parse.next_string()?;
+        let key = parse.next_bytes()?;
 
         // Read the value to set. This is a required field.
         let value = parse.next_bytes()?;
@@ -161,7 +157,7 @@ impl Set {
     pub(crate) fn into_frame(self) -> Frame {
         let mut frame = Frame::array();
         frame.push_bulk(Bytes::from("set".as_bytes()));
-        frame.push_bulk(Bytes::from(self.key.into_bytes()));
+        frame.push_bulk(self.key);
         frame.push_bulk(self.value);
         if let Some(ms) = self.expire {
             // Expirations in Redis procotol can be specified in two ways

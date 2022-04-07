@@ -20,22 +20,22 @@ use crate::{Connection, Db, Error, Frame, Parse, ParseError};
 /// Delete the given keys.
 #[derive(Debug)]
 pub struct Del {
-    keys: Vec<String>,
+    keys: Vec<Bytes>,
 }
 
 impl Del {
-    pub fn new(keys: Vec<String>) -> Del {
+    pub fn new(keys: Vec<Bytes>) -> Del {
         Del { keys }
     }
 
-    pub fn keys(&self) -> &Vec<String> {
+    pub fn keys(&self) -> &Vec<Bytes> {
         &self.keys
     }
 
     pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Del> {
         let mut keys = vec![];
         loop {
-            match parse.next_string() {
+            match parse.next_bytes() {
                 Ok(key) => keys.push(key),
                 Err(ParseError::EndOfStream) => break,
                 Err(err) => return Err(err.into()),
@@ -66,7 +66,7 @@ impl Del {
         let mut frame = Frame::array();
         frame.push_bulk(Bytes::from("del".as_bytes()));
         for key in self.keys.into_iter() {
-            frame.push_bulk(Bytes::from(key.into_bytes()))
+            frame.push_bulk(key);
         }
         frame
     }
