@@ -42,4 +42,15 @@ impl Db {
         let mut table = self.table.lock().unwrap();
         table.insert(key, value);
     }
+
+    pub fn del(&self, keys: &Vec<String>) -> u64 {
+        let mut table = self.table.lock().unwrap();
+        let mut res = 0;
+        for key in keys.iter() {
+            if table.remove(key).is_some() {
+                res += 1;
+            }
+        }
+        res
+    }
 }

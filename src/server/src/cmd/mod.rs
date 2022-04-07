@@ -21,6 +21,9 @@ pub use set::Set;
 mod ping;
 pub use ping::Ping;
 
+mod del;
+pub use del::Del;
+
 mod unknown;
 pub use unknown::Unknown;
 
@@ -33,6 +36,7 @@ use crate::{Connection, Db, Frame, Parse, ParseError};
 pub enum Command {
     Get(Get),
     Set(Set),
+    Del(Del),
     Ping(Ping),
     Unknown(Unknown),
 }
@@ -64,6 +68,7 @@ impl Command {
         let command = match &command_name[..] {
             "get" => Command::Get(Get::parse_frames(&mut parse)?),
             "set" => Command::Set(Set::parse_frames(&mut parse)?),
+            "del" => Command::Del(Del::parse_frames(&mut parse)?),
             "ping" => Command::Ping(Ping::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
@@ -95,6 +100,7 @@ impl Command {
         match self {
             Get(cmd) => cmd.apply(db, dst).await,
             Set(cmd) => cmd.apply(db, dst).await,
+            Del(cmd) => cmd.apply(db, dst).await,
             Ping(cmd) => cmd.apply(dst).await,
             Unknown(cmd) => cmd.apply(dst).await,
         }
@@ -105,6 +111,7 @@ impl Command {
         match self {
             Command::Get(_) => "get",
             Command::Set(_) => "set",
+            Command::Del(_) => "del",
             Command::Ping(_) => "ping",
             Command::Unknown(cmd) => cmd.get_name(),
         }
