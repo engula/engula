@@ -14,7 +14,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use engula_server::Server;
+use engula_server::{server, Config};
 
 #[derive(Parser)]
 pub struct Command {
@@ -39,13 +39,18 @@ enum SubCommand {
 struct StartCommand {
     #[clap(long, default_value = "127.0.0.1:21716")]
     addr: String,
+    #[clap(long, default_value = "1")]
+    num_threads: usize,
 }
 
 impl StartCommand {
     #[tokio::main]
     async fn run(self) -> Result<()> {
-        let server = Server::new(self.addr).await?;
-        server.run().await?;
+        let config = Config {
+            addr: self.addr,
+            num_threads: self.num_threads,
+        };
+        server::run(config)?;
         Ok(())
     }
 }

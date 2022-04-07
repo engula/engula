@@ -12,30 +12,54 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tokio::net::TcpListener;
+use std::{net::TcpListener, panic, thread};
+
 use tracing::info;
 
-use crate::{Db, Result, Session};
+use crate::{worker, Config, Db, Result};
 
-pub struct Server {
-    listener: TcpListener,
-    db: Db,
+struct Server {
+    config: Config,
+    workers: Vec<thread::JoinHandle<()>>,
 }
 
 impl Server {
-    pub async fn new(addr: String) -> Result<Server> {
-        let listener = TcpListener::bind(addr).await?;
-        info!("Server is running at {}", listener.local_addr()?);
-        let db = Db::default();
-        Ok(Self { listener, db })
-    }
-
-    pub async fn run(&self) -> Result<()> {
-        loop {
-            let (stream, addr) = self.listener.accept().await?;
-            info!(%addr, "New connection");
-            let mut session = Session::new(stream, self.db.clone());
-            tokio::spawn(async move { session.run().await.unwrap() });
+    fn new(config: Config) -> Server {
+        Self {
+            config,
+            workers: Vec::new(),
         }
     }
+
+    fn run(mut self) -> Result<()> {
+        let listener = TcpListener::bind(&self.config.addr)?;
+        listener.set_nonblocking(true)?;
+        let addr = listener.local_addr()?;
+        info!("Server is running at {}", addr);
+
+        let db = Db::default();
+        for i in 0..self.config.num_threads {
+            let listener = listener.try_clone()?;
+            let db = db.clone();
+            let handle = thread::Builder::new()
+                .name(format!("engula-worker-{}", i))
+                .spawn(move || {
+                    worker::run(listener, db);
+                })?;
+            self.workers.push(handle);
+        }
+
+        for handle in self.workers {
+            if let Err(err) = handle.join() {
+                panic::resume_unwind(err);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub fn run(config: Config) -> Result<()> {
+    let server = Server::new(config);
+    server.run()
 }
