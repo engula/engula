@@ -126,7 +126,7 @@ impl Reader {
     /// block or page. This function will skip those record directly.
     fn read_physical_record(&mut self) -> Result<Option<(u8, Vec<u8>)>> {
         loop {
-            if self.buf_size <= RECORD_HEADER_SIZE {
+            if self.buf_size < RECORD_HEADER_SIZE {
                 if !self.eof {
                     // Skip the trailing padding, if buf_size isn't zero.
                     self.read_block()?;
