@@ -8,7 +8,10 @@ repository = "https://github.com/engula/engula"
 description = "The Engula server."
 
 [dependencies]
-engula-runtime = { version = "0.3", path = "../runtime" }
+engula-engine = { version = "0.3", path = "../engine" }
 
+atoi = "0.3"
+bytes = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
+tokio = { version = "1.17", features = ["full"] }

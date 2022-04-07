@@ -12,31 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
+use tokio::net::TcpStream;
 
-pub struct TcpListener {}
+use crate::{Command, Connection, Db, Result};
 
-impl TcpListener {
-    pub fn bind<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpListener> {
-        todo!();
-    }
-
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        todo!();
-    }
-
-    pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-        todo!();
-    }
+pub struct Session {
+    conn: Connection,
+    db: Db,
 }
 
-pub struct TcpStream {}
+impl Session {
+    pub fn new(stream: TcpStream, db: Db) -> Session {
+        let conn = Connection::new(stream);
+        Self { conn, db }
+    }
 
-impl TcpStream {
-    pub fn connect<A: ToSocketAddrs>(_addr: A) -> io::Result<TcpStream> {
-        todo!();
+    pub async fn run(&mut self) -> Result<()> {
+        while let Some(frame) = self.conn.read_frame().await? {
+            let cmd = Command::from_frame(frame)?;
+            cmd.apply(&self.db, &mut self.conn).await?;
+        }
+        Ok(())
     }
 }

@@ -12,34 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use thiserror::Error;
+use bytes::Bytes;
 
-use crate::{FrameError, ParseError};
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Frame(#[from] FrameError),
-    #[error(transparent)]
-    Parse(#[from] ParseError),
-    #[error("unknown error: {0}")]
-    Unknown(String),
+#[derive(Clone)]
+pub struct Db {
+    table: Arc<Mutex<HashMap<String, Bytes>>>,
 }
 
-impl From<&str> for Error {
-    fn from(s: &str) -> Error {
-        Error::Unknown(s.to_owned())
+impl Default for Db {
+    fn default() -> Self {
+        Self {
+            table: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
-impl From<String> for Error {
-    fn from(s: String) -> Error {
-        Error::Unknown(s)
+impl Db {
+    pub fn get(&self, key: &str) -> Option<Bytes> {
+        let table = self.table.lock().unwrap();
+        table.get(key).cloned()
+    }
+
+    pub fn set(&self, key: String, value: Bytes) {
+        let mut table = self.table.lock().unwrap();
+        table.insert(key, value);
     }
 }
-
-pub type Result<T> = std::result::Result<T, Error>;

@@ -12,11 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_engine::Db;
+
 mod error;
 pub use error::{Error, Result};
 
 mod server;
-pub use server::{run, Server};
+pub use server::Server;
+
+#[allow(dead_code)]
+mod cmd;
+use cmd::Command;
+
+mod frame;
+use frame::{Error as FrameError, Frame};
+
+mod parse;
+use parse::{Parse, ParseError};
+
+mod session;
+use session::Session;
 
 mod connection;
 pub use connection::Connection;

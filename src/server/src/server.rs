@@ -12,37 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::ToSocketAddrs;
-
-use engula_runtime::{net::TcpListener, spawn};
+use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::{Connection, Result};
+use crate::{Db, Result, Session};
 
 pub struct Server {
     listener: TcpListener,
+    db: Db,
 }
 
 impl Server {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<Server> {
-        let listener = TcpListener::bind(addr)?;
-        Ok(Self { listener })
+    pub async fn new(addr: String) -> Result<Server> {
+        let listener = TcpListener::bind(addr).await?;
+        info!("Server is running at {}", listener.local_addr()?);
+        let db = Db::default();
+        Ok(Self { listener, db })
     }
 
     pub async fn run(&self) -> Result<()> {
         loop {
             let (stream, addr) = self.listener.accept().await?;
-            info!(%addr, "new connection");
-            let conn = Connection::new(stream);
-            spawn(async move { conn.run().await });
+            info!(%addr, "New connection");
+            let mut session = Session::new(stream, self.db.clone());
+            tokio::spawn(async move { session.run().await.unwrap() });
         }
     }
-}
-
-pub fn run<A: ToSocketAddrs>(addr: A) -> Result<()> {
-    let server = Server::new(addr)?;
-    spawn(async move {
-        server.run().await.unwrap();
-    });
-    Ok(())
 }

@@ -1,10 +1,11 @@
 [package]
-name = "engula-runtime"
+name = "engula-engine"
 version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
 repository = "https://github.com/engula/engula"
-description = "The Engula runtime."
+description = "The Engula server."
 
 [dependencies]
+bytes = "1.0"
