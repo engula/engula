@@ -21,7 +21,7 @@ use bytes::Bytes;
 
 #[derive(Clone)]
 pub struct Db {
-    table: Arc<Mutex<HashMap<String, Bytes>>>,
+    table: Arc<Mutex<HashMap<Bytes, Bytes>>>,
 }
 
 impl Default for Db {
@@ -33,17 +33,17 @@ impl Default for Db {
 }
 
 impl Db {
-    pub fn get(&self, key: &str) -> Option<Bytes> {
+    pub fn get(&self, key: &Bytes) -> Option<Bytes> {
         let table = self.table.lock().unwrap();
         table.get(key).cloned()
     }
 
-    pub fn set(&self, key: String, value: Bytes) {
+    pub fn set(&self, key: Bytes, value: Bytes) {
         let mut table = self.table.lock().unwrap();
         table.insert(key, value);
     }
 
-    pub fn del(&self, keys: &[String]) -> u64 {
+    pub fn del(&self, keys: &[Bytes]) -> u64 {
         let mut table = self.table.lock().unwrap();
         let mut res = 0;
         for key in keys.iter() {

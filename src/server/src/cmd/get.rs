@@ -25,19 +25,17 @@ use crate::{Connection, Db, Frame, Parse};
 #[derive(Debug)]
 pub struct Get {
     /// Name of the key to get
-    key: String,
+    key: Bytes,
 }
 
 impl Get {
     /// Create a new `Get` command which fetches `key`.
-    pub fn new(key: impl ToString) -> Get {
-        Get {
-            key: key.to_string(),
-        }
+    pub fn new(key: Bytes) -> Get {
+        Get { key }
     }
 
     /// Get the key
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
@@ -65,7 +63,7 @@ impl Get {
         // The `GET` string has already been consumed. The next value is the
         // name of the key to get. If the next value is not a string or the
         // input is fully consumed, then an error is returned.
-        let key = parse.next_string()?;
+        let key = parse.next_bytes()?;
 
         Ok(Get { key })
     }
@@ -101,7 +99,7 @@ impl Get {
     pub(crate) fn into_frame(self) -> Frame {
         let mut frame = Frame::array();
         frame.push_bulk(Bytes::from("get".as_bytes()));
-        frame.push_bulk(Bytes::from(self.key.into_bytes()));
+        frame.push_bulk(self.key);
         frame
     }
 }

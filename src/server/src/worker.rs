@@ -15,7 +15,7 @@
 use std::net::TcpListener;
 
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error};
 
 use crate::{Db, Session};
 
@@ -34,7 +34,7 @@ impl Worker {
         loop {
             let stream = match listener.accept().await {
                 Ok((stream, addr)) => {
-                    info!(%addr, "new connection");
+                    debug!(%addr, "new connection");
                     stream
                 }
                 Err(err) => {
