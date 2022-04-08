@@ -25,13 +25,13 @@ mod worker;
 
 #[allow(dead_code)]
 mod cmd;
-use cmd::Command;
+pub use cmd::Command;
 
 mod frame;
-use frame::{Error as FrameError, Frame};
+pub use frame::{Error as FrameError, Frame};
 
 mod parse;
-use parse::{Parse, ParseError};
+pub use parse::{Parse, ParseError};
 
 mod session;
 use session::Session;

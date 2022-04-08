@@ -25,7 +25,7 @@ use crate::Frame;
 /// cursor-like API. Each command struct includes a `parse_frame` method that
 /// uses a `Parse` to extract its fields.
 #[derive(Debug)]
-pub(crate) struct Parse {
+pub struct Parse {
     /// Array frame iterator.
     parts: vec::IntoIter<Frame>,
 }

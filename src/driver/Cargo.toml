@@ -1,0 +1,17 @@
+[package]
+name = "engula-driver"
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+description = "The Engula driver."
+
+[dependencies]
+engula-engine = { version = "0.3", path = "../engine" }
+engula-server = { version = "0.3", path = "../server" }
+
+libc = "0.2"
+bytes = "1.1"
+io-uring = "0.5"
+tracing = "0.1"

@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/bin", "src/engine", "src/server"]
+members = ["src/bin", "src/driver", "src/engine", "src/server"]
 
 [profile.release]
 debug = true

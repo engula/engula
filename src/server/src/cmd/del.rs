@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use bytes::Bytes;
-use tracing::{debug, instrument};
+use tracing::debug;
 
-use crate::{Connection, Db, Error, Frame, Parse, ParseError};
+use crate::{Db, Error, Frame, Parse, ParseError};
 
 /// Delete the given keys.
 #[derive(Debug)]
@@ -49,17 +49,13 @@ impl Del {
         }
     }
 
-    #[instrument(skip(self, db, dst))]
-    pub(crate) async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
         let response = Frame::Integer(db.del(&self.keys));
 
         debug!(?response);
 
-        // Write the response back to the client
-        dst.write_frame(&response).await?;
-
-        Ok(())
+        Ok(response)
     }
 
     pub(crate) fn into_frame(self) -> Frame {

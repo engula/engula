@@ -12,27 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tokio::net::TcpStream;
+use anyhow::Result;
+use clap::Parser;
+use engula_driver::Driver;
 
-use crate::{Command, Connection, Db, Result};
-
-pub struct Session {
-    conn: Connection,
-    db: Db,
+#[derive(Parser)]
+pub struct Command {
+    #[clap(subcommand)]
+    subcmd: SubCommand,
 }
 
-impl Session {
-    pub fn new(stream: TcpStream, db: Db) -> Session {
-        let conn = Connection::new(stream);
-        Self { conn, db }
-    }
-
-    pub async fn run(&mut self) -> Result<()> {
-        while let Some(frame) = self.conn.read_frame().await? {
-            let cmd = Command::from_frame(frame)?;
-            let reply = cmd.apply(&self.db)?;
-            self.conn.write_frame(&reply).await?;
+impl Command {
+    pub fn run(self) -> Result<()> {
+        match self.subcmd {
+            SubCommand::Start(cmd) => cmd.run(),
         }
+    }
+}
+
+#[derive(Parser)]
+enum SubCommand {
+    Start(StartCommand),
+}
+
+#[derive(Parser)]
+struct StartCommand {
+    #[clap(long, default_value = "127.0.0.1:21716")]
+    addr: String,
+}
+
+impl StartCommand {
+    fn run(self) -> Result<()> {
+        Driver::new(self.addr)?.run()?;
         Ok(())
     }
 }

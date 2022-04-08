@@ -10,6 +10,7 @@ categories = ["caching", "database", "data-structures"]
 description = "A low-latency, high-performance data structure store."
 
 [dependencies]
+engula-driver = { version = "0.3", path = "../driver" }
 engula-server = { version = "0.3", path = "../server" }
 
 clap = { version = "3.0", features = ["derive"] }

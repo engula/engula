@@ -15,11 +15,11 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use tracing::{debug, instrument};
+use tracing::debug;
 
 use crate::{
     cmd::{Parse, ParseError},
-    Connection, Db, Frame,
+    Db, Frame,
 };
 
 /// Set `key` to hold the string `value`.
@@ -137,17 +137,14 @@ impl Set {
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    #[instrument(skip(self, db, dst))]
-    pub(crate) async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Set the value in the shared database state.
         db.set(self.key, self.value);
 
         // Create a success response and write it to `dst`.
         let response = Frame::Simple("OK".to_string());
         debug!(?response);
-        dst.write_frame(&response).await?;
-
-        Ok(())
+        Ok(response)
     }
 
     /// Converts the command into an equivalent `Frame`.
