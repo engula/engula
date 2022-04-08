@@ -117,6 +117,7 @@ dependencies = [
  "atoi",
  "bytes",
  "engula-engine",
+ "smallvec",
  "thiserror",
  "tokio",
  "tracing",

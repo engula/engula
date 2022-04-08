@@ -12,6 +12,7 @@ engula-engine = { version = "0.3", path = "../engine" }
 
 atoi = "0.3"
 bytes = "1.0"
+smallvec = "1.8.0"
 thiserror = "1.0"
 tracing = "0.1"
 tokio = { version = "1.17", features = ["full"] }

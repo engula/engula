@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{self, Cursor};
-
-use bytes::{Buf, BytesMut};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
-    net::TcpStream,
+use std::{
+    collections::VecDeque,
+    io::{self, Cursor, ErrorKind, IoSlice},
 };
 
+use bytes::{Buf, BytesMut};
+use smallvec::SmallVec;
+use tokio::net::TcpStream;
+
 use crate::{Frame, FrameError};
+
+const WRITE_BUFFER_CAPACITY: usize = 16 * 1024;
 
 /// Send and receive `Frame` values from a remote peer.
 ///
@@ -36,26 +39,31 @@ use crate::{Frame, FrameError};
 /// The contents of the write buffer are then written to the socket.
 #[derive(Debug)]
 pub struct Connection {
-    // The `TcpStream`. It is decorated with a `BufWriter`, which provides write
-    // level buffering. The `BufWriter` implementation provided by Tokio is
-    // sufficient for our needs.
-    stream: BufWriter<TcpStream>,
+    stream: TcpStream,
 
     // The buffer for reading frames.
     buffer: BytesMut,
+
+    // The buffers for writing frames.
+    interest_writable: bool,
+    reply_buffer: Cursor<Vec<u8>>,
+    reply_buffer_queue: VecDeque<Cursor<Vec<u8>>>,
 }
 
 impl Connection {
-    /// Create a new `Connection`, backed by `socket`. Read and write buffers
+    /// Create a new `Connection`, backed by `stream`. Read and write buffers
     /// are initialized.
-    pub fn new(socket: TcpStream) -> Connection {
+    pub fn new(stream: TcpStream) -> Connection {
         Connection {
-            stream: BufWriter::new(socket),
+            stream,
             // Default to a 4KB read buffer. For the use case of mini redis,
             // this is fine. However, real applications will want to tune this
             // value to their specific use case. There is a high likelihood that
             // a larger read buffer will work better.
             buffer: BytesMut::with_capacity(4 * 1024),
+            interest_writable: false,
+            reply_buffer: Cursor::new(Vec::with_capacity(WRITE_BUFFER_CAPACITY)),
+            reply_buffer_queue: VecDeque::new(),
         }
     }
 
@@ -78,12 +86,14 @@ impl Connection {
                 return Ok(Some(frame));
             }
 
+            self.flush()?;
+
             // There is not enough buffered data to read a frame. Attempt to
             // read more data from the socket.
             //
             // On success, the number of bytes is returned. `0` indicates "end
             // of stream".
-            if 0 == self.stream.read_buf(&mut self.buffer).await? {
+            if 0 == self.read_buf().await? {
                 // The remote closed the connection. For this to be a clean
                 // shutdown, there should be no data in the read buffer. If
                 // there is, this means that the peer closed the socket while
@@ -177,53 +187,50 @@ impl Connection {
         match frame {
             Frame::Array(val) => {
                 // Encode the frame type prefix. For an array, it is `*`.
-                self.stream.write_u8(b'*').await?;
+                self.write_u8(b'*')?;
 
                 // Encode the length of the array.
-                self.write_decimal(val.len() as u64).await?;
+                self.write_decimal(val.len() as u64)?;
 
                 // Iterate and encode each entry in the array.
                 for entry in &**val {
-                    self.write_value(entry).await?;
+                    self.write_value(entry)?;
                 }
             }
             // The frame type is a literal. Encode the value directly.
-            _ => self.write_value(frame).await?,
+            _ => self.write_value(frame)?,
         }
 
-        // Ensure the encoded frame is written to the socket. The calls above
-        // are to the buffered stream and writes. Calling `flush` writes the
-        // remaining contents of the buffer to the socket.
-        self.stream.flush().await
+        Ok(())
     }
 
     /// Write a frame literal to the stream
-    async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
+    fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
             Frame::Simple(val) => {
-                self.stream.write_u8(b'+').await?;
-                self.stream.write_all(val.as_bytes()).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.write_u8(b'+')?;
+                self.write_all(val.as_bytes())?;
+                self.write_all(b"\r\n")?;
             }
             Frame::Error(val) => {
-                self.stream.write_u8(b'-').await?;
-                self.stream.write_all(val.as_bytes()).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.write_u8(b'-')?;
+                self.write_all(val.as_bytes())?;
+                self.write_all(b"\r\n")?;
             }
             Frame::Integer(val) => {
-                self.stream.write_u8(b':').await?;
-                self.write_decimal(*val).await?;
+                self.write_u8(b':')?;
+                self.write_decimal(*val)?;
             }
             Frame::Null => {
-                self.stream.write_all(b"$-1\r\n").await?;
+                self.write_all(b"$-1\r\n")?;
             }
             Frame::Bulk(val) => {
                 let len = val.len();
 
-                self.stream.write_u8(b'$').await?;
-                self.write_decimal(len as u64).await?;
-                self.stream.write_all(val).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.write_u8(b'$')?;
+                self.write_decimal(len as u64)?;
+                self.write_all(val)?;
+                self.write_all(b"\r\n")?;
             }
             // Encoding an `Array` from within a value cannot be done using a
             // recursive strategy. In general, async fns do not support
@@ -236,17 +243,167 @@ impl Connection {
     }
 
     /// Write a decimal frame to the stream
-    async fn write_decimal(&mut self, val: u64) -> io::Result<()> {
+    fn write_decimal(&mut self, val: u64) -> io::Result<()> {
         use std::io::Write;
 
         // Convert the value to a string
-        let mut buf = [0u8; 20];
+        let mut buf = [0u8; 22];
         let mut buf = Cursor::new(&mut buf[..]);
-        write!(buf, "{}", val)?;
+        write!(buf, "{}\r\n", val)?;
 
         let pos = buf.position() as usize;
-        self.stream.write_all(&buf.get_ref()[..pos]).await?;
-        self.stream.write_all(b"\r\n").await?;
+        self.write_all(&buf.get_ref()[..pos])?;
+
+        Ok(())
+    }
+
+    #[inline]
+    fn write_u8(&mut self, val: u8) -> io::Result<()> {
+        self.write_all(&[val])
+    }
+
+    fn write_all(&mut self, mut val: &[u8]) -> io::Result<()> {
+        use std::io::Write;
+
+        while !val.is_empty() {
+            let buf = self.reply_buffer.get_mut();
+            let avail = buf.capacity().saturating_sub(buf.len());
+            if val.len() <= avail {
+                Write::write_all(buf, val)?;
+                break;
+            }
+
+            Write::write_all(buf, &val[..avail])?;
+            val = &val[avail..];
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    // Ensure the encoded frame is written to the socket. The calls above
+    // are to the buffered writes. Calling `flush` writes the remaining contents of the buffer to
+    // the socket.
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.interest_writable {
+            if self.reply_buffer.is_empty() {
+                return Ok(());
+            }
+
+            self.flush_buf()?;
+            if self.reply_buffer.is_empty() {
+                // All buffered bytes are written.
+                self.reply_buffer.set_position(0);
+                self.reply_buffer.get_mut().clear();
+                debug_assert!(self.reply_buffer.is_empty());
+                return Ok(());
+            }
+
+            // The underlying stream returns [`ErrorKind::WouldBlock`].
+            self.interest_writable = true;
+        }
+
+        // Do not swap reply buffer if it has avail space.
+        let buf = self.reply_buffer.get_mut();
+        if buf.len() == buf.capacity() && !self.reply_buffer.is_empty() {
+            let mut new_reply_buffer = Cursor::new(Vec::with_capacity(WRITE_BUFFER_CAPACITY));
+            std::mem::swap(&mut new_reply_buffer, &mut self.reply_buffer);
+            self.reply_buffer_queue.push_back(new_reply_buffer);
+        }
+        Ok(())
+    }
+
+    fn flush_buf(&mut self) -> io::Result<()> {
+        let buf = &mut self.reply_buffer;
+        while !buf.is_empty() {
+            match self.stream.try_write(buf.remaining_slice()) {
+                Ok(n) => buf.set_position(buf.position() + n as u64),
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    async fn read_buf(&mut self) -> io::Result<usize> {
+        match self.stream.try_read_buf(&mut self.buffer) {
+            Ok(num) => Ok(num),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => self.wait_read_ready().await,
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn wait_read_ready(&mut self) -> io::Result<usize> {
+        use tokio::io::Interest;
+
+        loop {
+            let mut interest = Interest::READABLE;
+            if self.interest_writable {
+                interest |= Interest::WRITABLE;
+            }
+            let ready = self.stream.ready(interest).await?;
+            if ready.is_writable() {
+                self.continue_writes().await?;
+            }
+
+            if ready.is_readable() {
+                return self.stream.try_read_buf(&mut self.buffer);
+            }
+        }
+    }
+
+    async fn continue_writes(&mut self) -> io::Result<()> {
+        const MAX_VECTORED_IO: usize = 8;
+
+        // FIXME(walter) the underlying `std::net::TcpStream` use `send` instead of `writev`.
+        while !self.reply_buffer_queue.is_empty() || self.reply_buffer.is_empty() {
+            let mut vectored: SmallVec<[IoSlice; MAX_VECTORED_IO]> = SmallVec::new();
+            if !self.reply_buffer_queue.is_empty() {
+                for slice in self
+                    .reply_buffer_queue
+                    .iter()
+                    .map(|buf| buf.remaining_slice())
+                    .take(MAX_VECTORED_IO)
+                {
+                    vectored.push(IoSlice::new(slice));
+                }
+            }
+            if vectored.len() != MAX_VECTORED_IO && self.reply_buffer.is_empty() {
+                vectored.push(IoSlice::new(self.reply_buffer.remaining_slice()));
+            }
+
+            let mut num_written = match self.stream.try_write_vectored(&vectored) {
+                Ok(n) => n,
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => return Ok(()),
+                Err(e) => return Err(e),
+            };
+            drop(vectored);
+
+            while let Some(buf) = self.reply_buffer_queue.front_mut() {
+                let remaining_len = buf.remaining_slice().len();
+                if remaining_len > num_written {
+                    buf.set_position(buf.position() + num_written as u64);
+                    num_written = 0;
+                    break;
+                }
+                num_written -= remaining_len;
+                self.reply_buffer_queue.pop_front();
+            }
+            if num_written > 0 {
+                let remaining_len = self.reply_buffer.remaining_slice().len();
+                if remaining_len > num_written {
+                    self.reply_buffer
+                        .set_position(self.reply_buffer.position() + num_written as u64);
+                } else {
+                    self.reply_buffer.get_mut().clear();
+                    self.reply_buffer.set_position(0);
+                }
+            }
+        }
+
+        // All buffered bytes are written.
+        debug_assert!(self.reply_buffer_queue.is_empty());
+        debug_assert!(self.reply_buffer.is_empty());
+        self.interest_writable = false;
 
         Ok(())
     }
