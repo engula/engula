@@ -1,4 +1,9 @@
-use std::{collections::HashMap, io, os::unix::io::RawFd};
+use std::{
+    collections::HashMap,
+    io,
+    net::TcpStream,
+    os::unix::io::{FromRawFd, IntoRawFd, RawFd},
+};
 
 use engula_engine::Db;
 use io_uring::{cqueue, IoUring};
@@ -33,7 +38,8 @@ impl Driver {
         let io = self.io.take().unwrap();
         io.submit_and_wait(1)?;
         {
-            let cq = unsafe { io.completion_shared() };
+            let mut cq = unsafe { io.completion_shared() };
+            cq.sync();
             for cqe in cq {
                 let id = Token(cqe.user_data()).id();
                 debug!(id, "completion");
@@ -58,6 +64,9 @@ impl Driver {
         let id = self.next_id();
         let fd = self.listener.accept(io, cqe)?;
         debug!(fd, "accept");
+        let stream = unsafe { TcpStream::from_raw_fd(fd) };
+        stream.set_nodelay(true)?;
+        let fd = stream.into_raw_fd();
         let mut conn = Connection::new(id, fd, self.db.clone());
         conn.setup(io);
         self.connections.insert(id, conn);
