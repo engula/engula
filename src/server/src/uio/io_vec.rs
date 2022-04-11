@@ -12,38 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use clap::Parser;
-use engula_driver::Driver;
+pub struct IoVec {}
 
-#[derive(Parser)]
-pub struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
-
-impl Command {
-    pub fn run(self) -> Result<()> {
-        match self.subcmd {
-            SubCommand::Start(cmd) => cmd.run(),
-        }
+impl IoVec {
+    pub fn new() -> IoVec {
+        Self {}
     }
-}
 
-#[derive(Parser)]
-enum SubCommand {
-    Start(StartCommand),
-}
+    pub fn as_raw(&self) -> (*const libc::iovec, u32) {
+        todo!();
+    }
 
-#[derive(Parser)]
-struct StartCommand {
-    #[clap(long, default_value = "127.0.0.1:21716")]
-    addr: String,
-}
+    pub fn is_empty(&self) -> bool {
+        todo!();
+    }
 
-impl StartCommand {
-    fn run(self) -> Result<()> {
-        Driver::new(self.addr)?.run()?;
-        Ok(())
+    pub fn advance(&mut self, _: usize) {
+        todo!();
+    }
+
+    pub fn consume(&mut self, _: usize) {
+        todo!();
     }
 }

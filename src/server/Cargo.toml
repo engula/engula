@@ -11,7 +11,8 @@ description = "The Engula server."
 engula-engine = { version = "0.3", path = "../engine" }
 
 atoi = "0.3"
-bytes = "1.0"
 thiserror = "1.0"
+libc = "0.2"
+bytes = "1.1"
+io-uring = "0.5"
 tracing = "0.1"
-tokio = { version = "1.17", features = ["full"] }

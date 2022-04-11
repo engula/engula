@@ -12,28 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io;
+mod server;
+pub use server::Server;
 
-use thiserror::Error;
+mod io_vec;
+use io_vec::IoVec;
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error("unknown error: {0}")]
-    Unknown(String),
-}
+mod io_driver;
+use io_driver::{check_io_result, IoDriver};
 
-impl From<&str> for Error {
-    fn from(s: &str) -> Error {
-        Error::Unknown(s.to_owned())
-    }
-}
+mod token;
+use token::Token;
 
-impl From<String> for Error {
-    fn from(s: String) -> Error {
-        Error::Unknown(s)
-    }
-}
+mod listener;
+use listener::Listener;
 
-pub type Result<T> = std::result::Result<T, Error>;
+mod connection;
+use connection::Connection;

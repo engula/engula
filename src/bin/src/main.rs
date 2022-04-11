@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod driver;
 mod server;
 
 use anyhow::Result;
@@ -27,7 +26,6 @@ struct Command {
 impl Command {
     fn run(self) -> Result<()> {
         match self.subcmd {
-            SubCommand::Driver(cmd) => cmd.run(),
             SubCommand::Server(cmd) => cmd.run(),
         }
     }
@@ -35,7 +33,6 @@ impl Command {
 
 #[derive(Parser)]
 enum SubCommand {
-    Driver(driver::Command),
     Server(server::Command),
 }
 

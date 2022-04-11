@@ -14,5 +14,4 @@
 
 pub struct Config {
     pub addr: String,
-    pub num_threads: usize,
 }

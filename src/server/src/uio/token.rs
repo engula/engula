@@ -12,27 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tokio::net::TcpStream;
+pub struct Token(pub u64);
 
-use crate::{Command, Connection, Db, Result};
-
-pub struct Session {
-    conn: Connection,
-    db: Db,
-}
-
-impl Session {
-    pub fn new(stream: TcpStream, db: Db) -> Session {
-        let conn = Connection::new(stream);
-        Self { conn, db }
+impl Token {
+    pub fn new(id: u64, op: u8) -> Token {
+        Token(id << 8 | op as u64)
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        while let Some(frame) = self.conn.read_frame().await? {
-            let cmd = Command::from_frame(frame)?;
-            let reply = cmd.apply(&self.db)?;
-            self.conn.write_frame(&reply).await?;
-        }
-        Ok(())
+    pub fn id(token: u64) -> u64 {
+        token >> 8
+    }
+
+    pub fn op(token: u64) -> u8 {
+        token as u8
     }
 }

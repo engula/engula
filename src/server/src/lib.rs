@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_engine::Db;
+#![feature(get_mut_unchecked)]
 
 mod error;
 pub use error::{Error, Result};
@@ -20,21 +20,8 @@ pub use error::{Error, Result};
 mod config;
 pub use config::Config;
 
-pub mod server;
-mod worker;
+mod uio;
 
-#[allow(dead_code)]
-mod cmd;
-pub use cmd::Command;
-
-mod frame;
-pub use frame::{Error as FrameError, Frame};
-
-mod parse;
-pub use parse::{Parse, ParseError};
-
-mod session;
-use session::Session;
-
-mod connection;
-pub use connection::Connection;
+pub fn run(config: Config) -> Result<()> {
+    uio::Server::new(config)?.run()
+}
