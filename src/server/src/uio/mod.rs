@@ -15,11 +15,8 @@
 mod server;
 pub use server::Server;
 
-mod io_vec;
-use io_vec::IoVec;
-
-mod io_driver;
-use io_driver::{check_io_result, IoDriver};
+mod io;
+use io::{check_io_result, IoDriver};
 
 mod token;
 use token::Token;

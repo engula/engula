@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, net::TcpListener, os::unix::io::IntoRawFd};
+use std::{
+    collections::HashMap,
+    net::{TcpListener, TcpStream},
+    os::unix::io::{FromRawFd, IntoRawFd},
+};
 
+use engula_engine::Db;
 use io_uring::cqueue;
 use tracing::{error, info};
 
@@ -21,6 +26,7 @@ use super::{Connection, IoDriver, Listener, Token};
 use crate::{Config, Result};
 
 pub struct Server {
+    db: Db,
     io: IoDriver,
     last_id: u64,
     listener: Listener,
@@ -29,6 +35,7 @@ pub struct Server {
 
 impl Server {
     pub fn new(config: Config) -> Result<Server> {
+        let db = Db::default();
         let io = IoDriver::new()?;
 
         let tcp = TcpListener::bind(&config.addr)?;
@@ -38,6 +45,7 @@ impl Server {
         listener.prepare_accept()?;
 
         Ok(Self {
+            db,
             io,
             last_id: 0,
             listener,
@@ -85,7 +93,10 @@ impl Server {
     fn handle_listener(&mut self, cqe: cqueue::Entry) -> Result<()> {
         let id = self.next_id();
         if let Ok(fd) = self.listener.complete_accept(cqe) {
-            let conn = Connection::new(id, fd, self.io.clone())?;
+            let tcp = unsafe { TcpStream::from_raw_fd(fd) };
+            tcp.set_nodelay(true).unwrap();
+            let fd = tcp.into_raw_fd();
+            let conn = Connection::new(id, fd, self.io.clone(), self.db.clone());
             self.connections.insert(id, conn);
         }
         self.listener.prepare_accept()

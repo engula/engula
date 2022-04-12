@@ -16,10 +16,16 @@ use std::io;
 
 use thiserror::Error;
 
+use crate::{FrameError, ParseError};
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error(transparent)]
+    Frame(#[from] FrameError),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
     #[error("unknown error: {0}")]
     Unknown(String),
 }

@@ -14,11 +14,24 @@
 
 #![feature(get_mut_unchecked)]
 
+use engula_engine::Db;
+
 mod error;
 pub use error::{Error, Result};
 
 mod config;
 pub use config::Config;
+
+#[allow(dead_code)]
+mod cmd;
+use cmd::Command;
+
+#[allow(dead_code)]
+mod frame;
+use frame::{Error as FrameError, Frame};
+
+mod parse;
+use parse::{Parse, ParseError};
 
 mod uio;
 
