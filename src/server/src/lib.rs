@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(get_mut_unchecked)]
+
 use engula_engine::Db;
 
 mod error;
@@ -20,21 +22,26 @@ pub use error::{Error, Result};
 mod config;
 pub use config::Config;
 
-pub mod server;
-mod worker;
-
 #[allow(dead_code)]
 mod cmd;
 use cmd::Command;
 
+#[allow(dead_code)]
 mod frame;
 use frame::{Error as FrameError, Frame};
 
 mod parse;
 use parse::{Parse, ParseError};
 
-mod session;
-use session::Session;
+#[cfg(target_os = "linux")]
+mod uio;
 
-mod connection;
-pub use connection::Connection;
+#[cfg(target_os = "linux")]
+pub fn run(config: Config) -> Result<()> {
+    uio::Server::new(config)?.run()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn run(config: Config) -> Result<()> {
+    "not supported".into()
+}

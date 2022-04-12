@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use bytes::Bytes;
-use tracing::{debug, instrument};
+use tracing::debug;
 
-use crate::{Connection, Db, Frame, Parse};
+use crate::{Db, Frame, Parse};
 
 /// Get the value of key.
 ///
@@ -72,8 +72,7 @@ impl Get {
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    #[instrument(skip(self, db, dst))]
-    pub(crate) async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
         let response = if let Some(value) = db.get(&self.key) {
             // If a value is present, it is written to the client in "bulk"
@@ -86,10 +85,7 @@ impl Get {
 
         debug!(?response);
 
-        // Write the response back to the client
-        dst.write_frame(&response).await?;
-
-        Ok(())
+        Ok(response)
     }
 
     /// Converts the command into an equivalent `Frame`.

@@ -27,7 +27,7 @@ pub use del::Del;
 mod unknown;
 pub use unknown::Unknown;
 
-use crate::{Connection, Db, Frame, Parse, ParseError};
+use crate::{Db, Frame, Parse, ParseError};
 
 /// Enumeration of supported Redis commands.
 ///
@@ -95,15 +95,15 @@ impl Command {
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    pub(crate) async fn apply(self, db: &Db, dst: &mut Connection) -> crate::Result<()> {
+    pub fn apply(self, db: &Db) -> crate::Result<Frame> {
         use Command::*;
 
         match self {
-            Get(cmd) => cmd.apply(db, dst).await,
-            Set(cmd) => cmd.apply(db, dst).await,
-            Del(cmd) => cmd.apply(db, dst).await,
-            Ping(cmd) => cmd.apply(dst).await,
-            Unknown(cmd) => cmd.apply(dst).await,
+            Get(cmd) => cmd.apply(db),
+            Set(cmd) => cmd.apply(db),
+            Del(cmd) => cmd.apply(db),
+            Ping(cmd) => cmd.apply(),
+            Unknown(cmd) => cmd.apply(),
         }
     }
 

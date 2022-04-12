@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tracing::{debug, instrument};
+use tracing::debug;
 
-use crate::{Connection, Frame};
+use crate::Frame;
 
 /// Represents an "unknown" command. This is not a real `Redis` command.
 #[derive(Debug)]
@@ -39,13 +39,11 @@ impl Unknown {
     /// Responds to the client, indicating the command is not recognized.
     ///
     /// This usually means the command is not yet implemented by `mini-redis`.
-    #[instrument(skip(self, dst))]
-    pub(crate) async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
+    pub(crate) fn apply(self) -> crate::Result<Frame> {
         let response = Frame::Error(format!("ERR unknown command '{}'", self.command_name));
 
         debug!(?response);
 
-        dst.write_frame(&response).await?;
-        Ok(())
+        Ok(response)
     }
 }
