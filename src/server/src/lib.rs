@@ -33,8 +33,15 @@ use frame::{Error as FrameError, Frame};
 mod parse;
 use parse::{Parse, ParseError};
 
+#[cfg(target_os = "linux")]
 mod uio;
 
+#[cfg(target_os = "linux")]
 pub fn run(config: Config) -> Result<()> {
     uio::Server::new(config)?.run()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn run(config: Config) -> Result<()> {
+    "not supported".into()
 }
