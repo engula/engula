@@ -118,6 +118,7 @@ dependencies = [
  "engula-engine",
  "io-uring",
  "libc",
+ "mio",
  "thiserror",
  "tokio",
  "tracing",
