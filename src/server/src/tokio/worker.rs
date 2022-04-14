@@ -59,13 +59,18 @@ impl Worker {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
-pub async fn run(listener: TcpListener, db: Db) {
+pub fn run(listener: TcpListener, db: Db) {
     let local = task::LocalSet::new();
-    local
-        .run_until(async move {
-            let mut worker = Worker::new(db);
-            worker.run(listener).await;
-        })
-        .await;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            local
+                .run_until(async move {
+                    let mut worker = Worker::new(db);
+                    worker.run(listener).await;
+                })
+                .await;
+        });
 }
