@@ -22,6 +22,9 @@ pub use error::{Error, Result};
 mod config;
 pub use config::Config;
 
+mod buffer;
+pub use buffer::{ReadBuf, WriteBuf};
+
 #[allow(dead_code)]
 mod cmd;
 use cmd::Command;
@@ -42,6 +45,9 @@ pub fn run(config: Config) -> Result<()> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn run(_: Config) -> Result<()> {
-    Err("not supported".into())
+mod mio;
+
+#[cfg(not(target_os = "linux"))]
+pub fn run(config: Config) -> Result<()> {
+    mio::Server::new(config)?.run()
 }
