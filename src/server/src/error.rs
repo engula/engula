@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io;
+use std::{io, net::AddrParseError};
 
 use thiserror::Error;
 
@@ -33,6 +33,12 @@ pub enum Error {
 impl From<&str> for Error {
     fn from(s: &str) -> Error {
         Error::Unknown(s.to_owned())
+    }
+}
+
+impl From<AddrParseError> for Error {
+    fn from(e: AddrParseError) -> Self {
+        Error::Unknown(e.to_string())
     }
 }
 

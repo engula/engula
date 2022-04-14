@@ -14,6 +14,8 @@
 
 #![feature(get_mut_unchecked)]
 
+extern crate core;
+
 use engula_engine::Db;
 
 mod error;
@@ -21,6 +23,9 @@ pub use error::{Error, Result};
 
 mod config;
 pub use config::Config;
+
+mod buffer;
+pub use buffer::{ReadBuf, WriteBuf};
 
 #[allow(dead_code)]
 mod cmd;
@@ -42,6 +47,9 @@ pub fn run(config: Config) -> Result<()> {
 }
 
 #[cfg(not(target_os = "linux"))]
+mod tokio;
+
+#[cfg(not(target_os = "linux"))]
 pub fn run(config: Config) -> Result<()> {
-    "not supported".into()
+    tokio::Server::new(config).run()
 }
