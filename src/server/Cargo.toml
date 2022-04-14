@@ -14,5 +14,7 @@ atoi = "0.3"
 thiserror = "1.0"
 libc = "0.2"
 bytes = "1.1"
-io-uring = "0.5"
 tracing = "0.1"
+
+[target.unknown-linux-unkonwn.dependencies]
+io-uring = "0.5"

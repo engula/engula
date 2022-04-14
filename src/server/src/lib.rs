@@ -42,6 +42,6 @@ pub fn run(config: Config) -> Result<()> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn run(config: Config) -> Result<()> {
-    "not supported".into()
+pub fn run(_: Config) -> Result<()> {
+    Err("not supported".into())
 }
