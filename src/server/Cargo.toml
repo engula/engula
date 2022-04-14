@@ -12,7 +12,7 @@ engula-engine = { version = "0.3", path = "../engine" }
 
 atoi = "0.3"
 bytes = "1.1"
-mio = { version = "0.8", features = ["net", "os-poll"] }
+tokio = { version = "1.17.0", features = ["full"] }
 thiserror = "1.0"
 tracing = "0.1"
 

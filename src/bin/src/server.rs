@@ -39,11 +39,16 @@ enum SubCommand {
 struct StartCommand {
     #[clap(long, default_value = "127.0.0.1:21716")]
     addr: String,
+    #[clap(long, default_value = "1")]
+    num_threads: usize,
 }
 
 impl StartCommand {
     fn run(self) -> Result<()> {
-        let config = Config { addr: self.addr };
+        let config = Config {
+            addr: self.addr,
+            num_threads: self.num_threads,
+        };
         engula_server::run(config)?;
         Ok(())
     }

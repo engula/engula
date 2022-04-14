@@ -18,6 +18,7 @@ use bytes::{Buf, BufMut, BytesMut};
 
 use crate::{Frame, FrameError};
 
+#[derive(Debug)]
 pub struct ReadBuf {
     pub buf: BytesMut,
 }
@@ -95,6 +96,7 @@ impl ReadBuf {
     }
 }
 
+#[derive(Debug)]
 pub struct WriteBuf {
     pub buf: BytesMut,
     pub written: usize,

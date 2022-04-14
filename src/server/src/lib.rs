@@ -45,9 +45,9 @@ pub fn run(config: Config) -> Result<()> {
 }
 
 #[cfg(not(target_os = "linux"))]
-mod mio;
+mod tokio;
 
 #[cfg(not(target_os = "linux"))]
 pub fn run(config: Config) -> Result<()> {
-    mio::Server::new(config)?.run()
+    tokio::Server::new(config).run()
 }

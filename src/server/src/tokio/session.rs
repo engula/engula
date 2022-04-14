@@ -12,7 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct Config {
-    pub addr: String,
-    pub num_threads: usize,
+use tokio::net::TcpStream;
+
+use super::Connection;
+use crate::{Command, Db, Result};
+
+pub struct Session {
+    conn: Connection,
+    db: Db,
+}
+
+impl Session {
+    pub fn new(stream: TcpStream, db: Db) -> Session {
+        let conn = Connection::new(stream);
+        Self { conn, db }
+    }
+
+    pub async fn run(&mut self) -> Result<()> {
+        while let Some(frame) = self.conn.read_frame().await? {
+            let cmd = Command::from_frame(frame)?;
+            let frame = cmd.apply(&self.db)?;
+            self.conn.write_frame(&frame).await?;
+        }
+        Ok(())
+    }
 }
