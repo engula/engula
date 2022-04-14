@@ -14,6 +14,8 @@
 
 #![feature(get_mut_unchecked)]
 
+extern crate core;
+
 use engula_engine::Db;
 
 mod error;
