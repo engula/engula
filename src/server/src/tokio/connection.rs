@@ -42,7 +42,7 @@ impl Connection {
             // this is fine. However, real applications will want to tune this
             // value to their specific use case. There is a high likelihood that
             // a larger read buffer will work better.
-            buffer: ReadBuf::new(),
+            buffer: ReadBuf::default(),
         }
     }
 

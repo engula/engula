@@ -39,8 +39,8 @@ impl Connection {
             fd,
             io,
             db,
-            rbuf: ReadBuf::new(),
-            wbuf: WriteBuf::new(),
+            rbuf: ReadBuf::default(),
+            wbuf: WriteBuf::default(),
             num_inflights: 0,
         };
         conn.prepare_read();

@@ -23,13 +23,15 @@ pub struct ReadBuf {
     pub buf: BytesMut,
 }
 
-impl ReadBuf {
-    pub fn new() -> ReadBuf {
+impl Default for ReadBuf {
+    fn default() -> Self {
         Self {
             buf: BytesMut::with_capacity(4 * 1024),
         }
     }
+}
 
+impl ReadBuf {
     /// Tries to parse a frame from the buffer. If the buffer contains enough
     /// data, the frame is returned and the data removed from the buffer. If not
     /// enough data has been buffered yet, `Ok(None)` is returned. If the
@@ -102,14 +104,16 @@ pub struct WriteBuf {
     pub written: usize,
 }
 
-impl WriteBuf {
-    pub fn new() -> WriteBuf {
+impl Default for WriteBuf {
+    fn default() -> Self {
         Self {
             buf: BytesMut::with_capacity(4 * 1024),
             written: 0,
         }
     }
+}
 
+impl WriteBuf {
     pub fn consume(&mut self, size: usize) {
         self.written += size;
         if self.written == self.buf.len() {
