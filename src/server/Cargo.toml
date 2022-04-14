@@ -21,3 +21,6 @@ libc = "0.2"
 
 [target."cfg(target_os = \"linux\")".dependencies]
 io-uring = "0.5"
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["tokio"]
