@@ -64,6 +64,7 @@ impl Server {
                         let token = self.token();
                         let interest = Interest::READABLE | Interest::WRITABLE;
                         poll.registry().register(&mut stream, token, interest)?;
+                        stream.set_nodelay(true)?;
                         let connection = Connection::new(self.db.clone(), stream);
                         self.connections.insert(token, connection);
                     },
