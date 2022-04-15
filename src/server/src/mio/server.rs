@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use engula_engine::Db;
 use mio::{net::TcpListener, Events, Interest, Poll, Token};
-use tracing::info;
+use tracing::{info, trace};
 
 use super::would_block;
 use crate::{mio::connection::Connection, Config, Error, Result};
@@ -60,7 +60,7 @@ impl Server {
                             Err(ref e) if would_block(e) => break,
                             Err(e) => return Err(Error::Io(e)),
                         };
-                        info!("Accepted connection from: {}", address);
+                        trace!("Accepted connection from: {}", address);
                         let token = self.token();
                         let interest = Interest::READABLE | Interest::WRITABLE;
                         poll.registry().register(&mut stream, token, interest)?;
@@ -68,7 +68,7 @@ impl Server {
                         self.connections.insert(token, connection);
                     },
                     token => {
-                        info!("receive event {:?} for token {:?}", event, token);
+                        trace!("receive event {:?} for token {:?}", event, token);
                         let done = if let Some(connection) = self.connections.get_mut(&token) {
                             connection.handle_connection_event(event)?
                         } else {

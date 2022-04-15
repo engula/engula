@@ -17,7 +17,7 @@ use std::io::{Read, Write};
 use bytes::BufMut;
 use engula_engine::Db;
 use mio::{event::Event, net::TcpStream};
-use tracing::info;
+use tracing::trace;
 
 use super::{interrupted, would_block};
 use crate::{Command, Error, ReadBuf, Result, WriteBuf};
@@ -44,7 +44,7 @@ impl Connection {
     }
 
     pub fn handle_connection_event(&mut self, event: &Event) -> Result<bool> {
-        info!("handle_connection_event {:?}", event);
+        trace!("handle_connection_event {:?}", event);
 
         if event.is_readable() {
             let mut connection_closed = false;
@@ -54,16 +54,12 @@ impl Connection {
             loop {
                 match self.stream.read(&mut received_data[bytes_read..]) {
                     Ok(0) => {
-                        info!("receive 0");
                         // Reading 0 bytes means the other side has closed the
                         // connection or is done writing, then so are we.
                         connection_closed = true;
                         break;
                     }
-                    Ok(n) => {
-                        info!("receive n: {}", n);
-                        bytes_read += n;
-                    }
+                    Ok(n) => bytes_read += n,
                     // Would block "errors" are the OS's way of saying that the
                     // connection is not actually ready to perform this I/O operation.
                     Err(ref e) if would_block(e) => break,
@@ -76,16 +72,14 @@ impl Connection {
             if bytes_read != 0 {
                 self.read_buf.buf.put_slice(&received_data[..bytes_read]);
                 while let Some(frame) = self.read_buf.parse_frame() {
-                    info!("read frame: {:?}", frame);
                     let cmd = Command::from_frame(frame).unwrap();
                     let reply = cmd.apply(&self.db).unwrap();
-                    info!("write frame: {:?}", reply);
                     self.write_buf.write_frame(&reply);
                 }
             }
 
             if connection_closed {
-                info!("Connection closed");
+                trace!("Connection closed");
                 return Ok(true);
             }
         }
@@ -93,10 +87,7 @@ impl Connection {
         if !self.write_buf.buf.is_empty() {
             let buf = &mut self.write_buf.buf[self.write_buf.written..];
             match self.stream.write(buf) {
-                Ok(n) => {
-                    info!(n, "write buf");
-                    self.write_buf.consume(n)
-                }
+                Ok(n) => self.write_buf.consume(n),
                 Err(ref e) if would_block(e) => return Ok(false),
                 Err(ref e) if interrupted(e) => return self.handle_connection_event(event),
                 Err(e) => return Err(Error::Io(e)),
