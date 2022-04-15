@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_engine::Db;
-use mio::{event::Event, net::TcpStream, Token};
+use std::io::Read;
 
-use crate::{ReadBuf, Result, WriteBuf};
+use engula_engine::Db;
+use mio::{event::Event, net::TcpStream};
+use tracing::info;
+
+use super::{interrupted, would_block};
+use crate::{Command, Error, ReadBuf, Result, WriteBuf};
 
 pub struct Connection {
-    id: Token,
     db: Db,
     stream: TcpStream,
     read_buf: ReadBuf,
@@ -26,9 +29,8 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(id: Token, db: Db, stream: TcpStream) -> Connection {
+    pub fn new(db: Db, stream: TcpStream) -> Connection {
         Self {
-            id,
             db,
             read_buf: ReadBuf::default(),
             write_buf: WriteBuf::default(),
@@ -41,6 +43,48 @@ impl Connection {
     }
 
     pub fn handle_connection_event(&mut self, event: &Event) -> Result<bool> {
+        info!("handle_connection_event {:?}", event);
+        if event.is_readable() {
+            let mut connection_closed = false;
+            let mut received_data = vec![0; 4096];
+            let mut bytes_read = 0;
+            // We can (maybe) read from the connection.
+            loop {
+                match self.stream.read(&mut received_data[bytes_read..]) {
+                    Ok(0) => {
+                        info!("receive 0");
+                        // Reading 0 bytes means the other side has closed the
+                        // connection or is done writing, then so are we.
+                        connection_closed = true;
+                        break;
+                    }
+                    Ok(n) => {
+                        info!("receive n: {}", n);
+                        bytes_read += n;
+                    }
+                    // Would block "errors" are the OS's way of saying that the
+                    // connection is not actually ready to perform this I/O operation.
+                    Err(ref e) if would_block(e) => break,
+                    Err(ref e) if interrupted(e) => continue,
+                    // Other errors we'll consider fatal.
+                    Err(e) => return Err(Error::Io(e)),
+                }
+            }
+
+            if bytes_read != 0 {
+                // while let Some(frame) = self.read_buf.parse_frame() {
+                //     info!("read frame: {:?}", frame);
+                //     let cmd = Command::from_frame(frame).unwrap();
+                //     let reply = cmd.apply(&self.db).unwrap();
+                //     self.write_buf.write_frame(&reply);
+                // }
+            }
+
+            if connection_closed {
+                info!("Connection closed");
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 }
