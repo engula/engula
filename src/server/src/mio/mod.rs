@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(Debug, Copy, Clone)]
-pub enum DriverMode {
-    Tokio,
-    Mio,
-    #[cfg(target_os = "linux")]
-    Uio,
+mod connection;
+mod server;
+
+use std::io;
+
+pub use server::Server;
+
+pub fn would_block(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::WouldBlock
 }
 
-pub struct Config {
-    pub addr: String,
-    pub num_threads: usize,
-    pub driver_mode: DriverMode,
+pub fn interrupted(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::Interrupted
 }

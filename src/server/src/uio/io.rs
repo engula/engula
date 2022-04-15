@@ -51,7 +51,7 @@ impl IoDriver {
     pub fn dequeue(&mut self) -> CompletionQueue<'_> {
         let io = unsafe { Rc::get_mut_unchecked(&mut self.io) };
         let cq = io.completion();
-        assert!(cq.overflow() == 0);
+        assert_eq!(cq.overflow(), 0);
         cq
     }
 }
