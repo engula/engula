@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
+use bytes::BufMut;
 use engula_engine::Db;
 use mio::{event::Event, net::TcpStream};
 use tracing::info;
@@ -44,6 +45,7 @@ impl Connection {
 
     pub fn handle_connection_event(&mut self, event: &Event) -> Result<bool> {
         info!("handle_connection_event {:?}", event);
+
         if event.is_readable() {
             let mut connection_closed = false;
             let mut received_data = vec![0; 4096];
@@ -72,12 +74,14 @@ impl Connection {
             }
 
             if bytes_read != 0 {
-                // while let Some(frame) = self.read_buf.parse_frame() {
-                //     info!("read frame: {:?}", frame);
-                //     let cmd = Command::from_frame(frame).unwrap();
-                //     let reply = cmd.apply(&self.db).unwrap();
-                //     self.write_buf.write_frame(&reply);
-                // }
+                self.read_buf.buf.put_slice(&received_data[..bytes_read]);
+                while let Some(frame) = self.read_buf.parse_frame() {
+                    info!("read frame: {:?}", frame);
+                    let cmd = Command::from_frame(frame).unwrap();
+                    let reply = cmd.apply(&self.db).unwrap();
+                    info!("write frame: {:?}", reply);
+                    self.write_buf.write_frame(&reply);
+                }
             }
 
             if connection_closed {
@@ -85,6 +89,20 @@ impl Connection {
                 return Ok(true);
             }
         }
+
+        if !self.write_buf.buf.is_empty() {
+            let buf = &mut self.write_buf.buf[self.write_buf.written..];
+            match self.stream.write(buf) {
+                Ok(n) => {
+                    info!(n, "write buf");
+                    self.write_buf.consume(n)
+                }
+                Err(ref e) if would_block(e) => return Ok(false),
+                Err(ref e) if interrupted(e) => return self.handle_connection_event(event),
+                Err(e) => return Err(Error::Io(e)),
+            }
+        }
+
         Ok(false)
     }
 }
