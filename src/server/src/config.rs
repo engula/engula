@@ -14,7 +14,6 @@
 
 #[derive(Debug, Copy, Clone)]
 pub enum DriverMode {
-    Tokio,
     Mio,
     #[cfg(target_os = "linux")]
     Uio,
@@ -22,6 +21,5 @@ pub enum DriverMode {
 
 pub struct Config {
     pub addr: String,
-    pub num_threads: usize,
     pub driver_mode: DriverMode,
 }

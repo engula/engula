@@ -37,7 +37,6 @@ enum SubCommand {
 
 #[derive(clap::ArgEnum, Clone)]
 enum DriverMode {
-    Tokio,
     Mio,
     #[cfg(target_os = "linux")]
     Uio,
@@ -46,7 +45,6 @@ enum DriverMode {
 impl From<DriverMode> for engula_server::DriverMode {
     fn from(mode: DriverMode) -> Self {
         match mode {
-            DriverMode::Tokio => engula_server::DriverMode::Tokio,
             DriverMode::Mio => engula_server::DriverMode::Mio,
             #[cfg(target_os = "linux")]
             DriverMode::Uio => engula_server::DriverMode::Uio,
@@ -58,9 +56,7 @@ impl From<DriverMode> for engula_server::DriverMode {
 struct StartCommand {
     #[clap(long, default_value = "127.0.0.1:21716")]
     addr: String,
-    #[clap(long, default_value = "1")]
-    num_threads: usize,
-    #[clap(long, default_value = "tokio", arg_enum)]
+    #[clap(long, default_value = "mio", arg_enum)]
     driver_mode: DriverMode,
 }
 
@@ -68,7 +64,6 @@ impl StartCommand {
     fn run(self) -> Result<()> {
         let config = Config {
             addr: self.addr,
-            num_threads: self.num_threads,
             driver_mode: self.driver_mode.into(),
         };
         engula_server::run(config)?;
