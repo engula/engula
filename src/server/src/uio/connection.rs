@@ -29,7 +29,7 @@ pub struct Connection {
     db: Db,
     read_buf: ReadBuf,
     write_buf: WriteBuf,
-    num_inflghts: usize,
+    num_inflights: usize,
 }
 
 impl Connection {
@@ -41,7 +41,7 @@ impl Connection {
             db,
             read_buf: ReadBuf::default(),
             write_buf: WriteBuf::default(),
-            num_inflghts: 0,
+            num_inflights: 0,
         };
         conn.prepare_read();
         conn
@@ -51,7 +51,7 @@ impl Connection {
     //
     // Returns true if the connection should be dropped.
     pub fn tick(&mut self, cqe: cqueue::Entry) -> bool {
-        self.num_inflghts -= 1;
+        self.num_inflights -= 1;
 
         let op = Token::op(cqe.user_data());
         let result = check_io_result(cqe.result());
@@ -77,7 +77,7 @@ impl Connection {
             _ => unreachable!(),
         }
 
-        self.num_inflghts == 0
+        self.num_inflights == 0
     }
 
     fn process(&mut self) {
@@ -90,7 +90,7 @@ impl Connection {
 
     fn prepare(&mut self, sqe: squeue::Entry) -> Result<()> {
         self.io.enqueue(sqe)?;
-        self.num_inflghts += 1;
+        self.num_inflights += 1;
         Ok(())
     }
 
