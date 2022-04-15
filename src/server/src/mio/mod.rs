@@ -11,3 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+mod connection;
+mod server;
+
+use std::io;
+
+pub use server::Server;
+
+pub fn would_block(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::WouldBlock
+}
+
+pub fn interrupted(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::Interrupted
+}

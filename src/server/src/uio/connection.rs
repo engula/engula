@@ -27,9 +27,9 @@ pub struct Connection {
     fd: RawFd,
     io: IoDriver,
     db: Db,
-    rbuf: ReadBuf,
-    wbuf: WriteBuf,
-    num_inflights: usize,
+    read_buf: ReadBuf,
+    write_buf: WriteBuf,
+    inflight_cnt: usize,
 }
 
 impl Connection {
@@ -39,9 +39,9 @@ impl Connection {
             fd,
             io,
             db,
-            rbuf: ReadBuf::default(),
-            wbuf: WriteBuf::default(),
-            num_inflights: 0,
+            read_buf: ReadBuf::default(),
+            write_buf: WriteBuf::default(),
+            inflight_cnt: 0,
         };
         conn.prepare_read();
         conn
@@ -51,7 +51,7 @@ impl Connection {
     //
     // Returns true if the connection should be dropped.
     pub fn tick(&mut self, cqe: cqueue::Entry) -> bool {
-        self.num_inflights -= 1;
+        self.inflight_cnt -= 1;
 
         let op = Token::op(cqe.user_data());
         let result = check_io_result(cqe.result());
@@ -77,26 +77,26 @@ impl Connection {
             _ => unreachable!(),
         }
 
-        self.num_inflights == 0
+        self.inflight_cnt == 0
     }
 
     fn process(&mut self) {
-        while let Some(frame) = self.rbuf.parse_frame() {
+        while let Some(frame) = self.read_buf.parse_frame() {
             let cmd = Command::from_frame(frame).unwrap();
             let reply = cmd.apply(&self.db).unwrap();
-            self.wbuf.write_frame(&reply);
+            self.write_buf.write_frame(&reply);
         }
     }
 
     fn prepare(&mut self, sqe: squeue::Entry) -> Result<()> {
         self.io.enqueue(sqe)?;
-        self.num_inflights += 1;
+        self.inflight_cnt += 1;
         Ok(())
     }
 
     fn prepare_read(&mut self) {
         let token = Token::new(self.id, opcode::Read::CODE);
-        let buf = self.rbuf.buf.chunk_mut();
+        let buf = self.read_buf.buf.chunk_mut();
         let sqe = opcode::Read::new(types::Fd(self.fd), buf.as_mut_ptr(), buf.len() as u32)
             .build()
             .user_data(token.0);
@@ -115,20 +115,20 @@ impl Connection {
         }
 
         unsafe {
-            self.rbuf.buf.advance_mut(size);
+            self.read_buf.buf.advance_mut(size);
         }
 
         self.process();
 
         self.prepare_read();
-        if !self.wbuf.is_empty() {
+        if !self.write_buf.is_empty() {
             self.prepare_write();
         }
     }
 
     fn prepare_write(&mut self) {
         let token = Token::new(self.id, opcode::Write::CODE);
-        let buf = &mut self.wbuf.buf[self.wbuf.written..];
+        let buf = &mut self.write_buf.buf[self.write_buf.written..];
         let sqe = opcode::Write::new(types::Fd(self.fd), buf.as_mut_ptr(), buf.len() as u32)
             .build()
             .user_data(token.0);
@@ -139,8 +139,8 @@ impl Connection {
     }
 
     fn complete_write(&mut self, size: usize) {
-        self.wbuf.consume(size);
-        if !self.wbuf.is_empty() {
+        self.write_buf.consume(size);
+        if !self.write_buf.is_empty() {
             self.prepare_write();
         }
     }

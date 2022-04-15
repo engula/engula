@@ -47,7 +47,7 @@ mod uio;
 pub fn run(config: Config) -> Result<()> {
     match config.driver_mode {
         DriverMode::Tokio => tokio::Server::new(config).run(),
-        DriverMode::Mio => Ok(()),
+        DriverMode::Mio => mio::Server::new(config)?.run(),
         #[cfg(target_os = "linux")]
         DriverMode::Uio => uio::Server::new(config)?.run(),
     }
