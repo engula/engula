@@ -39,14 +39,12 @@ mod parse;
 use parse::{Parse, ParseError};
 
 mod mio;
-mod tokio;
 
 #[cfg(target_os = "linux")]
 mod uio;
 
 pub fn run(config: Config) -> Result<()> {
     match config.driver_mode {
-        DriverMode::Tokio => tokio::Server::new(config).run(),
         DriverMode::Mio => mio::Server::new(config)?.run(),
         #[cfg(target_os = "linux")]
         DriverMode::Uio => uio::Server::new(config)?.run(),
