@@ -316,6 +316,8 @@ impl<T: ObjectType> BoxObject<T> {
     where
         T: Default,
     {
+        use std::ptr::copy_nonoverlapping;
+
         let size = std::mem::size_of::<Object<T>>() + key.len();
         let align = std::mem::align_of::<Object<T>>();
         let layout = Layout::from_size_align(size, align).unwrap();
@@ -324,7 +326,14 @@ impl<T: ObjectType> BoxObject<T> {
             let mut ptr = NonNull::new_unchecked(alloc(layout).cast::<Object<T>>());
             let uninit_object = ptr.as_uninit_mut();
             uninit_object.write(Object::new(key.len(), T::default()));
-            BoxObject::from_raw(ptr)
+
+            let mut object = BoxObject::from_raw(ptr);
+            copy_nonoverlapping(
+                key.as_ptr(),
+                std::ptr::addr_of_mut!(object.key) as *mut u8,
+                key.len(),
+            );
+            object
         }
     }
 
@@ -417,6 +426,19 @@ mod tests {
         show_layout::<ObjectMeta>();
         show_layout::<Object<RawString>>();
         show_layout::<Object<LinkedList>>();
+    }
+
+    #[test]
+    fn object_key() {
+        let obj = BoxObject::<RawString>::with_key(&[0]);
+        assert_eq!(obj.key(), &[0]);
+
+        let obj = BoxObject::<RawString>::with_key(&[0, 1, 2, 3, 4, 5]);
+        assert_eq!(obj.key(), &[0, 1, 2, 3, 4, 5]);
+
+        let key = (0..1000).into_iter().map(|i| i as u8).collect::<Vec<_>>();
+        let obj = BoxObject::<RawString>::with_key(&key);
+        assert_eq!(obj.key(), key);
     }
 
     #[test]
