@@ -8,4 +8,5 @@ repository = "https://github.com/engula/engula"
 description = "The Engula server."
 
 [dependencies]
-bytes = "1.0"
+bitflags = "1.3.2"
+hashbrown = { version = "0.12.0", features = ["raw"] }

@@ -15,6 +15,11 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use engula_engine::objects::{
+    records::{array::Array, BoxRecord},
+    string::RawString,
+    BoxObject,
+};
 use tracing::debug;
 
 use crate::{
@@ -139,7 +144,9 @@ impl Set {
     /// to execute a received command.
     pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Set the value in the shared database state.
-        db.set(self.key, self.value);
+        let value = BoxRecord::<Array>::from_slice(self.value.as_ref());
+        let object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), value);
+        db.insert(BoxObject::leak(object));
 
         // Create a success response and write it to `dst`.
         let response = Frame::Simple("OK".to_string());
@@ -157,7 +164,7 @@ impl Set {
         frame.push_bulk(self.key);
         frame.push_bulk(self.value);
         if let Some(ms) = self.expire {
-            // Expirations in Redis procotol can be specified in two ways
+            // Expirations in Redis protocol can be specified in two ways
             // 1. SET key value EX seconds
             // 2. SET key value PX milliseconds
             // We the second option because it allows greater precision and

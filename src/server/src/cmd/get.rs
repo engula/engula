@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use bytes::Bytes;
+use engula_engine::objects::string::RawString;
 use tracing::debug;
 
 use crate::{Db, Frame, Parse};
@@ -74,10 +75,14 @@ impl Get {
     /// to execute a received command.
     pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
-        let response = if let Some(value) = db.get(&self.key) {
-            // If a value is present, it is written to the client in "bulk"
-            // format.
-            Frame::Bulk(value)
+        let response = if let Some(object_ref) = db.get(&self.key) {
+            if let Some(value) = object_ref.data::<RawString>() {
+                // If a value is present, it is written to the client in "bulk"
+                // format.
+                Frame::Bulk(value.data_slice().to_vec().into())
+            } else {
+                Frame::Error("Operation against a key holding the wrong kind of value".into())
+            }
         } else {
             // If there is no value, `Null` is written.
             Frame::Null

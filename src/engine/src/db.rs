@@ -12,45 +12,56 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use bytes::Bytes;
+use crate::{key_space::KeySpace, objects::ObjectRef};
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Db {
-    table: Arc<Mutex<HashMap<Bytes, Bytes>>>,
+    state: Arc<Mutex<DbState>>,
 }
 
-impl Default for Db {
-    fn default() -> Self {
-        Self {
-            table: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
+unsafe impl Send for Db {}
+
+unsafe impl Sync for Db {}
+
+#[derive(Default)]
+struct DbState {
+    key_space: KeySpace,
 }
 
 impl Db {
-    pub fn get(&self, key: &Bytes) -> Option<Bytes> {
-        let table = self.table.lock().unwrap();
-        table.get(key).cloned()
+    pub fn get(&self, key: &[u8]) -> Option<ObjectRef> {
+        let mut state = self.state.lock().unwrap();
+        state.key_space.get(key).cloned()
     }
 
-    pub fn set(&self, key: Bytes, value: Bytes) {
-        let mut table = self.table.lock().unwrap();
-        table.insert(key, value);
-    }
+    pub fn insert(&self, object_ref: ObjectRef) {
+        let mut state = self.state.lock().unwrap();
 
-    pub fn del(&self, keys: &[Bytes]) -> u64 {
-        let mut table = self.table.lock().unwrap();
-        let mut res = 0;
-        for key in keys.iter() {
-            if table.remove(key).is_some() {
-                res += 1;
-            }
+        let key = object_ref.key();
+        if let Some(old_object_ref) = state.key_space.insert(key, object_ref) {
+            old_object_ref.drop_in_place();
         }
-        res
+    }
+
+    pub fn remove(&self, key: &[u8]) -> Option<ObjectRef> {
+        let mut state = self.state.lock().unwrap();
+        state.key_space.remove(key)
+    }
+
+    pub fn delete_keys<'a, K: IntoIterator<Item = &'a [u8]>>(&self, keys: K) -> u64 {
+        let objects = {
+            let mut state = self.state.lock().unwrap();
+            keys.into_iter()
+                .filter_map(|key| state.key_space.remove(key))
+                .collect::<Vec<_>>()
+        };
+
+        let num_deleted = objects.len();
+        for object_ref in objects {
+            object_ref.drop_in_place();
+        }
+        num_deleted as u64
     }
 }
