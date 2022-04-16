@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    mem::{size_of, MaybeUninit},
-    os::unix::io::RawFd,
-};
+use std::{os::unix::io::RawFd, ptr};
 
 use io_uring::{cqueue, opcode, types};
 use tracing::{error, trace};
@@ -27,19 +24,11 @@ pub struct Listener {
     id: u64,
     fd: RawFd,
     io: IoDriver,
-    addr: MaybeUninit<libc::sockaddr_storage>,
-    addrlen: libc::socklen_t,
 }
 
 impl Listener {
     pub fn new(id: u64, fd: RawFd, io: IoDriver) -> Listener {
-        Self {
-            id,
-            fd,
-            io,
-            addr: MaybeUninit::uninit(),
-            addrlen: size_of::<libc::sockaddr_storage>() as _,
-        }
+        Self { id, fd, io }
     }
 
     pub fn id(&self) -> u64 {
@@ -48,13 +37,9 @@ impl Listener {
 
     pub fn prepare_accept(&mut self) -> Result<()> {
         let token = Token::new(self.id, opcode::Accept::CODE);
-        let sqe = opcode::Accept::new(
-            types::Fd(self.fd),
-            self.addr.as_mut_ptr() as *mut _,
-            &mut self.addrlen,
-        )
-        .build()
-        .user_data(token.0);
+        let sqe = opcode::Accept::new(types::Fd(self.fd), ptr::null_mut(), ptr::null_mut())
+            .build()
+            .user_data(token.0);
         match self.io.enqueue(sqe) {
             Ok(_) => {
                 trace!("listener prepare accept");
