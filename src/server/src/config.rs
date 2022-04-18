@@ -22,4 +22,5 @@ pub enum DriverMode {
 pub struct Config {
     pub addr: String,
     pub driver_mode: DriverMode,
+    pub max_memory_kb: usize,
 }
