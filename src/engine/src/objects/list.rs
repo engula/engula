@@ -14,27 +14,22 @@
 
 use std::ptr::NonNull;
 
-use super::{
-    records::{list_node::ListNode, BoxRecord, Record},
-    Object, ObjectType, ObjectVTable, Tag,
-};
-use crate::object_vtable;
-
-object_vtable!(LinkedList, LINKED_LIST_VTABLE);
+use super::{Object, ObjectLayout, ObjectType};
+use crate::elements::{list_node::ListNode, BoxElement, Element};
 
 #[repr(C)]
 #[derive(Default)]
 pub struct LinkedList {
-    head: Option<NonNull<Record<ListNode>>>,
-    tail: Option<NonNull<Record<ListNode>>>,
+    head: Option<NonNull<Element<ListNode>>>,
+    tail: Option<NonNull<Element<ListNode>>>,
     len: u32,
     pad: u32,
 }
 
 impl Object<LinkedList> {
-    pub fn pop_front(&mut self) -> Option<BoxRecord<ListNode>> {
+    pub fn pop_front(&mut self) -> Option<BoxElement<ListNode>> {
         if let Some(node) = self.head {
-            let mut node = unsafe { BoxRecord::from_raw(node) };
+            let mut node = unsafe { BoxElement::from_raw(node) };
             if let Some(mut next) = node.next.take() {
                 unsafe { next.as_mut().prev = None };
                 self.head = Some(next);
@@ -50,7 +45,7 @@ impl Object<LinkedList> {
         }
     }
 
-    pub fn push_front(&mut self, mut node: BoxRecord<ListNode>) {
+    pub fn push_front(&mut self, mut node: BoxElement<ListNode>) {
         if let Some(first) = self.head.as_mut() {
             unsafe {
                 first.as_mut().prev = Some(*node.inner());
@@ -59,16 +54,16 @@ impl Object<LinkedList> {
         node.associated_with(&self.meta);
         node.next = self.head;
         node.prev = None;
-        self.head = Some(BoxRecord::leak(node));
+        self.head = Some(BoxElement::leak(node));
         if self.tail.is_none() {
             self.tail = self.head;
         }
         self.len += 1;
     }
 
-    pub fn pop_back(&mut self) -> Option<BoxRecord<ListNode>> {
+    pub fn pop_back(&mut self) -> Option<BoxElement<ListNode>> {
         if let Some(node) = self.tail {
-            let mut node = unsafe { BoxRecord::from_raw(node) };
+            let mut node = unsafe { BoxElement::from_raw(node) };
             if let Some(mut prev) = node.prev.take() {
                 unsafe { prev.as_mut().next = None };
                 self.tail = Some(prev);
@@ -84,7 +79,7 @@ impl Object<LinkedList> {
         }
     }
 
-    pub fn push_back(&mut self, mut node: BoxRecord<ListNode>) {
+    pub fn push_back(&mut self, mut node: BoxElement<ListNode>) {
         if let Some(last) = self.tail.as_mut() {
             unsafe {
                 last.as_mut().next = Some(*node.inner());
@@ -93,18 +88,18 @@ impl Object<LinkedList> {
         node.associated_with(&self.meta);
         node.next = None;
         node.prev = self.tail;
-        self.tail = Some(BoxRecord::leak(node));
+        self.tail = Some(BoxElement::leak(node));
         if self.head.is_none() {
             self.head = self.tail;
         }
         self.len += 1;
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Record<ListNode>> {
+    pub fn iter(&self) -> impl Iterator<Item = &Element<ListNode>> {
         LinkedListIterator::new(self)
     }
 
-    pub fn iter_mut(&self) -> impl Iterator<Item = &mut Record<ListNode>> {
+    pub fn iter_mut(&self) -> impl Iterator<Item = &mut Element<ListNode>> {
         LinkedListIteratorMut::new(self)
     }
 
@@ -117,23 +112,19 @@ impl Object<LinkedList> {
     }
 }
 
-impl ObjectType for LinkedList {
-    fn object_type() -> Tag {
-        Tag::LINKED_LIST
-    }
-
-    fn vtable() -> &'static ObjectVTable {
-        &LINKED_LIST_VTABLE
+impl ObjectLayout for LinkedList {
+    fn object_type() -> u16 {
+        ObjectType::LINKED_LIST.bits
     }
 }
 
 impl Drop for LinkedList {
     fn drop(&mut self) {
         if let Some(node) = self.head.take() {
-            let mut node = unsafe { BoxRecord::from_raw(node) };
+            let mut node = unsafe { BoxElement::from_raw(node) };
             while let Some(next) = node.next.take() {
                 node.prev = None;
-                node = unsafe { BoxRecord::from_raw(next) };
+                node = unsafe { BoxElement::from_raw(next) };
             }
             node.prev = None;
         }
@@ -142,7 +133,7 @@ impl Drop for LinkedList {
 
 struct LinkedListIterator<'a> {
     _list: &'a LinkedList,
-    next: Option<NonNull<Record<ListNode>>>,
+    next: Option<NonNull<Element<ListNode>>>,
 }
 
 impl<'a> LinkedListIterator<'a> {
@@ -153,7 +144,7 @@ impl<'a> LinkedListIterator<'a> {
 }
 
 impl<'a> Iterator for LinkedListIterator<'a> {
-    type Item = &'a Record<ListNode>;
+    type Item = &'a Element<ListNode>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(node) = self.next.take() {
@@ -170,7 +161,7 @@ impl<'a> Iterator for LinkedListIterator<'a> {
 
 struct LinkedListIteratorMut<'a> {
     _list: &'a LinkedList,
-    next: Option<NonNull<Record<ListNode>>>,
+    next: Option<NonNull<Element<ListNode>>>,
 }
 
 impl<'a> LinkedListIteratorMut<'a> {
@@ -181,7 +172,7 @@ impl<'a> LinkedListIteratorMut<'a> {
 }
 
 impl<'a> Iterator for LinkedListIteratorMut<'a> {
-    type Item = &'a mut Record<ListNode>;
+    type Item = &'a mut Element<ListNode>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(mut node) = self.next {
@@ -208,7 +199,7 @@ mod tests {
         // push back
         let mut list: BoxObject<LinkedList> = BoxObject::with_key(&[1, 2, 3]);
         for value in &values {
-            let mut node = BoxRecord::<ListNode>::with_capacity(1);
+            let mut node = BoxElement::<ListNode>::with_capacity(1);
             node.data_slice_mut()[0] = *value;
             list.push_back(node);
         }
@@ -223,7 +214,7 @@ mod tests {
         // push front
         let mut list: BoxObject<LinkedList> = BoxObject::with_key(&[1, 2, 3]);
         for value in values.iter().rev() {
-            let mut node = BoxRecord::<ListNode>::with_capacity(1);
+            let mut node = BoxElement::<ListNode>::with_capacity(1);
             node.data_slice_mut()[0] = *value;
             list.push_front(node);
         }
@@ -238,7 +229,7 @@ mod tests {
         // pop front
         let mut list: BoxObject<LinkedList> = BoxObject::with_key(&[1, 2, 3]);
         for value in &values {
-            let mut node = BoxRecord::<ListNode>::with_capacity(1);
+            let mut node = BoxElement::<ListNode>::with_capacity(1);
             node.data_slice_mut()[0] = *value;
             list.push_back(node);
         }
@@ -253,7 +244,7 @@ mod tests {
         // pop back
         let mut list: BoxObject<LinkedList> = BoxObject::with_key(&[1, 2, 3]);
         for value in values.iter().rev() {
-            let mut node = BoxRecord::<ListNode>::with_capacity(1);
+            let mut node = BoxElement::<ListNode>::with_capacity(1);
             node.data_slice_mut()[0] = *value;
             list.push_back(node);
         }

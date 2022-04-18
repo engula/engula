@@ -18,7 +18,7 @@ use std::{
     slice,
 };
 
-use super::{BoxRecord, Record, RecordLayout, Tag};
+use super::{BoxElement, Element, ElementLayout, ElementType};
 
 #[repr(C)]
 pub struct Entry {
@@ -69,13 +69,13 @@ impl Entry {
     }
 }
 
-impl RecordLayout for Entry {
-    fn record_type() -> Tag {
-        Tag::RECORD_ENTRY
+impl ElementLayout for Entry {
+    fn element_type() -> u16 {
+        ElementType::ENTRY.bits
     }
 
-    fn layout(val: &Record<Self>) -> Layout {
-        type Target = Record<Entry>;
+    fn layout(val: &Element<Self>) -> Layout {
+        type Target = Element<Entry>;
 
         let align = std::mem::align_of::<Target>();
         let fixed_size = std::mem::size_of::<Target>();
@@ -83,9 +83,9 @@ impl RecordLayout for Entry {
     }
 }
 
-impl BoxRecord<Entry> {
-    pub fn with_capacity(key_len: usize, value_len: usize) -> BoxRecord<Entry> {
-        type Target = Record<Entry>;
+impl BoxElement<Entry> {
+    pub fn with_capacity(key_len: usize, value_len: usize) -> BoxElement<Entry> {
+        type Target = Element<Entry>;
 
         let capacity = key_len + value_len;
         let align = std::mem::align_of::<Target>();
@@ -94,9 +94,9 @@ impl BoxRecord<Entry> {
         unsafe {
             let ptr_addr = alloc(layout) as *mut Target;
             let mut ptr = NonNull::new_unchecked(ptr_addr);
-            let uninit_record = ptr.as_uninit_mut();
-            uninit_record.write(Record::new(Entry::new(key_len as u32, value_len as u32)));
-            BoxRecord::from_raw(ptr)
+            let uninit_element = ptr.as_uninit_mut();
+            uninit_element.write(Element::new(Entry::new(key_len as u32, value_len as u32)));
+            BoxElement::from_raw(ptr)
         }
     }
 }

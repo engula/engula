@@ -16,5 +16,7 @@
 
 mod db;
 pub use db::Db;
+pub mod elements;
 mod key_space;
 pub mod objects;
+pub mod record;

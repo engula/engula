@@ -14,7 +14,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{key_space::KeySpace, objects::ObjectRef};
+use crate::{
+    key_space::KeySpace,
+    objects::{BoxObject, ObjectLayout, RawObject},
+};
 
 #[derive(Default, Clone)]
 pub struct Db {
@@ -31,23 +34,28 @@ struct DbState {
 }
 
 impl Db {
-    pub fn get(&self, key: &[u8]) -> Option<ObjectRef> {
+    pub fn get(&self, key: &[u8]) -> Option<RawObject> {
         let mut state = self.state.lock().unwrap();
-        state.key_space.get(key).cloned()
+        state.key_space.get(key)
     }
 
-    pub fn insert(&self, object_ref: ObjectRef) {
+    pub fn insert<T>(&self, object: BoxObject<T>)
+    where
+        T: ObjectLayout,
+    {
         let mut state = self.state.lock().unwrap();
 
-        let key = object_ref.key();
-        if let Some(old_object_ref) = state.key_space.insert(key, object_ref) {
-            old_object_ref.drop_in_place();
+        let key = object.key();
+        if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
+            raw_object.drop_in_place();
         }
     }
 
-    pub fn remove(&self, key: &[u8]) -> Option<ObjectRef> {
+    pub fn remove(&self, key: &[u8]) {
         let mut state = self.state.lock().unwrap();
-        state.key_space.remove(key)
+        if let Some(raw_object) = state.key_space.remove(key) {
+            raw_object.drop_in_place();
+        }
     }
 
     pub fn delete_keys<'a, K: IntoIterator<Item = &'a [u8]>>(&self, keys: K) -> u64 {

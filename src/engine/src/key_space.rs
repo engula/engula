@@ -15,7 +15,7 @@ use std::hash::{Hash, Hasher};
 
 use hashbrown::raw::RawTable;
 
-use crate::objects::ObjectRef;
+use crate::objects::RawObject;
 
 const MIN_NUM_BUCKETS: usize = 16;
 const ADVANCE_STEP: usize = 64;
@@ -23,7 +23,7 @@ const ADVANCE_STEP: usize = 64;
 #[repr(C)]
 struct ObjectEntry {
     hash: u64,
-    object_ref: ObjectRef,
+    raw_object: RawObject,
 }
 
 pub struct KeySpace {
@@ -39,25 +39,22 @@ impl KeySpace {
         }
     }
 
-    pub fn insert(&mut self, key: &[u8], val: ObjectRef) -> Option<ObjectRef> {
+    pub fn insert(&mut self, key: &[u8], raw_object: RawObject) -> Option<RawObject> {
         self.advance_rehash();
 
         let hash = make_hash(&key);
-        let entry = ObjectEntry {
-            object_ref: val,
-            hash,
-        };
+        let entry = ObjectEntry { raw_object, hash };
 
         if let Some(next_table) = self.next_space.as_mut() {
             if let Some(record) = next_table.get_mut(hash, equivalent_key(key)) {
-                Some(std::mem::replace(record, entry).object_ref)
+                Some(std::mem::replace(record, entry).raw_object)
             } else {
                 unsafe { next_table.insert_no_grow(hash, entry) };
                 self.current_space.remove_entry(hash, equivalent_key(key));
                 None
             }
         } else if let Some(record) = self.current_space.get_mut(hash, equivalent_key(key)) {
-            Some(std::mem::replace(record, entry).object_ref)
+            Some(std::mem::replace(record, entry).raw_object)
         } else {
             unsafe { self.current_space.insert_no_grow(hash, entry) };
             self.ensure_enough_space();
@@ -65,52 +62,34 @@ impl KeySpace {
         }
     }
 
-    pub fn remove(&mut self, key: &[u8]) -> Option<ObjectRef> {
+    pub fn remove(&mut self, key: &[u8]) -> Option<RawObject> {
         self.advance_rehash();
 
         let hash = make_hash(&key);
         if let Some(next_table) = self.next_space.as_mut() {
             if let Some(record) = next_table.remove_entry(hash, equivalent_key(key)) {
-                return Some(record.object_ref);
+                return Some(record.raw_object);
             }
         }
 
-        if let Some(record) = self.current_space.remove_entry(hash, equivalent_key(key)) {
-            Some(record.object_ref)
-        } else {
-            None
-        }
+        self.current_space
+            .remove_entry(hash, equivalent_key(key))
+            .map(|record| record.raw_object)
     }
 
-    #[allow(dead_code)]
-    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut ObjectRef> {
+    pub fn get(&mut self, key: &[u8]) -> Option<RawObject> {
         self.advance_rehash();
 
         let hash = make_hash(&key);
         if let Some(next_table) = self.next_space.as_mut() {
             if let Some(entry) = next_table.get_mut(hash, equivalent_key(key)) {
-                return Some(&mut entry.object_ref);
+                return Some(entry.raw_object);
             }
         }
-        match self.current_space.get_mut(hash, equivalent_key(key)) {
-            Some(entry) => Some(&mut entry.object_ref),
-            None => None,
-        }
-    }
 
-    pub fn get(&mut self, key: &[u8]) -> Option<&ObjectRef> {
-        self.advance_rehash();
-
-        let hash = make_hash(&key);
-        if let Some(next_table) = self.next_space.as_mut() {
-            if let Some(entry) = next_table.get_mut(hash, equivalent_key(key)) {
-                return Some(&entry.object_ref);
-            }
-        }
-        match self.current_space.get(hash, equivalent_key(key)) {
-            Some(entry) => Some(&entry.object_ref),
-            None => None,
-        }
+        self.current_space
+            .get(hash, equivalent_key(key))
+            .map(|entry| entry.raw_object)
     }
 
     pub fn advance_rehash(&mut self) {
@@ -168,5 +147,5 @@ where
 }
 
 fn equivalent_key(k: &[u8]) -> impl Fn(&ObjectEntry) -> bool + '_ {
-    move |x| k.eq(x.object_ref.key())
+    move |x| k.eq(x.raw_object.key())
 }

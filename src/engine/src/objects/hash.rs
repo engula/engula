@@ -16,36 +16,31 @@ use std::hash::Hash;
 
 use hashbrown::raw::RawTable;
 
-use super::{
-    records::{entry::Entry, BoxRecord, Record},
-    ObjectType, ObjectVTable, Tag,
-};
-use crate::object_vtable;
-
-object_vtable!(HashMap, HASH_MAP_VTABLE);
+use super::{ObjectLayout, ObjectType};
+use crate::elements::{entry::Entry, BoxElement, Element};
 
 #[repr(C)]
 #[derive(Default)]
 pub struct HashMap {
-    current: RawTable<BoxRecord<Entry>>,
+    current: RawTable<BoxElement<Entry>>,
 }
 
 impl HashMap {
-    pub fn get(&self, key: &[u8]) -> Option<&Record<Entry>> {
+    pub fn get(&self, key: &[u8]) -> Option<&Element<Entry>> {
         match self.current.get(make_hash(key), equivalent_key(key)) {
             Some(entry) => Some(&*entry),
             None => None,
         }
     }
 
-    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut Record<Entry>> {
+    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut Element<Entry>> {
         match self.current.get_mut(make_hash(key), equivalent_key(key)) {
             Some(entry) => Some(&mut *entry),
             None => None,
         }
     }
 
-    pub fn insert(&mut self, entry: BoxRecord<Entry>) -> Option<BoxRecord<Entry>> {
+    pub fn insert(&mut self, entry: BoxElement<Entry>) -> Option<BoxElement<Entry>> {
         let key = entry.data_slice().0;
         let code = make_hash(key);
 
@@ -58,13 +53,9 @@ impl HashMap {
     }
 }
 
-impl ObjectType for HashMap {
-    fn object_type() -> Tag {
-        Tag::HASH_TABLE
-    }
-
-    fn vtable() -> &'static super::ObjectVTable {
-        &HASH_MAP_VTABLE
+impl ObjectLayout for HashMap {
+    fn object_type() -> u16 {
+        ObjectType::HASH_TABLE.bits
     }
 }
 
@@ -79,11 +70,11 @@ where
     state.finish()
 }
 
-fn equivalent_key(k: &[u8]) -> impl Fn(&BoxRecord<Entry>) -> bool + '_ {
+fn equivalent_key(k: &[u8]) -> impl Fn(&BoxElement<Entry>) -> bool + '_ {
     move |x| k.eq((*x).data_slice().0)
 }
 
-fn make_entry_hash(entry: &BoxRecord<Entry>) -> u64 {
+fn make_entry_hash(entry: &BoxElement<Entry>) -> u64 {
     use core::hash::Hasher;
     use std::collections::hash_map::DefaultHasher;
     let mut state = DefaultHasher::new();
@@ -107,7 +98,7 @@ mod tests {
         assert!(hash_map.get(key).is_none());
 
         // 2. insert
-        let mut entry = BoxRecord::<Entry>::with_capacity(2, 5);
+        let mut entry = BoxElement::<Entry>::with_capacity(2, 5);
         let (key_buf, val_buf) = entry.data_slice_mut();
         key_buf.copy_from_slice(key);
         val_buf.copy_from_slice(&[0u8, 1, 2, 3, 4]);
@@ -118,7 +109,7 @@ mod tests {
         assert!(hash_map.get(key).is_some());
 
         // 4. overwrite and got old value
-        let mut entry = BoxRecord::<Entry>::with_capacity(2, 5);
+        let mut entry = BoxElement::<Entry>::with_capacity(2, 5);
         let (key_buf, val_buf) = entry.data_slice_mut();
         key_buf.copy_from_slice(key);
         val_buf.copy_from_slice(&[2u8, 3, 4, 5, 6]);

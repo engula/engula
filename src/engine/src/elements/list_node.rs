@@ -18,13 +18,12 @@ use std::{
     ptr::NonNull,
 };
 
-use super::{array::Array, BoxRecord, Record, RecordLayout};
-use crate::objects::Tag;
+use super::{array::Array, BoxElement, Element, ElementLayout, ElementType};
 
 #[repr(C)]
 pub struct ListNode {
-    pub prev: Option<NonNull<Record<ListNode>>>,
-    pub next: Option<NonNull<Record<ListNode>>>,
+    pub prev: Option<NonNull<Element<ListNode>>>,
+    pub next: Option<NonNull<Element<ListNode>>>,
     data: Array,
 }
 
@@ -59,13 +58,13 @@ impl Drop for ListNode {
     }
 }
 
-impl RecordLayout for ListNode {
-    fn record_type() -> Tag {
-        Tag::RECORD_LIST_NODE
+impl ElementLayout for ListNode {
+    fn element_type() -> u16 {
+        ElementType::LIST_NODE.bits
     }
 
-    fn layout(val: &Record<Self>) -> Layout {
-        type Target = Record<ListNode>;
+    fn layout(val: &Element<Self>) -> Layout {
+        type Target = Element<ListNode>;
 
         let align = std::mem::align_of::<Target>();
         let fixed_size = std::mem::size_of::<Target>();
@@ -73,18 +72,18 @@ impl RecordLayout for ListNode {
     }
 }
 
-impl BoxRecord<ListNode> {
-    pub fn with_capacity(size: usize) -> BoxRecord<ListNode> {
-        type Target = Record<ListNode>;
+impl BoxElement<ListNode> {
+    pub fn with_capacity(size: usize) -> BoxElement<ListNode> {
+        type Target = Element<ListNode>;
 
         let align = std::mem::align_of::<Target>();
         let fixed_size = std::mem::size_of::<Target>();
         let layout = Layout::from_size_align(fixed_size + size, align).unwrap();
         unsafe {
             let mut ptr = NonNull::new_unchecked(alloc(layout) as *mut Target);
-            let uninit_record = ptr.as_uninit_mut();
-            uninit_record.write(Record::new(ListNode::new(size as u32)));
-            BoxRecord::from_raw(ptr)
+            let uninit_element = ptr.as_uninit_mut();
+            uninit_element.write(Element::new(ListNode::new(size as u32)));
+            BoxElement::from_raw(ptr)
         }
     }
 }

@@ -18,18 +18,13 @@ use std::{
     ptr::NonNull,
 };
 
-use super::{
-    records::{array::Array, BoxRecord, Record, RecordLayout},
-    BoxObject, Object, ObjectType, ObjectVTable, Tag,
-};
-use crate::object_vtable;
-
-object_vtable!(RawString, RAW_STRING_VTABLE);
+use super::{BoxObject, Object, ObjectLayout, ObjectType};
+use crate::elements::{array::Array, BoxElement, Element, ElementLayout};
 
 #[repr(C)]
 #[derive(Default)]
 pub struct RawString {
-    ptr: Option<NonNull<Record<Array>>>,
+    ptr: Option<NonNull<Element<Array>>>,
 }
 
 impl Deref for RawString {
@@ -59,27 +54,23 @@ impl Drop for RawString {
     }
 }
 
-impl ObjectType for RawString {
-    fn object_type() -> Tag {
-        Tag::RAW_STRING
-    }
-
-    fn vtable() -> &'static super::ObjectVTable {
-        &RAW_STRING_VTABLE
+impl ObjectLayout for RawString {
+    fn object_type() -> u16 {
+        ObjectType::RAW_STRING.bits
     }
 }
 
 impl Object<RawString> {
-    pub fn update_value(&mut self, mut value: BoxRecord<Array>) {
+    pub fn update_value(&mut self, mut value: BoxElement<Array>) {
         value.associated_with(&self.meta);
-        if let Some(old_value) = self.value.ptr.replace(BoxRecord::leak(value)) {
-            unsafe { BoxRecord::from_raw(old_value) };
+        if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
+            unsafe { BoxElement::from_raw(old_value) };
         }
     }
 }
 
 impl BoxObject<RawString> {
-    pub fn with_key_value(key: &[u8], value: BoxRecord<Array>) -> BoxObject<RawString> {
+    pub fn with_key_value(key: &[u8], value: BoxElement<Array>) -> BoxObject<RawString> {
         let mut object: BoxObject<RawString> = BoxObject::with_key(key);
         object.update_value(value);
         object
