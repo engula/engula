@@ -54,10 +54,15 @@ impl Ping {
     /// PING [message]
     /// ```
     pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Ping> {
-        match parse.next_string() {
-            Ok(msg) => Ok(Ping::new(Some(msg))),
-            Err(ParseError::EndOfStream) => Ok(Ping::default()),
-            Err(e) => Err(e.into()),
+        let cmd = match parse.next_string() {
+            Ok(msg) => Ping::new(Some(msg)),
+            Err(ParseError::EndOfStream) => Ping::default(),
+            Err(e) => return Err(e.into()),
+        };
+
+        match parse.finish() {
+            Ok(()) => Ok(cmd),
+            Err(_) => Err("wrong number of arguments for 'ping' command".into()),
         }
     }
 

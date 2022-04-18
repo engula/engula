@@ -20,7 +20,7 @@ use mio::{event::Event, net::TcpStream};
 use tracing::trace;
 
 use super::{interrupted, would_block};
-use crate::{Command, Error, ReadBuf, Result, WriteBuf};
+use crate::{cmd, Error, ReadBuf, Result, WriteBuf};
 
 pub struct Connection {
     db: Db,
@@ -72,9 +72,7 @@ impl Connection {
             if bytes_read != 0 {
                 self.read_buf.buf.put_slice(&received_data[..bytes_read]);
                 while let Some(frame) = self.read_buf.parse_frame() {
-                    let cmd = Command::from_frame(frame).unwrap();
-                    let reply = cmd.apply(&self.db).unwrap();
-                    self.write_buf.write_frame(&reply);
+                    self.write_buf.write_frame(&cmd::apply(frame, &self.db));
                 }
             }
 

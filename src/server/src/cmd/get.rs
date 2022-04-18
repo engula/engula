@@ -65,7 +65,10 @@ impl Get {
         // input is fully consumed, then an error is returned.
         let key = parse.next_bytes()?;
 
-        Ok(Get { key })
+        match parse.finish() {
+            Ok(()) => Ok(Get { key }),
+            Err(_) => Err("wrong number of arguments for 'get' command".into()),
+        }
     }
 
     /// Apply the `Get` command to the specified `Db` instance.
