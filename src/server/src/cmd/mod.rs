@@ -32,7 +32,7 @@ use crate::{Db, Frame, Parse, ParseError};
 pub fn apply(frame: Frame, db: &Db) -> Frame {
     match Command::from_frame(frame) {
         Ok(cmd) => cmd.apply(db).unwrap(),
-        Err(e) => Frame::Error(format!("ERR {}", e.to_string())),
+        Err(e) => Frame::Error(format!("ERR {}", e)),
     }
 }
 
