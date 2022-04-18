@@ -22,7 +22,7 @@ mod error;
 pub use error::{Error, Result};
 
 mod config;
-pub use config::Config;
+pub use config::{Config, DriverMode};
 
 mod buffer;
 pub use buffer::{ReadBuf, WriteBuf};
@@ -38,18 +38,15 @@ use frame::{Error as FrameError, Frame};
 mod parse;
 use parse::{Parse, ParseError};
 
+mod mio;
+
 #[cfg(target_os = "linux")]
 mod uio;
 
-#[cfg(target_os = "linux")]
 pub fn run(config: Config) -> Result<()> {
-    uio::Server::new(config)?.run()
-}
-
-#[cfg(not(target_os = "linux"))]
-mod tokio;
-
-#[cfg(not(target_os = "linux"))]
-pub fn run(config: Config) -> Result<()> {
-    tokio::Server::new(config).run()
+    match config.driver_mode {
+        DriverMode::Mio => mio::Server::new(config)?.run(),
+        #[cfg(target_os = "linux")]
+        DriverMode::Uio => uio::Server::new(config)?.run(),
+    }
 }

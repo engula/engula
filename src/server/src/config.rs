@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[derive(Debug, Copy, Clone)]
+pub enum DriverMode {
+    Mio,
+    #[cfg(target_os = "linux")]
+    Uio,
+}
+
 pub struct Config {
     pub addr: String,
-    pub num_threads: usize,
+    pub driver_mode: DriverMode,
 }

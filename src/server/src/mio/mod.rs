@@ -13,9 +13,16 @@
 // limitations under the License.
 
 mod connection;
-pub use connection::Connection;
 mod server;
+
+use std::io;
+
 pub use server::Server;
-mod session;
-pub use session::Session;
-mod worker;
+
+pub fn would_block(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::WouldBlock
+}
+
+pub fn interrupted(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::Interrupted
+}
