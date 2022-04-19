@@ -15,6 +15,7 @@
 pub mod hash;
 pub mod list;
 pub mod set;
+pub mod sorted_set;
 pub mod string;
 
 use std::{
@@ -26,9 +27,11 @@ use std::{
 
 use bitflags::bitflags;
 
+pub use self::{
+    hash::HashMap, list::LinkedList, set::HashSet, sorted_set::SortedSet, string::RawString,
+};
 use crate::{
     elements::{BoxElement, Element, ElementLayout},
-    objects::{hash::HashMap, list::LinkedList, set::HashSet, string::RawString},
     record::{RecordMeta, RecordType, RECORD_OBJECT},
 };
 
@@ -39,6 +42,7 @@ bitflags! {
         const LINKED_LIST = 0x1 << 1;
         const HASH_TABLE = 0x1 << 2;
         const SET = 0x1 << 3;
+        const SORTED_SET = 0x1 << 4;
     }
 }
 
@@ -245,6 +249,7 @@ impl RawObject {
         const LINKED_LIST: u16 = ObjectType::LINKED_LIST.bits;
         const HASH_TABLE: u16 = ObjectType::HASH_TABLE.bits;
         const SET: u16 = ObjectType::SET.bits;
+        const SORTED_SET: u16 = ObjectType::SORTED_SET.bits;
 
         unsafe {
             let meta = self.object_meta();
@@ -253,6 +258,7 @@ impl RawObject {
                 LINKED_LIST => self.as_ref::<Object<LinkedList>>().key(),
                 HASH_TABLE => self.as_ref::<Object<HashMap>>().key(),
                 SET => self.as_ref::<Object<HashSet>>().key(),
+                SORTED_SET => self.as_ref::<Object<SortedSet>>().key(),
                 v => panic!("unknown object type {}", v),
             }
         }
@@ -263,6 +269,7 @@ impl RawObject {
         const LINKED_LIST: u16 = ObjectType::LINKED_LIST.bits;
         const HASH_TABLE: u16 = ObjectType::HASH_TABLE.bits;
         const SET: u16 = ObjectType::SET.bits;
+        const SORTED_SET: u16 = ObjectType::SORTED_SET.bits;
 
         unsafe {
             let meta = self.object_meta();
@@ -278,6 +285,9 @@ impl RawObject {
                 }
                 SET => {
                     BoxObject::from_raw(self.ptr.cast::<Object<HashSet>>());
+                }
+                SORTED_SET => {
+                    BoxObject::from_raw(self.ptr.cast::<Object<SortedSet>>());
                 }
                 v => panic!("unknown object type {}", v),
             }
