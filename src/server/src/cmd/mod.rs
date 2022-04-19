@@ -29,6 +29,13 @@ pub use unknown::Unknown;
 
 use crate::{Db, Frame, Parse, ParseError};
 
+pub fn apply(frame: Frame, db: &Db) -> Frame {
+    match Command::from_frame(frame) {
+        Ok(cmd) => cmd.apply(db).unwrap(),
+        Err(e) => Frame::Error(format!("ERR {}", e)),
+    }
+}
+
 /// Enumeration of supported Redis commands.
 ///
 /// Methods called on `Command` are delegated to the command implementation.

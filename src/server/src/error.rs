@@ -26,7 +26,7 @@ pub enum Error {
     Frame(#[from] FrameError),
     #[error(transparent)]
     Parse(#[from] ParseError),
-    #[error("unknown error: {0}")]
+    #[error("{0}")]
     Unknown(String),
 }
 

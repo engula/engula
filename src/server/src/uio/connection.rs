@@ -20,7 +20,7 @@ use io_uring::{cqueue, opcode, squeue, types};
 use tracing::{error, trace};
 
 use super::{check_io_result, IoDriver, Token};
-use crate::{Command, ReadBuf, Result, WriteBuf};
+use crate::{cmd, ReadBuf, Result, WriteBuf};
 
 pub struct Connection {
     id: u64,
@@ -82,9 +82,7 @@ impl Connection {
 
     fn process(&mut self) {
         while let Some(frame) = self.read_buf.parse_frame() {
-            let cmd = Command::from_frame(frame).unwrap();
-            let reply = cmd.apply(&self.db).unwrap();
-            self.write_buf.write_frame(&reply);
+            self.write_buf.write_frame(&cmd::apply(frame, &self.db));
         }
     }
 

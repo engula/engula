@@ -29,7 +29,6 @@ pub use buffer::{ReadBuf, WriteBuf};
 
 #[allow(dead_code)]
 mod cmd;
-use cmd::Command;
 
 #[allow(dead_code)]
 mod frame;
