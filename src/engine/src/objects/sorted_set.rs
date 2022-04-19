@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(ptr_as_uninit)]
+use std::collections::{BTreeMap, HashMap};
 
-mod db;
-pub use db::Db;
-pub mod elements;
-mod key_space;
-pub mod objects;
-pub mod record;
+use super::{ObjectLayout, ObjectType};
+
+#[repr(C)]
+pub struct SortedSet {
+    scores: BTreeMap<f64, String>,
+    values: HashMap<String, f64>,
+}
+
+impl ObjectLayout for SortedSet {
+    fn object_type() -> u16 {
+        ObjectType::SORTED_SET.bits
+    }
+}
