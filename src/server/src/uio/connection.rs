@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::os::unix::io::RawFd;
+use std::{
+    os::unix::io::RawFd,
+    time::{Duration, Instant},
+};
 
 use bytes::BufMut;
 use engula_engine::Db;
@@ -29,6 +32,7 @@ pub struct Connection {
     db: Db,
     read_buf: ReadBuf,
     write_buf: WriteBuf,
+    last_interaction: Instant,
     num_inflights: usize,
 }
 
@@ -41,10 +45,15 @@ impl Connection {
             db,
             read_buf: ReadBuf::default(),
             write_buf: WriteBuf::default(),
+            last_interaction: Instant::now(),
             num_inflights: 0,
         };
         conn.prepare_read();
         conn
+    }
+
+    pub fn elapsed_from_last_interation(&self) -> Duration {
+        self.last_interaction.elapsed()
     }
 
     // Handles a completion event.
@@ -52,6 +61,7 @@ impl Connection {
     // Returns true if the connection should be dropped.
     pub fn tick(&mut self, cqe: cqueue::Entry) -> bool {
         self.num_inflights -= 1;
+        self.last_interaction = Instant::now();
 
         let op = Token::op(cqe.user_data());
         let result = check_io_result(cqe.result());
