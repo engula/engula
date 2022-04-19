@@ -17,31 +17,40 @@ use std::hash::Hash;
 use hashbrown::raw::RawTable;
 
 use super::{ObjectLayout, ObjectType};
-use crate::elements::{entry::Entry, BoxElement, Element};
+use crate::elements::{entry::Entry, BoxElement};
 
-#[repr(C)]
-#[derive(Default)]
-pub struct HashMap {
-    current: RawTable<BoxElement<Entry>>,
+pub trait HashKey {
+    fn key(&self) -> &[u8];
 }
 
-impl HashMap {
-    pub fn get(&self, key: &[u8]) -> Option<&Element<Entry>> {
+impl HashKey for BoxElement<Entry> {
+    fn key(&self) -> &[u8] {
+        self.data_slice().0
+    }
+}
+
+#[repr(C)]
+pub struct RawHashMap<T: HashKey> {
+    current: RawTable<T>,
+}
+
+impl<T: HashKey> RawHashMap<T> {
+    pub fn get(&self, key: &[u8]) -> Option<&T> {
         match self.current.get(make_hash(key), equivalent_key(key)) {
             Some(entry) => Some(&*entry),
             None => None,
         }
     }
 
-    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut Element<Entry>> {
+    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut T> {
         match self.current.get_mut(make_hash(key), equivalent_key(key)) {
             Some(entry) => Some(&mut *entry),
             None => None,
         }
     }
 
-    pub fn insert(&mut self, entry: BoxElement<Entry>) -> Option<BoxElement<Entry>> {
-        let key = entry.data_slice().0;
+    pub fn insert(&mut self, entry: T) -> Option<T> {
+        let key = entry.key();
         let code = make_hash(key);
 
         if let Some(old_entry) = self.current.get_mut(code, equivalent_key(key)) {
@@ -52,6 +61,16 @@ impl HashMap {
         }
     }
 }
+
+impl<T: HashKey> Default for RawHashMap<T> {
+    fn default() -> Self {
+        RawHashMap {
+            current: RawTable::default(),
+        }
+    }
+}
+
+pub type HashMap = RawHashMap<BoxElement<Entry>>;
 
 impl ObjectLayout for HashMap {
     fn object_type() -> u16 {
@@ -70,15 +89,15 @@ where
     state.finish()
 }
 
-fn equivalent_key(k: &[u8]) -> impl Fn(&BoxElement<Entry>) -> bool + '_ {
-    move |x| k.eq((*x).data_slice().0)
+fn equivalent_key<T: HashKey>(k: &[u8]) -> impl Fn(&T) -> bool + '_ {
+    move |x| k.eq(x.key())
 }
 
-fn make_entry_hash(entry: &BoxElement<Entry>) -> u64 {
+fn make_entry_hash<T: HashKey>(entry: &T) -> u64 {
     use core::hash::Hasher;
     use std::collections::hash_map::DefaultHasher;
     let mut state = DefaultHasher::new();
-    entry.data_slice().0.hash(&mut state);
+    entry.key().hash(&mut state);
     state.finish()
 }
 
