@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 #[derive(Debug, Copy, Clone)]
 pub enum DriverMode {
     Mio,
@@ -22,4 +24,5 @@ pub enum DriverMode {
 pub struct Config {
     pub addr: String,
     pub driver_mode: DriverMode,
+    pub connection_timeout: Option<Duration>,
 }

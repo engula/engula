@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use anyhow::Result;
 use clap::Parser;
 use engula_server::Config;
@@ -58,13 +60,20 @@ struct StartCommand {
     addr: String,
     #[clap(long, default_value = "mio", arg_enum)]
     driver_mode: DriverMode,
+    #[clap(long, default_value = "0")]
+    timeout: u64,
 }
 
 impl StartCommand {
     fn run(self) -> Result<()> {
+        let connection_timeout = match self.timeout {
+            0 => None,
+            timeout => Some(Duration::from_secs(timeout)),
+        };
         let config = Config {
             addr: self.addr,
             driver_mode: self.driver_mode.into(),
+            connection_timeout,
         };
         engula_server::run(config)?;
         Ok(())

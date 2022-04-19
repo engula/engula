@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    time::{Duration, Instant},
+};
 
 use bytes::BufMut;
 use engula_engine::Db;
@@ -27,6 +30,7 @@ pub struct Connection {
     stream: TcpStream,
     read_buf: ReadBuf,
     write_buf: WriteBuf,
+    last_interaction: Instant,
 }
 
 impl Connection {
@@ -36,6 +40,7 @@ impl Connection {
             read_buf: ReadBuf::default(),
             write_buf: WriteBuf::default(),
             stream,
+            last_interaction: Instant::now(),
         }
     }
 
@@ -43,8 +48,14 @@ impl Connection {
         &mut self.stream
     }
 
+    pub fn elapsed_from_last_interation(&self) -> Duration {
+        self.last_interaction.elapsed()
+    }
+
     pub fn handle_connection_event(&mut self, event: &Event) -> Result<bool> {
         trace!("handle_connection_event {:?}", event);
+
+        self.last_interaction = Instant::now();
 
         if event.is_readable() {
             let mut connection_closed = false;
