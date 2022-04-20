@@ -75,7 +75,13 @@ impl Server {
             if cq.is_empty() {
                 break;
             }
+
             for cqe in &mut cq {
+                if cqe.result() == -libc::ETIME {
+                    // skip timeout entry
+                    continue;
+                }
+
                 let id = Token::id(cqe.user_data());
                 if id == self.listener.id() {
                     self.handle_listener(cqe)?;
