@@ -78,7 +78,7 @@ impl Buf {
     }
 
     #[inline]
-    fn readable_slice<'a>(&'a self) -> &'a [u8] {
+    fn readable_slice(&self) -> &'_ [u8] {
         let len = self.wpos - self.rpos;
         unsafe { std::slice::from_raw_parts_mut(self.ptr.add(self.rpos), len) }
     }
@@ -125,7 +125,7 @@ impl BufChain {
         b
     }
 
-    pub fn as_consume_read_view<'a>(&'a self) -> impl Iterator<Item = &'a [u8]> + Clone {
+    pub fn as_consume_read_view(&self) -> impl Iterator<Item = &'_ [u8]> + Clone {
         let buf_cnt = self.wbuf_pos - self.rbuf_pos + 1;
         let mut buf = &self.chain;
         let mut pos = self.rbuf_pos;

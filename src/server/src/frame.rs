@@ -257,7 +257,7 @@ fn skip(src: &mut buffer::Cursor<'_>, n: usize) -> Result<(), Error> {
 }
 
 /// Read a new-line terminated decimal
-fn get_decimal<'a>(src: &'a mut buffer::Cursor<'_>) -> Result<u64, Error> {
+fn get_decimal(src: &mut buffer::Cursor<'_>) -> Result<u64, Error> {
     use atoi::atoi;
 
     let lines = get_line(src)?;

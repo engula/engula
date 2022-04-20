@@ -73,11 +73,11 @@ impl<'b> Cursor<'b> {
         buf[self.buf_pos.dat_idx]
     }
 
-    pub(crate) fn get_line<'a>(&'a mut self) -> Vec<&'a [u8]> {
+    pub(crate) fn get_line(&mut self) -> Vec<&'_ [u8]> {
         const WAIT_R: u8 = 1;
         const WAIT_N: u8 = 2;
 
-        let mut iovs = self.chain.as_consume_read_view().skip(self.buf_pos.buf_idx);
+        let iovs = self.chain.as_consume_read_view().skip(self.buf_pos.buf_idx);
 
         let mut buf_idx = self.buf_pos.buf_idx;
         let mut data_idx = self.buf_pos.dat_idx;
@@ -85,7 +85,7 @@ impl<'b> Cursor<'b> {
         let mut get_line_state = WAIT_R;
         let mut lines = Vec::with_capacity(2);
         let mut new_offset = self.offset;
-        while let Some(buf) = iovs.next() {
+        for buf in iovs {
             if buf.is_empty() {
                 return Vec::new();
             }
