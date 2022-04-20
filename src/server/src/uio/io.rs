@@ -14,7 +14,7 @@
 
 use std::{io, rc::Rc};
 
-use io_uring::{squeue, CompletionQueue, IoUring};
+use io_uring::{opcode, squeue, types, CompletionQueue, IoUring};
 
 use crate::Result;
 
@@ -31,6 +31,13 @@ impl IoDriver {
 
     pub fn wait(&mut self, want: usize) -> Result<usize> {
         let io = unsafe { Rc::get_mut_unchecked(&mut self.io) };
+        let ts = types::Timespec::new().sec(1);
+        let timeout = opcode::Timeout::new(&ts).build();
+        unsafe {
+            io.submission()
+                .push(&timeout)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        }
         let n = io.submit_and_wait(want)?;
         Ok(n)
     }

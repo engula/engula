@@ -16,11 +16,12 @@ use std::{
     collections::HashMap,
     net::{TcpListener, TcpStream},
     os::unix::io::{FromRawFd, IntoRawFd},
+    time::Duration,
 };
 
 use engula_engine::Db;
 use io_uring::cqueue;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 use super::{Connection, IoDriver, Listener, Token};
 use crate::{Config, Result};
@@ -30,6 +31,7 @@ pub struct Server {
     io: IoDriver,
     last_id: u64,
     listener: Listener,
+    connection_timeout: Option<Duration>,
     connections: HashMap<u64, Connection>,
 }
 
@@ -49,6 +51,7 @@ impl Server {
             io,
             last_id: 0,
             listener,
+            connection_timeout: config.connection_timeout,
             connections: HashMap::new(),
         })
     }
@@ -72,7 +75,13 @@ impl Server {
             if cq.is_empty() {
                 break;
             }
+
             for cqe in &mut cq {
+                if cqe.result() == -libc::ETIME {
+                    // skip timeout entry
+                    continue;
+                }
+
                 let id = Token::id(cqe.user_data());
                 if id == self.listener.id() {
                     self.handle_listener(cqe)?;
@@ -80,6 +89,17 @@ impl Server {
                     self.handle_connection(id, cqe)?;
                 }
             }
+        }
+
+        if let Some(timeout) = self.connection_timeout {
+            self.connections.retain(|token, connection| {
+                if connection.elapsed_from_last_interation() > timeout {
+                    trace!(token = token, "closing idle client");
+                    false
+                } else {
+                    true
+                }
+            });
         }
 
         Ok(())

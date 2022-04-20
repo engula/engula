@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use engula_engine::Db;
 use mio::{net::TcpListener, Events, Interest, Poll, Token};
@@ -27,6 +27,7 @@ pub struct Server {
     db: Db,
     next: Token,
     listener: TcpListener,
+    connection_timeout: Option<Duration>,
     connections: HashMap<Token, Connection>,
 }
 
@@ -41,17 +42,19 @@ impl Server {
             db: Db::default(),
             next: Token(SERVER.0 + 1),
             listener,
+            connection_timeout: config.connection_timeout,
             connections: HashMap::new(),
         })
     }
 
     pub fn run(&mut self) -> Result<()> {
+        let tick = Duration::from_millis(500);
         let mut poll = Poll::new()?;
         let mut events = Events::with_capacity(128);
         poll.registry()
             .register(&mut self.listener, SERVER, Interest::READABLE)?;
         loop {
-            poll.poll(&mut events, None)?;
+            poll.poll(&mut events, Some(tick))?;
             for event in events.iter() {
                 match event.token() {
                     SERVER => loop {
@@ -83,6 +86,18 @@ impl Server {
                         }
                     }
                 }
+            }
+
+            if let Some(timeout) = self.connection_timeout {
+                self.connections.retain(|token, connection| {
+                    if connection.elapsed_from_last_interation() > timeout {
+                        trace!(token = token.0, "closing idle client");
+                        poll.registry().deregister(connection.stream()).unwrap();
+                        false
+                    } else {
+                        true
+                    }
+                });
             }
         }
     }
