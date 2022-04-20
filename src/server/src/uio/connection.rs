@@ -110,7 +110,7 @@ impl Connection {
 
     fn prepare_read(&mut self) {
         let token = Token::new(self.id, opcode::Readv::CODE);
-        let (iovs, iovs_len, tlen) = self.read_buf.buf.as_io_slice();
+        let (iovs, iovs_len, tlen) = self.read_buf.buf.as_io_slice_mut();
         let sqe = opcode::Readv::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
@@ -151,7 +151,7 @@ impl Connection {
 
     fn prepare_write(&mut self) {
         let token = Token::new(self.id, opcode::Writev::CODE);
-        let (iovs, iovs_len, tlen) = self.write_buf.buf.as_io_slice_mut();
+        let (iovs, iovs_len, tlen) = self.write_buf.buf.as_io_slice();
         let sqe = opcode::Writev::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);

@@ -84,7 +84,7 @@ impl Buf {
     }
 
     #[inline]
-    fn write_ptr(&self) -> (*mut u8, usize) {
+    fn fill_ptr(&self) -> (*mut u8, usize) {
         let len = self.end - self.wpos;
         unsafe { (self.ptr.add(self.wpos), len) }
     }
@@ -94,8 +94,8 @@ pub struct BufChain {
     pool: Rc<RefCell<Pool>>,
 
     pub chain: Option<&'static mut Buf>,
-    wiovs: Option<Vec<IoSlice<'static>>>,
-    riovs: Option<Vec<IoSliceMut<'static>>>,
+    pub riovs: Option<Vec<IoSliceMut<'static>>>,
+    pub wiovs: Option<Vec<IoSlice<'static>>>,
     buf_cnt: usize,
 
     pub rbuf_pos: usize,
@@ -111,8 +111,8 @@ impl BufChain {
             buf_cnt: pre_init_cnt,
             rbuf_pos: 0,
             wbuf_pos: 0,
-            wiovs: None,
             riovs: None,
+            wiovs: None,
         };
         let p = b.pool.clone();
         let mut v = (*p).borrow_mut();
@@ -150,7 +150,7 @@ impl BufChain {
         .take(buf_cnt)
     }
 
-    pub fn as_io_slice(&mut self) -> (*const libc::iovec, u32, usize) {
+    pub fn as_io_slice_mut(&mut self) -> (*const libc::iovec, u32, usize) {
         let buf_cnt = self.wbuf_pos - self.rbuf_pos + 1;
         let mut pos = self.rbuf_pos;
         let mut buf = &self.chain;
@@ -165,11 +165,11 @@ impl BufChain {
         let mut curr_buf = buf.as_ref().unwrap();
         let mut total_len = 0;
 
-        let mut iovs = self.wiovs.take().unwrap_or_default();
+        let mut iovs = self.riovs.take().unwrap_or_default();
         iovs.clear();
         while iovs.len() < buf_cnt {
-            let (iov_base, iov_len) = curr_buf.write_ptr();
-            iovs.push(IoSlice::new(unsafe {
+            let (iov_base, iov_len) = curr_buf.fill_ptr();
+            iovs.push(IoSliceMut::new(unsafe {
                 std::slice::from_raw_parts_mut(iov_base, iov_len)
             }));
             total_len += iov_len;
@@ -180,11 +180,11 @@ impl BufChain {
             }
         }
         let ret = (iovs.as_ptr().cast(), iovs.len() as _, total_len);
-        self.wiovs = Some(iovs);
+        self.riovs = Some(iovs);
         ret
     }
 
-    pub fn as_io_slice_mut(&mut self) -> (*const libc::iovec, u32, usize) {
+    pub fn as_io_slice(&mut self) -> (*const libc::iovec, u32, usize) {
         let buf_cnt = self.wbuf_pos - self.rbuf_pos + 1;
         let mut pos = self.rbuf_pos;
         let mut buf = &mut self.chain;
@@ -197,12 +197,12 @@ impl BufChain {
             }
         }
         let mut curr_buf = buf.as_mut().unwrap();
-        let mut iovs = self.riovs.take().unwrap_or_default();
+        let mut iovs = self.wiovs.take().unwrap_or_default();
         iovs.clear();
         let mut tlen = 0;
         while iovs.len() < buf_cnt {
             let (iov_base, iov_len) = curr_buf.readable_ptr();
-            iovs.push(IoSliceMut::new(unsafe {
+            iovs.push(IoSlice::new(unsafe {
                 std::slice::from_raw_parts_mut(iov_base, iov_len)
             }));
             tlen += iov_len;
@@ -211,7 +211,7 @@ impl BufChain {
             }
         }
         let ret = (iovs.as_ptr().cast(), iovs.len() as _, tlen);
-        self.riovs = Some(iovs);
+        self.wiovs = Some(iovs);
         ret
     }
 
@@ -322,7 +322,7 @@ impl BufChain {
             unsafe {
                 let mut cnt;
                 let dst = loop {
-                    let (ptr, len) = curr_buf.write_ptr();
+                    let (ptr, len) = curr_buf.fill_ptr();
                     cnt = cmp::min(len, src.len() - off);
                     if cnt != 0 {
                         let dst = UninitSlice::from_raw_parts_mut(ptr, len as usize);

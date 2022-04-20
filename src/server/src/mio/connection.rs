@@ -13,17 +13,22 @@
 // limitations under the License.
 
 use std::{
+    cell::RefCell,
     io::{Read, Write},
+    rc::Rc,
     time::{Duration, Instant},
 };
 
-use bytes::BufMut;
 use engula_engine::Db;
 use mio::{event::Event, net::TcpStream};
 use tracing::trace;
 
 use super::{interrupted, would_block};
-use crate::{cmd, Error, ReadBuf, Result, WriteBuf};
+use crate::{
+    cmd,
+    io_vec::{BufChain, Pool},
+    Error, ReadBuf, Result, WriteBuf,
+};
 
 pub struct Connection {
     db: Db,
@@ -35,10 +40,11 @@ pub struct Connection {
 
 impl Connection {
     pub fn new(db: Db, stream: TcpStream) -> Connection {
+        let pool = Rc::new(RefCell::new(Pool::new(4 * 1024)));
         Self {
             db,
-            read_buf: ReadBuf::default(),
-            write_buf: WriteBuf::default(),
+            read_buf: ReadBuf::new(BufChain::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(BufChain::new(pool, 2)),
             stream,
             last_interaction: Instant::now(),
         }
@@ -83,6 +89,7 @@ impl Connection {
             if bytes_read != 0 {
                 self.read_buf.buf.put_slice(&received_data[..bytes_read]);
                 while let Some(frame) = self.read_buf.parse_frame() {
+                    self.read_buf.buf.recycle();
                     self.write_buf.write_frame(&cmd::apply(frame, &self.db));
                 }
             }
@@ -93,15 +100,17 @@ impl Connection {
             }
         }
 
-        if !self.write_buf.buf.is_empty() {
-            let buf = &mut self.write_buf.buf[self.write_buf.written..];
-            match self.stream.write(buf) {
-                Ok(n) => self.write_buf.consume(n),
+        if !self.write_buf.buf.data_remain() > 0 {
+            let _ = &mut self.write_buf.buf.as_io_slice();
+            let iovs = self.write_buf.buf.wiovs.as_ref().unwrap().as_slice();
+            match self.stream.write_vectored(iovs) {
+                Ok(n) => self.write_buf.buf.advance_rpos(n),
                 Err(ref e) if would_block(e) => return Ok(false),
                 Err(ref e) if interrupted(e) => return self.handle_connection_event(event),
                 Err(e) => return Err(Error::Io(e)),
             }
         }
+        self.write_buf.buf.recycle();
 
         Ok(false)
     }
