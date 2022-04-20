@@ -58,8 +58,11 @@ impl From<DriverMode> for engula_server::DriverMode {
 struct StartCommand {
     #[clap(long, default_value = "127.0.0.1:21716")]
     addr: String,
+
     #[clap(long, default_value = "mio", arg_enum)]
     driver_mode: DriverMode,
+
+    /// Close the connection after a client is idle for N seconds (0 to disable).
     #[clap(long, default_value = "0")]
     timeout: u64,
 }
