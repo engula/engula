@@ -16,6 +16,7 @@ mio = { version = "0.8.2", features = ["net", "os-ext"] }
 serde = { version = "1.0.136", features = ["derive"] }
 thiserror = "1.0"
 tracing = "0.1"
+bumpalo = "3.9"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2"

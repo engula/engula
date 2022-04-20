@@ -15,9 +15,11 @@
 //! Provides a type representing a Redis protocol frame as well as utilities for
 //! parsing frames from a byte array.
 
-use std::{convert::TryInto, fmt, io::Cursor, num::TryFromIntError, string::FromUtf8Error};
+use std::{convert::TryInto, fmt, num::TryFromIntError, string::FromUtf8Error};
 
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
+
+use crate::buffer;
 
 /// A frame in the Redis protocol.
 #[derive(Clone, Debug)]
@@ -74,7 +76,7 @@ impl Frame {
     }
 
     /// Checks if an entire message can be decoded from `src`
-    pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
+    pub fn check(src: &mut buffer::Cursor<'_>) -> Result<(), Error> {
         match get_u8(src)? {
             b'+' => {
                 get_line(src)?;
@@ -114,24 +116,31 @@ impl Frame {
     }
 
     /// The message has already been validated with `check`.
-    pub fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, Error> {
+    pub fn parse(src: &mut buffer::Cursor<'_>) -> Result<Frame, Error> {
         match get_u8(src)? {
             b'+' => {
-                // Read the line and convert it to `Vec<u8>`
-                let line = get_line(src)?.to_vec();
-
-                // Convert the line to a String
-                let string = String::from_utf8(line)?;
+                let lines = get_line(src)?;
+                let string = if lines.len() > 1 {
+                    lines
+                        .iter()
+                        .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
+                        .collect::<String>()
+                } else {
+                    unsafe { String::from_utf8_unchecked(lines[0].to_vec()) }
+                };
 
                 Ok(Frame::Simple(string))
             }
             b'-' => {
-                // Read the line and convert it to `Vec<u8>`
-                let line = get_line(src)?.to_vec();
-
-                // Convert the line to a String
-                let string = String::from_utf8(line)?;
-
+                let lines = get_line(src)?;
+                let string = if lines.len() > 1 {
+                    lines
+                        .iter()
+                        .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
+                        .collect::<String>()
+                } else {
+                    unsafe { String::from_utf8_unchecked(lines[0].to_vec()) }
+                };
                 Ok(Frame::Error(string))
             }
             b':' => {
@@ -141,6 +150,14 @@ impl Frame {
             b'$' => {
                 if b'-' == peek_u8(src)? {
                     let line = get_line(src)?;
+
+                    let concat: Vec<u8>;
+                    let line = if line.len() > 1 {
+                        concat = line.concat();
+                        &concat
+                    } else {
+                        line[0]
+                    };
 
                     if line != b"-1" {
                         return Err("protocol error; invalid frame format".into());
@@ -156,7 +173,7 @@ impl Frame {
                         return Err(Error::Incomplete);
                     }
 
-                    let data = Bytes::copy_from_slice(&src.chunk()[..len]);
+                    let data = src.peek_n(len).into();
 
                     // skip that number of bytes + 2 (\r\n).
                     skip(src, n)?;
@@ -166,7 +183,7 @@ impl Frame {
             }
             b'*' => {
                 let len = get_decimal(src)?.try_into()?;
-                let mut out = Vec::with_capacity(len);
+                let mut out = Vec::with_capacity(len); // TODO: more suitable cap.
 
                 for _ in 0..len {
                     out.push(Frame::parse(src)?);
@@ -216,57 +233,52 @@ impl fmt::Display for Frame {
     }
 }
 
-fn peek_u8(src: &mut Cursor<&[u8]>) -> Result<u8, Error> {
+fn peek_u8(src: &mut buffer::Cursor<'_>) -> Result<u8, Error> {
     if !src.has_remaining() {
         return Err(Error::Incomplete);
     }
-
-    Ok(src.chunk()[0])
+    Ok(src.peek_u8())
 }
 
-fn get_u8(src: &mut Cursor<&[u8]>) -> Result<u8, Error> {
+fn get_u8(src: &mut buffer::Cursor<'_>) -> Result<u8, Error> {
     if !src.has_remaining() {
         return Err(Error::Incomplete);
     }
-
-    Ok(src.get_u8())
+    let u = src.get_u8();
+    Ok(u)
 }
 
-fn skip(src: &mut Cursor<&[u8]>, n: usize) -> Result<(), Error> {
+fn skip(src: &mut buffer::Cursor<'_>, n: usize) -> Result<(), Error> {
     if src.remaining() < n {
         return Err(Error::Incomplete);
     }
-
     src.advance(n);
     Ok(())
 }
 
 /// Read a new-line terminated decimal
-fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, Error> {
+fn get_decimal<'a>(src: &'a mut buffer::Cursor<'_>) -> Result<u64, Error> {
     use atoi::atoi;
 
-    let line = get_line(src)?;
+    let lines = get_line(src)?;
 
-    atoi::<u64>(line).ok_or_else(|| "protocol error; invalid frame format".into())
+    let concat: Vec<u8>;
+    let bytes = if lines.len() > 1 {
+        concat = lines.concat();
+        &concat
+    } else {
+        lines[0]
+    };
+
+    atoi::<u64>(bytes).ok_or_else(|| "protocol error; invalid frame format".into())
 }
 
 /// Find a line
-fn get_line<'a>(src: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
-    // Scan the bytes directly
-    let start = src.position() as usize;
-    // Scan to the second to last byte
-    let end = src.get_ref().len() - 1;
-
-    for i in start..end {
-        if src.get_ref()[i] == b'\r' && src.get_ref()[i + 1] == b'\n' {
-            // We found a line, update the position to be *after* the \n
-            src.set_position((i + 2) as u64);
-
-            // Return the line
-            return Ok(&src.get_ref()[start..i]);
-        }
+fn get_line<'a>(src: &'a mut buffer::Cursor<'_>) -> Result<Vec<&'a [u8]>, Error> {
+    let lines = src.get_line();
+    if !lines.is_empty() {
+        return Ok(lines);
     }
-
     Err(Error::Incomplete)
 }
 

@@ -13,17 +13,18 @@
 // limitations under the License.
 
 use std::{
+    cell::RefCell,
     os::unix::io::RawFd,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
-use bytes::BufMut;
 use engula_engine::Db;
 use io_uring::{cqueue, opcode, squeue, types};
 use tracing::{error, trace};
 
 use super::{check_io_result, IoDriver, Token};
-use crate::{cmd, ReadBuf, Result, WriteBuf};
+use crate::{cmd, BufChain, Pool, ReadBuf, Result, WriteBuf};
 
 pub struct Connection {
     id: u64,
@@ -33,19 +34,24 @@ pub struct Connection {
     read_buf: ReadBuf,
     write_buf: WriteBuf,
     last_interaction: Instant,
+    has_read: bool,
+    has_write: bool,
     num_inflights: usize,
 }
 
 impl Connection {
     pub fn new(id: u64, fd: RawFd, io: IoDriver, db: Db) -> Connection {
+        let pool = Rc::new(RefCell::new(Pool::new(4 * 1024)));
         let mut conn = Self {
             id,
             fd,
             io,
             db,
-            read_buf: ReadBuf::default(),
-            write_buf: WriteBuf::default(),
+            read_buf: ReadBuf::new(BufChain::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(BufChain::new(pool, 2)),
             last_interaction: Instant::now(),
+            has_read: false,
+            has_write: false,
             num_inflights: 0,
         };
         conn.prepare_read();
@@ -66,14 +72,14 @@ impl Connection {
         let op = Token::op(cqe.user_data());
         let result = check_io_result(cqe.result());
         match op {
-            opcode::Read::CODE => match result {
+            opcode::Readv::CODE => match result {
                 Ok(size) => {
                     trace!(self.id, size, "connection complete read");
                     self.complete_read(size as usize);
                 }
                 Err(err) => error!(%err, self.id, "connection complete read"),
             },
-            opcode::Write::CODE => match result {
+            opcode::Writev::CODE => match result {
                 Ok(size) => {
                     trace!(self.id, size, "connection complete write");
                     self.complete_write(size as usize);
@@ -103,13 +109,16 @@ impl Connection {
     }
 
     fn prepare_read(&mut self) {
-        let token = Token::new(self.id, opcode::Read::CODE);
-        let buf = self.read_buf.buf.chunk_mut();
-        let sqe = opcode::Read::new(types::Fd(self.fd), buf.as_mut_ptr(), buf.len() as u32)
+        let token = Token::new(self.id, opcode::Readv::CODE);
+        let (iovs, iovs_len, tlen) = self.read_buf.buf.as_io_slice();
+        let sqe = opcode::Readv::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
-            Ok(_) => trace!(self.id, "connection prepare read"),
+            Ok(_) => {
+                trace!(self.id, tlen, "connection prepare read");
+                self.has_read = true;
+            }
             Err(err) => error!(%err, self.id, "connection prepare read"),
         }
     }
@@ -122,34 +131,48 @@ impl Connection {
             return;
         }
 
-        unsafe {
-            self.read_buf.buf.advance_mut(size);
-        }
+        // filled buf to support more read.
+        self.read_buf.buf.advance_wpos(size);
+
+        self.has_read = false;
 
         self.process();
 
-        self.prepare_read();
-        if !self.write_buf.is_empty() {
+        self.read_buf.buf.recycle();
+
+        if !self.has_read {
+            self.prepare_read();
+        }
+
+        if !self.has_write && self.write_buf.remain_write() {
             self.prepare_write();
         }
     }
 
     fn prepare_write(&mut self) {
-        let token = Token::new(self.id, opcode::Write::CODE);
-        let buf = &mut self.write_buf.buf[self.write_buf.written..];
-        let sqe = opcode::Write::new(types::Fd(self.fd), buf.as_mut_ptr(), buf.len() as u32)
+        let token = Token::new(self.id, opcode::Writev::CODE);
+        let (iovs, iovs_len, tlen) = self.write_buf.buf.as_io_slice_mut();
+        let sqe = opcode::Writev::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
-            Ok(_) => trace!(self.id, "connection prepare write"),
+            Ok(_) => {
+                trace!(self.id, tlen, "connection prepare write");
+                self.has_write = true;
+            }
             Err(err) => error!(%err, self.id, "connection prepare write"),
         }
     }
 
     fn complete_write(&mut self, size: usize) {
-        self.write_buf.consume(size);
-        if !self.write_buf.is_empty() {
+        self.write_buf.buf.advance_rpos(size);
+        self.write_buf.buf.recycle();
+        self.has_write = false;
+        if !self.has_write && self.write_buf.remain_write() {
             self.prepare_write();
+        }
+        if !self.has_read {
+            self.prepare_read();
         }
     }
 
