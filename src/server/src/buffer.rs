@@ -12,28 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bytes::buf::UninitSlice;
+use std::io::{IoSlice, IoSliceMut};
 
-use crate::{io_vec, Frame, FrameError};
-
-#[derive(Default)]
-struct BufPos {
-    buf_idx: usize,
-    dat_idx: usize,
-}
+use crate::{
+    io_vec::{self, BufAddr, BufSlice},
+    Frame, FrameError,
+};
 
 pub struct Cursor<'b> {
-    pub chain: &'b mut io_vec::IoVec,
-    buf_pos: BufPos,
+    pub bufs: &'b mut io_vec::Bufs,
+
+    pos: io_vec::BufAddr,
+    min_readable: io_vec::BufAddr,
+    max_readable: io_vec::BufAddr,
     offset: usize,
 }
 
 impl<'b> Cursor<'b> {
-    pub fn new(buf_chain: &'b mut io_vec::IoVec) -> Self {
+    pub fn new(
+        bufs: &'b mut io_vec::Bufs,
+        min_readable: io_vec::BufAddr,
+        max_readable: io_vec::BufAddr,
+    ) -> Self {
         Self {
-            chain: buf_chain,
-            buf_pos: Default::default(),
+            bufs,
+            pos: io_vec::BufAddr::zero(),
             offset: 0,
+            min_readable,
+            max_readable,
         }
     }
 
@@ -42,7 +48,7 @@ impl<'b> Cursor<'b> {
     }
 
     fn reset(&mut self) {
-        self.buf_pos = Default::default();
+        self.pos = io_vec::BufAddr::zero();
         self.offset = 0;
     }
 
@@ -51,45 +57,53 @@ impl<'b> Cursor<'b> {
     }
 
     pub fn get_u8(&mut self) -> u8 {
-        let buf = self
-            .chain
-            .as_consume_read_view()
-            .nth(self.buf_pos.buf_idx)
-            .unwrap();
-        let res = buf[self.buf_pos.dat_idx];
-        self.buf_pos.dat_idx += 1;
+        let buf = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
+        let buf = buf.slice(self.pos.dat, buf.end);
+        let res = buf[self.pos.dat];
+
+        // TODO: extract this.
+        self.pos.dat += 1;
         self.offset += 1;
-        if self.buf_pos.dat_idx == buf.len() {
-            self.buf_pos.dat_idx = 0;
-            self.buf_pos.buf_idx += 1;
+        if self.pos.dat == buf.len() {
+            self.pos.dat = 0;
+            self.pos.buf += 1;
         }
         res
     }
 
     pub fn peek_u8(&mut self) -> u8 {
-        let buf = self
-            .chain
-            .as_consume_read_view()
-            .nth(self.buf_pos.buf_idx)
-            .unwrap();
-        buf[self.buf_pos.dat_idx]
+        let buf = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
+        let buf = buf.slice(self.pos.dat, buf.end);
+        buf[self.pos.dat]
     }
 
-    pub(crate) fn get_line(&mut self) -> Vec<&'_ [u8]> {
+    pub(crate) fn get_line(&mut self) -> BufSlice<'_> {
         const WAIT_R: u8 = 1;
         const WAIT_N: u8 = 2;
 
-        let iovs = self.chain.as_consume_read_view().skip(self.buf_pos.buf_idx);
+        let start = self.pos.clone();
+        let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
+        let iovs = self.bufs.buf_iter().skip(self.pos.buf).take(buf_cnt);
 
-        let mut buf_idx = self.buf_pos.buf_idx;
-        let mut data_idx = self.buf_pos.dat_idx;
+        let mut buf_idx = self.pos.buf;
+        let mut data_idx = self.pos.dat;
+        let mut new_offset = self.offset;
 
         let mut get_line_state = WAIT_R;
-        let mut lines = Vec::with_capacity(2);
-        let mut new_offset = self.offset;
-        for buf in iovs {
+        'next_buf: for buf in iovs {
+            let begin = if buf_idx == self.min_readable.buf {
+                self.min_readable.dat
+            } else {
+                0
+            };
+            let end = if buf_idx == self.max_readable.buf {
+                self.max_readable.dat
+            } else {
+                0
+            };
+            let buf = buf.slice(begin, end);
             if buf.is_empty() {
-                return Vec::new();
+                break 'next_buf;
             }
             'next_byte: for i in data_idx..buf.len() {
                 match get_line_state {
@@ -104,31 +118,30 @@ impl<'b> Cursor<'b> {
                             get_line_state = WAIT_R;
                             continue 'next_byte;
                         }
-                        lines.push(&buf[data_idx..i + 1]);
                         new_offset += i + 1 - data_idx;
-                        self.buf_pos = if i + 1 == buf.len() {
-                            BufPos {
-                                buf_idx: buf_idx + 1,
-                                dat_idx: 0,
+                        self.pos = if i + 1 == buf.len() {
+                            BufAddr {
+                                buf: buf_idx + 1,
+                                dat: 0,
                             }
                         } else {
-                            BufPos {
-                                buf_idx,
-                                dat_idx: i + 1,
+                            BufAddr {
+                                buf: buf_idx,
+                                dat: i + 1,
                             }
                         };
                         self.offset = new_offset;
-                        return lines;
+                        break 'next_buf;
                     }
                     _ => unreachable!(),
                 }
             }
-            lines.push(&buf[data_idx..buf.len()]);
             new_offset += buf.len() - data_idx;
             data_idx = 0;
             buf_idx += 1;
         }
-        Vec::new()
+
+        self.bufs.slice(start, Some(self.pos))
     }
 
     pub(crate) fn remaining(&self) -> usize {
@@ -136,12 +149,13 @@ impl<'b> Cursor<'b> {
     }
 
     pub(crate) fn advance(&mut self, n: usize) {
-        let BufPos {
-            mut buf_idx,
-            mut dat_idx,
-        } = self.buf_pos;
+        let BufAddr {
+            buf: mut buf_idx,
+            dat: mut dat_idx,
+        } = self.pos;
 
-        let mut iter = self.chain.as_consume_read_view().skip(buf_idx);
+        let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
+        let mut iter = self.bufs.buf_iter().skip(buf_idx).take(buf_cnt);
         let mut remain_n = n;
         while remain_n > 0 {
             let buf = iter.next().unwrap();
@@ -153,47 +167,65 @@ impl<'b> Cursor<'b> {
             remain_n -= buf.len() - dat_idx;
             dat_idx = 0;
         }
-        self.buf_pos = BufPos { buf_idx, dat_idx };
+        self.pos = BufAddr {
+            buf: buf_idx,
+            dat: dat_idx,
+        };
         self.offset += n;
     }
 
-    pub(crate) fn peek_n(&self, n: usize) -> Vec<u8> {
-        let BufPos {
-            mut buf_idx,
-            mut dat_idx,
-        } = self.buf_pos;
-        let mut iovs = self.chain.as_consume_read_view().skip(buf_idx);
-        let mut remain_n = n;
+    pub(crate) fn peek_n(&self, n: usize) -> BufSlice {
+        let BufAddr {
+            buf: mut buf_idx,
+            dat: mut dat_idx,
+        } = self.pos;
 
-        let mut v = Vec::with_capacity(n); // TODO: reduce alloc or reuse.
+        let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
+        let mut iovs = self.bufs.buf_iter().skip(buf_idx).take(buf_cnt);
+
+        let start = self.pos.clone();
+        let end;
+        let mut remain_n = n;
         loop {
             let buf = iovs.next().unwrap();
             if dat_idx + remain_n > buf.len() {
-                v.extend(&buf[dat_idx..]);
                 remain_n = remain_n + dat_idx - buf.len();
                 buf_idx += 1;
                 dat_idx = 0;
             } else {
-                v.extend(&buf[dat_idx..dat_idx + remain_n]);
+                end = BufAddr {
+                    buf: buf_idx,
+                    dat: dat_idx + remain_n,
+                };
                 break;
             }
         }
-        v
+
+        self.bufs.slice(start, Some(end))
     }
 
     fn data_remain(&self) -> usize {
-        todo!()
+        let wait_read = self.bufs.slice(self.pos, Some(self.max_readable));
+        wait_read.len()
     }
 }
 
 pub struct ReadBuf {
     pub bufs: io_vec::Bufs,
-    pub iov: io_vec::IoVec,
+    pub min_readable: io_vec::BufAddr,
+    pub max_readable: io_vec::BufAddr,
+
+    pub riovs: Option<Vec<IoSliceMut<'static>>>,
 }
 
 impl ReadBuf {
-    pub fn new(iov: io_vec::IoVec, bufs: io_vec::Bufs) -> Self {
-        Self { iov, bufs }
+    pub fn new(bufs: io_vec::Bufs) -> Self {
+        Self {
+            bufs,
+            min_readable: io_vec::BufAddr::zero(),
+            max_readable: io_vec::BufAddr::zero(),
+            riovs: None,
+        }
     }
 
     /// Tries to parse a frame from the buffer. If the buffer contains enough
@@ -207,7 +239,7 @@ impl ReadBuf {
         // buffer. Cursor also implements `Buf` from the `bytes` crate
         // which provides a number of helpful utilities for working
         // with bytes.
-        let mut buf = Cursor::new(&mut self.iov);
+        let mut buf = Cursor::new(&mut self.bufs, self.min_readable, self.max_readable);
 
         // The first step is to check if enough data has been buffered to parse
         // a single frame. This step is usually much faster than doing a full
@@ -240,7 +272,7 @@ impl ReadBuf {
                 // up to `len` is discarded. The details of how this works is
                 // left to `BytesMut`. This is often done by moving an internal
                 // cursor, but it may be done by reallocating and copying data.
-                self.iov.advance_rpos(len);
+                self.advance_min_readable(len);
 
                 // Return the parsed frame to the caller.
                 Some(frame)
@@ -259,6 +291,35 @@ impl ReadBuf {
             Err(err) => panic!("{:?}", err),
         }
     }
+
+    pub(crate) fn wait_fill_io_slice_mut(&mut self) -> (*const libc::iovec, u32) {
+        let mut wait_flush = self.bufs.slice(self.max_readable, None);
+        let mut iovs = self.riovs.take().unwrap_or_default();
+        iovs.clear();
+        wait_flush.as_io_slice_mut(&mut iovs);
+        let ret = (iovs.as_ptr().cast(), iovs.len() as _);
+        self.riovs = Some(iovs);
+        ret
+    }
+
+    pub(crate) fn advance_min_readable(&mut self, n: usize) {
+        let wait_discard = self.bufs.slice(self.min_readable, Some(self.max_readable));
+        let next = wait_discard.advance_addr(self.min_readable, n).unwrap();
+        self.min_readable = next;
+        // TODO: free or back to pool for node < self.min_readable
+    }
+
+    pub(crate) fn advance_max_readable(&mut self, n: usize) {
+        let wait_filldata = self.bufs.slice(self.max_readable, None);
+        let next = wait_filldata.advance_addr(self.max_readable, n).unwrap();
+        self.max_readable = next;
+        // TODO: add node if no engouh space.
+    }
+
+    pub(crate) fn recycle(&mut self) {
+        // self.min_readable = BufAddr::zero();
+        // self.max_readable = BufAddr::zero();
+    }
 }
 
 pub struct WriteBuf {
@@ -266,19 +327,16 @@ pub struct WriteBuf {
     pub filled: io_vec::BufAddr,
     pub flushed: io_vec::BufAddr,
 
-    pub iov: io_vec::IoVec,
+    pub wiovs: Option<Vec<IoSlice<'static>>>,
 }
 
 impl WriteBuf {
     pub fn new(bufs: io_vec::Bufs) -> Self {
         Self {
-            iov: io_vec::IoVec {
-                riovs: None,
-                wiovs: None,
-            },
             bufs,
-            filled: io_vec::BufAddr::default(),
-            flushed: io_vec::BufAddr::default(),
+            filled: io_vec::BufAddr::zero(),
+            flushed: io_vec::BufAddr::zero(),
+            wiovs: None,
         }
     }
 
@@ -369,7 +427,28 @@ impl WriteBuf {
 
     #[inline]
     pub fn put_slice(&mut self, src: &[u8]) {
-        self.filled = self.bufs.put_after(self.filled, src);
+        self.filled = self.bufs.put_at(self.filled, src);
+    }
+
+    pub(crate) fn wait_flush_io_slice(&mut self) -> (*const libc::iovec, u32) {
+        let mut wait_flush = self.bufs.slice(self.flushed, Some(self.filled));
+        let mut iovs = self.wiovs.take().unwrap_or_default();
+        iovs.clear();
+        wait_flush.as_io_slice(&mut iovs);
+        let ret = (iovs.as_ptr().cast(), iovs.len() as _);
+        self.wiovs = Some(iovs);
+        ret
+    }
+
+    pub(crate) fn advance_flush_pos(&mut self, n: usize) {
+        let wait_flush = self.bufs.slice(self.flushed, Some(self.filled));
+        let flushed = wait_flush.advance_addr(self.flushed, n).unwrap();
+        self.flushed = flushed;
+    }
+
+    pub(crate) fn recycle(&mut self) {
+        // self.flushed = BufAddr::zero();
+        // self.filled = BufAddr::zero();
     }
 }
 

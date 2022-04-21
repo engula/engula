@@ -26,7 +26,7 @@ use tracing::trace;
 use super::{interrupted, would_block};
 use crate::{
     cmd,
-    io_vec::{IoVec, Pool},
+    io_vec::{IoVec, Pool, self},
     Error, ReadBuf, Result, WriteBuf,
 };
 
@@ -43,8 +43,8 @@ impl Connection {
         let pool = Rc::new(RefCell::new(Pool::new(4 * 1024)));
         Self {
             db,
-            read_buf: ReadBuf::new(IoVec::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(IoVec::new(pool, 2)),
+            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 2)),
             stream,
             last_interaction: Instant::now(),
         }

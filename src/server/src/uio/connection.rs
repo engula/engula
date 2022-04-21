@@ -24,7 +24,7 @@ use io_uring::{cqueue, opcode, squeue, types};
 use tracing::{error, trace};
 
 use super::{check_io_result, IoDriver, Token};
-use crate::{cmd, IoVec, Pool, ReadBuf, Result, WriteBuf, io_vec};
+use crate::{cmd, io_vec, Pool, ReadBuf, Result, WriteBuf};
 
 pub struct Connection {
     id: u64,
@@ -47,7 +47,7 @@ impl Connection {
             fd,
             io,
             db,
-            read_buf: ReadBuf::new(IoVec::new(pool.clone(), 2)),
+            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
             write_buf: WriteBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
             last_interaction: Instant::now(),
             has_read: false,
@@ -110,13 +110,13 @@ impl Connection {
 
     fn prepare_read(&mut self) {
         let token = Token::new(self.id, opcode::Readv::CODE);
-        let (iovs, iovs_len, tlen) = self.read_buf.iov.as_io_slice_mut();
+        let (iovs, iovs_len) = self.read_buf.wait_fill_io_slice_mut();
         let sqe = opcode::Readv::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
             Ok(_) => {
-                trace!(self.id, tlen, "connection prepare read");
+                trace!(self.id, "connection prepare read");
                 self.has_read = true;
             }
             Err(err) => error!(%err, self.id, "connection prepare read"),
@@ -131,14 +131,13 @@ impl Connection {
             return;
         }
 
-        // filled buf to support more read.
-        self.read_buf.iov.advance_wpos(size);
+        self.read_buf.advance_max_readable(size);
 
         self.has_read = false;
 
         self.process();
 
-        self.read_buf.iov.recycle();
+        self.read_buf.recycle();
 
         if !self.has_read {
             self.prepare_read();
@@ -151,13 +150,13 @@ impl Connection {
 
     fn prepare_write(&mut self) {
         let token = Token::new(self.id, opcode::Writev::CODE);
-        let (iovs, iovs_len, tlen) = self.write_buf.iov.as_io_slice();
+        let (iovs, iovs_len) = self.write_buf.wait_flush_io_slice();
         let sqe = opcode::Writev::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
             Ok(_) => {
-                trace!(self.id, tlen, "connection prepare write");
+                trace!(self.id, "connection prepare write");
                 self.has_write = true;
             }
             Err(err) => error!(%err, self.id, "connection prepare write"),
@@ -165,8 +164,8 @@ impl Connection {
     }
 
     fn complete_write(&mut self, size: usize) {
-        self.write_buf.iov.advance_rpos(size);
-        self.write_buf.iov.recycle();
+        self.write_buf.advance_flush_pos(size);
+        self.write_buf.recycle();
         self.has_write = false;
         if !self.has_write && self.write_buf.remain_write() {
             self.prepare_write();

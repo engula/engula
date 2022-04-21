@@ -19,7 +19,7 @@ use std::{convert::TryInto, fmt, num::TryFromIntError, string::FromUtf8Error};
 
 use bytes::Bytes;
 
-use crate::buffer;
+use crate::{buffer, io_vec};
 
 /// A frame in the Redis protocol.
 #[derive(Clone, Debug)]
@@ -119,29 +119,14 @@ impl Frame {
     pub fn parse(src: &mut buffer::Cursor<'_>) -> Result<Frame, Error> {
         match get_u8(src)? {
             b'+' => {
-                let lines = get_line(src)?;
-                let string = if lines.len() > 1 {
-                    lines
-                        .iter()
-                        .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
-                        .collect::<String>()
-                } else {
-                    unsafe { String::from_utf8_unchecked(lines[0].to_vec()) }
-                };
-
-                Ok(Frame::Simple(string))
+                let line = get_line(src)?;
+                let line = unsafe { String::from_utf8_unchecked(line.as_vec()) };
+                Ok(Frame::Simple(line))
             }
             b'-' => {
-                let lines = get_line(src)?;
-                let string = if lines.len() > 1 {
-                    lines
-                        .iter()
-                        .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
-                        .collect::<String>()
-                } else {
-                    unsafe { String::from_utf8_unchecked(lines[0].to_vec()) }
-                };
-                Ok(Frame::Error(string))
+                let line = get_line(src)?;
+                let line = unsafe { String::from_utf8_unchecked(line.as_vec()) };
+                Ok(Frame::Error(line))
             }
             b':' => {
                 let len = get_decimal(src)?;
@@ -150,16 +135,7 @@ impl Frame {
             b'$' => {
                 if b'-' == peek_u8(src)? {
                     let line = get_line(src)?;
-
-                    let concat: Vec<u8>;
-                    let line = if line.len() > 1 {
-                        concat = line.concat();
-                        &concat
-                    } else {
-                        line[0]
-                    };
-
-                    if line != b"-1" {
+                    if line.as_vec() != b"-1" {
                         return Err("protocol error; invalid frame format".into());
                     }
 
@@ -173,17 +149,18 @@ impl Frame {
                         return Err(Error::Incomplete);
                     }
 
-                    let data = src.peek_n(len).into();
+                    let data = src.peek_n(len).as_vec();
+                    let bytes = Bytes::from(data);
 
                     // skip that number of bytes + 2 (\r\n).
                     skip(src, n)?;
 
-                    Ok(Frame::Bulk(data))
+                    Ok(Frame::Bulk(bytes))
                 }
             }
             b'*' => {
                 let len = get_decimal(src)?.try_into()?;
-                let mut out = Vec::with_capacity(len); // TODO: more suitable cap.
+                let mut out = Vec::with_capacity(len);
 
                 for _ in 0..len {
                     out.push(Frame::parse(src)?);
@@ -260,21 +237,13 @@ fn skip(src: &mut buffer::Cursor<'_>, n: usize) -> Result<(), Error> {
 fn get_decimal(src: &mut buffer::Cursor<'_>) -> Result<u64, Error> {
     use atoi::atoi;
 
-    let lines = get_line(src)?;
-
-    let concat: Vec<u8>;
-    let bytes = if lines.len() > 1 {
-        concat = lines.concat();
-        &concat
-    } else {
-        lines[0]
-    };
-
-    atoi::<u64>(bytes).ok_or_else(|| "protocol error; invalid frame format".into())
+    let line = get_line(src)?;
+    let line = line.as_vec();
+    atoi::<u64>(&line).ok_or_else(|| "protocol error; invalid frame format".into())
 }
 
 /// Find a line
-fn get_line<'a>(src: &'a mut buffer::Cursor<'_>) -> Result<Vec<&'a [u8]>, Error> {
+fn get_line<'a>(src: &'a mut buffer::Cursor<'_>) -> Result<io_vec::BufSlice<'a>, Error> {
     let lines = src.get_line();
     if !lines.is_empty() {
         return Ok(lines);

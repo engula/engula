@@ -22,6 +22,7 @@ use std::{
 
 use bytes::buf::UninitSlice;
 
+#[derive(Debug)]
 pub struct Pool {
     arena: bumpalo::Bump,
     free_bufs: Option<&'static mut BufNode>,
@@ -58,6 +59,7 @@ impl Pool {
     }
 }
 
+#[derive(Debug)]
 pub struct BufNode {
     ptr: *mut u8,
 
@@ -74,20 +76,19 @@ impl BufNode {
         unsafe { (self.ptr.add(start), len) }
     }
 
-    // fill -> inf+
     #[inline]
-    fn slice(&self, start: usize, end: usize) -> &'_ [u8] {
+    pub fn slice(&self, start: usize, end: usize) -> &'_ [u8] {
         let len = end - start;
         unsafe { std::slice::from_raw_parts_mut(self.ptr.add(start), len) }
     }
 
     #[inline]
-    fn ptr_mut(&self, start: usize, end: usize) -> (*mut u8, usize) {
-        let len = end - start;
-        unsafe { (self.ptr.add(start), len) }
+    pub(crate) fn len(&self) -> usize {
+        self.end - self.begin
     }
 }
 
+#[derive(Debug)]
 pub struct Bufs {
     pool: Rc<RefCell<Pool>>,
 
@@ -95,40 +96,47 @@ pub struct Bufs {
     pub node_cnt: usize,
 }
 
-#[derive(Default, PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug, Copy)]
 pub struct BufAddr {
-    buf: usize, // NB: it's related to original bufs's idx.
-    dat: usize,
+    pub buf: usize, // NB: it's related to original bufs's idx.
+    pub dat: usize,
+}
+
+impl BufAddr {
+    pub fn zero() -> Self {
+        Self { buf: 0, dat: 0 }
+    }
 }
 
 impl Bufs {
     pub(crate) fn new(pool: Rc<RefCell<Pool>>, init_nodes: usize) -> Self {
         assert!(init_nodes > 0);
-        let bufs = Self {
+        let mut b = Self {
             pool,
             nodes: None,
             node_cnt: init_nodes,
         };
-        let mut p = bufs.pool.clone().borrow_mut();
-        for _ in 0..bufs.node_cnt {
-            let node = p.take_buf();
-            node.next = bufs.nodes.take();
-            let nbuf = node as *mut BufNode;
-            bufs.nodes = unsafe { Some(&mut *node) };
+        let p = b.pool.clone();
+        let mut v = (*p).borrow_mut();
+        for _ in 0..b.node_cnt {
+            let nbuf = v.take_buf();
+            nbuf.next = b.nodes.take();
+            let nbuf = nbuf as *mut BufNode;
+            b.nodes = unsafe { Some(&mut *nbuf) };
         }
-        bufs
+        b
     }
 
-    pub(crate) fn put_after(&self, filled: BufAddr, src: &[u8]) -> BufAddr {
-        let new_filled = filled.clone();
-        let buf = self.buf_iter().skip(filled.buf).next().unwrap();
+    pub(crate) fn put_at(&self, target: BufAddr, src: &[u8]) -> BufAddr {
+        let mut next = target.clone();
+        let mut buf = self.buf_iter().skip(target.buf).next().unwrap();
         let mut flushed = 0;
         while flushed < src.len() {
             unsafe {
                 let mut cnt;
                 let dst = loop {
-                    let start = if new_filled.buf == filled.buf {
-                        filled.dat
+                    let start = if next.buf == target.buf {
+                        target.dat
                     } else {
                         0
                     };
@@ -139,27 +147,28 @@ impl Bufs {
                         break dst;
                     }
                     if buf.next.is_some() {
-                        buf = buf.next.as_mut().unwrap();
+                        buf = buf.next.as_ref().unwrap();
                     } else {
-                        let mut p = self.pool.borrow_mut();
-                        let nbuf = p.take_buf();
-                        let nbuf = nbuf as *mut BufNode;
-                        buf.next = Some(&mut *nbuf);
-                        buf = buf.next.as_mut().unwrap();
-                        self.node_cnt += 1;
+                        // let mut p = self.pool.borrow_mut();
+                        // let nbuf = p.take_buf();
+                        // let nbuf = nbuf as *mut Buf;
+                        // curr_buf.next = Some(&mut *nbuf);
+                        // curr_buf = curr_buf.next.as_mut().unwrap();
+                        // self.buf_cnt += 1;
+                        todo!("lifecyle question")
                     }
-                    new_filled.buf += 1;
+                    next.buf += 1;
                     continue;
                 };
                 ptr::copy_nonoverlapping(src[flushed..].as_ptr(), dst.as_mut_ptr() as *mut u8, cnt);
                 flushed += cnt;
-                new_filled.dat += cnt;
+                next.dat += cnt;
             }
         }
-        new_filled
+        next
     }
 
-    pub fn slice(&self, start: BufAddr, end: BufAddr) -> BufSlice {
+    pub fn slice(&self, start: BufAddr, end: Option<BufAddr>) -> BufSlice {
         BufSlice {
             bufs: self,
             start,
@@ -167,11 +176,10 @@ impl Bufs {
         }
     }
 
-    fn buf_iter(&self) -> impl Iterator<Item = &&mut BufNode> {
+    pub fn buf_iter(&self) -> impl Iterator<Item = &&mut BufNode> {
         let mut curr = &self.nodes;
         std::iter::from_fn(move || {
             if let Some(node) = curr {
-                let ret = curr;
                 curr = &node.next;
                 Some(node)
             } else {
@@ -181,25 +189,36 @@ impl Bufs {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct BufSlice<'a> {
     bufs: &'a Bufs,
 
     start: BufAddr,
-    end: BufAddr,
+    end: Option<BufAddr>,
 }
 
 impl<'a> BufSlice<'a> {
-    pub fn advance_addr(&self, origin: BufAddr, n: usize) -> Option<BufAddr> {
-        let buf_cnt = self.end.buf - self.start.buf + 1;
+    fn end_buf(&self) -> usize {
+        if let Some(add) = self.end {
+            add.buf
+        } else {
+            self.bufs.node_cnt
+        }
+    }
+
+    pub fn advance_addr(&self, origin: BufAddr, mut n: usize) -> Option<BufAddr> {
         let mut buf = self.bufs.buf_iter().nth(origin.buf).unwrap();
         let mut curr_buf = origin.buf;
         let mut curr_pos = origin.dat;
         loop {
             if curr_pos + n >= buf.end {
-                if let Some(node) = buf.next {
+                if let Some(node) = &buf.next {
                     n -= buf.end - curr_pos;
                     buf = &node;
                     curr_buf += 1;
+                    if curr_buf == self.end_buf() {
+                        return None;
+                    }
                     curr_pos = 0;
                 } else {
                     return None;
@@ -208,18 +227,18 @@ impl<'a> BufSlice<'a> {
             }
             return Some(BufAddr {
                 buf: curr_buf,
-                dat: curr_pos,
+                dat: curr_pos + n,
             });
         }
     }
 
     pub fn as_io_slice_mut(&mut self, iovs: &mut Vec<IoSliceMut>) {
-        let buf_cnt = self.end.buf - self.start.buf + 1;
+        let buf_cnt = self.end_buf() - self.start.buf + 1;
         let bufs = self.bufs.buf_iter().skip(self.start.buf).take(buf_cnt);
         for (i, node) in bufs.enumerate() {
             let start = if i == 0 { self.start.dat } else { node.begin };
             let end = if i == buf_cnt - 1 {
-                self.end.dat
+                self.end.unwrap().dat
             } else {
                 node.end
             };
@@ -231,12 +250,12 @@ impl<'a> BufSlice<'a> {
     }
 
     pub fn as_io_slice(&mut self, iovs: &mut Vec<IoSlice>) {
-        let buf_cnt = self.end.buf - self.start.buf + 1;
+        let buf_cnt = self.end_buf() - self.start.buf + 1;
         let bufs = self.bufs.buf_iter().skip(self.start.buf).take(buf_cnt);
         for (i, node) in bufs.enumerate() {
             let start = if i == 0 { self.start.dat } else { node.begin };
             let end = if i == buf_cnt - 1 {
-                self.end.dat
+                self.end.unwrap().dat
             } else {
                 node.end
             };
@@ -246,141 +265,49 @@ impl<'a> BufSlice<'a> {
             }));
         }
     }
-}
 
-pub struct IoVec {
-    pub riovs: Option<Vec<IoSliceMut<'static>>>,
-    pub wiovs: Option<Vec<IoSlice<'static>>>,
-}
-
-impl IoVec {
-    pub fn as_consume_read_view(&self) -> impl Iterator<Item = &'_ [u8]> + Clone {
-        let buf_cnt = self.wbuf_pos - self.rbuf_pos + 1;
-        let mut buf = &self.chain;
-        let mut pos = self.rbuf_pos;
-        while pos != 0 {
-            if let Some(b) = buf {
-                buf = &b.next;
-                pos -= 1;
-            } else {
-                break;
-            }
+    pub(crate) fn is_empty(&self) -> bool {
+        if self.end.is_none() {
+            return false;
         }
-
-        let mut curr_buf = buf;
-        std::iter::from_fn(move || {
-            if curr_buf.is_none() {
-                return None;
-            }
-            let s = curr_buf.as_ref().unwrap().slice();
-            curr_buf = &curr_buf.as_ref().unwrap().next;
-            Some(s)
-        })
-        .take(buf_cnt)
+        self.start == self.end.unwrap()
     }
 
-    pub fn advance_rpos(&mut self, size: usize) {
-        let mut pos = self.rbuf_pos;
-        let mut buf = &mut self.chain;
-        while pos != 0 {
-            if let Some(b) = buf {
-                buf = &mut b.next;
-                pos -= 1;
+    pub(crate) fn as_vec(&self) -> Vec<u8> {
+        // TODO: temp method to test.
+        let buf_cnt = self.end_buf() - self.start.buf + 1;
+        let v = self.bufs.buf_iter().skip(self.start.buf).take(buf_cnt);
+        let mut ret = Vec::new();
+        for (i, buf) in v.enumerate() {
+            let start = if i == self.start.buf {
+                self.start.dat
             } else {
-                break;
-            }
-        }
-        let mut curr_buf = buf.as_mut().unwrap();
-        let mut remain_size = size;
-        loop {
-            let mut new_pos = curr_buf.begin + remain_size;
-            if new_pos >= curr_buf.end {
-                remain_size = new_pos - curr_buf.end;
-                new_pos = curr_buf.end;
-                curr_buf.begin = new_pos;
-                if curr_buf.next.is_none() {
-                    let mut p = self.pool.borrow_mut();
-                    let nbuf = p.take_buf();
-                    let nbuf = nbuf as *mut BufNode;
-                    curr_buf.next = unsafe { Some(&mut *nbuf) };
-                    self.buf_cnt += 1;
-                }
-                curr_buf = curr_buf.next.as_mut().unwrap();
-                self.rbuf_pos += 1;
-                continue;
+                0
+            };
+            let end = if i == self.end_buf() {
+                self.end.unwrap().dat
             } else {
-                curr_buf.begin = new_pos;
-                break;
-            }
+                0
+            };
+            let buf = buf.slice(start, end);
+            ret.extend_from_slice(buf);
         }
+        ret
     }
 
-    pub fn advance_wpos(&mut self, size: usize) {
-        let mut pos = self.wbuf_pos;
-        let mut buf = &mut self.chain;
-        while pos != 0 {
-            if let Some(b) = buf {
-                buf = &mut b.next;
-                pos -= 1;
+    pub(crate) fn len(&self) -> usize {
+        let mut total = 0;
+        let buf_cnt = self.end_buf() - self.start.buf + 1;
+        let bufs = self.bufs.buf_iter().skip(self.start.buf).take(buf_cnt);
+        for (i, node) in bufs.enumerate() {
+            let start = if i == 0 { self.start.dat } else { node.begin };
+            let end = if i == buf_cnt - 1 {
+                self.end.unwrap().dat
             } else {
-                break;
-            }
+                node.end
+            };
+            total += end - start;
         }
-        let mut curr_buf = buf.as_mut().unwrap();
-        let mut remain_size = size;
-        loop {
-            let mut new_pos = curr_buf.filled + remain_size;
-            if new_pos >= curr_buf.end {
-                remain_size = new_pos - curr_buf.end;
-                new_pos = curr_buf.end;
-                curr_buf.filled = new_pos;
-                if curr_buf.next.is_none() {
-                    let mut p = self.pool.borrow_mut();
-                    let nbuf = p.take_buf();
-                    let nbuf = nbuf as *mut BufNode;
-                    curr_buf.next = unsafe { Some(&mut *nbuf) };
-                    self.buf_cnt += 1;
-                }
-                curr_buf = curr_buf.next.as_mut().unwrap();
-                self.wbuf_pos += 1;
-                continue;
-            } else {
-                curr_buf.filled = new_pos;
-                break;
-            }
-        }
-    }
-
-    pub(crate) fn recycle(&mut self) {
-        if self.rbuf_pos == 0 {
-            return;
-        }
-        let wait_clean = self.rbuf_pos;
-        let mut clean_idx = 0;
-        let mut curr = self.chain.take();
-        while clean_idx < wait_clean {
-            let next;
-            let reuse_buf;
-            if let Some(buf) = curr {
-                next = buf.next.take();
-                buf.next = None;
-                buf.begin = 0;
-                buf.filled = 0;
-                reuse_buf = buf;
-            } else {
-                break;
-            }
-            curr = next;
-            let mut p = self.pool.borrow_mut();
-            p.ret_buf(reuse_buf);
-            clean_idx += 1;
-        }
-        self.rbuf_pos = 0;
-        self.wbuf_pos = if self.wbuf_pos > wait_clean {
-            self.wbuf_pos - wait_clean
-        } else {
-            0
-        };
-        self.chain = curr;
+        total
     }
 }
