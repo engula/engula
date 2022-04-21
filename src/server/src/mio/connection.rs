@@ -26,7 +26,7 @@ use tracing::trace;
 use super::{interrupted, would_block};
 use crate::{
     cmd,
-    io_vec::{BufChain, Pool},
+    io_vec::{IoVec, Pool},
     Error, ReadBuf, Result, WriteBuf,
 };
 
@@ -43,8 +43,8 @@ impl Connection {
         let pool = Rc::new(RefCell::new(Pool::new(4 * 1024)));
         Self {
             db,
-            read_buf: ReadBuf::new(BufChain::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(BufChain::new(pool, 2)),
+            read_buf: ReadBuf::new(IoVec::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(IoVec::new(pool, 2)),
             stream,
             last_interaction: Instant::now(),
         }
@@ -87,9 +87,9 @@ impl Connection {
             }
 
             if bytes_read != 0 {
-                self.read_buf.buf.put_slice(&received_data[..bytes_read]);
+                self.read_buf.iov.put_slice(&received_data[..bytes_read]);
                 while let Some(frame) = self.read_buf.parse_frame() {
-                    self.read_buf.buf.recycle();
+                    self.read_buf.iov.recycle();
                     self.write_buf.write_frame(&cmd::apply(frame, &self.db));
                 }
             }
@@ -100,17 +100,17 @@ impl Connection {
             }
         }
 
-        if !self.write_buf.buf.data_remain() > 0 {
-            let _ = &mut self.write_buf.buf.as_io_slice();
-            let iovs = self.write_buf.buf.wiovs.as_ref().unwrap().as_slice();
+        if !self.write_buf.iov.data_remain() > 0 {
+            let _ = &mut self.write_buf.iov.as_io_slice();
+            let iovs = self.write_buf.iov.wiovs.as_ref().unwrap().as_slice();
             match self.stream.write_vectored(iovs) {
-                Ok(n) => self.write_buf.buf.advance_rpos(n),
+                Ok(n) => self.write_buf.iov.advance_rpos(n),
                 Err(ref e) if would_block(e) => return Ok(false),
                 Err(ref e) if interrupted(e) => return self.handle_connection_event(event),
                 Err(e) => return Err(Error::Io(e)),
             }
         }
-        self.write_buf.buf.recycle();
+        self.write_buf.iov.recycle();
 
         Ok(false)
     }

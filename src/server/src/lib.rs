@@ -43,7 +43,7 @@ mod mio;
 mod uio;
 
 mod io_vec;
-use io_vec::{BufChain, Pool};
+use io_vec::{IoVec, Pool};
 
 pub fn run(config: Config) -> Result<()> {
     match config.driver_mode {

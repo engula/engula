@@ -24,7 +24,7 @@ use io_uring::{cqueue, opcode, squeue, types};
 use tracing::{error, trace};
 
 use super::{check_io_result, IoDriver, Token};
-use crate::{cmd, BufChain, Pool, ReadBuf, Result, WriteBuf};
+use crate::{cmd, IoVec, Pool, ReadBuf, Result, WriteBuf, io_vec};
 
 pub struct Connection {
     id: u64,
@@ -47,8 +47,8 @@ impl Connection {
             fd,
             io,
             db,
-            read_buf: ReadBuf::new(BufChain::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(BufChain::new(pool, 2)),
+            read_buf: ReadBuf::new(IoVec::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
             last_interaction: Instant::now(),
             has_read: false,
             has_write: false,
@@ -110,7 +110,7 @@ impl Connection {
 
     fn prepare_read(&mut self) {
         let token = Token::new(self.id, opcode::Readv::CODE);
-        let (iovs, iovs_len, tlen) = self.read_buf.buf.as_io_slice_mut();
+        let (iovs, iovs_len, tlen) = self.read_buf.iov.as_io_slice_mut();
         let sqe = opcode::Readv::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
@@ -132,13 +132,13 @@ impl Connection {
         }
 
         // filled buf to support more read.
-        self.read_buf.buf.advance_wpos(size);
+        self.read_buf.iov.advance_wpos(size);
 
         self.has_read = false;
 
         self.process();
 
-        self.read_buf.buf.recycle();
+        self.read_buf.iov.recycle();
 
         if !self.has_read {
             self.prepare_read();
@@ -151,7 +151,7 @@ impl Connection {
 
     fn prepare_write(&mut self) {
         let token = Token::new(self.id, opcode::Writev::CODE);
-        let (iovs, iovs_len, tlen) = self.write_buf.buf.as_io_slice();
+        let (iovs, iovs_len, tlen) = self.write_buf.iov.as_io_slice();
         let sqe = opcode::Writev::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
@@ -165,8 +165,8 @@ impl Connection {
     }
 
     fn complete_write(&mut self, size: usize) {
-        self.write_buf.buf.advance_rpos(size);
-        self.write_buf.buf.recycle();
+        self.write_buf.iov.advance_rpos(size);
+        self.write_buf.iov.recycle();
         self.has_write = false;
         if !self.has_write && self.write_buf.remain_write() {
             self.prepare_write();
