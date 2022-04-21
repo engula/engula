@@ -13,13 +13,12 @@
 // limitations under the License.
 
 use std::{
-    alloc::dealloc,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
 use super::{BoxObject, Object, ObjectLayout, ObjectType};
-use crate::elements::{array::Array, BoxElement, Element, ElementLayout};
+use crate::elements::{array::Array, BoxElement, Element};
 
 #[repr(C)]
 #[derive(Default)]
@@ -44,11 +43,8 @@ impl DerefMut for RawString {
 impl Drop for RawString {
     fn drop(&mut self) {
         unsafe {
-            if let Some(mut ptr) = self.ptr.take() {
-                let layout = Array::layout(ptr.as_ref());
-                std::ptr::drop_in_place(ptr.as_mut());
-
-                dealloc(ptr.as_ptr().cast(), layout);
+            if let Some(ptr) = self.ptr.take() {
+                BoxElement::from_raw(ptr);
             }
         }
     }

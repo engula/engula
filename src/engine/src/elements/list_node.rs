@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    alloc::{alloc, Layout},
+    alloc::Layout,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -74,6 +74,9 @@ impl ElementLayout for ListNode {
 
 impl BoxElement<ListNode> {
     pub fn with_capacity(size: usize) -> BoxElement<ListNode> {
+        // use std::alloc::alloc;
+        use crate::alloc::lsa_alloc as alloc;
+
         type Target = Element<ListNode>;
 
         let align = std::mem::align_of::<Target>();

@@ -14,9 +14,11 @@
 
 #![feature(ptr_as_uninit)]
 
+mod alloc;
 mod db;
-pub use db::Db;
 pub mod elements;
 mod key_space;
 pub mod objects;
 pub mod record;
+
+pub use db::Db;

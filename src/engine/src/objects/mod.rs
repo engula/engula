@@ -19,7 +19,7 @@ pub mod sorted_set;
 pub mod string;
 
 use std::{
-    alloc::{alloc, Layout},
+    alloc::Layout,
     ops::{Deref, DerefMut},
     ptr::NonNull,
     slice,
@@ -304,7 +304,10 @@ impl<T: ObjectLayout> BoxObject<T> {
     where
         T: Default,
     {
+        // use std::alloc::alloc;
         use std::ptr::copy_nonoverlapping;
+
+        use crate::alloc::lsa_alloc as alloc;
 
         let size = std::mem::size_of::<Object<T>>() + key.len();
         let align = std::mem::align_of::<Object<T>>();
@@ -354,7 +357,8 @@ impl<T: ObjectLayout> DerefMut for BoxObject<T> {
 
 impl<T: ObjectLayout> Drop for BoxObject<T> {
     fn drop(&mut self) {
-        use std::alloc::dealloc;
+        // use std::alloc::dealloc;
+        use crate::alloc::lsa_dealloc as dealloc;
 
         unsafe {
             let key_len = self.meta.key_len() as usize;

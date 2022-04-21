@@ -147,7 +147,8 @@ impl<T: ElementLayout> DerefMut for BoxElement<T> {
 
 impl<T: ElementLayout> Drop for BoxElement<T> {
     fn drop(&mut self) {
-        use std::alloc::dealloc;
+        // use std::alloc::dealloc;
+        use crate::alloc::lsa_dealloc as dealloc;
 
         unsafe {
             let layout = T::layout(self.ptr.as_ref());
