@@ -145,7 +145,7 @@ impl Frame {
                     let len = get_decimal(src)?.try_into()?;
                     let n = len + 2;
 
-                    if src.remaining() < n {
+                    if !src.data_remain(n) {
                         return Err(Error::Incomplete);
                     }
 
@@ -210,14 +210,14 @@ impl fmt::Display for Frame {
 }
 
 fn peek_u8(src: &mut buffer::Cursor<'_>) -> Result<u8, Error> {
-    if !src.has_remaining() {
+    if !src.data_remain(1) {
         return Err(Error::Incomplete);
     }
     Ok(src.peek_u8())
 }
 
 fn get_u8(src: &mut buffer::Cursor<'_>) -> Result<u8, Error> {
-    if !src.has_remaining() {
+    if !src.data_remain(1) {
         return Err(Error::Incomplete);
     }
     let u = src.get_u8();
@@ -225,7 +225,7 @@ fn get_u8(src: &mut buffer::Cursor<'_>) -> Result<u8, Error> {
 }
 
 fn skip(src: &mut buffer::Cursor<'_>, n: usize) -> Result<(), Error> {
-    if src.remaining() < n {
+    if !src.data_remain(n) {
         return Err(Error::Incomplete);
     }
     src.advance(n);

@@ -52,10 +52,6 @@ impl<'b> Cursor<'b> {
         self.offset = 0;
     }
 
-    pub fn has_remaining(&self) -> bool {
-        self.offset < self.data_remain()
-    }
-
     pub fn get_u8(&mut self) -> u8 {
         let node = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
         let buf = node.slice(self.pos.dat, node.end);
@@ -134,10 +130,6 @@ impl<'b> Cursor<'b> {
         self.bufs.slice(start, Some(self.pos))
     }
 
-    pub(crate) fn remaining(&self) -> usize {
-        self.data_remain() - self.offset
-    }
-
     pub(crate) fn advance(&mut self, n: usize) {
         let BufAddr {
             buf: mut buf_idx,
@@ -194,9 +186,31 @@ impl<'b> Cursor<'b> {
         self.bufs.slice(start, Some(end))
     }
 
-    fn data_remain(&self) -> usize {
-        let wait_read = self.bufs.slice(self.min_readable, Some(self.max_readable));
-        wait_read.len()
+    pub fn data_remain(&self, n: usize) -> bool {
+        let mut remain = (self.offset + n) as i64;
+        let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
+        let bufs = self
+            .bufs
+            .buf_iter()
+            .skip(self.min_readable.buf)
+            .take(buf_cnt);
+        for (i, node) in bufs.enumerate() {
+            let start = if i == 0 {
+                self.min_readable.dat
+            } else {
+                node.begin
+            };
+            let end = if i == buf_cnt - 1 {
+                self.max_readable.dat
+            } else {
+                node.end
+            };
+            remain -= (end - start) as i64;
+            if remain <= 0 {
+                return true;
+            }
+        }
+        false
     }
 }
 

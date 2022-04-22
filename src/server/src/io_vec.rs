@@ -352,7 +352,7 @@ impl<'a> BufSlice<'a> {
         // TODO: temp method to test.
         let buf_cnt = self.end_buf() - self.start.buf + 1;
         let v = self.bufs.buf_iter().skip(self.start.buf).take(buf_cnt);
-        let mut ret = Vec::new();
+        let mut ret = Vec::with_capacity(self.len());
         for (i, buf) in v.enumerate() {
             let start = if i == 0 { self.start.dat } else { buf.begin };
             let end = if i == buf_cnt - 1 {
