@@ -128,8 +128,8 @@ impl Bufs {
     }
 
     pub(crate) fn put_at(&self, target: BufAddr, src: &[u8]) -> BufAddr {
-        let mut next = target.clone();
-        let mut buf = self.buf_iter().skip(target.buf).next().unwrap();
+        let mut next = target;
+        let mut buf = self.buf_iter().nth(target.buf).unwrap();
         let mut flushed = 0;
         while flushed < src.len() {
             unsafe {
@@ -214,7 +214,7 @@ impl<'a> BufSlice<'a> {
             if curr_pos + n >= buf.end {
                 if let Some(node) = &buf.next {
                     n -= buf.end - curr_pos;
-                    buf = &node;
+                    buf = node;
                     curr_buf += 1;
                     if curr_buf == self.end_buf() {
                         return None;
@@ -282,12 +282,12 @@ impl<'a> BufSlice<'a> {
             let start = if i == self.start.buf {
                 self.start.dat
             } else {
-                0
+                buf.begin
             };
             let end = if i == self.end_buf() {
                 self.end.unwrap().dat
             } else {
-                0
+                buf.end
             };
             let buf = buf.slice(start, end);
             ret.extend_from_slice(buf);

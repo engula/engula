@@ -48,7 +48,7 @@ impl Connection {
             io,
             db,
             read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
+            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 2)),
             last_interaction: Instant::now(),
             has_read: false,
             has_write: false,

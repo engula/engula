@@ -36,7 +36,7 @@ impl<'b> Cursor<'b> {
     ) -> Self {
         Self {
             bufs,
-            pos: io_vec::BufAddr::zero(),
+            pos: min_readable,
             offset: 0,
             min_readable,
             max_readable,
@@ -48,7 +48,7 @@ impl<'b> Cursor<'b> {
     }
 
     fn reset(&mut self) {
-        self.pos = io_vec::BufAddr::zero();
+        self.pos = self.min_readable;
         self.offset = 0;
     }
 
@@ -57,14 +57,14 @@ impl<'b> Cursor<'b> {
     }
 
     pub fn get_u8(&mut self) -> u8 {
-        let buf = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
-        let buf = buf.slice(self.pos.dat, buf.end);
-        let res = buf[self.pos.dat];
+        let node = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
+        let buf = node.slice(self.pos.dat, node.end);
+        let res = buf[0];
 
         // TODO: extract this.
         self.pos.dat += 1;
         self.offset += 1;
-        if self.pos.dat == buf.len() {
+        if self.pos.dat == node.end {
             self.pos.dat = 0;
             self.pos.buf += 1;
         }
@@ -74,14 +74,14 @@ impl<'b> Cursor<'b> {
     pub fn peek_u8(&mut self) -> u8 {
         let buf = self.bufs.buf_iter().nth(self.pos.buf).unwrap();
         let buf = buf.slice(self.pos.dat, buf.end);
-        buf[self.pos.dat]
+        buf[0]
     }
 
     pub(crate) fn get_line(&mut self) -> BufSlice<'_> {
         const WAIT_R: u8 = 1;
         const WAIT_N: u8 = 2;
 
-        let start = self.pos.clone();
+        let start = self.pos;
         let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
         let iovs = self.bufs.buf_iter().skip(self.pos.buf).take(buf_cnt);
 
@@ -91,17 +91,7 @@ impl<'b> Cursor<'b> {
 
         let mut get_line_state = WAIT_R;
         'next_buf: for buf in iovs {
-            let begin = if buf_idx == self.min_readable.buf {
-                self.min_readable.dat
-            } else {
-                0
-            };
-            let end = if buf_idx == self.max_readable.buf {
-                self.max_readable.dat
-            } else {
-                0
-            };
-            let buf = buf.slice(begin, end);
+            let buf = buf.slice(buf.begin, buf.end); // handle on origin's buf idx, so get full buf.
             if buf.is_empty() {
                 break 'next_buf;
             }
@@ -183,7 +173,7 @@ impl<'b> Cursor<'b> {
         let buf_cnt = self.max_readable.buf - self.min_readable.buf + 1;
         let mut iovs = self.bufs.buf_iter().skip(buf_idx).take(buf_cnt);
 
-        let start = self.pos.clone();
+        let start = self.pos;
         let end;
         let mut remain_n = n;
         loop {
@@ -205,7 +195,7 @@ impl<'b> Cursor<'b> {
     }
 
     fn data_remain(&self) -> usize {
-        let wait_read = self.bufs.slice(self.pos, Some(self.max_readable));
+        let wait_read = self.bufs.slice(self.min_readable, Some(self.max_readable));
         wait_read.len()
     }
 }
@@ -317,8 +307,8 @@ impl ReadBuf {
     }
 
     pub(crate) fn recycle(&mut self) {
-        // self.min_readable = BufAddr::zero();
-        // self.max_readable = BufAddr::zero();
+        self.min_readable = BufAddr::zero();
+        self.max_readable = BufAddr::zero();
     }
 }
 
