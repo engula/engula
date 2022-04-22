@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+use std::{fs, time::Duration};
 
 use anyhow::Result;
 use clap::Parser;
@@ -65,20 +65,40 @@ struct StartCommand {
     /// Close the connection after a client is idle for N seconds (0 to disable).
     #[clap(long, default_value = "0")]
     timeout: u64,
+
+    /// Path to toml config file.
+    #[clap(short, long)]
+    config: Option<String>,
 }
 
 impl StartCommand {
-    fn run(self) -> Result<()> {
+    fn run(mut self) -> Result<()> {
+        if let Some(config) = self.config {
+            let config = fs::read_to_string(config)?;
+            let values = config.parse::<toml::Value>()?;
+
+            if let Some(timeout) = values.get("timeout") {
+                let timeout = match timeout.as_integer() {
+                    Some(timeout) if timeout >= 0 => timeout,
+                    _ => panic!("timeout should be non-negative integer"),
+                };
+                self.timeout = timeout as u64;
+            }
+        }
+
         let connection_timeout = match self.timeout {
             0 => None,
             timeout => Some(Duration::from_secs(timeout)),
         };
+
         let config = Config {
             addr: self.addr,
             driver_mode: self.driver_mode.into(),
             connection_timeout,
         };
+
         engula_server::run(config)?;
+
         Ok(())
     }
 }
