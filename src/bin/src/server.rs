@@ -14,9 +14,12 @@
 
 use std::{fs, time::Duration};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use engula_server::Config;
+use toml::Value;
+
+use crate::argenum::DriverMode;
 
 #[derive(Parser)]
 pub struct Command {
@@ -37,23 +40,6 @@ enum SubCommand {
     Start(StartCommand),
 }
 
-#[derive(clap::ArgEnum, Clone)]
-enum DriverMode {
-    Mio,
-    #[cfg(target_os = "linux")]
-    Uio,
-}
-
-impl From<DriverMode> for engula_server::DriverMode {
-    fn from(mode: DriverMode) -> Self {
-        match mode {
-            DriverMode::Mio => engula_server::DriverMode::Mio,
-            #[cfg(target_os = "linux")]
-            DriverMode::Uio => engula_server::DriverMode::Uio,
-        }
-    }
-}
-
 #[derive(Parser)]
 struct StartCommand {
     #[clap(long, default_value = "127.0.0.1:21716")]
@@ -63,8 +49,8 @@ struct StartCommand {
     driver_mode: DriverMode,
 
     /// Close the connection after a client is idle for N seconds (0 to disable).
-    #[clap(long, default_value = "0")]
-    timeout: u64,
+    #[clap(long)]
+    timeout: Option<u64>,
 
     /// Path to toml config file.
     #[clap(short, long)]
@@ -72,33 +58,54 @@ struct StartCommand {
 }
 
 impl StartCommand {
-    fn run(mut self) -> Result<()> {
-        if let Some(config) = self.config {
-            let config = fs::read_to_string(config)?;
-            let values = config.parse::<toml::Value>()?;
-
-            if let Some(timeout) = values.get("timeout") {
-                let timeout = match timeout.as_integer() {
-                    Some(timeout) if timeout >= 0 => timeout,
-                    _ => panic!("timeout should be non-negative integer"),
-                };
-                self.timeout = timeout as u64;
+    fn run(self) -> Result<()> {
+        let values = match &self.config {
+            None => None,
+            Some(config) => {
+                let config = fs::read_to_string(config)?;
+                let values = config.parse::<toml::Value>()?;
+                Some(values)
             }
-        }
-
-        let connection_timeout = match self.timeout {
-            0 => None,
-            timeout => Some(Duration::from_secs(timeout)),
         };
 
-        let config = Config {
-            addr: self.addr,
-            driver_mode: self.driver_mode.into(),
-            connection_timeout,
-        };
+        let config = merge_configs(self, values)?;
 
         engula_server::run(config)?;
 
         Ok(())
     }
+}
+
+const DEFAULT_CONNECTION_TIMEOUT: Option<Duration> = None;
+
+fn merge_configs(args: StartCommand, values: Option<Value>) -> Result<Config> {
+    let addr = args.addr;
+
+    let driver_mode = args.driver_mode.into();
+
+    let mut connection_timeout = DEFAULT_CONNECTION_TIMEOUT;
+    if let Some(values) = values {
+        if let Some(timeout) = values.get("timeout") {
+            match timeout {
+                Value::Integer(timeout) if *timeout >= 0 => {
+                    connection_timeout = Some(Duration::from_secs(*timeout as u64));
+                }
+                timeout => {
+                    return Err(anyhow!(
+                        "timeout should be non-negative integer, but {:?}",
+                        timeout
+                    ))
+                }
+            }
+        }
+    }
+    if let Some(timeout) = args.timeout {
+        connection_timeout = Some(Duration::from_secs(timeout as u64));
+    }
+
+    Ok(Config {
+        addr,
+        driver_mode,
+        connection_timeout,
+    })
 }

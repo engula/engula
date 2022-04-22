@@ -12,33 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod argenum;
-mod server;
+///! Adapters for [`clap::ArgEnum`].
 
-use anyhow::Result;
-use clap::Parser;
-
-#[derive(Parser)]
-struct Command {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
+#[derive(clap::ArgEnum, Clone)]
+pub enum DriverMode {
+    Mio,
+    #[cfg(target_os = "linux")]
+    Uio,
 }
 
-impl Command {
-    fn run(self) -> Result<()> {
-        match self.subcmd {
-            SubCommand::Server(cmd) => cmd.run(),
+impl From<DriverMode> for engula_server::DriverMode {
+    fn from(mode: DriverMode) -> Self {
+        match mode {
+            DriverMode::Mio => engula_server::DriverMode::Mio,
+            #[cfg(target_os = "linux")]
+            DriverMode::Uio => engula_server::DriverMode::Uio,
         }
     }
-}
-
-#[derive(Parser)]
-enum SubCommand {
-    Server(server::Command),
-}
-
-fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
-    let cmd: Command = Command::parse();
-    cmd.run()
 }
