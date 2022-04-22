@@ -47,8 +47,8 @@ impl Connection {
             fd,
             io,
             db,
-            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 2)),
+            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 1), 1),
+            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 1)),
             last_interaction: Instant::now(),
             has_read: false,
             has_write: false,
@@ -102,21 +102,21 @@ impl Connection {
         }
     }
 
-    fn prepare(&mut self, sqe: squeue::Entry) -> Result<()> {
-        self.io.enqueue(sqe)?;
+    fn prepare(&mut self, sqe: squeue::Entry) -> Result<usize> {
+        let s = self.io.enqueue(sqe)?;
         self.num_inflights += 1;
-        Ok(())
+        Ok(s)
     }
 
     fn prepare_read(&mut self) {
         let token = Token::new(self.id, opcode::Readv::CODE);
-        let (iovs, iovs_len) = self.read_buf.wait_fill_io_slice_mut();
+        let (iovs, iovs_len, tlen) = self.read_buf.wait_fill_io_slice_mut();
         let sqe = opcode::Readv::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
-            Ok(_) => {
-                trace!(self.id, "connection prepare read");
+            Ok(s) => {
+                trace!(self.id, tlen, s, "connection prepare read");
                 self.has_read = true;
             }
             Err(err) => error!(%err, self.id, "connection prepare read"),
@@ -150,13 +150,13 @@ impl Connection {
 
     fn prepare_write(&mut self) {
         let token = Token::new(self.id, opcode::Writev::CODE);
-        let (iovs, iovs_len) = self.write_buf.wait_flush_io_slice();
+        let (iovs, iovs_len, tlen) = self.write_buf.wait_flush_io_slice();
         let sqe = opcode::Writev::new(types::Fd(self.fd), iovs, iovs_len)
             .build()
             .user_data(token.0);
         match self.prepare(sqe) {
-            Ok(_) => {
-                trace!(self.id, "connection prepare write");
+            Ok(s) => {
+                trace!(self.id, tlen, s, "connection prepare write");
                 self.has_write = true;
             }
             Err(err) => error!(%err, self.id, "connection prepare write"),

@@ -203,7 +203,6 @@ impl fmt::Display for Frame {
                         part.fmt(fmt)?;
                     }
                 }
-
                 Ok(())
             }
         }
@@ -237,8 +236,8 @@ fn skip(src: &mut buffer::Cursor<'_>, n: usize) -> Result<(), Error> {
 fn get_decimal(src: &mut buffer::Cursor<'_>) -> Result<u64, Error> {
     use atoi::atoi;
 
-    let line = get_line(src)?;
-    let line = line.as_vec();
+    let lines = get_line(src)?;
+    let line = lines.as_vec();
     atoi::<u64>(&line).ok_or_else(|| "protocol error; invalid frame format".into())
 }
 

@@ -42,17 +42,18 @@ impl IoDriver {
         Ok(n)
     }
 
-    pub fn enqueue(&mut self, sqe: squeue::Entry) -> Result<()> {
+    pub fn enqueue(&mut self, sqe: squeue::Entry) -> Result<usize> {
         let io = unsafe { Rc::get_mut_unchecked(&mut self.io) };
         let mut sq = unsafe { io.submission_shared() };
+        let mut size = 0;
         while sq.is_full() {
-            io.submit_and_wait(1)?;
+            size = io.submit_and_wait(1)?;
             sq.sync();
         }
         unsafe {
             sq.push(&sqe).unwrap();
         }
-        Ok(())
+        Ok(size)
     }
 
     pub fn dequeue(&mut self) -> CompletionQueue<'_> {

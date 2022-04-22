@@ -206,15 +206,18 @@ pub struct ReadBuf {
     pub max_readable: io_vec::BufAddr,
 
     pub riovs: Option<Vec<IoSliceMut<'static>>>,
+
+    pub max_idle_buf_cnt: usize,
 }
 
 impl ReadBuf {
-    pub fn new(bufs: io_vec::Bufs) -> Self {
+    pub fn new(bufs: io_vec::Bufs, max_idle_buf_cnt: usize) -> Self {
         Self {
             bufs,
             min_readable: io_vec::BufAddr::zero(),
             max_readable: io_vec::BufAddr::zero(),
             riovs: None,
+            max_idle_buf_cnt,
         }
     }
 
@@ -282,33 +285,44 @@ impl ReadBuf {
         }
     }
 
-    pub(crate) fn wait_fill_io_slice_mut(&mut self) -> (*const libc::iovec, u32) {
-        let mut wait_flush = self.bufs.slice(self.max_readable, None);
+    pub(crate) fn wait_fill_io_slice_mut(&mut self) -> (*const libc::iovec, u32, usize) {
+        let mut wait_fill = self.bufs.slice(self.max_readable, None);
         let mut iovs = self.riovs.take().unwrap_or_default();
         iovs.clear();
-        wait_flush.as_io_slice_mut(&mut iovs);
-        let ret = (iovs.as_ptr().cast(), iovs.len() as _);
+        let tlen = wait_fill.as_io_slice_mut(&mut iovs);
+        let ret = (iovs.as_ptr().cast(), iovs.len() as _, tlen);
         self.riovs = Some(iovs);
         ret
     }
 
     pub(crate) fn advance_min_readable(&mut self, n: usize) {
-        let wait_discard = self.bufs.slice(self.min_readable, Some(self.max_readable));
+        let wait_discard = self.bufs.slice(self.min_readable, None);
         let next = wait_discard.advance_addr(self.min_readable, n).unwrap();
         self.min_readable = next;
         // TODO: free or back to pool for node < self.min_readable
     }
 
     pub(crate) fn advance_max_readable(&mut self, n: usize) {
-        let wait_filldata = self.bufs.slice(self.max_readable, None);
-        let next = wait_filldata.advance_addr(self.max_readable, n).unwrap();
-        self.max_readable = next;
-        // TODO: add node if no engouh space.
+        loop {
+            let next = self
+                .bufs
+                .slice(self.max_readable, None)
+                .advance_addr(self.max_readable, n);
+            if let Some(n) = next {
+                self.max_readable = n;
+                break;
+            }
+            self.bufs.append_buf();
+        }
     }
 
     pub(crate) fn recycle(&mut self) {
         self.min_readable = BufAddr::zero();
         self.max_readable = BufAddr::zero();
+        let need_clean = self.bufs.node_cnt - self.max_idle_buf_cnt;
+        if need_clean > 0 {
+            self.bufs.recycle(need_clean);
+        }
     }
 }
 
@@ -417,28 +431,44 @@ impl WriteBuf {
 
     #[inline]
     pub fn put_slice(&mut self, src: &[u8]) {
-        self.filled = self.bufs.put_at(self.filled, src);
+        let new_filled = self.bufs.put_at(self.filled, src);
+        self.filled = new_filled;
     }
 
-    pub(crate) fn wait_flush_io_slice(&mut self) -> (*const libc::iovec, u32) {
+    pub(crate) fn wait_flush_io_slice(&mut self) -> (*const libc::iovec, u32, usize) {
         let mut wait_flush = self.bufs.slice(self.flushed, Some(self.filled));
         let mut iovs = self.wiovs.take().unwrap_or_default();
         iovs.clear();
-        wait_flush.as_io_slice(&mut iovs);
-        let ret = (iovs.as_ptr().cast(), iovs.len() as _);
+        let tlen = wait_flush.as_io_slice(&mut iovs);
+        let ret = (iovs.as_ptr().cast(), iovs.len() as _, tlen);
         self.wiovs = Some(iovs);
         ret
     }
 
     pub(crate) fn advance_flush_pos(&mut self, n: usize) {
-        let wait_flush = self.bufs.slice(self.flushed, Some(self.filled));
+        let wait_flush = self.bufs.slice(self.flushed, None);
         let flushed = wait_flush.advance_addr(self.flushed, n).unwrap();
+        assert!(flushed.buf <= self.filled.buf);
         self.flushed = flushed;
     }
 
     pub(crate) fn recycle(&mut self) {
-        // self.flushed = BufAddr::zero();
-        // self.filled = BufAddr::zero();
+        if self.filled == self.flushed && self.filled.buf > 0 {
+            // no more inflight write, just reuse from head.
+            self.flushed = BufAddr::zero();
+            self.filled = BufAddr::zero();
+            let need_clean = self.bufs.node_cnt - 2;
+            if need_clean > 0 {
+                self.bufs.recycle(need_clean);
+            }
+            return;
+        }
+        if self.flushed.buf > 2 {
+            // there are inflight writes, remove prefix nodes and rewind pos.
+            let recycled = self.bufs.recycle(self.flushed.buf - 2);
+            self.flushed.buf -= recycled;
+            self.filled.buf -= recycled;
+        }
     }
 }
 
