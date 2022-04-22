@@ -276,6 +276,48 @@ where
     GLOBAL_LSA.compact(migrate);
 }
 
+#[derive(Default)]
+pub struct LsaMemStats {
+    pub freed: usize,
+    pub allocated: usize,
+    pub total: usize,
+
+    pub freed_segments: usize,
+}
+
+impl LsaMemStats {
+    fn apply(&mut self, segment: &Segment) {
+        self.freed += segment.freed;
+        self.allocated += segment.allocated;
+        self.total += SEGMENT_SIZE;
+    }
+}
+
+#[allow(dead_code)]
+pub fn read_mem_stats() -> LsaMemStats {
+    let mut stats = LsaMemStats::default();
+    {
+        let active_segment = GLOBAL_LSA.active_segment.lock().unwrap();
+        if let Some(active_segment) = active_segment.as_ref() {
+            stats.apply(active_segment);
+        }
+    }
+
+    {
+        let segments = GLOBAL_LSA.segments.lock().unwrap();
+        for segment in segments.iter() {
+            stats.apply(segment);
+        }
+    }
+
+    {
+        let freed_segments = GLOBAL_LSA.freed_segments.lock().unwrap();
+        stats.freed_segments = freed_segments.len();
+    }
+
+    stats
+}
+
 #[allow(dead_code)]
 fn assert_segment_size_is_power_of_two() {
     let _: [u8; SEGMENT_SIZE] = [0; (SEGMENT_SIZE - 1).next_power_of_two()];

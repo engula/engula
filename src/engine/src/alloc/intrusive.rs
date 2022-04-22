@@ -30,6 +30,7 @@ pub struct ListNode<T> {
 
 pub trait ListNodeAdaptor<T>: Default {
     fn node_mut(data: &mut T) -> &mut ListNode<T>;
+    fn node(data: &T) -> &ListNode<T>;
     unsafe fn node_offset(data: NonNull<T>) -> NonNull<ListNode<T>>;
 
     #[inline]
@@ -40,6 +41,16 @@ pub trait ListNodeAdaptor<T>: Default {
     #[inline]
     fn take_prev(data: &mut T) -> Option<NonNull<T>> {
         Self::node_mut(data).next
+    }
+
+    #[inline]
+    fn next(data: &T) -> Option<NonNull<T>> {
+        Self::node(data).next
+    }
+
+    #[inline]
+    fn prev(data: &T) -> Option<NonNull<T>> {
+        Self::node(data).prev
     }
 
     #[inline]
@@ -61,6 +72,13 @@ pub trait ListNodeAdaptor<T>: Default {
     fn set_prev(data: &mut T, prev: Option<NonNull<T>>) {
         unsafe { Self::set_prev_ptr(NonNull::from(data), prev) };
     }
+}
+
+pub struct Iter<'a, T: 'a, A: ListNodeAdaptor<T>> {
+    head: Option<NonNull<T>>,
+    tail: Option<NonNull<T>>,
+    len: usize,
+    marker: PhantomData<(&'a T, A)>,
 }
 
 impl<T> ListNode<T> {
@@ -247,11 +265,67 @@ impl<T, A: ListNodeAdaptor<T>> LinkedList<T, A> {
         self.len -= 1;
         node
     }
+
+    #[inline]
+    pub fn iter(&self) -> Iter<'_, T, A> {
+        Iter {
+            head: self.head,
+            tail: self.tail,
+            len: self.len,
+            marker: PhantomData,
+        }
+    }
 }
 
 impl<T, A: ListNodeAdaptor<T>> Drop for LinkedList<T, A> {
     fn drop(&mut self) {
         while self.pop_front_node().is_some() {}
+    }
+}
+
+impl<'a, T, A: ListNodeAdaptor<T>> Iterator for Iter<'a, T, A> {
+    type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<&'a T> {
+        if self.len == 0 {
+            None
+        } else {
+            self.head.map(|node| unsafe {
+                // Need an unbound lifetime to get 'a
+                let node = &*node.as_ptr();
+                self.len -= 1;
+                self.head = A::next(node);
+                node
+            })
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<&'a T> {
+        self.next_back()
+    }
+}
+
+impl<'a, T, A: ListNodeAdaptor<T>> DoubleEndedIterator for Iter<'a, T, A> {
+    #[inline]
+    fn next_back(&mut self) -> Option<&'a T> {
+        if self.len == 0 {
+            None
+        } else {
+            self.tail.map(|node| unsafe {
+                // Need an unbound lifetime to get 'a
+                let node = &*node.as_ptr();
+                self.len -= 1;
+                self.tail = A::prev(node);
+                node
+            })
+        }
     }
 }
 
@@ -264,6 +338,10 @@ macro_rules! intrusive_linked_list_adaptor {
         impl ListNodeAdaptor<$node_type> for $name {
             fn node_mut(data: &mut $node_type) -> &mut ListNode<$node_type> {
                 &mut data.$field_name
+            }
+
+            fn node(data: &$node_type) -> &ListNode<$node_type> {
+                &data.$field_name
             }
 
             #[allow(clippy::missing_safety_doc)]
