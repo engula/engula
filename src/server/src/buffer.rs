@@ -346,15 +346,17 @@ pub struct WriteBuf {
     pub flushed: io_vec::BufAddr,
 
     pub wiovs: Option<Vec<IoSlice<'static>>>,
+    pub max_idle_buf_cnt: usize,
 }
 
 impl WriteBuf {
-    pub fn new(bufs: io_vec::Bufs) -> Self {
+    pub fn new(bufs: io_vec::Bufs, max_idle_buf_cnt: usize) -> Self {
         Self {
             bufs,
             filled: io_vec::BufAddr::zero(),
             flushed: io_vec::BufAddr::zero(),
             wiovs: None,
+            max_idle_buf_cnt,
         }
     }
 
@@ -471,13 +473,13 @@ impl WriteBuf {
             // no more inflight write, just reuse from head.
             self.flushed = BufAddr::zero();
             self.filled = BufAddr::zero();
-            let need_clean = self.bufs.node_cnt - 2;
+            let need_clean = self.bufs.node_cnt - self.max_idle_buf_cnt;
             if need_clean > 0 {
                 self.bufs.recycle(need_clean);
             }
             return;
         }
-        if self.flushed.buf > 2 {
+        if self.flushed.buf >= self.max_idle_buf_cnt {
             // there are inflight writes, remove prefix nodes and rewind pos.
             let recycled = self.bufs.recycle(self.flushed.buf - 2);
             self.flushed.buf -= recycled;

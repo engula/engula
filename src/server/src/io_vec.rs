@@ -257,6 +257,7 @@ pub struct BufSlice<'a> {
 }
 
 impl<'a> BufSlice<'a> {
+    #[inline]
     fn end_buf(&self) -> usize {
         if let Some(add) = self.end {
             add.buf
@@ -368,6 +369,14 @@ impl<'a> BufSlice<'a> {
             ret.extend_from_slice(buf);
         }
         ret
+    }
+
+    pub fn only_one_slice(&self) -> Option<&'_ [u8]> {
+        if self.end.unwrap().buf != self.start.buf {
+            return None;
+        }
+        let buf = self.bufs.buf_iter().nth(self.start.buf).unwrap();
+        Some(buf.slice(self.start.dat, self.end.unwrap().dat))
     }
 
     pub(crate) fn len(&self) -> usize {

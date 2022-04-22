@@ -120,12 +120,22 @@ impl Frame {
         match get_u8(src)? {
             b'+' => {
                 let line = get_line(src)?;
-                let line = unsafe { String::from_utf8_unchecked(line.as_vec()) };
+                let v = if let Some(line) = line.only_one_slice() {
+                    line.to_vec()
+                } else {
+                    line.as_vec()
+                };
+                let line = unsafe { String::from_utf8_unchecked(v) };
                 Ok(Frame::Simple(line))
             }
             b'-' => {
                 let line = get_line(src)?;
-                let line = unsafe { String::from_utf8_unchecked(line.as_vec()) };
+                let v = if let Some(line) = line.only_one_slice() {
+                    line.to_vec()
+                } else {
+                    line.as_vec()
+                };
+                let line = unsafe { String::from_utf8_unchecked(v) };
                 Ok(Frame::Error(line))
             }
             b':' => {
@@ -135,10 +145,13 @@ impl Frame {
             b'$' => {
                 if b'-' == peek_u8(src)? {
                     let line = get_line(src)?;
-                    if line.as_vec() != b"-1" {
+                    if let Some(line) = line.only_one_slice() {
+                        if line != b"-1" {
+                            return Err("protocol error; invalid frame format".into());
+                        }
+                    } else if line.as_vec() != b"-1" {
                         return Err("protocol error; invalid frame format".into());
                     }
-
                     Ok(Frame::Null)
                 } else {
                     // Read the bulk string
@@ -149,8 +162,13 @@ impl Frame {
                         return Err(Error::Incomplete);
                     }
 
-                    let data = src.peek_n(len).as_vec();
-                    let bytes = Bytes::from(data);
+                    let data = src.peek_n(len);
+
+                    let bytes = if let Some(d) = data.only_one_slice() {
+                        Bytes::copy_from_slice(d)
+                    } else {
+                        Bytes::from(data.as_vec())
+                    };
 
                     // skip that number of bytes + 2 (\r\n).
                     skip(src, n)?;
@@ -237,8 +255,12 @@ fn get_decimal(src: &mut buffer::Cursor<'_>) -> Result<u64, Error> {
     use atoi::atoi;
 
     let lines = get_line(src)?;
-    let line = lines.as_vec();
-    atoi::<u64>(&line).ok_or_else(|| "protocol error; invalid frame format".into())
+    if let Some(line) = lines.only_one_slice() {
+        atoi::<u64>(line).ok_or_else(|| "protocol error; invalid frame format".into())
+    } else {
+        let lines = lines.as_vec();
+        atoi::<u64>(&lines).ok_or_else(|| "protocol error; invalid frame format".into())
+    }
 }
 
 /// Find a line
