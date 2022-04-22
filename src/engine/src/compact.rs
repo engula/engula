@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(ptr_as_uninit)]
+use std::ptr::NonNull;
 
-mod alloc;
-mod compact;
-mod db;
-pub mod elements;
-mod key_space;
-pub mod objects;
-pub mod record;
-
-pub use self::{alloc::compact_segments, compact::migrate_record, db::Db};
+pub fn migrate_record(_record_base: NonNull<u8>) -> usize {
+    todo!()
+}

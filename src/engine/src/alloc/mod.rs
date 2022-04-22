@@ -25,6 +25,8 @@ use lazy_static::lazy_static;
 use self::intrusive::{LinkedList, ListNode, ListNodeAdaptor};
 
 const SEGMENT_SIZE: usize = 8 * 1024 * 1024;
+const MAX_OBJECT_SIZE: usize = 2 * 1024 * 1024;
+const RECORD_ALIGN: usize = std::mem::size_of::<usize>();
 
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
     match lhs % rhs {
@@ -46,10 +48,9 @@ crate::intrusive_linked_list_adaptor!(SegmentNodeAdaptor, Segment, node);
 
 impl Segment {
     fn try_alloc(&mut self, layout: Layout) -> Option<*mut u8> {
-        let supported_align = std::mem::size_of::<usize>();
-        assert!(layout.align() <= supported_align);
+        assert!(layout.align() <= RECORD_ALIGN);
 
-        let align_allocated = next_multiple_of(self.allocated, supported_align);
+        let align_allocated = next_multiple_of(self.allocated, RECORD_ALIGN);
         if align_allocated + layout.size() > SEGMENT_SIZE {
             None
         } else {
@@ -62,7 +63,7 @@ impl Segment {
     }
 
     fn free(&mut self, layout: Layout) {
-        let aligned_size = next_multiple_of(layout.size(), std::mem::size_of::<usize>());
+        let aligned_size = next_multiple_of(layout.size(), RECORD_ALIGN);
         self.freed += aligned_size;
     }
 
@@ -70,14 +71,10 @@ impl Segment {
         self.freed == SEGMENT_SIZE || self.allocated == std::mem::size_of::<Segment>()
     }
 
-    fn try_reuse(&mut self) -> bool {
-        if self.is_empty() {
-            self.allocated = std::mem::size_of::<Segment>();
-            self.freed = std::mem::size_of::<Segment>();
-            true
-        } else {
-            false
-        }
+    unsafe fn reset(&mut self) {
+        debug_assert!(self.is_empty());
+        self.allocated = std::mem::size_of::<Segment>();
+        self.freed = std::mem::size_of::<Segment>();
     }
 }
 
@@ -96,6 +93,20 @@ impl Segment {
             let uninit_segment = ptr.as_uninit_mut();
             uninit_segment.write(default_segment);
             Box::from_raw(ptr.as_ptr())
+        }
+    }
+
+    unsafe fn compact<F>(&mut self, migrate: F)
+    where
+        F: Fn(NonNull<u8>) -> usize,
+    {
+        let data = std::ptr::addr_of_mut!(self.data) as *mut u8;
+        let mut consumed = std::mem::size_of::<Segment>();
+        while consumed <= SEGMENT_SIZE {
+            let record_base = data.add(consumed);
+            let record_size = migrate(NonNull::new_unchecked(record_base));
+            consumed += record_size;
+            consumed = next_multiple_of(consumed, RECORD_ALIGN);
         }
     }
 }
@@ -121,24 +132,42 @@ mod tests {
 
 type SegmentList = LinkedList<Segment, SegmentNodeAdaptor>;
 
+// FIXME(walter) the record meta should be atomic.
+unsafe impl Send for Segment {}
+unsafe impl Send for SegmentList {}
+
 pub struct Lsa {
-    segments: SegmentList,
-    freed_segments: SegmentList,
+    active_segment: Mutex<Option<Box<Segment>>>,
+    segments: Mutex<SegmentList>,
+    freed_segments: Mutex<SegmentList>,
 }
 
 impl Lsa {
     pub fn new() -> Self {
         Lsa {
-            segments: SegmentList::new(),
-            freed_segments: SegmentList::new(),
+            active_segment: Mutex::new(None),
+            segments: Mutex::new(SegmentList::new()),
+            freed_segments: Mutex::new(SegmentList::new()),
         }
     }
 
-    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
+    pub unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if Self::is_exceeds_supported_size(layout) {
+            return std::alloc::alloc(layout);
+        }
+
         for _ in 0..2 {
-            if let Some(last_segment) = self.segments.back_mut() {
-                if let Some(addr) = last_segment.try_alloc(layout) {
-                    return addr;
+            {
+                let mut active_seg = self.active_segment.lock().unwrap();
+                if let Some(last_segment) = active_seg.as_mut() {
+                    if let Some(addr) = last_segment.try_alloc(layout) {
+                        return addr;
+                    }
+
+                    {
+                        let mut segments = self.segments.lock().unwrap();
+                        segments.push_back(active_seg.take().unwrap());
+                    }
                 }
             }
 
@@ -148,44 +177,89 @@ impl Lsa {
         panic!("couldn't alloc enough memory with {:?}", layout);
     }
 
-    fn alloc_segment(&mut self) {
-        if let Some(segment) = self.freed_segments.pop_front() {
-            self.segments.push_back(segment);
-        } else {
-            self.segments.push_back(Segment::new());
+    unsafe fn dealloc(&self, addr: *mut u8, layout: Layout) {
+        if Self::is_exceeds_supported_size(layout) {
+            std::alloc::dealloc(addr, layout);
+            return;
         }
-    }
 
-    unsafe fn might_reuse_segment(&mut self, mut segment: NonNull<Segment>) {
-        if segment.as_mut().try_reuse() {
-            let boxed_segment = self.segments.unlink_node(segment);
-            self.freed_segments.push_back(boxed_segment);
-        }
-    }
-}
-
-// Because we don't obtain segment references without lock.
-unsafe impl Send for Lsa {}
-
-lazy_static! {
-    static ref GLOBAL_LSA: Mutex<Lsa> = Mutex::new(Lsa::new());
-}
-
-pub fn lsa_alloc(layout: Layout) -> *mut u8 {
-    let mut lsa = GLOBAL_LSA.lock().unwrap();
-    lsa.alloc(layout)
-}
-
-pub fn lsa_dealloc(addr: *mut u8, layout: Layout) {
-    let mut lsa = GLOBAL_LSA.lock().unwrap();
-    unsafe {
         let segment_addr = addr as usize ^ (SEGMENT_SIZE - 1);
         if let Some(mut segment_ptr) = NonNull::new(segment_addr as *mut Segment) {
             let segment = segment_ptr.as_mut();
             segment.free(layout);
-            lsa.might_reuse_segment(segment_ptr);
+            self.might_reuse_segment(segment_ptr);
         }
     }
+
+    fn alloc_segment(&self) {
+        let new_segment = {
+            let mut freed_segments = self.freed_segments.lock().unwrap();
+            freed_segments.pop_front()
+        };
+        let segment = new_segment.unwrap_or_else(Segment::new);
+        let mut active_seg = self.active_segment.lock().unwrap();
+        *active_seg = Some(segment);
+    }
+
+    unsafe fn might_reuse_segment(&self, mut segment_ptr: NonNull<Segment>) {
+        let segment = segment_ptr.as_mut();
+        if segment.is_empty() {
+            segment.reset();
+            let boxed_segment = {
+                let mut segments = self.segments.lock().unwrap();
+                segments.unlink_node(segment_ptr)
+            };
+
+            let mut freed_segments = self.freed_segments.lock().unwrap();
+            freed_segments.push_back(boxed_segment);
+        }
+    }
+
+    fn is_exceeds_supported_size(layout: Layout) -> bool {
+        let aligned_size = next_multiple_of(layout.size(), RECORD_ALIGN);
+        aligned_size >= MAX_OBJECT_SIZE
+    }
+
+    fn compact<F>(&self, migrate: F)
+    where
+        F: Fn(NonNull<u8>) -> usize,
+    {
+        let boxed_segment = {
+            let mut segments = self.segments.lock().unwrap();
+            if let Some(mut segment) = segments.pop_front() {
+                // TODO(walter) migrate without lock.
+                unsafe { segment.compact(migrate) };
+                segment
+            } else {
+                return;
+            }
+        };
+
+        let mut freed_segments = self.freed_segments.lock().unwrap();
+        freed_segments.push_back(boxed_segment);
+    }
+}
+
+lazy_static! {
+    static ref GLOBAL_LSA: Lsa = Lsa::new();
+}
+
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn lsa_alloc(layout: Layout) -> *mut u8 {
+    GLOBAL_LSA.alloc(layout)
+}
+
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn lsa_dealloc(addr: *mut u8, layout: Layout) {
+    GLOBAL_LSA.dealloc(addr, layout);
+}
+
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn compact_segments<F>(migrate: F)
+where
+    F: Fn(NonNull<u8>) -> usize,
+{
+    GLOBAL_LSA.compact(migrate);
 }
 
 #[allow(dead_code)]

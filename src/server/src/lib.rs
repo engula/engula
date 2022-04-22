@@ -16,7 +16,16 @@
 
 extern crate core;
 
-use engula_engine::Db;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
+
+use engula_engine::{compact_segments, migrate_record, Db};
 
 mod error;
 pub use error::{Error, Result};
@@ -42,10 +51,33 @@ mod mio;
 #[cfg(target_os = "linux")]
 mod uio;
 
-pub fn run(config: Config) -> Result<()> {
-    match config.driver_mode {
-        DriverMode::Mio => mio::Server::new(config)?.run(),
-        #[cfg(target_os = "linux")]
-        DriverMode::Uio => uio::Server::new(config)?.run(),
+fn run_background(exit_flags: Arc<AtomicBool>) {
+    while exit_flags.load(Ordering::Acquire) {
+        unsafe {
+            compact_segments(migrate_record);
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn bootstrap_background_service() -> (Arc<AtomicBool>, JoinHandle<()>) {
+    let exit_flag = Arc::new(AtomicBool::new(false));
+    let cloned_exit_flag = exit_flag.clone();
+    let join_handle = std::thread::spawn(move || {
+        run_background(cloned_exit_flag);
+    });
+    (exit_flag, join_handle)
+}
+
+pub fn run(config: Config) -> Result<()> {
+    let (exit_flag, join_handle) = bootstrap_background_service();
+    match config.driver_mode {
+        DriverMode::Mio => mio::Server::new(config)?.run()?,
+        #[cfg(target_os = "linux")]
+        DriverMode::Uio => uio::Server::new(config)?.run()?,
+    };
+    exit_flag.store(true, Ordering::Release);
+    join_handle.join().unwrap();
+    Ok(())
 }

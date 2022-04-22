@@ -28,7 +28,7 @@ pub struct ListNode<T> {
     marker: PhantomData<T>,
 }
 
-pub unsafe trait ListNodeAdaptor<T>: Default {
+pub trait ListNodeAdaptor<T>: Default {
     fn node_mut(data: &mut T) -> &mut ListNode<T>;
     unsafe fn node_offset(data: NonNull<T>) -> NonNull<ListNode<T>>;
 
@@ -261,11 +261,12 @@ macro_rules! intrusive_linked_list_adaptor {
         #[derive(Default)]
         struct $name;
 
-        unsafe impl ListNodeAdaptor<$node_type> for $name {
+        impl ListNodeAdaptor<$node_type> for $name {
             fn node_mut(data: &mut $node_type) -> &mut ListNode<$node_type> {
                 &mut data.$field_name
             }
 
+            #[allow(clippy::missing_safety_doc)]
             unsafe fn node_offset(data: NonNull<$node_type>) -> NonNull<ListNode<$node_type>> {
                 NonNull::new_unchecked(std::ptr::addr_of!(data.as_ref().$field_name) as *mut _)
             }
