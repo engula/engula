@@ -29,14 +29,16 @@ impl IoDriver {
         Ok(Self { io: Rc::new(io) })
     }
 
-    pub fn wait(&mut self, want: usize) -> Result<usize> {
+    pub fn wait(&mut self, want: usize, need_timeout: bool) -> Result<usize> {
         let io = unsafe { Rc::get_mut_unchecked(&mut self.io) };
-        let ts = types::Timespec::new().sec(1);
-        let timeout = opcode::Timeout::new(&ts).build();
-        unsafe {
-            io.submission()
-                .push(&timeout)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        if need_timeout {
+            let ts = types::Timespec::new().sec(1);
+            let timeout = opcode::Timeout::new(&ts).build();
+            unsafe {
+                io.submission()
+                    .push(&timeout)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            }
         }
         let n = io.submit_and_wait(want)?;
         Ok(n)

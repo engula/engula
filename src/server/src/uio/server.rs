@@ -64,10 +64,11 @@ impl Server {
 
     fn tick(&mut self) -> Result<()> {
         let mut io = self.io.clone();
-        io.wait(1).map_err(|err| {
-            error!(%err, "wait io");
-            err
-        })?;
+        io.wait(1, self.connection_timeout.is_some())
+            .map_err(|err| {
+                error!(%err, "wait io");
+                err
+            })?;
 
         let mut cq = io.dequeue();
         loop {
