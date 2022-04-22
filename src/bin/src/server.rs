@@ -78,6 +78,7 @@ impl StartCommand {
 
 const DEFAULT_CONNECTION_TIMEOUT: Option<Duration> = None;
 
+/// Merge configs from args and files, and prefer those from args to those from file.
 fn merge_configs(args: StartCommand, values: Option<Value>) -> Result<Config> {
     let addr = args.addr;
 
