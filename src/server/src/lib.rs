@@ -22,7 +22,7 @@ mod error;
 pub use error::{Error, Result};
 
 mod config;
-pub use config::{Config, DriverMode};
+pub use config::{Config, ConfigBuilder, DriverMode};
 
 mod buffer;
 pub use buffer::{ReadBuf, WriteBuf};

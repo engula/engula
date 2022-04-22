@@ -14,9 +14,9 @@
 
 use std::{fs, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::Parser;
-use engula_server::Config;
+use engula_server::{Config, ConfigBuilder};
 use toml::Value;
 
 use crate::argenum::DriverMode;
@@ -42,11 +42,13 @@ enum SubCommand {
 
 #[derive(Parser)]
 struct StartCommand {
-    #[clap(long, default_value = "127.0.0.1:21716")]
-    addr: String,
+    /// Address of the Engula server.
+    #[clap(long)]
+    addr: Option<String>,
 
-    #[clap(long, default_value = "mio", arg_enum)]
-    driver_mode: DriverMode,
+    /// Driver mode of the Engula server.
+    #[clap(long, arg_enum)]
+    driver_mode: Option<DriverMode>,
 
     /// Close the connection after a client is idle for N seconds (0 to disable).
     #[clap(long)]
@@ -68,45 +70,47 @@ impl StartCommand {
             }
         };
 
-        let config = merge_configs(self, values)?;
-
-        engula_server::run(config)?;
+        engula_server::run(merge_configs(self, values))?;
 
         Ok(())
     }
 }
 
-const DEFAULT_CONNECTION_TIMEOUT: Option<Duration> = None;
-
 /// Merge configs from args and files, and prefer those from args to those from file.
-fn merge_configs(args: StartCommand, values: Option<Value>) -> Result<Config> {
-    let addr = args.addr;
+fn merge_configs(args: StartCommand, values: Option<Value>) -> Config {
+    let mut config_builder = ConfigBuilder::default();
+    apply_from_values(&mut config_builder, values);
+    apply_from_args(&mut config_builder, args);
+    config_builder.build()
+}
 
-    let driver_mode = args.driver_mode.into();
-
-    let mut connection_timeout = DEFAULT_CONNECTION_TIMEOUT;
+fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<Value>) {
     if let Some(values) = values {
         if let Some(timeout) = values.get("timeout") {
             match timeout {
                 Value::Integer(timeout) if *timeout >= 0 => {
-                    connection_timeout = Some(Duration::from_secs(*timeout as u64));
+                    config_builder.connection_timeout = Some(Duration::from_secs(*timeout as u64));
                 }
                 timeout => {
-                    return Err(anyhow!(
-                        "timeout should be non-negative integer, but {:?}",
-                        timeout
-                    ))
+                    panic!("timeout should be non-negative integer, but {:?}", timeout)
                 }
             }
         }
     }
-    if let Some(timeout) = args.timeout {
-        connection_timeout = Some(Duration::from_secs(timeout as u64));
-    }
+}
 
-    Ok(Config {
-        addr,
-        driver_mode,
-        connection_timeout,
-    })
+fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {
+    if let Some(addr) = args.addr {
+        config_builder.addr = addr;
+    }
+    if let Some(driver_mode) = args.driver_mode {
+        config_builder.driver_mode = driver_mode.into();
+    }
+    if let Some(timeout) = args.timeout {
+        if timeout > 0 {
+            config_builder.connection_timeout = Some(Duration::from_secs(timeout as u64));
+        } else {
+            config_builder.connection_timeout = None;
+        }
+    }
 }

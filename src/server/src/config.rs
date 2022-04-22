@@ -26,3 +26,29 @@ pub struct Config {
     pub driver_mode: DriverMode,
     pub connection_timeout: Option<Duration>,
 }
+
+pub struct ConfigBuilder {
+    pub addr: String,
+    pub driver_mode: DriverMode,
+    pub connection_timeout: Option<Duration>,
+}
+
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self {
+            addr: "127.0.0.1:21716".to_string(),
+            driver_mode: DriverMode::Mio,
+            connection_timeout: None,
+        }
+    }
+}
+
+impl ConfigBuilder {
+    pub fn build(self) -> Config {
+        Config {
+            addr: self.addr,
+            driver_mode: self.driver_mode,
+            connection_timeout: self.connection_timeout,
+        }
+    }
+}
