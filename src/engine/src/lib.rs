@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #![feature(ptr_as_uninit)]
+#![allow(clippy::missing_safety_doc)]
 
 mod alloc;
 mod compact;

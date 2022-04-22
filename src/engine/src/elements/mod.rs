@@ -25,6 +25,7 @@ use std::{
 
 use bitflags::bitflags;
 
+use self::{array::Array, entry::Entry, list_node::ListNode};
 use crate::{
     objects::{ObjectMeta, RawObject},
     record::{RecordMeta, RecordType, RECORD_ELEMENT},
@@ -78,11 +79,15 @@ impl<T: ElementLayout> Element<T> {
     /// # Safety
     ///
     /// User should ensure an object is associated before.
-    pub unsafe fn associated_object(&self) -> RawObject {
+    pub unsafe fn associated_object(&self) -> Option<RawObject> {
         let mut bytes = [0u8; 8];
         bytes[..6].copy_from_slice(&self.meta.left[..]);
         let address = u64::from_le_bytes(bytes);
-        RawObject::from_raw_address(address as usize)
+        if address != 0 {
+            Some(RawObject::from_raw_address(address as usize))
+        } else {
+            None
+        }
     }
 
     /// Migrate data saved by element to another element.
@@ -159,6 +164,45 @@ impl<T: ElementLayout> Drop for BoxElement<T> {
 
             dealloc(self.ptr.as_ptr().cast(), layout);
         }
+    }
+}
+
+#[repr(C)]
+pub struct RawElement {
+    record_meta: NonNull<RecordMeta>,
+}
+
+impl RawElement {
+    pub fn from_raw(record_meta: NonNull<RecordMeta>) -> Self {
+        RawElement { record_meta }
+    }
+
+    pub unsafe fn element_layout(&self) -> Layout {
+        const ARRAY: u16 = ElementType::ARRAY.bits();
+        const ENTRY: u16 = ElementType::ENTRY.bits();
+        const LIST_NODE: u16 = ElementType::LIST_NODE.bits();
+        let record_meta = self.record_meta.as_ref();
+        match record_meta.user_defined_tag() {
+            ARRAY => Array::layout(self.record_meta.cast().as_ref()),
+            ENTRY => Entry::layout(self.record_meta.cast().as_ref()),
+            LIST_NODE => ListNode::layout(self.record_meta.cast().as_ref()),
+            _ => panic!("unknown element"),
+        }
+    }
+
+    pub unsafe fn data_mut<T>(&mut self) -> Option<&mut Element<T>>
+    where
+        T: ElementLayout,
+    {
+        if T::element_type() == self.element_type() {
+            Some(self.record_meta.cast().as_mut())
+        } else {
+            None
+        }
+    }
+
+    unsafe fn element_type(&self) -> u16 {
+        self.record_meta.as_ref().user_defined_tag()
     }
 }
 

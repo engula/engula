@@ -57,16 +57,19 @@ impl ObjectLayout for RawString {
 }
 
 impl Object<RawString> {
-    pub fn update_value(&mut self, mut value: BoxElement<Array>) {
-        value.associated_with(&self.meta);
-        if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
-            unsafe { BoxElement::from_raw(old_value) };
+    pub fn update_value(&mut self, value: Option<BoxElement<Array>>) -> Option<BoxElement<Array>> {
+        if let Some(mut value) = value {
+            value.associated_with(&self.meta);
+            if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
+                return unsafe { Some(BoxElement::from_raw(old_value)) };
+            }
         }
+        None
     }
 }
 
 impl BoxObject<RawString> {
-    pub fn with_key_value(key: &[u8], value: BoxElement<Array>) -> BoxObject<RawString> {
+    pub fn with_key_value(key: &[u8], value: Option<BoxElement<Array>>) -> BoxObject<RawString> {
         let mut object: BoxObject<RawString> = BoxObject::with_key(key);
         object.update_value(value);
         object

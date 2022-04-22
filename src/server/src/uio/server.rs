@@ -36,8 +36,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(config: Config) -> Result<Server> {
-        let db = Db::default();
+    pub fn new(db: Db, config: Config) -> Result<Server> {
         let io = IoDriver::new()?;
 
         let tcp = TcpListener::bind(&config.addr)?;

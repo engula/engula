@@ -133,6 +133,13 @@ impl<T: ObjectLayout> Object<T> {
     {
         todo!()
     }
+
+    pub fn object_layout(&self) -> Layout {
+        let key_len = self.meta.key_len() as usize;
+        let fixed_size = std::mem::size_of::<Object<T>>();
+        let align = std::mem::align_of::<Object<T>>();
+        Layout::from_size_align(fixed_size + key_len, align).unwrap()
+    }
 }
 
 impl<T: ObjectLayout> RecordType for Object<T> {
@@ -188,7 +195,7 @@ impl RawObject {
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn object_meta(&self) -> &ObjectMeta {
+    pub unsafe fn object_meta(&self) -> &ObjectMeta {
         self.ptr.as_ref()
     }
 
@@ -203,14 +210,14 @@ impl RawObject {
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn as_ref<T>(&self) -> &T {
+    pub unsafe fn as_ref<T>(&self) -> &T {
         &*(self.ptr.as_ptr() as *const T)
     }
 
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn as_mut<'a, T>(&self) -> &'a mut T {
+    pub unsafe fn as_mut<'a, T>(&self) -> &'a mut T {
         &mut *(self.ptr.as_ptr() as *mut T)
     }
 }
@@ -293,6 +300,43 @@ impl RawObject {
             }
         }
     }
+
+    pub fn object_layout(&self) -> Layout {
+        const RAW_STRING: u16 = ObjectType::RAW_STRING.bits();
+        const LINKED_LIST: u16 = ObjectType::LINKED_LIST.bits();
+        const HASH_TABLE: u16 = ObjectType::HASH_TABLE.bits();
+        const SET: u16 = ObjectType::SET.bits();
+        const SORTED_SET: u16 = ObjectType::SORTED_SET.bits();
+
+        unsafe {
+            let object_meta = self.object_meta();
+            match object_meta.object_type() {
+                RAW_STRING => {
+                    let raw_string = self.as_ref::<Object<RawString>>();
+                    raw_string.object_layout()
+                }
+                LINKED_LIST => {
+                    let linked_list = self.as_ref::<Object<LinkedList>>();
+                    linked_list.object_layout()
+                }
+                HASH_TABLE => {
+                    let hash_map = self.as_ref::<Object<HashMap>>();
+                    hash_map.object_layout()
+                }
+                SET => {
+                    let hash_set = self.as_ref::<Object<HashSet>>();
+                    hash_set.object_layout()
+                }
+                SORTED_SET => {
+                    let hash_set = self.as_ref::<Object<SortedSet>>();
+                    hash_set.object_layout()
+                }
+                v => panic!("unknown object type {}", v),
+            }
+        }
+    }
+
+    // pub fn migrate_element<T>(&self, element: BoxElement<T>) where T
 }
 
 pub struct BoxObject<T: ObjectLayout> {
@@ -361,11 +405,7 @@ impl<T: ObjectLayout> Drop for BoxObject<T> {
         use crate::alloc::lsa_dealloc as dealloc;
 
         unsafe {
-            let key_len = self.meta.key_len() as usize;
-            let fixed_size = std::mem::size_of::<Object<T>>();
-            let align = std::mem::align_of::<Object<T>>();
-            let layout = Layout::from_size_align(fixed_size + key_len, align).unwrap();
-
+            let layout = self.object_layout();
             let object = self.ptr.as_mut();
             object.meta.set_tombstone();
             std::ptr::drop_in_place(self.ptr.as_ptr());
@@ -415,17 +455,17 @@ mod tests {
         let mut obj = BoxObject::<RawString>::with_key(&[0, 1, 2, 3]);
         let mut array = BoxElement::<Array>::with_capacity(5);
         array.data_slice_mut().copy_from_slice(&[0, 1, 2, 3, 4]);
-        obj.update_value(array);
+        obj.update_value(Some(array));
         drop(obj);
 
         // 3. RawString replace value
         let mut obj = BoxObject::<RawString>::with_key(&[0, 1, 2, 3]);
         let mut array = BoxElement::<Array>::with_capacity(5);
         array.data_slice_mut().copy_from_slice(&[0, 1, 2, 3, 4]);
-        obj.update_value(array);
+        obj.update_value(Some(array));
         let mut new_array = BoxElement::<Array>::with_capacity(3);
         new_array.data_slice_mut().copy_from_slice(&[0, 1, 2]);
-        obj.update_value(new_array);
+        obj.update_value(Some(new_array));
         drop(obj);
     }
 }

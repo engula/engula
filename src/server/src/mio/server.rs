@@ -32,14 +32,14 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(config: Config) -> Result<Server> {
+    pub fn new(db: Db, config: Config) -> Result<Server> {
         let addr = config.addr.parse()?;
         let listener = TcpListener::bind(addr)?;
 
         info!("server is running at {}", listener.local_addr()?);
 
         Ok(Self {
-            db: Db::default(),
+            db,
             next: Token(SERVER.0 + 1),
             listener,
             connection_timeout: config.connection_timeout,

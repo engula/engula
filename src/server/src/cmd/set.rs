@@ -144,7 +144,7 @@ impl Set {
     pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Set the value in the shared database state.
         let value = BoxElement::<Array>::from_slice(self.value.as_ref());
-        let object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), value);
+        let object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), Some(value));
         db.insert(object);
 
         // Create a success response and write it to `dst`.

@@ -35,12 +35,13 @@ pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(8))]
 struct Segment {
     node: ListNode<Segment>,
 
     allocated: usize,
     freed: usize,
+    compacting: bool,
     data: [u8; 0],
 }
 
@@ -87,6 +88,7 @@ impl Segment {
                 node: ListNode::new(),
                 allocated: segment_header_size,
                 freed: segment_header_size,
+                compacting: false,
                 data: [0; 0],
             };
             let mut ptr = NonNull::new_unchecked(alloc(layout)).cast::<Segment>();
@@ -183,11 +185,14 @@ impl Lsa {
             return;
         }
 
+        // FIXME(walter) this break pointer alias rules.
         let segment_addr = addr as usize ^ (SEGMENT_SIZE - 1);
         if let Some(mut segment_ptr) = NonNull::new(segment_addr as *mut Segment) {
             let segment = segment_ptr.as_mut();
             segment.free(layout);
-            self.might_reuse_segment(segment_ptr);
+            if !segment.compacting {
+                self.might_reuse_segment(segment_ptr);
+            }
         }
     }
 
@@ -224,19 +229,28 @@ impl Lsa {
     where
         F: Fn(NonNull<u8>) -> usize,
     {
-        let boxed_segment = {
-            let mut segments = self.segments.lock().unwrap();
-            if let Some(mut segment) = segments.pop_front() {
-                // TODO(walter) migrate without lock.
-                unsafe { segment.compact(migrate) };
-                segment
-            } else {
-                return;
-            }
-        };
+        if let Some(mut boxed_segment) = self.select_segment_for_compaction() {
+            unsafe { boxed_segment.compact(migrate) };
+            let mut freed_segments = self.freed_segments.lock().unwrap();
+            boxed_segment.compacting = false;
+            freed_segments.push_back(boxed_segment);
+        }
+    }
 
-        let mut freed_segments = self.freed_segments.lock().unwrap();
-        freed_segments.push_back(boxed_segment);
+    fn select_segment_for_compaction(&self) -> Option<Box<Segment>> {
+        let mut segments = self.segments.lock().unwrap();
+        let limit = std::cmp::min(16, segments.len());
+        for _ in 0..limit {
+            if let Some(mut segment) = segments.pop_front() {
+                // if the segment has free space exceeds about 40%.
+                if segment.freed * 100 > SEGMENT_SIZE * 40 {
+                    segment.compacting = true;
+                    return Some(segment);
+                }
+                segments.push_back(segment);
+            }
+        }
+        None
     }
 }
 
