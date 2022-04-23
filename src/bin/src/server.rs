@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs, time::Duration};
+use std::fs;
 
 use anyhow::Result;
 use clap::Parser;
 use engula_server::{Config, ConfigBuilder};
-use toml::Value;
 
 use crate::argenum::DriverMode;
 
@@ -65,7 +64,7 @@ impl StartCommand {
             None => None,
             Some(config) => {
                 let config = fs::read_to_string(config)?;
-                let values = config.parse::<toml::Value>()?;
+                let values: ConfigBuilder = toml::from_str(&config)?;
                 Some(values)
             }
         };
@@ -77,40 +76,32 @@ impl StartCommand {
 }
 
 /// Merge configs from args and files, and prefer those from args to those from file.
-fn merge_configs(args: StartCommand, values: Option<Value>) -> Config {
+fn merge_configs(args: StartCommand, values: Option<ConfigBuilder>) -> Config {
     let mut config_builder = ConfigBuilder::default();
     apply_from_values(&mut config_builder, values);
     apply_from_args(&mut config_builder, args);
     config_builder.build()
 }
 
-fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<Value>) {
-    if let Some(values) = values {
-        if let Some(timeout) = values.get("timeout") {
-            match timeout {
-                Value::Integer(timeout) if *timeout >= 0 => {
-                    config_builder.connection_timeout = Some(Duration::from_secs(*timeout as u64));
-                }
-                timeout => {
-                    panic!("timeout should be non-negative integer, but {:?}", timeout)
-                }
-            }
-        }
+fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<ConfigBuilder>) {
+    let values = match values {
+        None => return,
+        Some(values) => values,
+    };
+
+    if let Some(timeout) = values.timeout {
+        config_builder.timeout = Some(timeout);
     }
 }
 
 fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {
     if let Some(addr) = args.addr {
-        config_builder.addr = addr;
+        config_builder.addr = Some(addr);
     }
     if let Some(driver_mode) = args.driver_mode {
-        config_builder.driver_mode = driver_mode.into();
+        config_builder.driver_mode = Some(driver_mode.into());
     }
     if let Some(timeout) = args.timeout {
-        if timeout > 0 {
-            config_builder.connection_timeout = Some(Duration::from_secs(timeout as u64));
-        } else {
-            config_builder.connection_timeout = None;
-        }
+        config_builder.timeout = Some(timeout as u64);
     }
 }
