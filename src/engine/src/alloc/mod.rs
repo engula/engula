@@ -216,7 +216,7 @@ impl Lsa {
         let mut segment_ptr = NonNull::new_unchecked(segment_addr as *mut Segment);
         let segment = segment_ptr.as_mut();
         segment.free(layout);
-        if !segment.active && Self::should_compact(&segment) {
+        if !segment.active && Self::should_compact(segment) {
             self.wake();
         }
         if !segment.compacting {
@@ -327,6 +327,12 @@ impl Lsa {
 
     unsafe fn wait(&self, waker: fn()) {
         self.waker.store(waker as usize, Ordering::Release);
+    }
+}
+
+impl Default for Lsa {
+    fn default() -> Self {
+        Lsa::new()
     }
 }
 
