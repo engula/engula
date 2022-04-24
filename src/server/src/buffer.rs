@@ -338,6 +338,11 @@ impl ReadBuf {
             self.bufs.recycle(need_clean);
         }
     }
+
+    pub(crate) fn put_slice(&mut self, src: &[u8]) {
+        let filled = self.bufs.put_at(self.max_readable, src);
+        self.max_readable = filled;
+    }
 }
 
 pub struct WriteBuf {

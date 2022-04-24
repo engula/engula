@@ -37,7 +37,7 @@ use frame::{Error as FrameError, Frame};
 mod parse;
 use parse::{Parse, ParseError};
 
-// mod mio;
+mod mio;
 
 #[cfg(target_os = "linux")]
 mod uio;
@@ -47,7 +47,7 @@ use io_vec::Pool;
 
 pub fn run(config: Config) -> Result<()> {
     match config.driver_mode {
-        DriverMode::Mio => todo!(), //mio::Server::new(config)?.run(),
+        DriverMode::Mio => mio::Server::new(config)?.run(),
         #[cfg(target_os = "linux")]
         DriverMode::Uio => uio::Server::new(config)?.run(),
     }

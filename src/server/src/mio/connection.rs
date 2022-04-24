@@ -26,7 +26,7 @@ use tracing::trace;
 use super::{interrupted, would_block};
 use crate::{
     cmd,
-    io_vec::{IoVec, Pool, self},
+    io_vec::{self, Pool},
     Error, ReadBuf, Result, WriteBuf,
 };
 
@@ -43,8 +43,8 @@ impl Connection {
         let pool = Rc::new(RefCell::new(Pool::new(4 * 1024)));
         Self {
             db,
-            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2)),
-            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 2)),
+            read_buf: ReadBuf::new(io_vec::Bufs::new(pool.clone(), 2), 2),
+            write_buf: WriteBuf::new(io_vec::Bufs::new(pool, 2), 2),
             stream,
             last_interaction: Instant::now(),
         }
@@ -87,11 +87,12 @@ impl Connection {
             }
 
             if bytes_read != 0 {
-                self.read_buf.iov.put_slice(&received_data[..bytes_read]);
+                self.read_buf.put_slice(&received_data[..bytes_read]);
                 while let Some(frame) = self.read_buf.parse_frame() {
-                    self.read_buf.iov.recycle();
                     self.write_buf.write_frame(&cmd::apply(frame, &self.db));
                 }
+                self.read_buf.recycle();
+                self.write_buf.recycle();
             }
 
             if connection_closed {
@@ -100,17 +101,16 @@ impl Connection {
             }
         }
 
-        if !self.write_buf.iov.data_remain() > 0 {
-            let _ = &mut self.write_buf.iov.as_io_slice();
-            let iovs = self.write_buf.iov.wiovs.as_ref().unwrap().as_slice();
+        if self.write_buf.remain_write() {
+            let _ = &mut self.write_buf.wait_flush_io_slice();
+            let iovs = self.write_buf.wiovs.as_ref().unwrap().as_slice();
             match self.stream.write_vectored(iovs) {
-                Ok(n) => self.write_buf.iov.advance_rpos(n),
+                Ok(n) => self.write_buf.advance_flush_pos(n),
                 Err(ref e) if would_block(e) => return Ok(false),
                 Err(ref e) if interrupted(e) => return self.handle_connection_event(event),
                 Err(e) => return Err(Error::Io(e)),
             }
         }
-        self.write_buf.iov.recycle();
 
         Ok(false)
     }
