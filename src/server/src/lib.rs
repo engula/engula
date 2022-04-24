@@ -43,6 +43,7 @@ mod mio;
 mod uio;
 
 mod io_vec;
+#[cfg(target_os = "linux")]
 use io_vec::Pool;
 
 pub fn run(config: Config) -> Result<()> {

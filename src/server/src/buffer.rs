@@ -299,6 +299,7 @@ impl ReadBuf {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn wait_fill_io_slice_mut(&mut self) -> (*const libc::iovec, u32, usize) {
         let mut wait_fill = self.bufs.slice(self.max_readable, None);
         let mut iovs = self.riovs.take().unwrap_or_default();
@@ -316,6 +317,7 @@ impl ReadBuf {
         // TODO: free or back to pool for node < self.min_readable
     }
 
+    #[allow(dead_code)]
     pub(crate) fn advance_max_readable(&mut self, n: usize) {
         loop {
             let next = self

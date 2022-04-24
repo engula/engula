@@ -205,6 +205,7 @@ impl Bufs {
         })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn append_buf(&mut self) {
         let mut buf = &mut self.nodes;
         assert!(buf.is_some());
