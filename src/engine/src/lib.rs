@@ -15,7 +15,7 @@
 #![feature(ptr_as_uninit)]
 #![allow(clippy::missing_safety_doc)]
 
-mod alloc;
+pub mod alloc;
 mod compact;
 mod db;
 pub mod elements;
@@ -23,4 +23,8 @@ mod key_space;
 pub mod objects;
 pub mod record;
 
-pub use self::{alloc::compact_segments, compact::migrate_record, db::Db};
+pub use self::{
+    alloc::{compact_segments, read_mem_stats},
+    compact::migrate_record,
+    db::Db,
+};

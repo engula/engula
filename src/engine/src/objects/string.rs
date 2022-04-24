@@ -63,6 +63,8 @@ impl Object<RawString> {
             if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
                 return unsafe { Some(BoxElement::from_raw(old_value)) };
             }
+        } else if let Some(old_value) = self.value.ptr.take() {
+            return unsafe { Some(BoxElement::from_raw(old_value)) };
         }
         None
     }

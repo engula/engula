@@ -52,7 +52,7 @@ mod mio;
 mod uio;
 
 fn run_background(db: Db, exit_flags: Arc<AtomicBool>) {
-    while exit_flags.load(Ordering::Acquire) {
+    while !exit_flags.load(Ordering::Acquire) {
         unsafe {
             compact_segments(|record_base| migrate_record(db.clone(), record_base));
         }

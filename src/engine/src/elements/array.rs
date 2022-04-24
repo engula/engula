@@ -54,7 +54,7 @@ impl Array {
 
 impl ElementLayout for Array {
     fn element_type() -> u16 {
-        ElementType::ARRAY.bits
+        ElementType::ARRAY.bits()
     }
 
     fn layout(val: &Element<Self>) -> Layout {

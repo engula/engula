@@ -53,7 +53,7 @@ pub struct Element<T: ElementLayout> {
 }
 
 impl<T: ElementLayout> Element<T> {
-    pub(self) fn new(data: T) -> Self {
+    pub(super) fn new(data: T) -> Self {
         Element {
             meta: RecordMeta::element(T::element_type()),
             data,
@@ -169,7 +169,7 @@ impl<T: ElementLayout> Drop for BoxElement<T> {
 
 #[repr(C)]
 pub struct RawElement {
-    record_meta: NonNull<RecordMeta>,
+    pub record_meta: NonNull<RecordMeta>,
 }
 
 impl RawElement {
@@ -186,7 +186,12 @@ impl RawElement {
             ARRAY => Array::layout(self.record_meta.cast().as_ref()),
             ENTRY => Entry::layout(self.record_meta.cast().as_ref()),
             LIST_NODE => ListNode::layout(self.record_meta.cast().as_ref()),
-            _ => panic!("unknown element"),
+            v => panic!(
+                "unknown element {}, raw tag is {:b}, address {:X}",
+                v,
+                record_meta.tag(),
+                self.record_meta.as_ptr() as usize
+            ),
         }
     }
 
@@ -201,7 +206,7 @@ impl RawElement {
         }
     }
 
-    unsafe fn element_type(&self) -> u16 {
+    pub unsafe fn element_type(&self) -> u16 {
         self.record_meta.as_ref().user_defined_tag()
     }
 }

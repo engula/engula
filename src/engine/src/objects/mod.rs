@@ -468,4 +468,27 @@ mod tests {
         obj.update_value(Some(new_array));
         drop(obj);
     }
+
+    impl ElementLayout for usize {
+        fn element_type() -> u16 {
+            0
+        }
+        fn layout(val: &Element<Self>) -> Layout {
+            std::alloc::Layout::for_value(val)
+        }
+    }
+
+    #[test]
+    fn associated_object() {
+        let object_meta = ObjectMeta::new(RecordMeta::default());
+        let mut element = Element::<usize>::new(0);
+        element.associated_with(&object_meta);
+        unsafe {
+            let object = element.associated_object().unwrap();
+            assert_eq!(
+                object.ptr.as_ptr() as usize,
+                &object_meta as *const _ as usize
+            );
+        }
+    }
 }

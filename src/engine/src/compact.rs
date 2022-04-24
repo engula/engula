@@ -25,6 +25,10 @@ pub fn migrate_record(db: Db, record_base: NonNull<u8>) -> usize {
     // FIXME(walter) this may break the pointer alias rules if there exists a unique no-alias
     // pointer.
     let record_meta = unsafe { record_base.cast::<RecordMeta>().as_ref() };
+    if !record_meta.is_used() {
+        return 0;
+    }
+
     if record_meta.is_tombstone() {
         // Since this record has been marked as tombstone, just skip it rather than copy to new
         // address.
@@ -62,7 +66,12 @@ unsafe fn migrate_element(mut raw_element: RawElement) -> usize {
         }
         record_size
     } else {
-        panic!("not supported element type");
+        panic!(
+            "not supported element type: {}, address {:X}, expect element type {}",
+            raw_element.element_type(),
+            raw_element.record_meta.as_ptr() as usize,
+            Array::element_type(),
+        );
     }
 }
 
@@ -70,6 +79,7 @@ unsafe fn migrate_object(db: Db, mut raw_object: RawObject) -> usize {
     // TODO(walter) now only `RawString` is supported.
     if let Some(origin) = raw_object.data_mut::<RawString>() {
         let value = origin.update_value(None);
+        assert!(value.is_some());
         let new_object = BoxObject::<RawString>::with_key_value(origin.key(), value);
         let layout = new_object.object_layout();
         db.insert(new_object);
