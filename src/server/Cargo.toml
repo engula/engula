@@ -13,6 +13,7 @@ engula-engine = { version = "0.3", path = "../engine" }
 atoi = "0.3"
 bytes = "1.1"
 mio = { version = "0.8.2", features = ["net", "os-ext"] }
+serde = { version = "1.0.136", features = ["derive"] }
 thiserror = "1.0"
 tracing = "0.1"
 

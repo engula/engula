@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+use std::fs;
 
 use anyhow::Result;
 use clap::Parser;
-use engula_server::Config;
+use engula_server::{Config, ConfigBuilder};
+
+use crate::argenum::DriverMode;
 
 #[derive(Parser)]
 pub struct Command {
@@ -37,48 +39,69 @@ enum SubCommand {
     Start(StartCommand),
 }
 
-#[derive(clap::ArgEnum, Clone)]
-enum DriverMode {
-    Mio,
-    #[cfg(target_os = "linux")]
-    Uio,
-}
-
-impl From<DriverMode> for engula_server::DriverMode {
-    fn from(mode: DriverMode) -> Self {
-        match mode {
-            DriverMode::Mio => engula_server::DriverMode::Mio,
-            #[cfg(target_os = "linux")]
-            DriverMode::Uio => engula_server::DriverMode::Uio,
-        }
-    }
-}
-
 #[derive(Parser)]
 struct StartCommand {
-    #[clap(long, default_value = "127.0.0.1:21716")]
-    addr: String,
+    /// Address of the Engula server.
+    #[clap(long)]
+    addr: Option<String>,
 
-    #[clap(long, default_value = "mio", arg_enum)]
-    driver_mode: DriverMode,
+    /// Driver mode of the Engula server.
+    #[clap(long, arg_enum)]
+    driver_mode: Option<DriverMode>,
 
     /// Close the connection after a client is idle for N seconds (0 to disable).
-    #[clap(long, default_value = "0")]
-    timeout: u64,
+    #[clap(long)]
+    timeout: Option<u64>,
+
+    /// Path to toml config file.
+    #[clap(short, long)]
+    config: Option<String>,
 }
 
 impl StartCommand {
     fn run(self) -> Result<()> {
-        let connection_timeout = match self.timeout {
-            0 => None,
-            timeout => Some(Duration::from_secs(timeout)),
+        let values = match &self.config {
+            None => None,
+            Some(config) => {
+                let config = fs::read_to_string(config)?;
+                let values: ConfigBuilder = toml::from_str(&config)?;
+                Some(values)
+            }
         };
-        let config = Config {
-            addr: self.addr,
-            driver_mode: self.driver_mode.into(),
-            connection_timeout,
-        };
-        engula_server::run(config)?;
+
+        engula_server::run(merge_configs(self, values))?;
+
         Ok(())
+    }
+}
+
+/// Merge configs from args and files, and prefer those from args to those from file.
+fn merge_configs(args: StartCommand, values: Option<ConfigBuilder>) -> Config {
+    let mut config_builder = ConfigBuilder::default();
+    apply_from_values(&mut config_builder, values);
+    apply_from_args(&mut config_builder, args);
+    config_builder.build()
+}
+
+fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<ConfigBuilder>) {
+    let values = match values {
+        None => return,
+        Some(values) => values,
+    };
+
+    if let Some(timeout) = values.timeout {
+        config_builder.timeout = Some(timeout);
+    }
+}
+
+fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {
+    if let Some(addr) = args.addr {
+        config_builder.addr = Some(addr);
+    }
+    if let Some(driver_mode) = args.driver_mode {
+        config_builder.driver_mode = Some(driver_mode.into());
+    }
+    if let Some(timeout) = args.timeout {
+        config_builder.timeout = Some(timeout as u64);
     }
 }
