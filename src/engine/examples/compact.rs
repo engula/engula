@@ -156,12 +156,18 @@ fn report_memory_stats(num_deleted_keys: usize) {
     println!("lsa freed segment: {}", stats.freed_segments);
     println!("num compaction: {}", stats.compacted_segments);
 
-    let info = unsafe { libc::mallinfo2() };
-    println!("");
-    println!("mallinfo.arena: {}MB", mb(info.arena));
-    println!("mallinfo.hblkhd: {}MB", mb(info.hblkhd));
-    println!("mailinfo.total-allocated: {}MB", mb(info.uordblks));
-    println!("mailinfo.total-free-space: {}MB", mb(info.fordblks));
+    #[cfg(target_os = "linux")]
+    {
+        let info = unsafe { libc::mallinfo() };
+        println!("");
+        println!("mallinfo.arena: {}MB", mb(info.arena as usize));
+        println!("mallinfo.hblkhd: {}MB", mb(info.hblkhd as usize));
+        println!("mailinfo.total-allocated: {}MB", mb(info.uordblks as usize));
+        println!(
+            "mailinfo.total-free-space: {}MB",
+            mb(info.fordblks as usize)
+        );
+    }
 }
 
 use std::sync::{Condvar, Mutex};
