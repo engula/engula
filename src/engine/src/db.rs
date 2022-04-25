@@ -73,3 +73,16 @@ impl Db {
         num_deleted as u64
     }
 }
+
+impl Drop for DbState {
+    fn drop(&mut self) {
+        if let Some(drain) = self.key_space.drain_next_space() {
+            for raw_object in drain {
+                raw_object.drop_in_place();
+            }
+        }
+        for raw_object in self.key_space.drain_current_space() {
+            raw_object.drop_in_place();
+        }
+    }
+}

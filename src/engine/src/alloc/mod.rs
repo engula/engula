@@ -15,7 +15,7 @@
 mod intrusive;
 
 use std::{
-    alloc::{alloc, Layout},
+    alloc::{alloc, dealloc, Layout},
     ptr::NonNull,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -107,6 +107,15 @@ impl Segment {
         }
     }
 
+    fn drop_self(self: Box<Segment>) {
+        unsafe {
+            let raw_segment = Box::leak(self) as *mut Segment;
+            std::ptr::drop_in_place(raw_segment);
+            let layout = Layout::from_size_align(SEGMENT_SIZE, SEGMENT_SIZE).unwrap();
+            dealloc(raw_segment as *mut u8, layout);
+        }
+    }
+
     unsafe fn compact<F>(&self, migrate: F)
     where
         F: Fn(NonNull<u8>) -> usize,
@@ -131,14 +140,6 @@ impl Segment {
             "compact segment {:X} is finished",
             self as *const _ as usize
         );
-    }
-}
-
-impl Drop for Segment {
-    fn drop(&mut self) {
-        if !self.is_empty() {
-            panic!("There are some memory leaks");
-        }
     }
 }
 
@@ -216,7 +217,7 @@ impl Lsa {
         let mut segment_ptr = NonNull::new_unchecked(segment_addr as *mut Segment);
         let segment = segment_ptr.as_mut();
         segment.free(layout);
-        if !segment.active && Self::should_compact(segment) {
+        if !segment.active && !segment.is_empty() && Self::should_compact(segment) {
             self.wake();
         }
         if !segment.compacting {
@@ -275,9 +276,11 @@ impl Lsa {
             self.num_compacted_segments.fetch_add(1, Ordering::AcqRel);
             let mut freed_segments = self.freed_segments.lock().unwrap();
             // TODO(walter) add parameter.
-            if freed_segments.len() <= 1 {
+            if freed_segments.len() <= 16 {
                 boxed_segment.compacting = false;
                 freed_segments.push_back(boxed_segment);
+            } else {
+                Segment::drop_self(boxed_segment);
             }
             true
         } else {
@@ -413,6 +416,29 @@ pub fn read_mem_stats() -> LsaMemStats {
     stats.compacted_segments = GLOBAL_LSA.num_compacted_segments.load(Ordering::Acquire);
 
     stats
+}
+
+pub fn drop_all_segments() {
+    {
+        let mut active_segment = GLOBAL_LSA.active_segment.lock().unwrap();
+        if let Some(active_segment) = active_segment.take() {
+            Segment::drop_self(active_segment);
+        }
+    }
+
+    {
+        let mut segments = GLOBAL_LSA.segments.lock().unwrap();
+        while let Some(segment) = segments.pop_front() {
+            Segment::drop_self(segment);
+        }
+    }
+
+    {
+        let mut freed_segments = GLOBAL_LSA.freed_segments.lock().unwrap();
+        while let Some(segment) = freed_segments.pop_front() {
+            Segment::drop_self(segment);
+        }
+    }
 }
 
 #[allow(dead_code)]

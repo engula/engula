@@ -23,6 +23,7 @@ use std::{
 };
 
 use engula_engine::{
+    alloc::drop_all_segments,
     elements::{array::Array, BoxElement},
     objects::{BoxObject, RawString},
     *,
@@ -151,8 +152,16 @@ fn report_memory_stats(num_deleted_keys: usize) {
     println!("allocated: {}MB", mb(stats.allocated));
     println!("freed: {}MB", mb(stats.freed));
     println!("freed ratio: {}", ratio(stats.freed, stats.total));
+    println!("lsa used segment: {}", stats.used_segments);
     println!("lsa freed segment: {}", stats.freed_segments);
     println!("num compaction: {}", stats.compacted_segments);
+
+    let info = unsafe { libc::mallinfo2() };
+    println!("");
+    println!("mallinfo.arena: {}MB", mb(info.arena));
+    println!("mallinfo.hblkhd: {}MB", mb(info.hblkhd));
+    println!("mailinfo.total-allocated: {}MB", mb(info.uordblks));
+    println!("mailinfo.total-free-space: {}MB", mb(info.fordblks));
 }
 
 use std::sync::{Condvar, Mutex};
@@ -215,6 +224,7 @@ fn main() {
     join_handle.join().unwrap();
 
     report_memory_stats(num_deleted_keys);
-
+    drop(db);
+    drop_all_segments();
     println!("success");
 }
