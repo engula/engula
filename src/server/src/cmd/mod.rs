@@ -24,6 +24,9 @@ pub use ping::Ping;
 mod del;
 pub use del::Del;
 
+mod info;
+pub use info::Info;
+
 mod unknown;
 pub use unknown::Unknown;
 
@@ -45,6 +48,7 @@ pub enum Command {
     Set(Set),
     Del(Del),
     Ping(Ping),
+    Info(Info),
     Unknown(Unknown),
 }
 
@@ -78,6 +82,7 @@ impl Command {
             "set" => Command::Set(Set::parse_frames(&mut parse)?),
             "del" => Command::Del(Del::parse_frames(&mut parse)?),
             "ping" => Command::Ping(Ping::parse_frames(&mut parse)?),
+            "info" => Command::Info(Info::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
@@ -110,6 +115,7 @@ impl Command {
             Set(cmd) => cmd.apply(db),
             Del(cmd) => cmd.apply(db),
             Ping(cmd) => cmd.apply(),
+            Info(cmd) => cmd.apply(db),
             Unknown(cmd) => cmd.apply(),
         }
     }
@@ -121,6 +127,7 @@ impl Command {
             Command::Set(_) => "set",
             Command::Del(_) => "del",
             Command::Ping(_) => "ping",
+            Command::Info(_) => "info",
             Command::Unknown(cmd) => cmd.get_name(),
         }
     }

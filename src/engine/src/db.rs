@@ -28,15 +28,30 @@ unsafe impl Send for Db {}
 
 unsafe impl Sync for Db {}
 
+#[derive(Default, Clone, Debug)]
+pub struct DbStats {
+    pub num_keys: usize,
+    pub evicted_keys: usize,
+    pub keyspace_hits: usize,
+    pub keyspace_misses: usize,
+}
+
 #[derive(Default)]
 struct DbState {
+    stats: DbStats,
     key_space: KeySpace,
 }
 
 impl Db {
     pub fn get(&self, key: &[u8]) -> Option<RawObject> {
         let mut state = self.state.lock().unwrap();
-        state.key_space.get(key)
+        let result = state.key_space.get(key);
+        if result.is_some() {
+            state.stats.keyspace_hits += 1;
+        } else {
+            state.stats.keyspace_misses += 1;
+        }
+        result
     }
 
     pub fn insert<T>(&self, object: BoxObject<T>)
@@ -48,6 +63,8 @@ impl Db {
         let key = object.key();
         if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
             raw_object.drop_in_place();
+        } else {
+            state.stats.num_keys += 1;
         }
     }
 
@@ -55,15 +72,19 @@ impl Db {
         let mut state = self.state.lock().unwrap();
         if let Some(raw_object) = state.key_space.remove(key) {
             raw_object.drop_in_place();
+            state.stats.num_keys = state.stats.num_keys.saturating_sub(1);
         }
     }
 
     pub fn delete_keys<'a, K: IntoIterator<Item = &'a [u8]>>(&self, keys: K) -> u64 {
         let objects = {
             let mut state = self.state.lock().unwrap();
-            keys.into_iter()
+            let objects = keys
+                .into_iter()
                 .filter_map(|key| state.key_space.remove(key))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            state.stats.num_keys = state.stats.num_keys.saturating_sub(objects.len());
+            objects
         };
 
         let num_deleted = objects.len();
@@ -71,6 +92,11 @@ impl Db {
             object_ref.drop_in_place();
         }
         num_deleted as u64
+    }
+
+    pub fn stats(&self) -> DbStats {
+        let state = self.state.lock().unwrap();
+        state.stats.clone()
     }
 }
 
