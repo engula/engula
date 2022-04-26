@@ -52,16 +52,12 @@ pub struct Element<T: ElementLayout> {
 }
 
 impl<T: ElementLayout> Element<T> {
-    pub(self) fn new(data: T) -> Self {
+    pub(super) fn new(data: T) -> Self {
         Element {
             meta: RecordMeta::element(T::element_type()),
             data,
         }
     }
-
-    // pub fn tag(&self) -> Tag {
-    //     self.header.meta.tag
-    // }
 
     /// Associated this element to a [`Object`].
     ///
@@ -78,11 +74,15 @@ impl<T: ElementLayout> Element<T> {
     /// # Safety
     ///
     /// User should ensure an object is associated before.
-    pub unsafe fn associated_object(&self) -> RawObject {
+    pub unsafe fn associated_object(&self) -> Option<RawObject> {
         let mut bytes = [0u8; 8];
         bytes[..6].copy_from_slice(&self.meta.left[..]);
         let address = u64::from_le_bytes(bytes);
-        RawObject::from_raw_address(address as usize)
+        if address == 0 {
+            Some(RawObject::from_raw_address(address as usize))
+        } else {
+            None
+        }
     }
 
     /// Migrate data saved by element to another element.

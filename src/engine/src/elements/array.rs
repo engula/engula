@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    alloc::{alloc, Layout},
-    ptr::NonNull,
-    slice,
-};
+use std::{alloc::Layout, ptr::NonNull, slice};
 
 use super::{BoxElement, Element, ElementLayout, ElementType};
 
@@ -58,7 +54,7 @@ impl Array {
 
 impl ElementLayout for Array {
     fn element_type() -> u16 {
-        ElementType::ARRAY.bits
+        ElementType::ARRAY.bits()
     }
 
     fn layout(val: &Element<Self>) -> Layout {
@@ -70,6 +66,8 @@ impl ElementLayout for Array {
 
 impl BoxElement<Array> {
     pub fn with_capacity(size: usize) -> BoxElement<Array> {
+        use std::alloc::alloc;
+
         let align = std::mem::align_of::<Element<Array>>();
         let fixed_size = std::mem::size_of::<Element<Array>>();
         let layout = Layout::from_size_align(fixed_size + size, align).unwrap();

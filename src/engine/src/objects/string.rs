@@ -13,13 +13,12 @@
 // limitations under the License.
 
 use std::{
-    alloc::dealloc,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
 use super::{BoxObject, Object, ObjectLayout, ObjectType};
-use crate::elements::{array::Array, BoxElement, Element, ElementLayout};
+use crate::elements::{array::Array, BoxElement, Element};
 
 #[repr(C)]
 #[derive(Default)]
@@ -31,24 +30,21 @@ impl Deref for RawString {
     type Target = Array;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref().unwrap().as_ref() }
+        unsafe { self.ptr.as_ref().expect("value MUST exists").as_ref() }
     }
 }
 
 impl DerefMut for RawString {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut().unwrap().as_mut() }
+        unsafe { self.ptr.as_mut().expect("value MUST exists").as_mut() }
     }
 }
 
 impl Drop for RawString {
     fn drop(&mut self) {
         unsafe {
-            if let Some(mut ptr) = self.ptr.take() {
-                let layout = Array::layout(ptr.as_ref());
-                std::ptr::drop_in_place(ptr.as_mut());
-
-                dealloc(ptr.as_ptr().cast(), layout);
+            if let Some(ptr) = self.ptr.take() {
+                BoxElement::from_raw(ptr);
             }
         }
     }
@@ -61,18 +57,28 @@ impl ObjectLayout for RawString {
 }
 
 impl Object<RawString> {
-    pub fn update_value(&mut self, mut value: BoxElement<Array>) {
-        value.associated_with(&self.meta);
-        if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
-            unsafe { BoxElement::from_raw(old_value) };
+    #[inline]
+    pub fn has_value(&self) -> bool {
+        self.value.ptr.is_some()
+    }
+
+    pub fn update_value(&mut self, value: Option<BoxElement<Array>>) -> Option<BoxElement<Array>> {
+        if let Some(mut value) = value {
+            value.associated_with(&self.meta);
+            if let Some(old_value) = self.value.ptr.replace(BoxElement::leak(value)) {
+                return unsafe { Some(BoxElement::from_raw(old_value)) };
+            }
+        } else if let Some(old_value) = self.value.ptr.take() {
+            return unsafe { Some(BoxElement::from_raw(old_value)) };
         }
+        None
     }
 }
 
 impl BoxObject<RawString> {
     pub fn with_key_value(key: &[u8], value: BoxElement<Array>) -> BoxObject<RawString> {
         let mut object: BoxObject<RawString> = BoxObject::with_key(key);
-        object.update_value(value);
+        object.update_value(Some(value));
         object
     }
 }

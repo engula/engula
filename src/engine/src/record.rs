@@ -12,24 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub const RECORD_ELEMENT: u16 = 0;
-pub const RECORD_OBJECT: u16 = 1;
-const RECORD_TOMBSTOME: u16 = 0x10;
-const RECORD_META_SHIFT: u32 = 3;
+pub const RECORD_ELEMENT: u16 = 0b00;
+pub const RECORD_OBJECT: u16 = 0b10;
+const RECORD_USED_MASK: u16 = 0b01;
+const RECORD_TYPE_MASK: u16 = 0b10;
+const RECORD_TOMBSTOME: u16 = 0b100;
+const RECORD_META_SHIFT: u32 = 4;
 
 pub trait RecordType {
     fn record_type() -> u16;
 }
 
 #[repr(C, align(8))]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct RecordMeta {
     /// Hold the meta tag of the record.
     ///
     /// bits:
-    /// - 0: object or element
-    /// - 1: tombstone?
-    /// - 2: reserved
+    /// - 0: is this memory used?
+    /// - 1: object or element
+    /// - 2: tombstone?
     /// - 3-15: object or element defined
     tag: u16,
     pub left: [u8; 6],
@@ -41,7 +43,7 @@ impl RecordMeta {
             .checked_shl(RECORD_META_SHIFT)
             .expect("user defined tag out of range");
         RecordMeta {
-            tag: tag | RECORD_ELEMENT,
+            tag: tag | RECORD_ELEMENT | RECORD_USED_MASK,
             left: [0; 6],
         }
     }
@@ -51,7 +53,7 @@ impl RecordMeta {
             .checked_shl(RECORD_META_SHIFT)
             .expect("user defined tag out of range");
         RecordMeta {
-            tag: tag | RECORD_ELEMENT,
+            tag: tag | RECORD_OBJECT | RECORD_USED_MASK,
             left: [0; 6],
         }
     }
@@ -99,10 +101,14 @@ impl RecordMeta {
     }
 
     pub fn clear_tombstone(&mut self) {
-        self.tag ^= RECORD_TOMBSTOME;
+        self.tag &= !RECORD_TOMBSTOME;
+    }
+
+    pub fn tag(&self) -> u16 {
+        self.tag
     }
 
     fn record_type(&self) -> u16 {
-        self.tag & 0x1
+        self.tag & RECORD_TYPE_MASK
     }
 }

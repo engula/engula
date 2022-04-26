@@ -19,7 +19,7 @@ pub mod sorted_set;
 pub mod string;
 
 use std::{
-    alloc::{alloc, Layout},
+    alloc::Layout,
     ops::{Deref, DerefMut},
     ptr::NonNull,
     slice,
@@ -133,6 +133,13 @@ impl<T: ObjectLayout> Object<T> {
     {
         todo!()
     }
+
+    pub fn object_layout(&self) -> Layout {
+        let key_len = self.meta.key_len() as usize;
+        let fixed_size = std::mem::size_of::<Object<T>>();
+        let align = std::mem::align_of::<Object<T>>();
+        Layout::from_size_align(fixed_size + key_len, align).unwrap()
+    }
 }
 
 impl<T: ObjectLayout> RecordType for Object<T> {
@@ -188,7 +195,7 @@ impl RawObject {
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn object_meta(&self) -> &ObjectMeta {
+    pub unsafe fn object_meta(&self) -> &ObjectMeta {
         self.ptr.as_ref()
     }
 
@@ -203,14 +210,14 @@ impl RawObject {
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn as_ref<T>(&self) -> &T {
+    pub unsafe fn as_ref<T>(&self) -> &T {
         &*(self.ptr.as_ptr() as *const T)
     }
 
     /// # Safety
     ///
     /// TODO(walter)
-    unsafe fn as_mut<'a, T>(&self) -> &'a mut T {
+    pub unsafe fn as_mut<'a, T>(&self) -> &'a mut T {
         &mut *(self.ptr.as_ptr() as *mut T)
     }
 }
@@ -304,7 +311,7 @@ impl<T: ObjectLayout> BoxObject<T> {
     where
         T: Default,
     {
-        use std::ptr::copy_nonoverlapping;
+        use std::{alloc::alloc, ptr::copy_nonoverlapping};
 
         let size = std::mem::size_of::<Object<T>>() + key.len();
         let align = std::mem::align_of::<Object<T>>();
@@ -357,11 +364,7 @@ impl<T: ObjectLayout> Drop for BoxObject<T> {
         use std::alloc::dealloc;
 
         unsafe {
-            let key_len = self.meta.key_len() as usize;
-            let fixed_size = std::mem::size_of::<Object<T>>();
-            let align = std::mem::align_of::<Object<T>>();
-            let layout = Layout::from_size_align(fixed_size + key_len, align).unwrap();
-
+            let layout = self.object_layout();
             let object = self.ptr.as_mut();
             object.meta.set_tombstone();
             std::ptr::drop_in_place(self.ptr.as_ptr());
@@ -411,17 +414,17 @@ mod tests {
         let mut obj = BoxObject::<RawString>::with_key(&[0, 1, 2, 3]);
         let mut array = BoxElement::<Array>::with_capacity(5);
         array.data_slice_mut().copy_from_slice(&[0, 1, 2, 3, 4]);
-        obj.update_value(array);
+        obj.update_value(Some(array));
         drop(obj);
 
         // 3. RawString replace value
         let mut obj = BoxObject::<RawString>::with_key(&[0, 1, 2, 3]);
         let mut array = BoxElement::<Array>::with_capacity(5);
         array.data_slice_mut().copy_from_slice(&[0, 1, 2, 3, 4]);
-        obj.update_value(array);
+        obj.update_value(Some(array));
         let mut new_array = BoxElement::<Array>::with_capacity(3);
         new_array.data_slice_mut().copy_from_slice(&[0, 1, 2]);
-        obj.update_value(new_array);
+        obj.update_value(Some(new_array));
         drop(obj);
     }
 }
