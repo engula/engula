@@ -69,7 +69,20 @@ impl StartCommand {
             }
         };
 
-        engula_server::run(merge_configs(self, values))?;
+        let mut config = merge_configs(self, values);
+        #[cfg(target_os = "linux")]
+        {
+            use sys::*;
+            let mem_info = MemInfo::new()?;
+            if config.max_memory == 0 {
+                config.max_memory = (mem_info.total as f64 * 0.9) as u64;
+            }
+            if config.compact_memory == 0 {
+                config.compact_memory = (mem_info.total as f64 * 0.8) as u64;
+            }
+        }
+
+        engula_server::run(config)?;
 
         Ok(())
     }
@@ -103,5 +116,47 @@ fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {
     }
     if let Some(timeout) = args.timeout {
         config_builder.timeout = Some(timeout as u64);
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod sys {
+    use std::{io, str::FromStr};
+
+    #[derive(Default, Debug)]
+    pub struct MemInfo {
+        pub total: usize,
+        pub free: usize,
+        pub available: usize,
+        pub buffers: usize,
+        pub cached: usize,
+        pub swap_total: usize,
+        pub swap_free: usize,
+    }
+
+    impl MemInfo {
+        pub fn new() -> io::Result<MemInfo> {
+            let mut mem_info = MemInfo::default();
+            let content = std::fs::read_to_string("/proc/meminfo")?;
+            for line in content.split('\n') {
+                let mut iter = line.split(':');
+                let field = match iter.next() {
+                    Some("MemTotal") => &mut mem_info.total,
+                    Some("MemFree") => &mut mem_info.free,
+                    Some("MemAvailable") => &mut mem_info.available,
+                    Some("Buffers") => &mut mem_info.buffers,
+                    Some("Cached") => &mut mem_info.cached,
+                    Some("SwapTotal") => &mut mem_info.swap_total,
+                    Some("SwapFree") => &mut mem_info.swap_free,
+                    _ => continue,
+                };
+                *field = iter
+                    .next()
+                    .and_then(|s| s.trim_start().split(' ').next())
+                    .and_then(|s| usize::from_str(s).ok())
+                    .unwrap_or_default();
+            }
+            Ok(mem_info)
+        }
     }
 }

@@ -87,11 +87,12 @@ fn insert_and_remove_keys_randomly(
             deleted_keys.insert(deleted_index);
         }
 
-        // if i % 100 == 0 {
-        //     unsafe {
-        //         compact_segments(|record_base| migrate_record(db.clone(), record_base));
-        //     }
-        // }
+        if i % 1000 == 0 {
+            db.on_cron();
+            // unsafe {
+            //     compact_segments(|record_base| migrate_record(db.clone(), record_base));
+            // }
+        }
     }
 
     // unsafe {
@@ -195,9 +196,9 @@ fn run_background(db: Db, exit_flags: Arc<AtomicBool>) {
         wait();
         loop {
             unsafe {
-                if !compact_segments(|record_base| migrate_record(db.clone(), record_base)) {
-                    break;
-                }
+                // if !compact_segments(|record_base| migrate_record(db.clone(), record_base)) {
+                //     break;
+                // }
             }
         }
     }
@@ -207,7 +208,7 @@ fn bootstrap_background_service(db: Db) -> (Arc<AtomicBool>, JoinHandle<()>) {
     let exit_flag = Arc::new(AtomicBool::new(false));
     let cloned_exit_flag = exit_flag.clone();
     let join_handle = std::thread::spawn(move || {
-        run_background(db, cloned_exit_flag);
+        // run_background(db, cloned_exit_flag);
     });
     (exit_flag, join_handle)
 }

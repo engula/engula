@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use engula_engine::Db;
 use mio::{net::TcpListener, Events, Interest, Poll, Token};
@@ -48,13 +51,24 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let tick = Duration::from_millis(500);
+        let tick = Duration::from_millis(100);
+        let mut db_cron_deadline = Instant::now() + tick;
         let mut poll = Poll::new()?;
         let mut events = Events::with_capacity(128);
         poll.registry()
             .register(&mut self.listener, SERVER, Interest::READABLE)?;
         loop {
-            poll.poll(&mut events, Some(tick))?;
+            self.db.before_sleep();
+            poll.poll(
+                &mut events,
+                Some(db_cron_deadline.saturating_duration_since(Instant::now())),
+            )?;
+            let now = Instant::now();
+            if db_cron_deadline <= now {
+                db_cron_deadline = now + tick;
+                self.db.on_cron();
+            }
+
             for event in events.iter() {
                 match event.token() {
                     SERVER => loop {

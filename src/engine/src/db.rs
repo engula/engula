@@ -39,28 +39,40 @@ pub struct DbStats {
 #[derive(Default)]
 struct DbState {
     stats: DbStats,
+    lru: u32,
     key_space: KeySpace,
 }
 
 impl Db {
     pub fn get(&self, key: &[u8]) -> Option<RawObject> {
         let mut state = self.state.lock().unwrap();
-        let result = state.key_space.get(key);
-        if result.is_some() {
-            state.stats.keyspace_hits += 1;
-        } else {
-            state.stats.keyspace_misses += 1;
+        match state.key_space.get(key) {
+            Some(mut raw_object) => {
+                unsafe {
+                    let object_meta = raw_object.object_meta_mut();
+                    if object_meta.lru() != state.lru {
+                        object_meta.set_lru(state.lru);
+                    }
+                };
+                state.stats.keyspace_hits += 1;
+                Some(raw_object)
+            }
+            None => {
+                state.stats.keyspace_misses += 1;
+                None
+            }
         }
-        result
     }
 
-    pub fn insert<T>(&self, object: BoxObject<T>)
+    pub fn insert<T>(&self, mut object: BoxObject<T>)
     where
         T: ObjectLayout,
     {
-        let mut state = self.state.lock().unwrap();
+        self.keep_memory_watermark();
 
+        let mut state = self.state.lock().unwrap();
         let key = object.key();
+        object.meta.set_lru(state.lru);
         if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
             raw_object.drop_in_place();
         } else {
@@ -97,6 +109,63 @@ impl Db {
     pub fn stats(&self) -> DbStats {
         let state = self.state.lock().unwrap();
         state.stats.clone()
+    }
+
+    pub fn on_cron(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.lru = state.lru.wrapping_add(1);
+    }
+
+    pub fn before_sleep(&self) {
+        let mut state = self.state.lock().unwrap();
+        todo!()
+    }
+
+    fn keep_memory_watermark(&self) {
+        let allocated_memory = crate::alloc::allocated_memory();
+        let max_memory: usize = 100 * 1024 * 1024;
+        if allocated_memory < max_memory {
+            return;
+        }
+
+        println!(
+            "allocated memory {} exceeds max memory {}",
+            allocated_memory, max_memory
+        );
+
+        loop {
+            unsafe {
+                crate::alloc::compact_segment(|record_base| {
+                    crate::compact::migrate_record(self.clone(), record_base)
+                });
+            }
+
+            if crate::alloc::allocated_memory() >= max_memory {
+                self.evict_one_key();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn evict_one_key(&self) {
+        let mut state = self.state.lock().unwrap();
+        let mut pool: [Option<RawObject>; 10] = [None; 10];
+        let num_objects = state.key_space.random_objects(&mut pool[..]);
+        pool[..num_objects]
+            .sort_unstable_by(|a, b| a.map(RawObject::lru).cmp(&b.map(RawObject::lru)));
+        let raw_object = pool
+            .into_iter()
+            .find(|v| v.is_some())
+            .flatten()
+            .expect("evict_one_key");
+
+        state
+            .key_space
+            .remove(raw_object.key())
+            .expect("evict_one_key");
+        raw_object.drop_in_place();
+        state.stats.num_keys = state.stats.num_keys.saturating_sub(1);
     }
 }
 

@@ -28,6 +28,8 @@ pub struct Config {
     pub addr: String,
     pub driver_mode: DriverMode,
     pub connection_timeout: Option<Duration>,
+    pub max_memory: u64,
+    pub compact_memory: u64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -35,6 +37,8 @@ pub struct ConfigBuilder {
     pub addr: Option<String>,
     pub driver_mode: Option<DriverMode>,
     pub timeout: Option<u64>,
+    pub max_memory: Option<u64>,
+    pub compact_memory: Option<u64>,
 }
 
 impl Default for ConfigBuilder {
@@ -43,6 +47,8 @@ impl Default for ConfigBuilder {
             addr: Some("127.0.0.1:21716".to_string()),
             driver_mode: Some(DriverMode::Mio),
             timeout: Some(0),
+            max_memory: None,
+            compact_memory: None,
         }
     }
 }
@@ -56,6 +62,8 @@ impl ConfigBuilder {
                 0 => None,
                 timeout => Some(Duration::from_secs(timeout)),
             }),
+            max_memory: self.max_memory.unwrap_or_default(),
+            compact_memory: self.compact_memory.unwrap_or_default(),
         }
     }
 }

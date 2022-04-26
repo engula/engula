@@ -75,12 +75,22 @@ impl ObjectMeta {
 
     pub fn key_len(&self) -> usize {
         let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(&self.meta.left[2..]);
+        bytes[0..3].copy_from_slice(&self.meta.left[3..]);
         u32::from_le_bytes(bytes) as usize
     }
 
     pub fn set_tombstone(&mut self) {
         self.meta.set_tombstone();
+    }
+
+    pub fn set_lru(&mut self, val: u32) {
+        self.meta.left[0..3].copy_from_slice(&val.to_le_bytes()[0..3]);
+    }
+
+    pub fn lru(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        bytes[0..3].copy_from_slice(&self.meta.left[..3]);
+        u32::from_le_bytes(bytes)
     }
 }
 
@@ -95,8 +105,9 @@ impl<T: ObjectLayout> Object<T> {
     pub(self) fn new(key_len: usize, value: T) -> Self {
         let key_len: u32 = key_len as u32;
         let mut meta = RecordMeta::object(T::object_type());
-        meta.left[..2].copy_from_slice(0u16.to_le_bytes().as_ref());
-        meta.left[2..].copy_from_slice(key_len.to_le_bytes().as_ref());
+        debug_assert_eq!((&meta.left[..3]).len(), 3);
+        meta.left[..3].copy_from_slice(&0u32.to_le_bytes().as_ref()[..3]);
+        meta.left[3..].copy_from_slice(&key_len.to_le_bytes().as_ref()[..3]);
         Object {
             meta: ObjectMeta::new(meta),
             value,
@@ -203,7 +214,7 @@ impl RawObject {
     ///
     /// TODO(walter)
     #[allow(dead_code)]
-    unsafe fn object_meta_mut(&mut self) -> &mut ObjectMeta {
+    pub unsafe fn object_meta_mut(&mut self) -> &mut ObjectMeta {
         self.ptr.as_mut()
     }
 
@@ -219,6 +230,10 @@ impl RawObject {
     /// TODO(walter)
     pub unsafe fn as_mut<'a, T>(&self) -> &'a mut T {
         &mut *(self.ptr.as_ptr() as *mut T)
+    }
+
+    pub fn lru(self) -> u32 {
+        unsafe { self.object_meta().lru() }
     }
 }
 
@@ -337,6 +352,14 @@ impl RawObject {
     }
 
     // pub fn migrate_element<T>(&self, element: BoxElement<T>) where T
+}
+
+impl Deref for RawObject {
+    type Target = ObjectMeta;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.object_meta() }
+    }
 }
 
 pub struct BoxObject<T: ObjectLayout> {

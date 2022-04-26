@@ -14,6 +14,7 @@
 use std::hash::{Hash, Hasher};
 
 use hashbrown::raw::RawTable;
+use rand::{thread_rng, Rng};
 
 use crate::objects::RawObject;
 
@@ -27,6 +28,7 @@ struct ObjectEntry {
 }
 
 pub struct KeySpace {
+    cursor: usize,
     current_space: RawTable<ObjectEntry>,
     next_space: Option<RawTable<ObjectEntry>>,
 }
@@ -34,6 +36,7 @@ pub struct KeySpace {
 impl KeySpace {
     pub fn new() -> KeySpace {
         KeySpace {
+            cursor: 0,
             current_space: RawTable::with_capacity(MIN_NUM_BUCKETS),
             next_space: None,
         }
@@ -103,7 +106,7 @@ impl KeySpace {
                     let entry = self.current_space.remove(bucket);
                     next_table.insert_no_grow(entry.hash, entry);
                     advanced += 1;
-                    if advanced > ADVANCE_STEP {
+                    if advanced % ADVANCE_STEP == 0 {
                         return;
                     }
                 }
@@ -137,6 +140,35 @@ impl KeySpace {
 
     pub fn drain_current_space(&mut self) -> impl Iterator<Item = RawObject> + '_ {
         self.current_space.drain().map(|entry| entry.raw_object)
+    }
+
+    pub fn random_objects(&self, pool: &mut [Option<RawObject>]) -> usize {
+        if let Some(next_table) = self.next_space.as_ref() {
+            let consumed = Self::random_objects_from_space(&self.current_space, pool);
+            consumed + Self::random_objects_from_space(&next_table, &mut pool[consumed..])
+        } else {
+            Self::random_objects_from_space(&self.current_space, pool)
+        }
+    }
+
+    fn random_objects_from_space(
+        space: &RawTable<ObjectEntry>,
+        pool: &mut [Option<RawObject>],
+    ) -> usize {
+        let hashmask = space.buckets() - 1;
+        let mut index = thread_rng().gen::<usize>() & hashmask;
+        let mut stored = 0;
+        let target = std::cmp::min(pool.len(), space.len());
+        while stored < target {
+            unsafe {
+                if let Some(bucket) = space.full_bucket(index) {
+                    pool[stored] = Some(bucket.as_ref().raw_object);
+                    stored += 1;
+                }
+                index = (index + 1) & hashmask;
+            }
+        }
+        stored
     }
 }
 

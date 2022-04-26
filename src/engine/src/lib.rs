@@ -23,8 +23,4 @@ mod key_space;
 pub mod objects;
 pub mod record;
 
-pub use self::{
-    alloc::{compact_segments, read_mem_stats},
-    compact::migrate_record,
-    db::Db,
-};
+pub use self::{alloc::read_mem_stats, compact::migrate_record, db::Db};

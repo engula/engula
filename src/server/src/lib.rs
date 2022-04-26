@@ -25,7 +25,7 @@ use std::{
     time::Duration,
 };
 
-use engula_engine::{compact_segments, migrate_record, Db};
+use engula_engine::{migrate_record, Db};
 
 mod error;
 pub use error::{Error, Result};
@@ -54,7 +54,7 @@ mod uio;
 fn run_background(db: Db, exit_flags: Arc<AtomicBool>) {
     while !exit_flags.load(Ordering::Acquire) {
         unsafe {
-            compact_segments(|record_base| migrate_record(db.clone(), record_base));
+            //compact_segments(|record_base| migrate_record(db.clone(), record_base));
         }
 
         std::thread::sleep(Duration::from_millis(100));
@@ -65,7 +65,7 @@ fn bootstrap_background_service(db: Db) -> (Arc<AtomicBool>, JoinHandle<()>) {
     let exit_flag = Arc::new(AtomicBool::new(false));
     let cloned_exit_flag = exit_flag.clone();
     let join_handle = std::thread::spawn(move || {
-        run_background(db, cloned_exit_flag);
+        //run_background(db, cloned_exit_flag);
     });
     (exit_flag, join_handle)
 }

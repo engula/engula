@@ -39,13 +39,21 @@ pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
 }
 
 #[repr(C, align(8))]
+#[derive(Debug, PartialEq, Eq)]
+enum SegmentState {
+    Active,
+    Frozen,
+    Compactable,
+    Freed,
+}
+
+#[repr(C, align(8))]
 struct Segment {
     node: ListNode<Segment>,
 
     allocated: usize,
     freed: usize,
-    compacting: bool,
-    active: bool,
+    state: SegmentState,
     data: [u8; 0],
 }
 
@@ -53,6 +61,7 @@ crate::intrusive_linked_list_adaptor!(SegmentNodeAdaptor, Segment, node);
 
 impl Segment {
     fn try_alloc(&mut self, layout: Layout) -> Option<*mut u8> {
+        debug_assert_eq!(self.state, SegmentState::Active);
         assert!(layout.align() <= RECORD_ALIGN);
 
         let align_allocated = next_multiple_of(self.allocated, RECORD_ALIGN);
@@ -68,6 +77,7 @@ impl Segment {
     }
 
     fn free(&mut self, layout: Layout) {
+        debug_assert_ne!(self.state, SegmentState::Freed);
         let aligned_size = next_multiple_of(layout.size(), RECORD_ALIGN);
         self.freed += aligned_size;
     }
@@ -76,9 +86,33 @@ impl Segment {
         self.freed == SEGMENT_SIZE || self.allocated == std::mem::size_of::<Segment>()
     }
 
-    unsafe fn reset(&mut self) {
+    fn freeze(&mut self) -> usize {
+        debug_assert_eq!(self.state, SegmentState::Active);
+        let tail_freed = SEGMENT_SIZE - self.allocated;
+        self.freed += tail_freed;
+        self.state = SegmentState::Frozen;
+        tail_freed
+    }
+
+    fn active(&mut self) {
+        debug_assert_eq!(self.state, SegmentState::Freed);
+        self.state = SegmentState::Active;
         self.allocated = std::mem::size_of::<Segment>();
         self.freed = std::mem::size_of::<Segment>();
+    }
+
+    fn compactable(&mut self) {
+        debug_assert_eq!(self.state, SegmentState::Frozen);
+        self.state = SegmentState::Compactable;
+    }
+
+    fn as_freed(&mut self) {
+        debug_assert_eq!(self.state, SegmentState::Compactable);
+        self.state = SegmentState::Freed;
+    }
+
+    fn allocated_size(&self) -> usize {
+        self.allocated
     }
 }
 
@@ -91,8 +125,7 @@ impl Segment {
                 node: ListNode::new(),
                 allocated: segment_header_size,
                 freed: segment_header_size,
-                compacting: false,
-                active: false,
+                state: SegmentState::Freed,
                 data: [0; 0],
             };
             debug_assert_eq!(
@@ -154,9 +187,16 @@ use std::collections::HashSet;
 pub struct Lsa {
     waker: AtomicUsize,
     num_compacted_segments: AtomicUsize,
+
+    num_active_segments: AtomicUsize,
+    num_freed_segments: AtomicUsize,
+
     allocated_segments: Mutex<HashSet<usize>>,
+
+    // active -> segments -> compactable segments -> freed segments.
     active_segment: Mutex<Option<Box<Segment>>>,
     segments: Mutex<SegmentList>,
+    compactable_segments: Mutex<SegmentList>,
     freed_segments: Mutex<SegmentList>,
 }
 
@@ -164,10 +204,13 @@ impl Lsa {
     pub fn new() -> Self {
         Lsa {
             waker: AtomicUsize::new(0),
+            num_active_segments: AtomicUsize::new(0),
+            num_freed_segments: AtomicUsize::new(0),
             num_compacted_segments: AtomicUsize::new(0),
             allocated_segments: Mutex::new(HashSet::new()),
             active_segment: Mutex::new(None),
             segments: Mutex::new(SegmentList::new()),
+            compactable_segments: Mutex::new(SegmentList::new()),
             freed_segments: Mutex::new(SegmentList::new()),
         }
     }
@@ -185,7 +228,7 @@ impl Lsa {
                         return addr;
                     }
 
-                    last_segment.active = false;
+                    last_segment.freeze();
                     {
                         let mut segments = self.segments.lock().unwrap();
                         segments.push_back(active_seg.take().unwrap());
@@ -213,15 +256,25 @@ impl Lsa {
                 panic!("unknown segment {:X}", segment_addr);
             }
         }
+
         assert_ne!(segment_addr, 0);
         let mut segment_ptr = NonNull::new_unchecked(segment_addr as *mut Segment);
         let segment = segment_ptr.as_mut();
         segment.free(layout);
-        if !segment.active && !segment.is_empty() && Self::should_compact(segment) {
-            self.wake();
+        if segment.state == SegmentState::Frozen && Self::should_compact(segment) {
+            self.make_segment_compactable(segment_ptr);
         }
-        if !segment.compacting {
-            self.might_reuse_segment(segment_ptr);
+    }
+
+    fn make_segment_compactable(&self, segment: NonNull<Segment>) {
+        let mut boxed_segment = {
+            let mut segments = self.segments.lock().unwrap();
+            unsafe { segments.unlink_node(segment) }
+        };
+        {
+            boxed_segment.compactable();
+            let mut compactable_segments = self.compactable_segments.lock().unwrap();
+            compactable_segments.push_back(boxed_segment);
         }
     }
 
@@ -235,28 +288,37 @@ impl Lsa {
             let mut freed_segments = self.freed_segments.lock().unwrap();
             freed_segments.pop_front()
         };
-        let segment = new_segment.unwrap_or_else(Segment::new);
+        let mut segment = match new_segment {
+            Some(segment) => {
+                self.num_freed_segments.fetch_sub(1, Ordering::Relaxed);
+                segment
+            }
+            None => Segment::new(),
+        };
+        self.num_active_segments.fetch_add(1, Ordering::Relaxed);
         {
             let mut allocated_segments = self.allocated_segments.lock().unwrap();
             allocated_segments.insert(segment.as_ref() as *const _ as usize);
         }
+
+        segment.active();
         assert!(active_seg.is_none());
         *active_seg = Some(segment);
     }
 
-    unsafe fn might_reuse_segment(&self, mut segment_ptr: NonNull<Segment>) {
-        let segment = segment_ptr.as_mut();
-        if segment.is_empty() {
-            segment.reset();
-            let boxed_segment = {
-                let mut segments = self.segments.lock().unwrap();
-                segments.unlink_node(segment_ptr)
-            };
+    // unsafe fn might_reuse_segment(&self, mut segment_ptr: NonNull<Segment>) {
+    //     let segment = segment_ptr.as_mut();
+    //     if segment.is_empty() {
+    //         segment.reset();
+    //         let boxed_segment = {
+    //             let mut segments = self.segments.lock().unwrap();
+    //             segments.unlink_node(segment_ptr)
+    //         };
 
-            let mut freed_segments = self.freed_segments.lock().unwrap();
-            freed_segments.push_back(boxed_segment);
-        }
-    }
+    //         let mut freed_segments = self.freed_segments.lock().unwrap();
+    //         freed_segments.push_back(boxed_segment);
+    //     }
+    // }
 
     fn is_exceeds_supported_size(layout: Layout) -> bool {
         let aligned_size = next_multiple_of(layout.size(), RECORD_ALIGN);
@@ -270,14 +332,16 @@ impl Lsa {
         if let Some(mut boxed_segment) = self.select_segment_for_compaction() {
             unsafe {
                 boxed_segment.compact(migrate);
-                boxed_segment.reset();
+                boxed_segment.as_freed();
             };
+            println!("compact a segment");
 
-            self.num_compacted_segments.fetch_add(1, Ordering::AcqRel);
+            self.num_compacted_segments.fetch_add(1, Ordering::Relaxed);
+            self.num_active_segments.fetch_sub(1, Ordering::Relaxed);
             let mut freed_segments = self.freed_segments.lock().unwrap();
             // TODO(walter) add parameter.
             if freed_segments.len() <= 16 {
-                boxed_segment.compacting = false;
+                self.num_freed_segments.fetch_add(1, Ordering::Relaxed);
                 freed_segments.push_back(boxed_segment);
             } else {
                 Segment::drop_self(boxed_segment);
@@ -289,21 +353,8 @@ impl Lsa {
     }
 
     fn select_segment_for_compaction(&self) -> Option<Box<Segment>> {
-        let mut segments = self.segments.lock().unwrap();
-        // TODO(walter) add parameter.
-        let limit = std::cmp::min(16, segments.len());
-        for _ in 0..limit {
-            if let Some(mut segment) = segments.pop_front() {
-                // if the segment has free space exceeds about 20%.
-                if Self::should_compact(&segment) {
-                    segment.compacting = true;
-                    return Some(segment);
-                } else {
-                    segments.push_back(segment);
-                }
-            }
-        }
-        None
+        let mut segments = self.compactable_segments.lock().unwrap();
+        segments.pop_front()
     }
 
     fn should_compact(segment: &Segment) -> bool {
@@ -354,7 +405,7 @@ pub unsafe fn lsa_dealloc(addr: *mut u8, layout: Layout) {
 }
 
 #[allow(clippy::missing_safety_doc)]
-pub unsafe fn compact_segments<F>(migrate: F) -> bool
+pub unsafe fn compact_segment<F>(migrate: F) -> bool
 where
     F: Fn(NonNull<u8>) -> usize,
 {
@@ -439,6 +490,15 @@ pub fn drop_all_segments() {
             Segment::drop_self(segment);
         }
     }
+}
+
+pub fn allocated_memory() -> usize {
+    let active_segment = GLOBAL_LSA.active_segment.lock().unwrap();
+    GLOBAL_LSA.num_active_segments.load(Ordering::Relaxed) * SEGMENT_SIZE
+        + active_segment
+            .as_deref()
+            .map(Segment::allocated_size)
+            .unwrap_or_default()
 }
 
 #[allow(dead_code)]
