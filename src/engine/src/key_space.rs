@@ -128,6 +128,16 @@ impl KeySpace {
             self.advance_rehash();
         }
     }
+
+    pub fn drain_next_space(&mut self) -> Option<impl Iterator<Item = RawObject> + '_> {
+        self.next_space
+            .as_mut()
+            .map(|next_table| next_table.drain().map(|drain| drain.raw_object))
+    }
+
+    pub fn drain_current_space(&mut self) -> impl Iterator<Item = RawObject> + '_ {
+        self.current_space.drain().map(|entry| entry.raw_object)
+    }
 }
 
 impl Default for KeySpace {

@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    alloc::{alloc, Layout},
-    ptr::NonNull,
-    slice,
-};
+use std::{alloc::Layout, ptr::NonNull, slice};
 
 use super::{BoxElement, Element, ElementLayout, ElementType};
 
@@ -85,6 +81,8 @@ impl ElementLayout for Entry {
 
 impl BoxElement<Entry> {
     pub fn with_capacity(key_len: usize, value_len: usize) -> BoxElement<Entry> {
+        use std::alloc::alloc;
+
         type Target = Element<Entry>;
 
         let capacity = key_len + value_len;
