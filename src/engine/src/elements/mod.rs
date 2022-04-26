@@ -65,8 +65,8 @@ impl<T: ElementLayout> Element<T> {
     /// [`associated_object`].
     pub fn associated_with(&mut self, object_meta: &ObjectMeta) {
         self.meta.clear_tombstone();
-        let address = object_meta as *const _ as u64;
-        self.meta.left.copy_from_slice(&address.to_le_bytes()[..6]);
+        let address = object_meta as *const _ as usize;
+        self.meta.set_associated_address(address);
     }
 
     /// Return the underlying associated objects
@@ -75,11 +75,9 @@ impl<T: ElementLayout> Element<T> {
     ///
     /// User should ensure an object is associated before.
     pub unsafe fn associated_object(&self) -> Option<RawObject> {
-        let mut bytes = [0u8; 8];
-        bytes[..6].copy_from_slice(&self.meta.left[..]);
-        let address = u64::from_le_bytes(bytes);
+        let address = self.meta.associated_address();
         if address == 0 {
-            Some(RawObject::from_raw_address(address as usize))
+            Some(RawObject::from_raw_address(address))
         } else {
             None
         }

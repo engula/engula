@@ -34,7 +34,7 @@ pub struct RecordMeta {
     /// - 2: tombstone?
     /// - 3-15: object or element defined
     tag: u16,
-    pub left: [u8; 6],
+    left: [u8; 6],
 }
 
 impl RecordMeta {
@@ -111,4 +111,45 @@ impl RecordMeta {
     fn record_type(&self) -> u16 {
         self.tag & RECORD_TYPE_MASK
     }
+}
+
+impl RecordMeta {
+    pub(crate) fn set_key_len(&mut self, key_len: u32) {
+        let bytes = key_len.to_le_bytes();
+        self.left[3..].copy_from_slice(&bytes[..3]);
+    }
+
+    pub(crate) fn key_len(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        bytes[0..3].copy_from_slice(&self.left[3..]);
+        u32::from_le_bytes(bytes)
+    }
+
+    pub fn set_lru(&mut self, val: u32) {
+        self.left[0..3].copy_from_slice(&val.to_le_bytes()[0..3]);
+    }
+
+    pub fn lru(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        bytes[0..3].copy_from_slice(&self.left[..3]);
+        u32::from_le_bytes(bytes)
+    }
+}
+
+impl RecordMeta {
+    pub fn set_associated_address(&mut self, address: usize) {
+        self.left.copy_from_slice(&address.to_le_bytes()[..6]);
+    }
+
+    pub fn associated_address(&self) -> usize {
+        let mut bytes = [0u8; 8];
+        bytes[..6].copy_from_slice(&self.left[..]);
+        usize::from_le_bytes(bytes)
+    }
+}
+
+#[allow(dead_code)]
+fn assert_address_space() {
+    // sizeof(usize) == sizeof(u64)
+    let _: [u8; std::mem::size_of::<u64>()] = [0; std::mem::size_of::<usize>()];
 }
