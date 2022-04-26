@@ -30,22 +30,35 @@ unsafe impl Sync for Db {}
 
 #[derive(Default)]
 struct DbState {
+    lru: u32,
     key_space: KeySpace,
 }
 
 impl Db {
     pub fn get(&self, key: &[u8]) -> Option<RawObject> {
         let mut state = self.state.lock().unwrap();
-        state.key_space.get(key)
+        match state.key_space.get(key) {
+            Some(mut raw_object) => {
+                unsafe {
+                    let object_meta = raw_object.object_meta_mut();
+                    if object_meta.lru() != state.lru {
+                        object_meta.set_lru(state.lru);
+                    }
+                };
+                Some(raw_object)
+            }
+            None => None,
+        }
     }
 
-    pub fn insert<T>(&self, object: BoxObject<T>)
+    pub fn insert<T>(&self, mut object: BoxObject<T>)
     where
         T: ObjectLayout,
     {
         let mut state = self.state.lock().unwrap();
 
         let key = object.key();
+        object.meta.set_lru(state.lru);
         if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
             raw_object.drop_in_place();
         }
