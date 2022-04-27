@@ -13,7 +13,8 @@
 // limitations under the License.
 use std::hash::{Hash, Hasher};
 
-use hashbrown::raw::RawTable;
+use hashbrown::raw::{RawIterRange, RawTable};
+use rand::{thread_rng, Rng};
 
 use crate::objects::RawObject;
 
@@ -138,6 +139,38 @@ impl KeySpace {
     pub fn drain_current_space(&mut self) -> impl Iterator<Item = RawObject> + '_ {
         self.current_space.drain().map(|entry| entry.raw_object)
     }
+
+    /// Select maximum `limit` objects randomly from key space.
+    #[allow(dead_code)]
+    pub fn random_objects(&mut self, limit: usize) -> Vec<RawObject> {
+        let mut objects = Self::random_objects_from_space(&self.current_space, limit);
+        let left = limit - objects.len();
+        if left > 0 {
+            if let Some(next_space) = self.next_space.as_ref() {
+                objects.append(&mut Self::random_objects_from_space(next_space, left));
+            }
+        }
+        objects
+    }
+
+    fn random_objects_from_space(space: &RawTable<ObjectEntry>, limit: usize) -> Vec<RawObject> {
+        unsafe {
+            let take_n_objects = |it: RawIterRange<ObjectEntry>, n| {
+                it.take(n).map(|bucket| bucket.as_ref().raw_object)
+            };
+            let index = thread_rng().gen::<usize>();
+            let limit = std::cmp::min(space.len(), limit);
+            let mut objects =
+                take_n_objects(space.iter_with_hint(index), limit).collect::<Vec<_>>();
+            if objects.len() < limit {
+                objects.extend(take_n_objects(
+                    space.iter_with_hint(0),
+                    limit - objects.len(),
+                ));
+            }
+            objects
+        }
+    }
 }
 
 impl Default for KeySpace {
@@ -158,4 +191,81 @@ where
 
 fn equivalent_key(k: &[u8]) -> impl Fn(&ObjectEntry) -> bool + '_ {
     move |x| k.eq(x.raw_object.key())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::NonNull;
+
+    use super::*;
+
+    #[test]
+    fn random_objects_from_space() {
+        unsafe {
+            #[derive(Debug)]
+            struct TestCase {
+                objects: Vec<u64>,
+                take: usize,
+                expect: usize,
+            }
+
+            let cases = vec![
+                TestCase {
+                    objects: vec![],
+                    take: 0,
+                    expect: 0,
+                },
+                TestCase {
+                    objects: vec![1, 3, 5, 7, 9],
+                    take: 4,
+                    expect: 4,
+                },
+                TestCase {
+                    objects: vec![1, 3, 5, 7, 9],
+                    take: 5,
+                    expect: 5,
+                },
+                TestCase {
+                    objects: vec![1, 3, 5, 7, 9],
+                    take: 6,
+                    expect: 5,
+                },
+            ];
+
+            for case in cases {
+                println!("case {:?}", case);
+                let mut table = RawTable::<ObjectEntry>::with_capacity(32);
+                for object in case.objects {
+                    table.insert_no_grow(
+                        object,
+                        ObjectEntry {
+                            hash: object,
+                            raw_object: RawObject::from_raw(NonNull::dangling()),
+                        },
+                    );
+                }
+
+                let objects = KeySpace::random_objects_from_space(&table, case.take);
+                assert_eq!(objects.len(), case.expect);
+            }
+        }
+    }
+
+    #[test]
+    fn random_objects() {
+        unsafe {
+            let mut space = KeySpace::new();
+            for object in [1, 2, 3, 4, 5, 6, 7, 8] {
+                space.insert(&[object], RawObject::from_raw(NonNull::dangling()));
+            }
+            let objects = space.random_objects(0);
+            assert_eq!(objects.len(), 0);
+
+            let objects = space.random_objects(1);
+            assert_eq!(objects.len(), 1);
+
+            let objects = space.random_objects(10);
+            assert_eq!(objects.len(), 8);
+        }
+    }
 }
