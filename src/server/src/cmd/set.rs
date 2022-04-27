@@ -150,6 +150,7 @@ impl Set {
         // Create a success response and write it to `dst`.
         let response = Frame::Simple("OK".to_string());
         debug!(?response);
+
         Ok(response)
     }
 

@@ -30,14 +30,7 @@ pub use info::Info;
 mod unknown;
 pub use unknown::Unknown;
 
-use crate::{Db, Frame, Parse, ParseError};
-
-pub fn apply(frame: Frame, db: &Db) -> Frame {
-    match Command::from_frame(frame) {
-        Ok(cmd) => cmd.apply(db).unwrap(),
-        Err(e) => Frame::Error(format!("ERR {}", e)),
-    }
-}
+use crate::{connection::Connection, Db, Frame, Parse, ParseError, Result};
 
 /// Enumeration of supported Redis commands.
 ///
@@ -107,17 +100,21 @@ impl Command {
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    pub fn apply(self, db: &Db) -> crate::Result<Frame> {
+    pub async fn apply(self, db: &Db, dst: &mut Connection) -> Result<()> {
         use Command::*;
 
-        match self {
+        let respose = match self {
             Get(cmd) => cmd.apply(db),
             Set(cmd) => cmd.apply(db),
             Del(cmd) => cmd.apply(db),
             Ping(cmd) => cmd.apply(),
             Info(cmd) => cmd.apply(db),
             Unknown(cmd) => cmd.apply(),
-        }
+        }?;
+
+        dst.write_frame(&respose).await?;
+
+        Ok(())
     }
 
     /// Returns the command name
