@@ -24,7 +24,10 @@ use io_uring::cqueue;
 use tracing::{error, info, trace};
 
 use super::{Connection, IoDriver, Listener, Token};
-use crate::{Config, Result};
+use crate::{
+    timer::{TaskKind, Timer},
+    Config, Result,
+};
 
 pub struct Server {
     db: Db,
@@ -57,14 +60,16 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        let mut timer = Timer::default();
+        self.register_scheduled_tasks(&mut timer);
         loop {
-            self.tick()?;
+            self.tick(&mut timer)?;
         }
     }
 
-    fn tick(&mut self) -> Result<()> {
+    fn tick(&mut self, timer: &mut Timer) -> Result<()> {
         let mut io = self.io.clone();
-        io.wait(1).map_err(|err| {
+        io.wait(1, timer.duration_since_now()).map_err(|err| {
             error!(%err, "wait io");
             err
         })?;
@@ -91,16 +96,7 @@ impl Server {
             }
         }
 
-        if let Some(timeout) = self.connection_timeout {
-            self.connections.retain(|token, connection| {
-                if connection.elapsed_from_last_interation() > timeout {
-                    trace!(token = token, "closing idle client");
-                    false
-                } else {
-                    true
-                }
-            });
-        }
+        timer.dispatch_tasks();
 
         Ok(())
     }
@@ -128,5 +124,35 @@ impl Server {
             self.connections.remove(&id);
         }
         Ok(())
+    }
+
+    fn on_recycle_idle_connections(&mut self) {
+        if let Some(timeout) = self.connection_timeout {
+            self.connections.retain(|token, connection| {
+                if connection.elapsed_from_last_interation() > timeout {
+                    trace!(token = token, "closing idle client");
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+
+    fn on_db_tick(&mut self) {}
+
+    fn register_scheduled_tasks(&mut self, timer: &mut Timer) {
+        let db_tick_interval = Duration::from_millis(100);
+        let conn_idle_interval = Duration::from_millis(500);
+        timer.add(
+            TaskKind::Interval(db_tick_interval),
+            Server::on_db_tick,
+            self,
+        );
+        timer.add(
+            TaskKind::Interval(conn_idle_interval),
+            Server::on_recycle_idle_connections,
+            self,
+        );
     }
 }

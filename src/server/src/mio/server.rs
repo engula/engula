@@ -19,7 +19,11 @@ use mio::{net::TcpListener, Events, Interest, Poll, Token};
 use tracing::{info, trace};
 
 use super::would_block;
-use crate::{mio::connection::Connection, Config, Error, Result};
+use crate::{
+    mio::connection::Connection,
+    timer::{TaskKind, Timer},
+    Config, Error, Result,
+};
 
 const SERVER: Token = Token(0);
 
@@ -48,13 +52,15 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let tick = Duration::from_millis(500);
         let mut poll = Poll::new()?;
         let mut events = Events::with_capacity(128);
         poll.registry()
             .register(&mut self.listener, SERVER, Interest::READABLE)?;
+
+        let mut timer = Timer::new();
+        self.register_scheduled_tasks(&mut poll, &mut timer);
         loop {
-            poll.poll(&mut events, Some(tick))?;
+            poll.poll(&mut events, timer.duration_since_now())?;
             for event in events.iter() {
                 match event.token() {
                     SERVER => loop {
@@ -88,18 +94,40 @@ impl Server {
                 }
             }
 
-            if let Some(timeout) = self.connection_timeout {
-                self.connections.retain(|token, connection| {
-                    if connection.elapsed_from_last_interation() > timeout {
-                        trace!(token = token.0, "closing idle client");
-                        poll.registry().deregister(connection.stream()).unwrap();
-                        false
-                    } else {
-                        true
-                    }
-                });
-            }
+            timer.dispatch_tasks();
         }
+    }
+
+    fn on_db_tick(&mut self) {}
+
+    fn recycle_idle_connections(&mut self, poll: &mut Poll) {
+        if let Some(timeout) = self.connection_timeout {
+            self.connections.retain(|token, connection| {
+                if connection.elapsed_from_last_interation() > timeout {
+                    trace!(token = token.0, "closing idle client");
+                    poll.registry().deregister(connection.stream()).unwrap();
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+
+    fn register_scheduled_tasks(&mut self, poll: &mut Poll, timer: &mut Timer) {
+        let db_tick_interval = Duration::from_millis(100);
+        let conn_idle_interval = Duration::from_millis(500);
+        timer.add(
+            TaskKind::Interval(db_tick_interval),
+            Server::on_db_tick,
+            self,
+        );
+        timer.add_with_arg(
+            TaskKind::Interval(conn_idle_interval),
+            Server::recycle_idle_connections,
+            self,
+            poll,
+        );
     }
 
     fn token(&mut self) -> Token {
