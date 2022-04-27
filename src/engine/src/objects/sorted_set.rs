@@ -22,6 +22,16 @@ pub struct SortedSet {
     values: HashMap<String, f64>,
 }
 
+impl SortedSet {
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &f64)> {
+        self.values.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&String, &mut f64)> {
+        self.values.iter_mut()
+    }
+}
+
 impl ObjectLayout for SortedSet {
     fn object_type() -> u16 {
         ObjectType::SORTED_SET.bits

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ptr::NonNull;
+use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use super::{Object, ObjectLayout, ObjectType};
 use crate::elements::{list_node::ListNode, BoxElement, Element};
@@ -24,6 +24,30 @@ pub struct LinkedList {
     tail: Option<NonNull<Element<ListNode>>>,
     len: u32,
     pad: u32,
+}
+
+/// An iterator over the elements of a `LinkedList`.
+///
+/// This `struct` is created by [`LinkedList::iter()`]. See its
+/// documentation for more.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct Iter<'a> {
+    head: Option<NonNull<Element<ListNode>>>,
+    tail: Option<NonNull<Element<ListNode>>>,
+    len: usize,
+    marker: PhantomData<&'a Element<ListNode>>,
+}
+
+/// An iterator over the elements of a `LinkedList`.
+///
+/// This `struct` is created by [`LinkedList::iter_mut()`]. See its
+/// documentation for more.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct IterMut<'a> {
+    head: Option<NonNull<Element<ListNode>>>,
+    tail: Option<NonNull<Element<ListNode>>>,
+    len: usize,
+    marker: PhantomData<&'a mut Element<ListNode>>,
 }
 
 impl Object<LinkedList> {
@@ -96,11 +120,21 @@ impl Object<LinkedList> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Element<ListNode>> {
-        LinkedListIterator::new(self)
+        Iter {
+            head: self.head,
+            tail: self.tail,
+            len: self.len as usize,
+            marker: PhantomData,
+        }
     }
 
-    pub fn iter_mut(&self) -> impl Iterator<Item = &mut Element<ListNode>> {
-        LinkedListIteratorMut::new(self)
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Element<ListNode>> {
+        IterMut {
+            head: self.head,
+            tail: self.tail,
+            len: self.len as usize,
+            marker: PhantomData,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -114,7 +148,7 @@ impl Object<LinkedList> {
 
 impl ObjectLayout for LinkedList {
     fn object_type() -> u16 {
-        ObjectType::LINKED_LIST.bits
+        ObjectType::LINKED_LIST.bits()
     }
 }
 
@@ -131,61 +165,101 @@ impl Drop for LinkedList {
     }
 }
 
-struct LinkedListIterator<'a> {
-    _list: &'a LinkedList,
-    next: Option<NonNull<Element<ListNode>>>,
-}
-
-impl<'a> LinkedListIterator<'a> {
-    fn new(list: &'a LinkedList) -> Self {
-        let next = list.head;
-        LinkedListIterator { _list: list, next }
-    }
-}
-
-impl<'a> Iterator for LinkedListIterator<'a> {
+impl<'a> Iterator for Iter<'a> {
     type Item = &'a Element<ListNode>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(node) = self.next.take() {
-            unsafe {
-                let node = node.as_ref();
-                self.next = node.next;
-                Some(node)
-            }
-        } else {
+        if self.len == 0 {
             None
+        } else {
+            self.head.map(|node| unsafe {
+                let node = node.as_ref();
+                self.len -= 1;
+                self.head = node.next;
+                node
+            })
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+}
+
+impl<'a> DoubleEndedIterator for Iter<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.len == 0 {
+            None
+        } else {
+            self.tail.map(|node| unsafe {
+                let node = node.as_ref();
+                self.len -= 1;
+                self.tail = node.prev;
+                node
+            })
         }
     }
 }
 
-struct LinkedListIteratorMut<'a> {
-    _list: &'a LinkedList,
-    next: Option<NonNull<Element<ListNode>>>,
-}
+impl ExactSizeIterator for Iter<'_> {}
 
-impl<'a> LinkedListIteratorMut<'a> {
-    fn new(list: &'a LinkedList) -> Self {
-        let next = list.head;
-        LinkedListIteratorMut { _list: list, next }
-    }
-}
+impl FusedIterator for Iter<'_> {}
 
-impl<'a> Iterator for LinkedListIteratorMut<'a> {
+impl<'a> Iterator for IterMut<'a> {
     type Item = &'a mut Element<ListNode>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(mut node) = self.next {
-            unsafe {
-                let node = node.as_mut();
-                self.next = node.next;
-                Some(node)
-            }
-        } else {
+        if self.len == 0 {
             None
+        } else {
+            self.head.map(|mut node| unsafe {
+                let node = node.as_mut();
+                self.len -= 1;
+                self.head = node.next;
+                node
+            })
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+}
+
+impl<'a> DoubleEndedIterator for IterMut<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.len == 0 {
+            None
+        } else {
+            self.tail.map(|mut node| unsafe {
+                let node = node.as_mut();
+                self.len -= 1;
+                self.tail = node.prev;
+                node
+            })
         }
     }
 }
+
+impl ExactSizeIterator for IterMut<'_> {}
+
+impl FusedIterator for IterMut<'_> {}
 
 #[cfg(test)]
 mod tests {

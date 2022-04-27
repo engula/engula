@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
+use std::{hash::Hash, marker::PhantomData};
 
-use hashbrown::raw::RawTable;
+use hashbrown::raw::{RawIter, RawTable};
 
 use super::{ObjectLayout, ObjectType};
 use crate::elements::{entry::Entry, BoxElement};
@@ -32,6 +32,22 @@ impl HashKey for BoxElement<Entry> {
 #[repr(C)]
 pub struct RawHashMap<T: HashKey> {
     current: RawTable<T>,
+}
+
+pub struct Iter<'a, T>
+where
+    T: HashKey,
+{
+    iter: RawIter<T>,
+    marker: PhantomData<&'a T>,
+}
+
+pub struct IterMut<'a, T>
+where
+    T: HashKey,
+{
+    iter: RawIter<T>,
+    marker: PhantomData<&'a mut T>,
 }
 
 impl<T: HashKey> RawHashMap<T> {
@@ -60,6 +76,20 @@ impl<T: HashKey> RawHashMap<T> {
             None
         }
     }
+
+    pub fn iter<'a>(&self) -> Iter<'a, T> {
+        Iter {
+            iter: unsafe { self.current.iter() },
+            marker: PhantomData,
+        }
+    }
+
+    pub fn iter_mut<'a>(&mut self) -> IterMut<'a, T> {
+        IterMut {
+            iter: unsafe { self.current.iter() },
+            marker: PhantomData,
+        }
+    }
 }
 
 impl<T: HashKey> Default for RawHashMap<T> {
@@ -67,6 +97,28 @@ impl<T: HashKey> Default for RawHashMap<T> {
         RawHashMap {
             current: RawTable::default(),
         }
+    }
+}
+
+impl<'a, T> Iterator for Iter<'a, T>
+where
+    T: HashKey,
+{
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bucket| unsafe { bucket.as_ref() })
+    }
+}
+
+impl<'a, T> Iterator for IterMut<'a, T>
+where
+    T: HashKey,
+{
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bucket| unsafe { bucket.as_mut() })
     }
 }
 
@@ -135,5 +187,29 @@ mod tests {
         let entry = hash_map.insert(entry).unwrap();
         let (_, val_buf) = entry.data_slice();
         assert_eq!(val_buf, &[0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn hash_map_iterate() {
+        let mut hash_map: BoxObject<HashMap> = BoxObject::with_key(&[1, 2, 3]);
+
+        let mut insert = |key: &[u8], value: &[u8]| {
+            let mut entry = BoxElement::<Entry>::with_capacity(key.len(), value.len());
+            let (key_buf, val_buf) = entry.data_slice_mut();
+            key_buf.copy_from_slice(key);
+            val_buf.copy_from_slice(value);
+            hash_map.insert(entry);
+        };
+
+        let mut record_table = std::collections::HashSet::new();
+        for i in 0..16u8 {
+            insert(&[i], &[i]);
+            record_table.insert(vec![i]);
+        }
+        for entry in hash_map.iter() {
+            let (key, _) = entry.data_slice();
+            record_table.remove(key);
+        }
+        assert!(record_table.is_empty());
     }
 }
