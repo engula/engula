@@ -19,6 +19,14 @@ use crate::{
     objects::{BoxObject, ObjectLayout, RawObject},
 };
 
+#[derive(Default, Clone, Debug)]
+pub struct DbStats {
+    pub num_keys: usize,
+    pub evicted_keys: usize,
+    pub keyspace_hits: usize,
+    pub keyspace_misses: usize,
+}
+
 #[derive(Default, Clone)]
 pub struct Db {
     state: Arc<Mutex<DbState>>,
@@ -31,6 +39,7 @@ unsafe impl Sync for Db {}
 #[derive(Default)]
 struct DbState {
     lru: u32,
+    stats: DbStats,
     key_space: KeySpace,
 }
 
@@ -45,9 +54,13 @@ impl Db {
                         object_meta.set_lru(state.lru);
                     }
                 };
+                state.stats.keyspace_hits += 1;
                 Some(raw_object)
             }
-            None => None,
+            None => {
+                state.stats.keyspace_misses += 1;
+                None
+            }
         }
     }
 
@@ -61,6 +74,8 @@ impl Db {
         object.meta.set_lru(state.lru);
         if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
             raw_object.drop_in_place();
+        } else {
+            state.stats.num_keys += 1;
         }
     }
 
@@ -68,15 +83,19 @@ impl Db {
         let mut state = self.state.lock().unwrap();
         if let Some(raw_object) = state.key_space.remove(key) {
             raw_object.drop_in_place();
+            state.stats.num_keys = state.stats.num_keys.saturating_sub(1);
         }
     }
 
     pub fn delete_keys<'a, K: IntoIterator<Item = &'a [u8]>>(&self, keys: K) -> u64 {
         let objects = {
             let mut state = self.state.lock().unwrap();
-            keys.into_iter()
+            let objects = keys
+                .into_iter()
                 .filter_map(|key| state.key_space.remove(key))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            state.stats.num_keys = state.stats.num_keys.saturating_sub(objects.len());
+            objects
         };
 
         let num_deleted = objects.len();
@@ -84,6 +103,10 @@ impl Db {
             object_ref.drop_in_place();
         }
         num_deleted as u64
+    }
+
+    pub fn stats(&self) -> DbStats {
+        self.state.lock().unwrap().stats.clone()
     }
 }
 
