@@ -42,6 +42,8 @@ mod mio;
 #[cfg(target_os = "linux")]
 mod uio;
 
+mod timer;
+
 pub fn run(config: Config) -> Result<()> {
     match config.driver_mode {
         DriverMode::Mio => mio::Server::new(config)?.run(),
