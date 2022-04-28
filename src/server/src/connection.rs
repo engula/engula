@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    future::Future,
-    io::{self, Cursor},
-    pin::Pin,
-};
+use std::io::{self, Cursor};
 
 use bytes::{Buf, BytesMut};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter};
-use tokio_uring::{
-    buf::{IoBuf, IoBufMut},
-    net::TcpStream,
-};
+use monoio::net::TcpStream;
+use monoio_compat::TcpStreamCompat;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
 use crate::frame::{self, Frame};
 
@@ -44,7 +38,7 @@ pub struct Connection {
     // The `TcpStream`. It is decorated with a `BufWriter`, which provides write
     // level buffering. The `BufWriter` implementation provided by Tokio is
     // sufficient for our needs.
-    stream: BufWriter<TcpStreamAdpator>,
+    stream: BufWriter<TcpStreamCompat>,
 
     // The buffer for reading frames.
     buffer: BytesMut,
@@ -54,14 +48,7 @@ impl Connection {
     /// Create a new `Connection`, backed by `socket`. Read and write buffers
     /// are initialized.
     pub fn new(socket: TcpStream) -> Connection {
-        let stream = TcpStreamAdpator {
-            socket,
-            read_fut: None,
-            read_owned_buf: Some(Vec::with_capacity(1024)),
-            write_fut: None,
-            write_owned_buf: Some(Vec::with_capacity(1024)),
-            write_len: 0,
-        };
+        let stream = unsafe { TcpStreamCompat::new(socket) };
         Connection {
             stream: BufWriter::new(stream),
             // Default to a 4KB read buffer. For the use case of mini redis,
@@ -262,142 +249,5 @@ impl Connection {
         self.stream.write_all(b"\r\n").await?;
 
         Ok(())
-    }
-}
-
-type PinnedFuture<B> = Pin<Box<dyn Future<Output = tokio_uring::BufResult<usize, B>> + 'static>>;
-
-struct LimitedBuffer {
-    buf: Vec<u8>,
-    limit: usize,
-}
-
-unsafe impl IoBuf for LimitedBuffer {
-    fn stable_ptr(&self) -> *const u8 {
-        self.buf.as_ptr()
-    }
-
-    fn bytes_init(&self) -> usize {
-        self.buf.len().min(self.limit)
-    }
-
-    fn bytes_total(&self) -> usize {
-        self.buf.capacity().min(self.limit)
-    }
-}
-
-unsafe impl IoBufMut for LimitedBuffer {
-    fn stable_mut_ptr(&mut self) -> *mut u8 {
-        self.buf.as_mut_ptr()
-    }
-
-    unsafe fn set_init(&mut self, pos: usize) {
-        self.buf.set_init(pos)
-    }
-}
-
-pub struct TcpStreamAdpator {
-    socket: TcpStream,
-
-    read_fut: Option<PinnedFuture<LimitedBuffer>>,
-    read_owned_buf: Option<Vec<u8>>,
-
-    write_fut: Option<PinnedFuture<Vec<u8>>>,
-    write_owned_buf: Option<Vec<u8>>,
-    write_len: usize,
-}
-
-impl AsyncRead for TcpStreamAdpator {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<io::Result<()>> {
-        let this = self.get_mut();
-        let mut fut = this.read_fut.take().unwrap_or_else(|| {
-            // we can read at most that length
-            let mut owned_buf = this.read_owned_buf.take().unwrap();
-            let cap = owned_buf.capacity();
-            let remaining = buf.remaining();
-            if remaining > cap {
-                owned_buf.reserve(remaining - cap); //  remain - cap
-            }
-            let limited_buffer = LimitedBuffer {
-                buf: owned_buf,
-                limit: remaining,
-            };
-            let socket = unsafe { &*(&this.socket as *const TcpStream) };
-            let f = TcpStream::read(socket, limited_buffer);
-            Box::pin(f)
-        });
-        match fut.as_mut().poll(cx) {
-            std::task::Poll::Ready((r, limited_buffer)) => {
-                let inner = limited_buffer.buf;
-                let ret = if let Err(e) = r {
-                    std::task::Poll::Ready(Err(e))
-                } else {
-                    buf.put_slice(&inner[..r.unwrap()]);
-                    std::task::Poll::Ready(Ok(()))
-                };
-                this.read_owned_buf = Some(inner);
-                ret
-            }
-            std::task::Poll::Pending => {
-                this.read_fut = Some(fut);
-                std::task::Poll::Pending
-            }
-        }
-    }
-}
-
-impl AsyncWrite for TcpStreamAdpator {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, io::Error>> {
-        let this = self.get_mut();
-        let mut fut = this.write_fut.take().unwrap_or_else(|| {
-            let mut owned_buf = this.write_owned_buf.take().unwrap();
-            let stream = unsafe { &*(&this.socket as *const TcpStream) };
-
-            owned_buf.clear();
-            owned_buf.extend_from_slice(buf);
-
-            this.write_len = owned_buf.len();
-            let f = TcpStream::write(stream, owned_buf);
-            Box::pin(f)
-        });
-        // Check if the slice between different poll_write calls is the same
-        if buf.len() != this.write_len {
-            panic!("write slice length mismatch between poll_write");
-        }
-        match fut.as_mut().poll(cx) {
-            std::task::Poll::Ready((r, owned_buf)) => {
-                this.write_owned_buf = Some(owned_buf);
-                match r {
-                    Ok(n) => std::task::Poll::Ready(Ok(n)),
-                    Err(e) => std::task::Poll::Ready(Err(e)),
-                }
-            }
-            std::task::Poll::Pending => {
-                this.write_fut = Some(fut);
-                std::task::Poll::Pending
-            }
-        }
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), io::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), io::Error>> {
-        std::task::Poll::Ready(Ok(()))
     }
 }

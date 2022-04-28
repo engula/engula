@@ -45,8 +45,7 @@ use connection::Connection;
 mod server;
 mod shutdown;
 
-use tokio::signal;
-use tokio_uring::net::TcpListener;
+use monoio::net::TcpListener;
 
 pub fn run(config: Config) -> Result<()> {
     // Resolve & Bind a TCP listener
@@ -55,8 +54,13 @@ pub fn run(config: Config) -> Result<()> {
     let addr = config.addr.to_socket_addrs()?.next().unwrap();
     let listener = TcpListener::bind(addr)?;
 
-    tokio_uring::start(async {
-        server::run(db, listener, signal::ctrl_c(), config).await;
+    let mut rt = monoio::RuntimeBuilder::new()
+        .with_entries(32768)
+        .enable_timer()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        server::run(db, listener, config).await;
     });
 
     Ok(())

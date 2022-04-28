@@ -62,7 +62,7 @@ impl Shutdown {
         }
 
         // Cannot receive a "lag error" as only one value is ever sent.
-        let _ = tokio::select! {
+        let _ = monoio::select! {
             _ = self.notify.recv() => {},
             _ = self.close_rx.recv() => {
                 debug!("wake up due to closing")

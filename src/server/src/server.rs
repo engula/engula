@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cell::RefCell, future::Future, ops::Deref, rc::Rc, sync::Arc};
+use std::{cell::RefCell, ops::Deref, rc::Rc, sync::Arc, time::Duration};
 
-use tokio::{
-    sync::{broadcast, mpsc, Semaphore},
-    time::{self, Duration, Instant},
+use monoio::{
+    net::{TcpListener, TcpStream},
+    time::{self, Instant},
 };
-use tokio_uring::net::{TcpListener, TcpStream};
+use tokio::sync::{broadcast, mpsc, Semaphore};
 use tracing::{debug, error, info, instrument};
 
 use crate::{cmd::Command, shutdown::Shutdown, Config, Connection, Db};
@@ -77,7 +77,7 @@ struct Server {
     shutdown_complete_rx: mpsc::Receiver<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
 
-    conn_infos: Rc<RefCell<Vec<Rc<RefCell<ConnInfo>>>>>,
+    conn_infos: Rc<RefCell<ConnInfos>>,
 }
 
 /// Per-connection handler. Reads requests from `connection` and applies the
@@ -106,7 +106,7 @@ struct Handler {
     /// the newly available permit and resume accepting connections.
     limit_connections: Arc<Semaphore>,
 
-    conn_stats: Rc<RefCell<ConnInfo>>,
+    conn_info: Rc<RefCell<ConnInfo>>,
 
     /// Listen for shutdown notifications.
     ///
@@ -121,6 +121,8 @@ struct Handler {
     /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
 }
+
+type ConnInfos = Vec<Rc<RefCell<ConnInfo>>>;
 
 struct ConnInfo {
     id: usize,
@@ -157,7 +159,7 @@ const MAX_CONNECTIONS: usize = 250;
 ///
 /// `tokio::signal::ctrl_c()` can be used as the `shutdown` argument. This will
 /// listen for a SIGINT signal.
-pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future, config: Config) {
+pub async fn run(db: Db, listener: TcpListener, config: Config) {
     // When the provided `shutdown` future completes, we must send a shutdown
     // message to all active connections. We use a broadcast channel for this
     // purpose. The call below ignores the receiver of the broadcast pair, and when
@@ -197,7 +199,7 @@ pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future, config: C
     // asynchronous Rust. See the API docs for more details:
     //
     // https://docs.rs/tokio/*/tokio/macro.select.html
-    tokio::select! {
+    monoio::select! {
         res = server.run() => {
             // If an error is received here, accepting connections from the TCP
             // listener failed multiple times and the server is giving up and
@@ -209,10 +211,11 @@ pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future, config: C
                 error!(cause = %err, "failed to accept");
             }
         }
-        _ = shutdown => {
-            // The shutdown signal has been received.
-            info!("shutting down");
-        }
+        // TODO: handle shutdown signal.
+        // _ = rx.recv() => {
+        //     // The shutdown signal has been received.
+        //     info!("shutting down");
+        // }
     }
 
     // Extract the `shutdown_complete` receiver and transmitter
@@ -279,8 +282,7 @@ impl Server {
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
-
-            socket.set_tcp_nodelay(true).await?;
+            socket.set_nodelay(true)?;
 
             // Create the necessary per-connection handler state.
             let conn_id = self.conn_infos.borrow().len();
@@ -306,7 +308,7 @@ impl Server {
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
 
-                conn_stats: Rc::new(RefCell::new(ConnInfo {
+                conn_info: Rc::new(RefCell::new(ConnInfo {
                     id: conn_id,
                     last_interaction: Instant::now(),
                     conn_closer,
@@ -315,12 +317,12 @@ impl Server {
             self.conn_infos
                 .deref()
                 .borrow_mut()
-                .push(handler.conn_stats.clone());
+                .push(handler.conn_info.clone());
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
             let handlers = self.conn_infos.clone();
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
                 if let Err(err) = handler.run().await {
                     error!(cause = ?err, "connection error");
@@ -363,15 +365,12 @@ impl Server {
         }
     }
 
-    async fn recycle_idle_connections(
-        timeout: Duration,
-        conn_infos: Rc<RefCell<Vec<Rc<RefCell<ConnInfo>>>>>,
-    ) {
+    async fn recycle_idle_connections(timeout: Duration, conn_infos: Rc<RefCell<ConnInfos>>) {
         let mut wait_close = Vec::new();
-        conn_infos.deref().borrow_mut().retain(|conn_stats| {
-            let t = conn_stats.deref().borrow().elapsed_from_last_interation();
+        conn_infos.deref().borrow_mut().retain(|conn_info| {
+            let t = conn_info.deref().borrow().elapsed_from_last_interation();
             if t > timeout {
-                wait_close.push(conn_stats.deref().borrow().conn_closer.clone());
+                wait_close.push(conn_info.deref().borrow().conn_closer.clone());
                 false
             } else {
                 true
@@ -385,10 +384,10 @@ impl Server {
 
     fn register_scheduled_tasks(&mut self) {
         let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let db_tick_interval = Duration::from_millis(100);
-            tokio::select! {
-                _ = tokio::time::sleep(db_tick_interval) => {},
+            monoio::select! {
+                _ = monoio::time::sleep(db_tick_interval) => {},
                 _ = shutdown.recv() => {},
             };
             Self::on_db_tick().await;
@@ -397,11 +396,11 @@ impl Server {
         let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
         let conn_infos = self.conn_infos.clone();
         if let Some(timeout) = self.config.connection_timeout {
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 loop {
                     let conn_idle_interval = Duration::from_millis(500);
-                    tokio::select! {
-                        _ = tokio::time::sleep(conn_idle_interval) => {},
+                    monoio::select! {
+                        _ = monoio::time::sleep(conn_idle_interval) => {},
                         _ = shutdown.recv() => {},
                     };
                     Self::recycle_idle_connections(timeout, conn_infos.clone()).await;
@@ -433,7 +432,7 @@ impl Handler {
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
             // signal.
-            let maybe_frame = tokio::select! {
+            let maybe_frame = monoio::select! {
                 res = self.connection.read_frame() => res?,
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
@@ -442,7 +441,7 @@ impl Handler {
                 }
             };
 
-            self.conn_stats.clone().borrow_mut().last_interaction = Instant::now();
+            self.conn_info.clone().borrow_mut().last_interaction = Instant::now();
 
             // If `None` is returned from `read_frame()` then the peer closed
             // the socket. There is no further work to do and the task can be
