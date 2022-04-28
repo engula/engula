@@ -48,8 +48,6 @@ mod shutdown;
 use tokio::signal;
 use tokio_uring::net::TcpListener;
 
-mod timer;
-
 pub fn run(config: Config) -> Result<()> {
     // Resolve & Bind a TCP listener
     let db = Db::default();
@@ -58,7 +56,7 @@ pub fn run(config: Config) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
 
     tokio_uring::start(async {
-        server::run(db, listener, signal::ctrl_c()).await;
+        server::run(db, listener, signal::ctrl_c(), config).await;
     });
 
     Ok(())

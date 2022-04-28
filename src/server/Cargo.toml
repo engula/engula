@@ -17,7 +17,6 @@ thiserror = "1.0"
 tracing = "0.1"
 tokio = { version = "1.17.0", features = ["full"] }
 tokio-uring = { git = "https://github.com/zojw/tokio-uring", branch = "nodelay" }
-tokio-stream = "0.1.8"
 
 [package.metadata.cargo-udeps.ignore]
 normal = ["tokio"]

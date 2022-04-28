@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
+use tracing::debug;
 
 /// Listens for the server shutdown signal.
 ///
@@ -30,14 +31,20 @@ pub(crate) struct Shutdown {
 
     /// The receive half of the channel used to listen for shutdown.
     notify: broadcast::Receiver<()>,
+
+    close_tx: mpsc::Sender<()>,
+    close_rx: mpsc::Receiver<()>,
 }
 
 impl Shutdown {
     /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
     pub(crate) fn new(notify: broadcast::Receiver<()>) -> Shutdown {
+        let (close_tx, close_rx) = mpsc::channel(1);
         Shutdown {
             shutdown: false,
             notify,
+            close_rx,
+            close_tx,
         }
     }
 
@@ -55,9 +62,18 @@ impl Shutdown {
         }
 
         // Cannot receive a "lag error" as only one value is ever sent.
-        let _ = self.notify.recv().await;
+        let _ = tokio::select! {
+            _ = self.notify.recv() => {},
+            _ = self.close_rx.recv() => {
+                debug!("wake up due to closing")
+            },
+        };
 
         // Remember that the signal has been received.
         self.shutdown = true;
+    }
+
+    pub(crate) fn closer(&self) -> mpsc::Sender<()> {
+        self.close_tx.clone()
     }
 }

@@ -12,22 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{future::Future, sync::Arc};
+use std::{cell::RefCell, future::Future, ops::Deref, rc::Rc, sync::Arc};
 
 use tokio::{
     sync::{broadcast, mpsc, Semaphore},
-    time::{self, Duration},
+    time::{self, Duration, Instant},
 };
 use tokio_uring::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info, instrument};
 
-use crate::{cmd::Command, Connection, shutdown::Shutdown, Db};
+use crate::{cmd::Command, shutdown::Shutdown, Config, Connection, Db};
 // use crate::{DbDropGuard, Shutdown};
 
 /// Server listener state. Created in the `run` call. It includes a `run` method
 /// which performs the TCP listening and initialization of per-connection state.
 // #[derive(Debug)]
-struct Listener {
+struct Server {
     /// Shared database handle.
     ///
     /// Contains the key / value store as well as the broadcast channels for
@@ -36,6 +36,8 @@ struct Listener {
     /// This holds a wrapper around an `Arc`. The internal `Db` can be
     /// retrieved and passed into the per connection state (`Handler`).
     db: Db,
+
+    config: Config,
 
     /// TCP listener supplied by the `run` caller.
     listener: TcpListener,
@@ -74,6 +76,8 @@ struct Listener {
     /// is safe to exit the server process.
     shutdown_complete_rx: mpsc::Receiver<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
+
+    conn_infos: Rc<RefCell<Vec<Rc<RefCell<ConnInfo>>>>>,
 }
 
 /// Per-connection handler. Reads requests from `connection` and applies the
@@ -102,6 +106,8 @@ struct Handler {
     /// the newly available permit and resume accepting connections.
     limit_connections: Arc<Semaphore>,
 
+    conn_stats: Rc<RefCell<ConnInfo>>,
+
     /// Listen for shutdown notifications.
     ///
     /// A wrapper around the `broadcast::Receiver` paired with the sender in
@@ -114,6 +120,18 @@ struct Handler {
 
     /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
+}
+
+struct ConnInfo {
+    id: usize,
+    last_interaction: Instant,
+    conn_closer: mpsc::Sender<()>,
+}
+
+impl ConnInfo {
+    pub fn elapsed_from_last_interation(&self) -> Duration {
+        self.last_interaction.elapsed()
+    }
 }
 
 /// Maximum number of concurrent connections the redis server will accept.
@@ -139,7 +157,7 @@ const MAX_CONNECTIONS: usize = 250;
 ///
 /// `tokio::signal::ctrl_c()` can be used as the `shutdown` argument. This will
 /// listen for a SIGINT signal.
-pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future) {
+pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future, config: Config) {
     // When the provided `shutdown` future completes, we must send a shutdown
     // message to all active connections. We use a broadcast channel for this
     // purpose. The call below ignores the receiver of the broadcast pair, and when
@@ -149,13 +167,15 @@ pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future) {
     let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
     // Initialize the listener state
-    let mut server = Listener {
+    let mut server = Server {
         listener,
         db,
+        config,
         limit_connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
         notify_shutdown,
         shutdown_complete_tx,
         shutdown_complete_rx,
+        conn_infos: Rc::new(RefCell::new(Vec::new())),
     };
 
     // Concurrently run the server and listen for the `shutdown` signal. The
@@ -198,7 +218,7 @@ pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future) {
     // Extract the `shutdown_complete` receiver and transmitter
     // explicitly drop `shutdown_transmitter`. This is important, as the
     // `.await` below would otherwise never complete.
-    let Listener {
+    let Server {
         mut shutdown_complete_rx,
         shutdown_complete_tx,
         notify_shutdown,
@@ -218,7 +238,7 @@ pub async fn run(db: Db, listener: TcpListener, shutdown: impl Future) {
     let _ = shutdown_complete_rx.recv().await;
 }
 
-impl Listener {
+impl Server {
     /// Run the server
     ///
     /// Listen for inbound connections. For each inbound connection, spawn a
@@ -236,6 +256,8 @@ impl Listener {
     /// strategy, which is what we do here.
     async fn run(&mut self) -> crate::Result<()> {
         info!("accepting inbound connections");
+
+        self.register_scheduled_tasks();
 
         loop {
             // Wait for a permit to become available
@@ -261,6 +283,9 @@ impl Listener {
             socket.set_tcp_nodelay(true).await?;
 
             // Create the necessary per-connection handler state.
+            let conn_id = self.conn_infos.borrow().len();
+            let shutdown = Shutdown::new(self.notify_shutdown.subscribe());
+            let conn_closer = shutdown.closer();
             let mut handler = Handler {
                 // Get a handle to the shared database.
                 db: self.db.clone(),
@@ -275,20 +300,33 @@ impl Listener {
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+                shutdown,
 
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
+
+                conn_stats: Rc::new(RefCell::new(ConnInfo {
+                    id: conn_id,
+                    last_interaction: Instant::now(),
+                    conn_closer,
+                })),
             };
+            self.conn_infos
+                .deref()
+                .borrow_mut()
+                .push(handler.conn_stats.clone());
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
+            let handlers = self.conn_infos.clone();
             tokio_uring::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
                 if let Err(err) = handler.run().await {
                     error!(cause = ?err, "connection error");
                 }
+                let mut handlers = handlers.deref().borrow_mut();
+                handlers.retain(|e| conn_id != e.deref().borrow().id);
             });
         }
     }
@@ -324,6 +362,55 @@ impl Listener {
             backoff *= 2;
         }
     }
+
+    async fn recycle_idle_connections(
+        timeout: Duration,
+        conn_infos: Rc<RefCell<Vec<Rc<RefCell<ConnInfo>>>>>,
+    ) {
+        let mut wait_close = Vec::new();
+        conn_infos.deref().borrow_mut().retain(|conn_stats| {
+            let t = conn_stats.deref().borrow().elapsed_from_last_interation();
+            if t > timeout {
+                wait_close.push(conn_stats.deref().borrow().conn_closer.clone());
+                false
+            } else {
+                true
+            }
+        });
+
+        for c in wait_close {
+            let _ = c.send(()).await;
+        }
+    }
+
+    fn register_scheduled_tasks(&mut self) {
+        let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
+        tokio_uring::spawn(async move {
+            let db_tick_interval = Duration::from_millis(100);
+            tokio::select! {
+                _ = tokio::time::sleep(db_tick_interval) => {},
+                _ = shutdown.recv() => {},
+            };
+            Self::on_db_tick().await;
+        });
+
+        let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
+        let conn_infos = self.conn_infos.clone();
+        if let Some(timeout) = self.config.connection_timeout {
+            tokio_uring::spawn(async move {
+                loop {
+                    let conn_idle_interval = Duration::from_millis(500);
+                    tokio::select! {
+                        _ = tokio::time::sleep(conn_idle_interval) => {},
+                        _ = shutdown.recv() => {},
+                    };
+                    Self::recycle_idle_connections(timeout, conn_infos.clone()).await;
+                }
+            });
+        }
+    }
+
+    async fn on_db_tick() {}
 }
 
 impl Handler {
@@ -354,6 +441,8 @@ impl Handler {
                     return Ok(());
                 }
             };
+
+            self.conn_stats.clone().borrow_mut().last_interaction = Instant::now();
 
             // If `None` is returned from `read_frame()` then the peer closed
             // the socket. There is no further work to do and the task can be
