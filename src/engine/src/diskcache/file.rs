@@ -12,15 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(ptr_as_uninit)]
-#![allow(clippy::missing_safety_doc)]
+use std::io::Result;
 
-mod db;
-#[allow(dead_code)]
-mod diskcache;
-pub mod elements;
-mod key_space;
-pub mod objects;
-pub mod record;
+pub struct ActiveFile {}
 
-pub use db::Db;
+impl ActiveFile {
+    pub fn seal(self) -> SealedFile {
+        SealedFile {}
+    }
+
+    pub async fn read(&self, offset: u32, length: u32) -> Result<Vec<u8>> {
+        todo!()
+    }
+
+    pub fn write(&mut self, buf: &[u8]) -> Result<(u32, u32)> {
+        todo!()
+    }
+}
+
+pub struct SealedFile {}
+
+impl SealedFile {
+    pub async fn read(&self, offset: u32, length: u32) -> Result<Vec<u8>> {
+        todo!()
+    }
+}
