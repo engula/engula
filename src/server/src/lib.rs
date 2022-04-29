@@ -16,13 +16,15 @@
 
 extern crate core;
 
+use std::net::ToSocketAddrs;
+
 use engula_engine::Db;
 
 mod error;
 pub use error::{Error, Result};
 
 mod config;
-pub use config::{Config, ConfigBuilder, DriverMode};
+pub use config::{Config, ConfigBuilder};
 
 mod buffer;
 pub use buffer::{ReadBuf, WriteBuf};
@@ -37,17 +39,29 @@ use frame::{Error as FrameError, Frame};
 mod parse;
 use parse::{Parse, ParseError};
 
-mod mio;
+mod connection;
+use connection::Connection;
 
-#[cfg(target_os = "linux")]
-mod uio;
+mod server;
+mod shutdown;
 
-mod timer;
+use monoio::net::TcpListener;
 
 pub fn run(config: Config) -> Result<()> {
-    match config.driver_mode {
-        DriverMode::Mio => mio::Server::new(config)?.run(),
-        #[cfg(target_os = "linux")]
-        DriverMode::Uio => uio::Server::new(config)?.run(),
-    }
+    // Resolve & Bind a TCP listener
+    let db = Db::default();
+
+    let addr = config.addr.to_socket_addrs()?.next().unwrap();
+    let listener = TcpListener::bind(addr)?;
+
+    let mut rt = monoio::RuntimeBuilder::new()
+        .with_entries(32768)
+        .enable_timer()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        server::run(db, listener, config).await;
+    });
+
+    Ok(())
 }

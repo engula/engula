@@ -18,8 +18,6 @@ use anyhow::Result;
 use clap::Parser;
 use engula_server::{Config, ConfigBuilder};
 
-use crate::argenum::DriverMode;
-
 #[derive(Parser)]
 pub struct Command {
     #[clap(subcommand)]
@@ -44,10 +42,6 @@ struct StartCommand {
     /// Address of the Engula server.
     #[clap(long)]
     addr: Option<String>,
-
-    /// Driver mode of the Engula server.
-    #[clap(long, arg_enum)]
-    driver_mode: Option<DriverMode>,
 
     /// Close the connection after a client is idle for N seconds (0 to disable).
     #[clap(long)]
@@ -97,9 +91,6 @@ fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<ConfigBu
 fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {
     if let Some(addr) = args.addr {
         config_builder.addr = Some(addr);
-    }
-    if let Some(driver_mode) = args.driver_mode {
-        config_builder.driver_mode = Some(driver_mode.into());
     }
     if let Some(timeout) = args.timeout {
         config_builder.timeout = Some(timeout as u64);

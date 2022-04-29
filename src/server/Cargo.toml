@@ -12,16 +12,12 @@ engula-engine = { version = "0.3", path = "../engine" }
 
 atoi = "0.3"
 bytes = "1.1"
-mio = { version = "0.8.2", features = ["net", "os-ext"] }
 serde = { version = "1.0.136", features = ["derive"] }
 thiserror = "1.0"
 tracing = "0.1"
-
-[target."cfg(unix)".dependencies]
-libc = "0.2"
-
-[target."cfg(target_os = \"linux\")".dependencies]
-io-uring = "0.5"
+monoio = "0.0.4"
+monoio-compat = "0.0.5"
+tokio = { version = "1.17.0", features = ["io-util", "sync"] }
 
 [package.metadata.cargo-udeps.ignore]
 normal = ["tokio"]
