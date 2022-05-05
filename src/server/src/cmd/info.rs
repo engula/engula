@@ -11,11 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use engula_engine::Db;
 use tracing::debug;
 
-use super::Command;
-use crate::{async_trait, frame::Frame, parse::Parse};
+use super::{Command, Commands};
+use crate::{async_trait, frame::Frame, parse::Parse, Db};
 
 // The INFO command returns information and statistics about the server in
 // a format that is simple to parse by computers and easy to read by humans.
@@ -48,7 +47,7 @@ impl Info {
 /// ```text
 /// INFO [section [section...]]
 /// ``
-pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
     // TODO(walter) support 'all', 'default', 'everthing'.
     match parse.finish() {
         Ok(()) => Ok(Box::new(Info {})),

@@ -28,13 +28,15 @@ mod info;
 pub use info::Info;
 
 mod unknown;
-use std::{collections::HashMap, rc::Weak};
+use std::collections::HashMap;
 
 mod cmds;
+use cmds::all_cmd_tables;
+
+mod command;
 
 pub use unknown::Unknown;
 
-use self::cmds::all_cmd_tables;
 use crate::{async_trait, Db, Frame, Parse, ParseError, Result};
 
 pub struct Commands {
@@ -58,7 +60,7 @@ impl Commands {
         }
         let base_cmd = base_cmd.unwrap();
         let command = if base_cmd.sub_cmds.is_empty() {
-            (base_cmd.parse)(&mut parse)?
+            (base_cmd.parse)(self, &mut parse)?
         } else {
             let mut sub_cmd = parse.next_string()?;
             sub_cmd.make_ascii_lowercase();
@@ -66,7 +68,7 @@ impl Commands {
                 .sub_cmds
                 .get(&sub_cmd)
                 .ok_or_else(|| crate::Error::Unknown("illege command".to_string()))?;
-            (sub_cmd.parse)(&mut parse)?
+            (sub_cmd.parse)(self, &mut parse)?
         };
         parse.finish()?;
         Ok(command)
@@ -87,12 +89,11 @@ pub struct CommandInfo {
     args: Vec<Arg>,
     tips: Vec<String>,
     group: Group,
-    parent: Option<Weak<CommandInfo>>,
     key_specs: Vec<KeySpec>,
     since: String,
     summary: String,
 
-    parse: fn(&mut Parse) -> Result<Box<dyn Command>>,
+    parse: fn(&Commands, &mut Parse) -> Result<Box<dyn Command>>,
 }
 
 #[derive(Clone)]

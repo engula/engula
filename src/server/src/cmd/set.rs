@@ -21,6 +21,7 @@ use engula_engine::{
 };
 use tracing::debug;
 
+use super::Commands;
 use crate::{
     async_trait,
     cmd::{Command, Parse, ParseError},
@@ -71,7 +72,7 @@ pub struct Set {
 /// ```text
 /// SET key value [EX seconds|PX milliseconds]
 /// ```
-pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
     use ParseError::EndOfStream;
 
     // Read the key to set. This is a required field

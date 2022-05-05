@@ -14,7 +14,7 @@
 
 use bytes::Bytes;
 
-use super::Command;
+use super::{Command, Commands};
 use crate::{async_trait, Db, Frame, Parse, ParseError};
 
 /// Returns PONG if no argument is provided, otherwise
@@ -55,7 +55,7 @@ impl Ping {
 /// ```text
 /// PING [message]
 /// ```
-pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
     let cmd = match parse.next_string() {
         Ok(msg) => Ping::new(Some(msg)),
         Err(ParseError::EndOfStream) => Ping::default(),

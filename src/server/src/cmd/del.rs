@@ -15,7 +15,7 @@
 use bytes::Bytes;
 use tracing::debug;
 
-use super::Command;
+use super::{Command, Commands};
 use crate::{async_trait, Db, Error, Frame, Parse, ParseError};
 
 /// Delete the given keys.
@@ -24,7 +24,7 @@ pub struct Del {
     keys: Vec<Bytes>,
 }
 
-pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
     let mut keys = vec![];
     loop {
         match parse.next_bytes() {
