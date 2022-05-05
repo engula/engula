@@ -24,7 +24,7 @@ pub struct DiskOptions {
     mem_capacity: usize,
     disk_capacity: usize,
     file_size: usize,
-    file_buffer_size: usize,
+    write_buffer_size: usize,
 }
 
 pub struct DiskCache {
@@ -41,13 +41,13 @@ impl DiskCache {
     }
 
     pub async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let mut entry = self.table.get(key);
-        while let Some(ent) = entry {
-            let handle = ent.as_handle();
+        let mut index = self.table.get(key);
+        while let Some(idx) = index {
+            let handle = idx.as_handle();
             if let Some(value) = self.store.read(key, &handle).await? {
                 return Ok(Some(value));
             }
-            entry = self.table.next(ent.next);
+            index = self.table.next(idx.next);
         }
         Ok(None)
     }
