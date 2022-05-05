@@ -14,7 +14,8 @@
 use engula_engine::Db;
 use tracing::debug;
 
-use crate::{frame::Frame, parse::Parse};
+use super::Command;
+use crate::{async_trait, frame::Frame, parse::Parse};
 
 // The INFO command returns information and statistics about the server in
 // a format that is simple to parse by computers and easy to read by humans.
@@ -25,37 +26,40 @@ impl Info {
     pub fn new() -> Self {
         Info {}
     }
+}
 
-    /// Parse a `Info` instance from a received frame.
-    ///
-    /// The `Parse` argument provides a cursor-like API to read fields from the
-    /// `Frame`. At this point, the entire frame has already been received from
-    /// the socket.
-    ///
-    /// The `INFO` string has already been consumed.
-    ///
-    /// # Returns
-    ///
-    /// Returns the `INFO` value on success. If the frame is malformed, `Err` is
-    /// returned.
-    ///
-    /// # Format
-    ///
-    /// Expects an array frame containing `INFO` and some optional messages.
-    ///
-    /// ```text
-    /// INFO [section [section...]]
-    /// ``
-    pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Info> {
-        // TODO(walter) support 'all', 'default', 'everthing'.
-        match parse.finish() {
-            Ok(()) => Ok(Info {}),
-            Err(_) => Err("wrong number of arguments for 'info' command".into()),
-        }
+/// Parse a `Info` instance from a received frame.
+///
+/// The `Parse` argument provides a cursor-like API to read fields from the
+/// `Frame`. At this point, the entire frame has already been received from
+/// the socket.
+///
+/// The `INFO` string has already been consumed.
+///
+/// # Returns
+///
+/// Returns the `INFO` value on success. If the frame is malformed, `Err` is
+/// returned.
+///
+/// # Format
+///
+/// Expects an array frame containing `INFO` and some optional messages.
+///
+/// ```text
+/// INFO [section [section...]]
+/// ``
+pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+    // TODO(walter) support 'all', 'default', 'everthing'.
+    match parse.finish() {
+        Ok(()) => Ok(Box::new(Info {})),
+        Err(_) => Err("wrong number of arguments for 'info' command".into()),
     }
+}
 
+#[async_trait]
+impl super::Command for Info {
     /// Apply the `INFO` command and return the message.
-    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
+    async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         let db_stats = db.stats();
         let content = format!(
             r#"# Stats
@@ -74,5 +78,9 @@ keys:{num_keys}
         let response = Frame::Bulk(content.into());
         debug!(?response);
         Ok(response)
+    }
+
+    fn get_name(&self) -> &str {
+        "info"
     }
 }

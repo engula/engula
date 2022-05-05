@@ -28,104 +28,153 @@ mod info;
 pub use info::Info;
 
 mod unknown;
+use std::{collections::HashMap, rc::Weak};
+
+mod cmds;
+
 pub use unknown::Unknown;
 
-use crate::{connection::Connection, Db, Frame, Parse, ParseError, Result};
+use self::cmds::all_cmd_tables;
+use crate::{async_trait, Db, Frame, Parse, ParseError, Result};
 
-/// Enumeration of supported Redis commands.
-///
-/// Methods called on `Command` are delegated to the command implementation.
-#[derive(Debug)]
-pub enum Command {
-    Get(Get),
-    Set(Set),
-    Del(Del),
-    Ping(Ping),
-    Info(Info),
-    Unknown(Unknown),
+pub struct Commands {
+    commands: HashMap<String, CommandInfo>,
 }
 
-impl Command {
-    /// Parse a command from a received frame.
-    ///
-    /// The `Frame` must represent a Redis command supported by `mini-redis` and
-    /// be the array variant.
-    ///
-    /// # Returns
-    ///
-    /// On success, the command value is returned, otherwise, `Err` is returned.
-    pub fn from_frame(frame: Frame) -> crate::Result<Command> {
-        // The frame  value is decorated with `Parse`. `Parse` provides a
-        // "cursor" like API which makes parsing the command easier.
-        //
-        // The frame value must be an array variant. Any other frame variants
-        // result in an error being returned.
-        let mut parse = Parse::new(frame)?;
-
-        // All redis commands begin with the command name as a string. The name
-        // is read and converted to lower cases in order to do case sensitive
-        // matching.
-        let mut command_name = parse.next_string()?;
-        command_name.make_ascii_lowercase();
-
-        // Match the command name, delegating the rest of the parsing to the
-        // specific command.
-        let command = match &command_name[..] {
-            "get" => Command::Get(Get::parse_frames(&mut parse)?),
-            "set" => Command::Set(Set::parse_frames(&mut parse)?),
-            "del" => Command::Del(Del::parse_frames(&mut parse)?),
-            "ping" => Command::Ping(Ping::parse_frames(&mut parse)?),
-            "info" => Command::Info(Info::parse_frames(&mut parse)?),
-            _ => {
-                // The command is not recognized and an Unknown command is
-                // returned.
-                //
-                // `return` is called here to skip the `finish()` call below. As
-                // the command is not recognized, there is most likely
-                // unconsumed fields remaining in the `Parse` instance.
-                return Ok(Command::Unknown(Unknown::new(command_name)));
-            }
-        };
-
-        // Check if there is any remaining unconsumed fields in the `Parse`
-        // value. If fields remain, this indicates an unexpected frame format
-        // and an error is returned.
-        parse.finish()?;
-
-        // The command has been successfully parsed
-        Ok(command)
-    }
-
-    /// Apply the command to the specified `Db` instance.
-    ///
-    /// The response is written to `dst`. This is called by the server in order
-    /// to execute a received command.
-    pub async fn apply(self, db: &Db, dst: &mut Connection) -> Result<()> {
-        use Command::*;
-
-        let respose = match self {
-            Get(cmd) => cmd.apply(db),
-            Set(cmd) => cmd.apply(db),
-            Del(cmd) => cmd.apply(db),
-            Ping(cmd) => cmd.apply(),
-            Info(cmd) => cmd.apply(db),
-            Unknown(cmd) => cmd.apply(),
-        }?;
-
-        dst.write_frame(&respose).await?;
-
-        Ok(())
-    }
-
-    /// Returns the command name
-    pub(crate) fn get_name(&self) -> &str {
-        match self {
-            Command::Get(_) => "get",
-            Command::Set(_) => "set",
-            Command::Del(_) => "del",
-            Command::Ping(_) => "ping",
-            Command::Info(_) => "info",
-            Command::Unknown(cmd) => cmd.get_name(),
+impl Commands {
+    pub fn new() -> Self {
+        Self {
+            commands: all_cmd_tables(),
         }
     }
+
+    pub fn lookup_command(&self, frame: Frame) -> crate::Result<Box<dyn Command>> {
+        let mut parse = Parse::new(frame)?;
+        let mut base_cmd_name = parse.next_string()?;
+        base_cmd_name.make_ascii_lowercase();
+        let base_cmd = self.commands.get(&base_cmd_name);
+        if base_cmd.is_none() {
+            return Ok(Box::new(Unknown::new(base_cmd_name)));
+        }
+        let base_cmd = base_cmd.unwrap();
+        let command = if base_cmd.sub_cmds.is_empty() {
+            (base_cmd.parse)(&mut parse)?
+        } else {
+            let mut sub_cmd = parse.next_string()?;
+            sub_cmd.make_ascii_lowercase();
+            let sub_cmd = base_cmd
+                .sub_cmds
+                .get(&sub_cmd)
+                .ok_or_else(|| crate::Error::Unknown("illege command".to_string()))?;
+            (sub_cmd.parse)(&mut parse)?
+        };
+        parse.finish()?;
+        Ok(command)
+    }
 }
+
+#[async_trait]
+pub trait Command {
+    async fn apply(&self, db: &Db) -> crate::Result<Frame>;
+    fn get_name(&self) -> &str;
+}
+
+#[derive(Clone)]
+pub struct CommandInfo {
+    name: String,
+    flags: u64,
+    sub_cmds: HashMap<String, CommandInfo>,
+    args: Vec<Arg>,
+    tips: Vec<String>,
+    group: Group,
+    parent: Option<Weak<CommandInfo>>,
+    key_specs: Vec<KeySpec>,
+    since: String,
+    summary: String,
+
+    parse: fn(&mut Parse) -> Result<Box<dyn Command>>,
+}
+
+#[derive(Clone)]
+pub enum Group {
+    Generic,
+    String,
+    List,
+    Set,
+    SortedSet,
+    Hash,
+    Pubsub,
+    Transactions,
+    Connection,
+    Server,
+    Scripting,
+    Hyperloglog,
+    Cluster,
+    Sentinel,
+    Geo,
+    Stream,
+    Bitmap,
+    Module,
+}
+
+#[derive(Clone)]
+pub struct KeySpec {
+    flags: u64,
+    bs: BeginSearch,
+    fk: FindKeys,
+}
+
+#[derive(Clone)]
+pub enum BeginSearch {
+    Index(usize),
+    Keyword { keyword: String, start_from: usize },
+}
+
+#[derive(Clone)]
+pub enum FindKeys {
+    Range {
+        last_key: usize,
+        key_step: usize,
+        limit: usize,
+    },
+    KeyNum {
+        key_num_index: usize,
+        first_key_index: usize,
+        key_step: usize,
+    },
+}
+
+#[derive(Clone)]
+pub struct Arg {
+    name: String,
+    typ: ArgType,
+    key_spec_index: usize,
+    token: String,
+    flag: u64,
+    sub_args: Vec<Arg>,
+
+    since: String,
+    summary: String,
+}
+
+#[derive(Clone)]
+pub enum ArgType {
+    String,
+    Int,
+    Double,
+    Key, /* A string, but represents a keyname */
+    Pattern,
+    UnixTime,
+    PureToken,
+    OneOf, /* Has subargs */
+    Block,
+}
+
+#[allow(dead_code)]
+const CMD_ARG_NONE: u8 = 0;
+#[allow(dead_code)]
+const CMD_ARG_OPTIONAL: u8 = 1 << 0;
+#[allow(dead_code)]
+const CMD_ARG_MULTIPLE: u8 = 1 << 1;
+#[allow(dead_code)]
+const CMD_ARG_MULTIPLE_TOKEN: u8 = 1 << 2;

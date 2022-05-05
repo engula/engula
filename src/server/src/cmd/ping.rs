@@ -14,7 +14,8 @@
 
 use bytes::Bytes;
 
-use crate::{Frame, Parse, ParseError};
+use super::Command;
+use crate::{async_trait, Db, Frame, Parse, ParseError};
 
 /// Returns PONG if no argument is provided, otherwise
 /// return a copy of the argument as a bulk.
@@ -32,50 +33,57 @@ impl Ping {
     pub fn new(msg: Option<String>) -> Ping {
         Ping { msg }
     }
+}
 
-    /// Parse a `Ping` instance from a received frame.
-    ///
-    /// The `Parse` argument provides a cursor-like API to read fields from the
-    /// `Frame`. At this point, the entire frame has already been received from
-    /// the socket.
-    ///
-    /// The `PING` string has already been consumed.
-    ///
-    /// # Returns
-    ///
-    /// Returns the `Ping` value on success. If the frame is malformed, `Err` is
-    /// returned.
-    ///
-    /// # Format
-    ///
-    /// Expects an array frame containing `PING` and an optional message.
-    ///
-    /// ```text
-    /// PING [message]
-    /// ```
-    pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Ping> {
-        let cmd = match parse.next_string() {
-            Ok(msg) => Ping::new(Some(msg)),
-            Err(ParseError::EndOfStream) => Ping::default(),
-            Err(e) => return Err(e.into()),
-        };
+/// Parse a `Ping` instance from a received frame.
+///
+/// The `Parse` argument provides a cursor-like API to read fields from the
+/// `Frame`. At this point, the entire frame has already been received from
+/// the socket.
+///
+/// The `PING` string has already been consumed.
+///
+/// # Returns
+///
+/// Returns the `Ping` value on success. If the frame is malformed, `Err` is
+/// returned.
+///
+/// # Format
+///
+/// Expects an array frame containing `PING` and an optional message.
+///
+/// ```text
+/// PING [message]
+/// ```
+pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+    let cmd = match parse.next_string() {
+        Ok(msg) => Ping::new(Some(msg)),
+        Err(ParseError::EndOfStream) => Ping::default(),
+        Err(e) => return Err(e.into()),
+    };
 
-        match parse.finish() {
-            Ok(()) => Ok(cmd),
-            Err(_) => Err("wrong number of arguments for 'ping' command".into()),
-        }
+    match parse.finish() {
+        Ok(()) => Ok(Box::new(cmd)),
+        Err(_) => Err("wrong number of arguments for 'ping' command".into()),
     }
+}
 
+#[async_trait]
+impl super::Command for Ping {
     /// Apply the `Ping` command and return the message.
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    pub(crate) fn apply(self) -> crate::Result<Frame> {
-        let response = match self.msg {
+    async fn apply(&self, _: &Db) -> crate::Result<Frame> {
+        let response = match &self.msg {
             None => Frame::Simple("PONG".to_string()),
-            Some(msg) => Frame::Bulk(Bytes::from(msg)),
+            Some(msg) => Frame::Bulk(Bytes::from(msg.to_owned())),
         };
 
         Ok(response)
+    }
+
+    fn get_name(&self) -> &str {
+        "ping"
     }
 }

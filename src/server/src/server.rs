@@ -19,9 +19,9 @@ use monoio::{
     time::{self, Instant},
 };
 use tokio::sync::{broadcast, mpsc, Semaphore};
-use tracing::{debug, error, info, instrument};
+use tracing::{error, info, instrument};
 
-use crate::{cmd::Command, shutdown::Shutdown, Config, Connection, Db};
+use crate::{cmd, shutdown::Shutdown, Config, Connection, Db};
 // use crate::{DbDropGuard, Shutdown};
 
 /// Server listener state. Created in the `run` call. It includes a `run` method
@@ -321,14 +321,14 @@ impl Server {
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
-            let handlers = self.conn_infos.clone();
+            let conn_infos = self.conn_infos.clone();
             monoio::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
                 if let Err(err) = handler.run().await {
                     error!(cause = ?err, "connection error");
                 }
-                let mut handlers = handlers.deref().borrow_mut();
-                handlers.retain(|e| conn_id != e.deref().borrow().id);
+                let mut conn_infos = conn_infos.deref().borrow_mut();
+                conn_infos.retain(|e| conn_id != e.deref().borrow().id);
             });
         }
     }
@@ -427,6 +427,7 @@ impl Handler {
     /// it reaches a safe state, at which point it is terminated.
     #[instrument(skip(self))]
     async fn run(&mut self) -> crate::Result<()> {
+        let cmds = cmd::Commands::new();
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         while !self.shutdown.is_shutdown() {
@@ -454,7 +455,7 @@ impl Handler {
             // Convert the redis frame into a command struct. This returns an
             // error if the frame is not a valid redis command or it is an
             // unsupported command.
-            let cmd = Command::from_frame(frame)?;
+            let cmd = cmds.lookup_command(frame)?;
 
             // Logs the `cmd` object. The syntax here is a shorthand provided by
             // the `tracing` crate. It can be thought of as similar to:
@@ -465,7 +466,7 @@ impl Handler {
             //
             // `tracing` provides structured logging, so information is "logged"
             // as key-value pairs.
-            debug!(?cmd);
+            // debug!(?cmd);
 
             // Perform the work needed to apply the command. This may mutate the
             // database state as a result.
@@ -474,7 +475,9 @@ impl Handler {
             // command to write response frames directly to the connection. In
             // the case of pub/sub, multiple frames may be send back to the
             // peer.
-            cmd.apply(&self.db, &mut self.connection).await?;
+            let resp = cmd.apply(&self.db).await?;
+
+            self.connection.write_frame(&resp).await?;
         }
 
         Ok(())
