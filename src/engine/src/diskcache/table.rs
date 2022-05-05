@@ -12,39 +12,91 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub struct DiskTable {
-    handles: Vec<DiskHandle>,
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::Hasher,
+};
+
+use super::BlockHandle;
+
+pub struct HashTable {
+    indices: HashMap<u64, u32>,
+    entries: Vec<HashEntry>,
+    // The position of the next free entry.
     next: u32,
 }
 
-pub struct DiskHandle {
+impl HashTable {
+    pub fn with_mem_capacity(mem_capacity: usize) -> HashTable {
+        let capacity = mem_capacity / (12 + std::mem::size_of::<HashEntry>());
+        let mut table = Self {
+            indices: HashMap::with_capacity(capacity),
+            entries: Vec::with_capacity(capacity),
+            next: 1,
+        };
+        // Inserts a dummy entry.
+        table.entries.push(HashEntry::default());
+        table
+    }
+
+    pub fn get(&self, key: &[u8]) -> Option<&HashEntry> {
+        let hash = hash64(key);
+        if let Some(index) = self.indices.get(&hash) {
+            self.entries.get(*index as usize)
+        } else {
+            None
+        }
+    }
+
+    pub fn next(&self, index: u32) -> Option<&HashEntry> {
+        if index > 0 {
+            self.entries.get(index as usize)
+        } else {
+            None
+        }
+    }
+
+    pub fn insert(&mut self, key: &[u8], handle: BlockHandle) {
+        let hash = hash64(key);
+        let next = self.indices.get(&hash).cloned().unwrap_or_default();
+        let entry = HashEntry {
+            fileno: handle.fileno,
+            offset: handle.offset,
+            length: handle.length,
+            next,
+        };
+        let index = self.next;
+        if index == self.entries.len() as u32 {
+            self.entries.push(entry);
+            self.next = index + 1;
+        } else {
+            let entry = std::mem::replace(&mut self.entries[index as usize], entry);
+            self.next = entry.next;
+        }
+        self.indices.insert(hash, index);
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct HashEntry {
     pub fileno: u32,
     pub offset: u32,
     pub length: u32,
     pub next: u32,
 }
 
-impl DiskTable {
-    pub fn with_capacity(capacity: usize) -> DiskTable {
-        Self {
-            handles: Vec::with_capacity(capacity),
-            next: 0,
+impl HashEntry {
+    pub fn as_handle(&self) -> BlockHandle {
+        BlockHandle {
+            fileno: self.fileno,
+            offset: self.offset,
+            length: self.length,
         }
     }
+}
 
-    pub fn get(&self, index: u32) -> Option<&DiskHandle> {
-        self.handles.get(index as usize)
-    }
-
-    pub fn insert(&mut self, handle: DiskHandle) -> u32 {
-        let index = self.next;
-        if index == self.handles.len() as u32 {
-            self.handles.push(handle);
-            self.next = index + 1;
-        } else {
-            let handle = std::mem::replace(&mut self.handles[index as usize], handle);
-            self.next = handle.next;
-        }
-        index
-    }
+fn hash64(buf: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::default();
+    hasher.write(buf);
+    hasher.finish()
 }
