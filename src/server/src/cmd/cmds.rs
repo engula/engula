@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use super::*;
 
+// TODO: use marco to generate this command tables.
 pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
     let cmds = [
         CommandInfo {

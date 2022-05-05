@@ -14,10 +14,10 @@
 
 use std::io::{self, Cursor};
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use monoio::net::TcpStream;
 use monoio_compat::TcpStreamCompat;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::frame::{self, Frame};
 
@@ -38,10 +38,11 @@ pub struct Connection {
     // The `TcpStream`. It is decorated with a `BufWriter`, which provides write
     // level buffering. The `BufWriter` implementation provided by Tokio is
     // sufficient for our needs.
-    stream: BufWriter<TcpStreamCompat>,
+    stream: TcpStreamCompat,
 
     // The buffer for reading frames.
-    buffer: BytesMut,
+    rbuffer: BytesMut,
+    wbuffer: BytesMut,
 }
 
 impl Connection {
@@ -50,12 +51,13 @@ impl Connection {
     pub fn new(socket: TcpStream) -> Connection {
         let stream = unsafe { TcpStreamCompat::new(socket) };
         Connection {
-            stream: BufWriter::new(stream),
+            stream,
             // Default to a 4KB read buffer. For the use case of mini redis,
             // this is fine. However, real applications will want to tune this
             // value to their specific use case. There is a high likelihood that
             // a larger read buffer will work better.
-            buffer: BytesMut::with_capacity(4 * 1024),
+            rbuffer: BytesMut::with_capacity(4 * 1024),
+            wbuffer: BytesMut::with_capacity(4 * 1024),
         }
     }
 
@@ -83,12 +85,12 @@ impl Connection {
             //
             // On success, the number of bytes is returned. `0` indicates "end
             // of stream".
-            if 0 == self.stream.read_buf(&mut self.buffer).await? {
+            if 0 == self.stream.read_buf(&mut self.rbuffer).await? {
                 // The remote closed the connection. For this to be a clean
                 // shutdown, there should be no data in the read buffer. If
                 // there is, this means that the peer closed the socket while
                 // sending a frame.
-                if self.buffer.is_empty() {
+                if self.rbuffer.is_empty() {
                     return Ok(None);
                 } else {
                     return Err("connection reset by peer".into());
@@ -108,7 +110,7 @@ impl Connection {
         // buffer. Cursor also implements `Buf` from the `bytes` crate
         // which provides a number of helpful utilities for working
         // with bytes.
-        let mut buf = Cursor::new(&self.buffer[..]);
+        let mut buf = Cursor::new(&self.rbuffer[..]);
 
         // The first step is to check if enough data has been buffered to parse
         // a single frame. This step is usually much faster than doing a full
@@ -142,7 +144,7 @@ impl Connection {
                 // up to `len` is discarded. The details of how this works is
                 // left to `BytesMut`. This is often done by moving an internal
                 // cursor, but it may be done by reallocating and copying data.
-                self.buffer.advance(len);
+                self.rbuffer.advance(len);
 
                 // Return the parsed frame to the caller.
                 Ok(Some(frame))
@@ -175,68 +177,74 @@ impl Connection {
         // considered literals. For now, mini-redis is not able to encode
         // recursive frame structures. See below for more details.
         match frame {
-            Frame::Array(val) => {
-                // Encode the frame type prefix. For an array, it is `*`.
-                self.stream.write_u8(b'*').await?;
-
-                // Encode the length of the array.
-                self.write_decimal(val.len() as u64).await?;
-
-                // Iterate and encode each entry in the array.
-                for entry in &**val {
-                    self.write_value(entry).await?;
-                }
-            }
+            Frame::Array(val) => self.write_arry(val)?,
             // The frame type is a literal. Encode the value directly.
-            _ => self.write_value(frame).await?,
+            _ => self.write_value(frame)?,
         }
+
+        self.stream.write_all(self.wbuffer.chunk()).await?;
 
         // Ensure the encoded frame is written to the socket. The calls above
         // are to the buffered stream and writes. Calling `flush` writes the
         // remaining contents of the buffer to the socket.
-        self.stream.flush().await
+        self.stream.flush().await?;
+
+        self.wbuffer.clear();
+
+        Ok(())
+    }
+
+    fn write_arry(&mut self, val: &Vec<Frame>) -> io::Result<()> {
+        // Encode the frame type prefix. For an array, it is `*`.
+        self.wbuffer.put_u8(b'*');
+
+        // Encode the length of the array.
+        self.write_decimal(val.len() as u64)?;
+
+        // Iterate and encode each entry in the array.
+        for entry in &**val {
+            self.write_value(entry)?;
+        }
+
+        Ok(())
     }
 
     /// Write a frame literal to the stream
-    async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
+    fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
             Frame::Simple(val) => {
-                self.stream.write_u8(b'+').await?;
-                self.stream.write_all(val.as_bytes()).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.wbuffer.put_u8(b'+');
+                self.wbuffer.put(val.as_bytes());
+                self.wbuffer.put_slice(b"\r\n");
             }
             Frame::Error(val) => {
-                self.stream.write_u8(b'-').await?;
-                self.stream.write_all(val.as_bytes()).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.wbuffer.put_u8(b'-');
+                self.wbuffer.put(val.as_bytes());
+                self.wbuffer.put_slice(b"\r\n");
             }
             Frame::Integer(val) => {
-                self.stream.write_u8(b':').await?;
-                self.write_decimal(*val).await?;
+                self.wbuffer.put_u8(b':');
+                self.write_decimal(*val)?;
             }
             Frame::Null => {
-                self.stream.write_all(b"$-1\r\n").await?;
+                self.wbuffer.put_slice(b"$-1\r\n");
             }
             Frame::Bulk(val) => {
                 let len = val.len();
 
-                self.stream.write_u8(b'$').await?;
-                self.write_decimal(len as u64).await?;
-                self.stream.write_all(val).await?;
-                self.stream.write_all(b"\r\n").await?;
+                self.wbuffer.put_u8(b'$');
+                self.write_decimal(len as u64)?;
+                self.wbuffer.put_slice(val);
+                self.wbuffer.put_slice(b"\r\n");
             }
-            // Encoding an `Array` from within a value cannot be done using a
-            // recursive strategy. In general, async fns do not support
-            // recursion. Mini-redis has not needed to encode nested arrays yet,
-            // so for now it is skipped.
-            Frame::Array(_val) => unreachable!(),
+            Frame::Array(val) => self.write_arry(val)?,
         }
 
         Ok(())
     }
 
     /// Write a decimal frame to the stream
-    async fn write_decimal(&mut self, val: u64) -> io::Result<()> {
+    fn write_decimal(&mut self, val: u64) -> io::Result<()> {
         use std::io::Write;
 
         // Convert the value to a string
@@ -245,8 +253,8 @@ impl Connection {
         write!(buf, "{}", val)?;
 
         let pos = buf.position() as usize;
-        self.stream.write_all(&buf.get_ref()[..pos]).await?;
-        self.stream.write_all(b"\r\n").await?;
+        self.wbuffer.put(&buf.get_ref()[..pos]);
+        self.wbuffer.put_slice(b"\r\n");
 
         Ok(())
     }

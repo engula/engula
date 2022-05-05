@@ -62,12 +62,13 @@ impl Commands {
         let command = if base_cmd.sub_cmds.is_empty() {
             (base_cmd.parse)(self, &mut parse)?
         } else {
-            let mut sub_cmd = parse.next_string()?;
-            sub_cmd.make_ascii_lowercase();
-            let sub_cmd = base_cmd
-                .sub_cmds
-                .get(&sub_cmd)
-                .ok_or_else(|| crate::Error::Unknown("illege command".to_string()))?;
+            let mut sub_cmd_name = parse.next_string()?;
+            sub_cmd_name.make_ascii_lowercase();
+            let sub_cmd = base_cmd.sub_cmds.get(&sub_cmd_name);
+            if sub_cmd.is_none() {
+                return Ok(Box::new(Unknown::new(base_cmd_name + " " + &sub_cmd_name)));
+            }
+            let sub_cmd = sub_cmd.unwrap();
             (sub_cmd.parse)(self, &mut parse)?
         };
         parse.finish()?;
