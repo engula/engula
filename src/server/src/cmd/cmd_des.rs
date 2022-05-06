@@ -71,6 +71,7 @@ pub trait CommandAction {
 #[derive(Clone)]
 pub struct CommandDesc {
     pub name: String,
+    pub arity: i64, // -N means ">= N"
     pub flags: u64,
     pub sub_cmds: Option<HashMap<String, CommandDesc>>,
     pub args: Vec<Arg>,
@@ -114,21 +115,21 @@ pub struct KeySpec {
 
 #[derive(Clone)]
 pub enum BeginSearch {
-    Index(u64),
-    Keyword { keyword: String, start_from: u64 },
+    Index(i64),
+    Keyword { keyword: String, start_from: i64 },
 }
 
 #[derive(Clone)]
 pub enum FindKeys {
     Range {
-        last_key: u64,
-        key_step: u64,
-        limit: u64,
+        last_key: i64,
+        key_step: i64,
+        limit: i64,
     },
     KeyNum {
-        key_num_index: u64,
-        first_key_index: u64,
-        key_step: u64,
+        key_num_index: i64,
+        first_key_index: i64,
+        key_step: i64,
     },
 }
 

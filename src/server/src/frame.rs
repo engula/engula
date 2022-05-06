@@ -24,7 +24,7 @@ use bytes::{Buf, Bytes};
 pub enum Frame {
     Simple(String),
     Error(String),
-    Integer(u64),
+    Integer(i64),
     Bulk(Bytes),
     Null,
     Array(Vec<Frame>),
@@ -54,20 +54,6 @@ impl Frame {
         match self {
             Frame::Array(vec) => {
                 vec.push(Frame::Bulk(bytes));
-            }
-            _ => panic!("not an array frame"),
-        }
-    }
-
-    /// Push an "integer" frame into the array. `self` must be an Array frame.
-    ///
-    /// # Panics
-    ///
-    /// panics if `self` is not an array
-    pub(crate) fn push_int(&mut self, value: u64) {
-        match self {
-            Frame::Array(vec) => {
-                vec.push(Frame::Integer(value));
             }
             _ => panic!("not an array frame"),
         }
@@ -136,7 +122,7 @@ impl Frame {
             }
             b':' => {
                 let len = get_decimal(src)?;
-                Ok((Frame::Integer(len), 1))
+                Ok((Frame::Integer(len as i64), 1))
             }
             b'$' => {
                 if b'-' == peek_u8(src)? {

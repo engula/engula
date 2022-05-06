@@ -24,6 +24,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
             name: "get".to_string(),
             flags: CMD_FLAG_FAST | CMD_FLAG_READONLY,
             sub_cmds: None,
+            arity: 2,
             args: vec![Arg{ name: "key".to_string(), typ: ArgType::Key, key_spec_index: 0, ..Default::default() }],
             tips: vec![],
             group: Group::String,
@@ -34,6 +35,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "set".to_string(),
+            arity: -3,
             flags: CMD_FLAG_DENYOOM | CMD_FLAG_WRITE,
             sub_cmds: None,
             args: vec![],
@@ -46,6 +48,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "del".to_string(),
+            arity: -2,
             flags: CMD_FLAG_WRITE,
             sub_cmds: None,
             args: vec![Arg{
@@ -68,6 +71,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         // connection
         CommandDesc {
             name: "ping".to_string(),
+            arity: -1,
             flags: CMD_FLAG_FAST | CMD_FLAG_SENTINEL,
             sub_cmds: None,
             args: vec![Arg{ name: "message".to_owned(), typ: ArgType::String, optional: true, ..Default::default()}],
@@ -84,6 +88,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         // server
         CommandDesc {
             name: "info".to_string(),
+            arity: -1,
             flags: CMD_FLAG_LOADING | CMD_FLAG_STALE | CMD_FLAG_SENTINEL,
             sub_cmds: None,
             args: vec![],
@@ -100,11 +105,13 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "command".to_string(),
+            arity: -1,
             flags: CMD_FLAG_LOADING | CMD_FLAG_STALE | CMD_FLAG_SENTINEL,
             sub_cmds: Some(vec![(
                 "info".to_string(),
                 CommandDesc {
                     name: "info".to_string(),
+                    arity: -2,
                     flags: CMD_FLAG_LOADING | CMD_FLAG_STALE,
                     sub_cmds: None,
                     args: vec![Arg{ name: "command-name".to_string(), typ: ArgType::String, optional: true, multiple: true, ..Default::default() }],

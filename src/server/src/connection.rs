@@ -199,7 +199,7 @@ impl Connection {
         self.wbuffer.put_u8(b'*');
 
         // Encode the length of the array.
-        self.write_decimal(val.len() as u64)?;
+        self.write_decimal(val.len() as i64)?;
 
         // Iterate and encode each entry in the array.
         for entry in &**val {
@@ -233,7 +233,7 @@ impl Connection {
                 let len = val.len();
 
                 self.wbuffer.put_u8(b'$');
-                self.write_decimal(len as u64)?;
+                self.write_decimal(len as i64)?;
                 self.wbuffer.put_slice(val);
                 self.wbuffer.put_slice(b"\r\n");
             }
@@ -244,7 +244,7 @@ impl Connection {
     }
 
     /// Write a decimal frame to the stream
-    fn write_decimal(&mut self, val: u64) -> io::Result<()> {
+    fn write_decimal(&mut self, val: i64) -> io::Result<()> {
         use std::io::Write;
 
         // Convert the value to a string

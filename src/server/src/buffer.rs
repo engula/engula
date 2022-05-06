@@ -144,7 +144,7 @@ impl WriteBuf {
                 self.buf.put_slice(b"*");
 
                 // Encode the length of the array.
-                self.write_decimal(val.len() as u64);
+                self.write_decimal(val.len() as i64);
 
                 // Iterate and encode each entry in the array.
                 for entry in &**val {
@@ -180,7 +180,7 @@ impl WriteBuf {
                 let len = val.len();
 
                 self.buf.put_slice(b"$");
-                self.write_decimal(len as u64);
+                self.write_decimal(len as i64);
                 self.buf.put_slice(val);
                 self.buf.put_slice(b"\r\n");
             }
@@ -193,7 +193,7 @@ impl WriteBuf {
     }
 
     /// Write a decimal frame to the stream
-    pub fn write_decimal(&mut self, val: u64) {
+    pub fn write_decimal(&mut self, val: i64) {
         use std::io::Write;
 
         // Convert the value to a string

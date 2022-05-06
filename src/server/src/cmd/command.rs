@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use super::*;
 use crate::{async_trait, Db, Frame, Parse};
 
@@ -85,7 +87,7 @@ fn cmd_to_frame(desc: &CommandDesc) -> Frame {
     let key_step = 0;
     let cmd_frames = vec![
         Frame::Bulk(desc.name.to_owned().into()),
-        Frame::Integer(desc.args.len() as u64),
+        Frame::Integer(desc.arity),
         Frame::Array(
             cmd_flag_name(desc.flags)
                 .iter()
@@ -103,7 +105,14 @@ fn cmd_to_frame(desc: &CommandDesc) -> Frame {
                 .collect(),
         ),
         Frame::Array(desc.key_specs.iter().map(keyspec_to_frame).collect()),
-        Frame::Array(vec![]), // TODO: subcommands
+        Frame::Array(
+            desc.sub_cmds
+                .as_ref()
+                .unwrap_or(&HashMap::new())
+                .values()
+                .map(cmd_to_frame)
+                .collect(),
+        ),
     ];
     Frame::Array(cmd_frames)
 }
