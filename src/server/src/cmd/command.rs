@@ -35,23 +35,8 @@ pub(crate) fn parse_command(
 impl CommandAction for Command {
     async fn apply(&self, _: &Db) -> crate::Result<Frame> {
         let mut cmds = Vec::new();
-        for info in &self.cmds {
-            let first_key = 0;
-            let last_key = 0;
-            let key_step = 0;
-            let cmd_frames = vec![
-                Frame::Bulk(info.name.to_owned().into()),
-                Frame::Integer(info.args.len() as u64),
-                Frame::Array(vec![]), // TODO: flags
-                Frame::Integer(first_key),
-                Frame::Integer(last_key),
-                Frame::Integer(key_step),
-                Frame::Array(vec![]), // TODO: category
-                Frame::Array(vec![]), // TODO: tips
-                Frame::Array(vec![]), // TODO: key_specs
-                Frame::Array(vec![]), // TODO: subcommands
-            ];
-            cmds.push(Frame::Array(cmd_frames));
+        for desc in &self.cmds {
+            cmds.push(cmd_to_frame(desc));
         }
         Ok(Frame::Array(cmds))
     }
@@ -84,22 +69,7 @@ impl CommandAction for CommandInfo {
     async fn apply(&self, _: &Db) -> crate::Result<Frame> {
         let mut cmds = Vec::new();
         if let Some(desc) = &self.cmd {
-            let first_key = 0;
-            let last_key = 0;
-            let key_step = 0;
-            let cmd_frames = vec![
-                Frame::Bulk(desc.name.to_owned().into()),
-                Frame::Integer(desc.args.len() as u64),
-                Frame::Array(vec![]), // TODO: flags
-                Frame::Integer(first_key),
-                Frame::Integer(last_key),
-                Frame::Integer(key_step),
-                Frame::Array(vec![]), // TODO: category
-                Frame::Array(vec![]), // TODO: tips
-                Frame::Array(vec![]), // TODO: key_specs
-                Frame::Array(vec![]), // TODO: subcommands
-            ];
-            cmds.push(Frame::Array(cmd_frames));
+            cmds.push(cmd_to_frame(desc));
         }
         Ok(Frame::Array(cmds))
     }
@@ -107,4 +77,108 @@ impl CommandAction for CommandInfo {
     fn get_name(&self) -> &str {
         "command info"
     }
+}
+
+fn cmd_to_frame(desc: &CommandDesc) -> Frame {
+    let first_key = 0;
+    let last_key = 0;
+    let key_step = 0;
+    let cmd_frames = vec![
+        Frame::Bulk(desc.name.to_owned().into()),
+        Frame::Integer(desc.args.len() as u64),
+        Frame::Array(
+            cmd_flag_name(desc.flags)
+                .iter()
+                .map(|f| Frame::Bulk(f.to_owned().into()))
+                .collect(),
+        ),
+        Frame::Integer(first_key),
+        Frame::Integer(last_key),
+        Frame::Integer(key_step),
+        Frame::Array(vec![]), // TODO: acl_category
+        Frame::Array(
+            desc.tips
+                .iter()
+                .map(|f| Frame::Bulk(f.to_lowercase().into()))
+                .collect(),
+        ),
+        Frame::Array(desc.key_specs.iter().map(keyspec_to_frame).collect()),
+        Frame::Array(vec![]), // TODO: subcommands
+    ];
+    Frame::Array(cmd_frames)
+}
+
+fn keyspec_to_frame(spec: &KeySpec) -> Frame {
+    let mut frames = Vec::new();
+    frames.extend(vec![
+        Frame::Bulk("flags".into()),
+        Frame::Array(
+            keyspec_flag_name(spec.flags)
+                .iter()
+                .map(|f| Frame::Bulk(f.to_owned().into()))
+                .collect(),
+        ),
+        Frame::Bulk("begin_search".into()),
+        Frame::Bulk("type".into()),
+    ]);
+    match &spec.bs {
+        BeginSearch::Index(idx) => {
+            frames.push(Frame::Bulk("index".into()));
+            frames.push(Frame::Bulk("spec".into()));
+            frames.push(Frame::Array(vec![
+                Frame::Bulk("index".into()),
+                Frame::Integer(idx.to_owned()),
+            ]));
+        }
+        BeginSearch::Keyword {
+            keyword,
+            start_from,
+        } => {
+            frames.push(Frame::Bulk("keyword".into()));
+            frames.push(Frame::Bulk("spec".into()));
+            frames.push(Frame::Array(vec![
+                Frame::Bulk("keyword".into()),
+                Frame::Bulk(keyword.to_owned().into()),
+                Frame::Bulk("startfrom".into()),
+                Frame::Integer(start_from.to_owned()),
+            ]));
+        }
+    };
+    frames.push(Frame::Bulk("find_keys".into()));
+    frames.push(Frame::Bulk("type".into()));
+    match &spec.fk {
+        FindKeys::Range {
+            last_key,
+            key_step,
+            limit,
+        } => {
+            frames.push(Frame::Bulk("range".into()));
+            frames.push(Frame::Bulk("spec".into()));
+            frames.push(Frame::Array(vec![
+                Frame::Bulk("lastkey".into()),
+                Frame::Integer(last_key.to_owned()),
+                Frame::Bulk("keystep".into()),
+                Frame::Integer(key_step.to_owned()),
+                Frame::Bulk("limit".into()),
+                Frame::Integer(limit.to_owned()),
+            ]));
+        }
+        FindKeys::KeyNum {
+            key_num_index,
+            first_key_index,
+            key_step,
+        } => {
+            frames.push(Frame::Bulk("keynum".into()));
+            frames.push(Frame::Bulk("spec".into()));
+            frames.push(Frame::Array(vec![
+                Frame::Bulk("keynumidx".into()),
+                Frame::Integer(key_num_index.to_owned()),
+                Frame::Bulk("firstkey".into()),
+                Frame::Integer(first_key_index.to_owned()),
+                Frame::Bulk("keystep".into()),
+                Frame::Integer(key_step.to_owned()),
+            ]));
+        }
+    }
+    Frame::Array(frames)
 }

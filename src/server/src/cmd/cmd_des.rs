@@ -41,14 +41,18 @@ impl CommandDescs {
             return Ok(Box::new(Unknown::new(base_cmd_name)));
         }
         let base_cmd = base_cmd.unwrap();
-        let command = if frame_cnt == 1 || base_cmd.sub_cmds.is_empty() {
+        let command = if frame_cnt == 1 || base_cmd.sub_cmds.is_none() {
             (base_cmd.parse)(self, &mut parse)?
         } else {
             let mut sub_cmd_name = parse.next_string()?;
             sub_cmd_name.make_ascii_lowercase();
-            let sub_cmd = base_cmd.sub_cmds.get(&sub_cmd_name);
+            if base_cmd.sub_cmds.is_none() {
+                return Ok(Box::new(Unknown::new(base_cmd_name + "|" + &sub_cmd_name)));
+            }
+            let sub_cmds = base_cmd.sub_cmds.as_ref().unwrap();
+            let sub_cmd = sub_cmds.get(&sub_cmd_name);
             if sub_cmd.is_none() {
-                return Ok(Box::new(Unknown::new(base_cmd_name + " " + &sub_cmd_name)));
+                return Ok(Box::new(Unknown::new(base_cmd_name + "|" + &sub_cmd_name)));
             }
             let sub_cmd = sub_cmd.unwrap();
             (sub_cmd.parse)(self, &mut parse)?
@@ -68,7 +72,7 @@ pub trait CommandAction {
 pub struct CommandDesc {
     pub name: String,
     pub flags: u64,
-    pub sub_cmds: HashMap<String, CommandDesc>,
+    pub sub_cmds: Option<HashMap<String, CommandDesc>>,
     pub args: Vec<Arg>,
     pub tips: Vec<String>,
     pub group: Group,
@@ -103,42 +107,44 @@ pub enum Group {
 
 #[derive(Clone)]
 pub struct KeySpec {
-    flags: u64,
-    bs: BeginSearch,
-    fk: FindKeys,
+    pub flags: u64,
+    pub bs: BeginSearch,
+    pub fk: FindKeys,
 }
 
 #[derive(Clone)]
 pub enum BeginSearch {
-    Index(usize),
-    Keyword { keyword: String, start_from: usize },
+    Index(u64),
+    Keyword { keyword: String, start_from: u64 },
 }
 
 #[derive(Clone)]
 pub enum FindKeys {
     Range {
-        last_key: usize,
-        key_step: usize,
-        limit: usize,
+        last_key: u64,
+        key_step: u64,
+        limit: u64,
     },
     KeyNum {
-        key_num_index: usize,
-        first_key_index: usize,
-        key_step: usize,
+        key_num_index: u64,
+        first_key_index: u64,
+        key_step: u64,
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Arg {
-    name: String,
-    typ: ArgType,
-    key_spec_index: usize,
-    token: String,
-    flag: u64,
-    sub_args: Vec<Arg>,
+    pub name: String,
+    pub typ: ArgType,
+    pub key_spec_index: usize,
+    pub token: String,
+    pub flag: u64,
+    pub sub_args: Vec<Arg>,
+    pub optional: bool,
+    pub multiple: bool,
 
-    since: String,
-    summary: String,
+    pub since: String,
+    pub summary: String,
 }
 
 #[derive(Clone)]
@@ -154,11 +160,111 @@ pub enum ArgType {
     Block,
 }
 
-#[allow(dead_code)]
-const CMD_ARG_NONE: u8 = 0;
-#[allow(dead_code)]
-const CMD_ARG_OPTIONAL: u8 = 1 << 0;
-#[allow(dead_code)]
-const CMD_ARG_MULTIPLE: u8 = 1 << 1;
-#[allow(dead_code)]
-const CMD_ARG_MULTIPLE_TOKEN: u8 = 1 << 2;
+impl Default for ArgType {
+    fn default() -> Self {
+        ArgType::String
+    }
+}
+
+// Command Arg Flags.
+pub const CMD_ARG_NONE: u8 = 0;
+pub const CMD_ARG_OPTIONAL: u8 = 1 << 0;
+pub const CMD_ARG_MULTIPLE: u8 = 1 << 1;
+pub const CMD_ARG_MULTIPLE_TOKEN: u8 = 1 << 2;
+
+// Command Flags
+pub const CMD_FLAG_WRITE: u64 = 1 << 0;
+pub const CMD_FLAG_READONLY: u64 = 1 << 1;
+pub const CMD_FLAG_DENYOOM: u64 = 1 << 2;
+pub const CMD_FLAG_MODULE: u64 = 1 << 3; /* Command exported by module. */
+pub const CMD_FLAG_ADMIN: u64 = 1 << 4;
+pub const CMD_FLAG_PUBSUB: u64 = 1 << 5;
+pub const CMD_FLAG_NOSCRIPT: u64 = 1 << 6;
+pub const CMD_FLAG_BLOCKING: u64 = 1 << 8; /* Has potential to block. */
+pub const CMD_FLAG_LOADING: u64 = 1 << 9;
+pub const CMD_FLAG_STALE: u64 = 1 << 10;
+pub const CMD_FLAG_SKIP_MONITOR: u64 = 1 << 11;
+pub const CMD_FLAG_SKIP_SLOWLOG: u64 = 1 << 12;
+pub const CMD_FLAG_ASKING: u64 = 1 << 13;
+pub const CMD_FLAG_FAST: u64 = 1 << 14;
+pub const CMD_FLAG_NO_AUTH: u64 = 1 << 15;
+pub const CMD_FLAG_MAY_REPLICATE: u64 = 1 << 16;
+pub const CMD_FLAG_SENTINEL: u64 = 1 << 17;
+pub const CMD_FLAG_ONLY_SENTINEL: u64 = 1 << 18;
+pub const CMD_FLAG_NO_MANDATORY_KEYS: u64 = 1 << 19;
+pub const CMD_FLAG_PROTECTED: u64 = 1 << 20;
+pub const CMD_FLAG_MODULE_GETKEYS: u64 = 1 << 21; /* Use the modules getkeys interface. */
+pub const CMD_FLAG_MODULE_NO_CLUSTER: u64 = 1 << 22; /* Deny on Redis Cluster. */
+pub const CMD_FLAG_NO_ASYNC_LOADING: u64 = 1 << 23;
+pub const CMD_FLAG_NO_MULTI: u64 = 1 << 24;
+pub const CMD_FLAG_MOVABLE_KEYS: u64 = 1 << 25; /* populated by populateCommandMovableKeys */
+pub const CMD_FLAG_ALLOW_BUSY: u64 = 1 << 26;
+pub const CMD_FLAG_MODULE_GETCHANNELS: u64 = 1 << 27;
+
+pub fn cmd_flag_name(flag: u64) -> Vec<String> {
+    let flags = [
+        (CMD_FLAG_WRITE, "write"),
+        (CMD_FLAG_READONLY, "readonly"),
+        (CMD_FLAG_DENYOOM, "denyoom"),
+        (CMD_FLAG_MODULE, "module"),
+        (CMD_FLAG_ADMIN, "admin"),
+        (CMD_FLAG_PUBSUB, "pubsub"),
+        (CMD_FLAG_NOSCRIPT, "noscript"),
+        (CMD_FLAG_BLOCKING, "blocking"),
+        (CMD_FLAG_LOADING, "loading"),
+        (CMD_FLAG_STALE, "stale"),
+        (CMD_FLAG_SKIP_MONITOR, "skip_monitor"),
+        (CMD_FLAG_SKIP_SLOWLOG, "skip_slowlog"),
+        (CMD_FLAG_ASKING, "asking"),
+        (CMD_FLAG_FAST, "fast"),
+        (CMD_FLAG_NO_AUTH, "no_auth"),
+        (CMD_FLAG_MAY_REPLICATE, "may_replicate"),
+        (CMD_FLAG_NO_MANDATORY_KEYS, "no_mandatory_keys"),
+        (CMD_FLAG_NO_ASYNC_LOADING, "no_async_loading"),
+        (CMD_FLAG_NO_MULTI, "no_multi"),
+        (CMD_FLAG_MOVABLE_KEYS, "movablekeys"),
+        (CMD_FLAG_ALLOW_BUSY, "allow_busy"),
+    ];
+    flags
+        .into_iter()
+        .filter(|f| f.0 & flag > 0)
+        .map(|f| f.1.to_owned())
+        .collect()
+}
+
+// Key Spec FLags.
+// TODO: add comments
+pub const CMD_KEY_SPEC_FLAG_RO: u64 = 1 << 0;
+pub const CMD_KEY_SPEC_FLAG_RW: u64 = 1 << 1;
+pub const CMD_KEY_SPEC_FLAG_OW: u64 = 1 << 2;
+pub const CMD_KEY_SPEC_FLAG_RM: u64 = 1 << 3;
+pub const CMD_KEY_SPEC_FLAG_ACCESS: u64 = 1 << 4;
+pub const CMD_KEY_SPEC_FLAG_UPDATE: u64 = 1 << 5;
+pub const CMD_KEY_SPEC_FLAG_INSERT: u64 = 1 << 6;
+pub const CMD_KEY_SPEC_FLAG_DELETE: u64 = 1 << 7;
+pub const CMD_KEY_SPEC_FLAG_NOT_KEY: u64 = 1 << 8;
+pub const CMD_KEY_SPEC_FLAG_INCOMPLETE: u64 = 1 << 9;
+pub const CMD_KEY_SPEC_FLAG_VARIABLE_FLAGS: u64 = 1 << 10;
+pub const CMD_KEY_SPEC_FLAG_FULL_ACCESS: u64 =
+    CMD_KEY_SPEC_FLAG_RW | CMD_KEY_SPEC_FLAG_ACCESS | CMD_KEY_SPEC_FLAG_UPDATE;
+
+pub fn keyspec_flag_name(flag: u64) -> Vec<String> {
+    let flags = [
+        (CMD_KEY_SPEC_FLAG_RO, "RO"),
+        (CMD_KEY_SPEC_FLAG_RW, "RW"),
+        (CMD_KEY_SPEC_FLAG_OW, "OW"),
+        (CMD_KEY_SPEC_FLAG_RM, "RM"),
+        (CMD_KEY_SPEC_FLAG_ACCESS, "access"),
+        (CMD_KEY_SPEC_FLAG_UPDATE, "update"),
+        (CMD_KEY_SPEC_FLAG_INSERT, "insert"),
+        (CMD_KEY_SPEC_FLAG_DELETE, "delete"),
+        (CMD_KEY_SPEC_FLAG_NOT_KEY, "not_key"),
+        (CMD_KEY_SPEC_FLAG_INCOMPLETE, "incomplete"),
+        (CMD_KEY_SPEC_FLAG_VARIABLE_FLAGS, "variable_flags"),
+    ];
+    flags
+        .into_iter()
+        .filter(|f| f.0 & flag > 0)
+        .map(|f| f.1.to_owned())
+        .collect()
+}
