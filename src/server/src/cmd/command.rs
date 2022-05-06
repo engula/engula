@@ -86,7 +86,7 @@ fn cmd_to_frame(desc: &CommandDesc) -> Frame {
     let last_key = 0;
     let key_step = 0;
     let cmd_frames = vec![
-        Frame::Bulk(desc.name.to_owned().into()),
+        Frame::Bulk(desc.fullname.to_owned().into()),
         Frame::Integer(desc.arity),
         Frame::Array(
             cmd_flag_name(desc.flags)

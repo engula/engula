@@ -22,6 +22,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         // string
         CommandDesc {
             name: "get".to_string(),
+            fullname: "get".to_string(),
             flags: CMD_FLAG_FAST | CMD_FLAG_READONLY,
             sub_cmds: None,
             arity: 2,
@@ -35,6 +36,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "set".to_string(),
+            fullname: "set".to_string(),
             arity: -3,
             flags: CMD_FLAG_DENYOOM | CMD_FLAG_WRITE,
             sub_cmds: None,
@@ -48,6 +50,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "del".to_string(),
+            fullname: "del".to_string(),
             arity: -2,
             flags: CMD_FLAG_WRITE,
             sub_cmds: None,
@@ -71,6 +74,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         // connection
         CommandDesc {
             name: "ping".to_string(),
+            fullname: "ping".to_string(),
             arity: -1,
             flags: CMD_FLAG_FAST | CMD_FLAG_SENTINEL,
             sub_cmds: None,
@@ -88,6 +92,7 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         // server
         CommandDesc {
             name: "info".to_string(),
+            fullname: "info".to_string(),
             arity: -1,
             flags: CMD_FLAG_LOADING | CMD_FLAG_STALE | CMD_FLAG_SENTINEL,
             sub_cmds: None,
@@ -105,12 +110,14 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         },
         CommandDesc {
             name: "command".to_string(),
+            fullname: "command".to_string(),
             arity: -1,
             flags: CMD_FLAG_LOADING | CMD_FLAG_STALE | CMD_FLAG_SENTINEL,
             sub_cmds: Some(vec![(
                 "info".to_string(),
                 CommandDesc {
                     name: "info".to_string(),
+                    fullname: "command|info".to_string(),
                     arity: -2,
                     flags: CMD_FLAG_LOADING | CMD_FLAG_STALE,
                     sub_cmds: None,

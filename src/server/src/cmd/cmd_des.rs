@@ -71,6 +71,7 @@ pub trait CommandAction {
 #[derive(Clone)]
 pub struct CommandDesc {
     pub name: String,
+    pub fullname: String,
     pub arity: i64, // -N means ">= N"
     pub flags: u64,
     pub sub_cmds: Option<HashMap<String, CommandDesc>>,
