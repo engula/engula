@@ -15,7 +15,8 @@
 use bytes::Bytes;
 use tracing::debug;
 
-use crate::{Db, Error, Frame, Parse, ParseError};
+use super::*;
+use crate::{async_trait, Db, Error, Frame, Parse, ParseError};
 
 /// Delete the given keys.
 #[derive(Debug)]
@@ -23,47 +24,45 @@ pub struct Del {
     keys: Vec<Bytes>,
 }
 
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
+    let mut keys = vec![];
+    loop {
+        match parse.next_bytes() {
+            Ok(key) => keys.push(key),
+            Err(ParseError::EndOfStream) => break,
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    if !keys.is_empty() {
+        Ok(Box::new(Del { keys }))
+    } else {
+        Err(Error::from("Del without keys"))
+    }
+}
+
 impl Del {
     pub fn new(keys: Vec<Bytes>) -> Del {
         Del { keys }
     }
+}
 
-    pub fn keys(&self) -> &Vec<Bytes> {
-        &self.keys
-    }
-
-    pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Del> {
-        let mut keys = vec![];
-        loop {
-            match parse.next_bytes() {
-                Ok(key) => keys.push(key),
-                Err(ParseError::EndOfStream) => break,
-                Err(err) => return Err(err.into()),
-            }
-        }
-
-        if !keys.is_empty() {
-            Ok(Del { keys })
-        } else {
-            Err(Error::from("Del without keys"))
-        }
-    }
-
-    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
+#[async_trait]
+impl CommandAction for Del {
+    async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
-        let response = Frame::Integer(db.delete_keys(self.keys.iter().map(|bytes| bytes.as_ref())));
+        let response =
+            Frame::Integer(db.delete_keys(self.keys.iter().map(|bytes| bytes.as_ref())) as i64);
 
         debug!(?response);
 
         Ok(response)
     }
 
-    pub(crate) fn into_frame(self) -> Frame {
-        let mut frame = Frame::array();
-        frame.push_bulk(Bytes::from("del".as_bytes()));
-        for key in self.keys.into_iter() {
-            frame.push_bulk(key);
-        }
-        frame
+    fn get_name(&self) -> &str {
+        "del"
     }
 }

@@ -14,7 +14,8 @@
 
 use tracing::debug;
 
-use crate::Frame;
+use super::*;
+use crate::{async_trait, Db, Frame};
 
 /// Represents an "unknown" command. This is not a real `Redis` command.
 #[derive(Debug)]
@@ -30,20 +31,22 @@ impl Unknown {
             command_name: key.to_string(),
         }
     }
+}
 
-    /// Returns the command name
-    pub(crate) fn get_name(&self) -> &str {
-        &self.command_name
-    }
-
+#[async_trait]
+impl CommandAction for Unknown {
     /// Responds to the client, indicating the command is not recognized.
     ///
     /// This usually means the command is not yet implemented by `mini-redis`.
-    pub(crate) fn apply(self) -> crate::Result<Frame> {
+    async fn apply(&self, _: &Db) -> crate::Result<Frame> {
         let response = Frame::Error(format!("ERR unknown command '{}'", self.command_name));
 
         debug!(?response);
 
         Ok(response)
+    }
+
+    fn get_name(&self) -> &str {
+        &self.command_name
     }
 }
