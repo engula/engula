@@ -16,6 +16,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod db;
+#[allow(dead_code)]
+mod diskcache;
 pub mod elements;
 mod key_space;
 pub mod objects;
