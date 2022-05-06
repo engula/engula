@@ -15,7 +15,7 @@
 use bytes::Bytes;
 use tracing::debug;
 
-use super::{Command, Commands};
+use super::*;
 use crate::{async_trait, Db, Error, Frame, Parse, ParseError};
 
 /// Delete the given keys.
@@ -24,7 +24,10 @@ pub struct Del {
     keys: Vec<Bytes>,
 }
 
-pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
     let mut keys = vec![];
     loop {
         match parse.next_bytes() {
@@ -48,7 +51,7 @@ impl Del {
 }
 
 #[async_trait]
-impl super::Command for Del {
+impl CommandAction for Del {
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
         let response = Frame::Integer(db.delete_keys(self.keys.iter().map(|bytes| bytes.as_ref())));

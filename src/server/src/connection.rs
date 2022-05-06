@@ -72,7 +72,7 @@ impl Connection {
     /// On success, the received frame is returned. If the `TcpStream`
     /// is closed in a way that doesn't break a frame in half, it returns
     /// `None`. Otherwise, an error is returned.
-    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
+    pub async fn read_frame(&mut self) -> crate::Result<Option<(Frame, usize)>> {
         loop {
             // Attempt to parse a frame from the buffered data. If enough data
             // has been buffered, the frame is returned.
@@ -103,7 +103,7 @@ impl Connection {
     /// data, the frame is returned and the data removed from the buffer. If not
     /// enough data has been buffered yet, `Ok(None)` is returned. If the
     /// buffered data does not represent a valid frame, `Err` is returned.
-    fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
+    fn parse_frame(&mut self) -> crate::Result<Option<(Frame, usize)>> {
         use frame::Error::Incomplete;
 
         // Cursor is used to track the "current" location in the

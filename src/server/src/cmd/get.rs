@@ -16,7 +16,7 @@ use bytes::Bytes;
 use engula_engine::objects::string::RawString;
 use tracing::debug;
 
-use super::{Command, Commands};
+use super::*;
 use crate::{async_trait, Db, Frame, Parse};
 
 /// Get the value of key.
@@ -57,7 +57,10 @@ impl Get {
 /// ```text
 /// GET key
 /// ```
-pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
     // The `GET` string has already been consumed. The next value is the
     // name of the key to get. If the next value is not a string or the
     // input is fully consumed, then an error is returned.
@@ -70,7 +73,7 @@ pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box
 }
 
 #[async_trait]
-impl super::Command for Get {
+impl CommandAction for Get {
     /// Apply the `Get` command to the specified `Db` instance.
     ///
     /// The response is written to `dst`. This is called by the server in order

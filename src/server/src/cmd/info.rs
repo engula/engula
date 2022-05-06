@@ -13,7 +13,7 @@
 // limitations under the License.
 use tracing::debug;
 
-use super::{Command, Commands};
+use super::*;
 use crate::{async_trait, frame::Frame, parse::Parse, Db};
 
 // The INFO command returns information and statistics about the server in
@@ -47,7 +47,10 @@ impl Info {
 /// ```text
 /// INFO [section [section...]]
 /// ``
-pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
     // TODO(walter) support 'all', 'default', 'everthing'.
     match parse.finish() {
         Ok(()) => Ok(Box::new(Info {})),
@@ -56,7 +59,7 @@ pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box
 }
 
 #[async_trait]
-impl super::Command for Info {
+impl CommandAction for Info {
     /// Apply the `INFO` command and return the message.
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         let db_stats = db.stats();

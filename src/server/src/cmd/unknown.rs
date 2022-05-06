@@ -14,6 +14,7 @@
 
 use tracing::debug;
 
+use super::*;
 use crate::{async_trait, Db, Frame};
 
 /// Represents an "unknown" command. This is not a real `Redis` command.
@@ -33,7 +34,7 @@ impl Unknown {
 }
 
 #[async_trait]
-impl super::Command for Unknown {
+impl CommandAction for Unknown {
     /// Responds to the client, indicating the command is not recognized.
     ///
     /// This usually means the command is not yet implemented by `mini-redis`.

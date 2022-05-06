@@ -21,12 +21,8 @@ use engula_engine::{
 };
 use tracing::debug;
 
-use super::Commands;
-use crate::{
-    async_trait,
-    cmd::{Command, Parse, ParseError},
-    Db, Frame,
-};
+use super::*;
+use crate::{async_trait, parse::Parse, Db, Frame};
 
 /// Set `key` to hold the string `value`.
 ///
@@ -72,8 +68,11 @@ pub struct Set {
 /// ```text
 /// SET key value [EX seconds|PX milliseconds]
 /// ```
-pub(crate) fn parse_frames(_: &Commands, parse: &mut Parse) -> crate::Result<Box<dyn Command>> {
-    use ParseError::EndOfStream;
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
+    use crate::ParseError::EndOfStream;
 
     // Read the key to set. This is a required field
     let key = parse.next_bytes()?;
@@ -126,7 +125,7 @@ impl Set {
 }
 
 #[async_trait]
-impl super::Command for Set {
+impl CommandAction for Set {
     /// Apply the `Set` command to the specified `Db` instance.
     ///
     /// The response is written to `dst`. This is called by the server in order

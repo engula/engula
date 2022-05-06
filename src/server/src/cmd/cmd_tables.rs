@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use super::*;
 
 // TODO: use marco to generate this command tables.
-pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
+pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
     let cmds = [
-        CommandInfo {
+        CommandDesc {
             name: "get".to_string(),
             flags: 0,
             sub_cmds: HashMap::new(),
@@ -31,7 +31,7 @@ pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
             summary: "".to_string(),
             parse: get::parse_frames,
         },
-        CommandInfo {
+        CommandDesc {
             name: "set".to_string(),
             flags: 0,
             sub_cmds: HashMap::new(),
@@ -43,7 +43,7 @@ pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
             summary: "".to_string(),
             parse: set::parse_frames,
         },
-        CommandInfo {
+        CommandDesc {
             name: "del".to_string(),
             flags: 0,
             sub_cmds: HashMap::new(),
@@ -55,7 +55,7 @@ pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
             summary: "".to_string(),
             parse: del::parse_frames,
         },
-        CommandInfo {
+        CommandDesc {
             name: "ping".to_string(),
             flags: 0,
             sub_cmds: HashMap::new(),
@@ -67,7 +67,7 @@ pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
             summary: "".to_string(),
             parse: ping::parse_frames,
         },
-        CommandInfo {
+        CommandDesc {
             name: "info".to_string(),
             flags: 0,
             sub_cmds: HashMap::new(),
@@ -79,20 +79,36 @@ pub(crate) fn all_cmd_tables() -> HashMap<String, CommandInfo> {
             summary: "".to_string(),
             parse: info::parse_frames,
         },
-        CommandInfo {
+        CommandDesc {
             name: "command".to_string(),
             flags: 0,
-            sub_cmds: HashMap::new(),
+            sub_cmds: vec![(
+                "info".to_string(),
+                CommandDesc {
+                    name: "info".to_string(),
+                    flags: 0,
+                    sub_cmds: HashMap::new(),
+                    args: Vec::new(),
+                    tips: Vec::new(),
+                    group: Group::Server,
+                    key_specs: Vec::new(),
+                    since: "1.0.0".to_string(),
+                    summary: "".to_string(),
+                    parse: command::parse_command_info,
+                },
+            )]
+            .into_iter()
+            .collect(),
             args: Vec::new(),
             tips: Vec::new(),
             group: Group::Server,
             key_specs: Vec::new(),
             since: "1.0.0".to_string(),
             summary: "".to_string(),
-            parse: command::parse_frames,
+            parse: command::parse_command,
         },
     ];
     cmds.into_iter()
         .map(|e| (e.name.clone(), e))
-        .collect::<HashMap<String, CommandInfo>>()
+        .collect::<HashMap<String, CommandDesc>>()
 }

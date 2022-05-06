@@ -114,7 +114,7 @@ impl Frame {
     }
 
     /// The message has already been validated with `check`.
-    pub fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, Error> {
+    pub fn parse(src: &mut Cursor<&[u8]>) -> Result<(Frame, usize), Error> {
         match get_u8(src)? {
             b'+' => {
                 // Read the line and convert it to `Vec<u8>`
@@ -123,7 +123,7 @@ impl Frame {
                 // Convert the line to a String
                 let string = String::from_utf8(line)?;
 
-                Ok(Frame::Simple(string))
+                Ok((Frame::Simple(string), 1))
             }
             b'-' => {
                 // Read the line and convert it to `Vec<u8>`
@@ -132,11 +132,11 @@ impl Frame {
                 // Convert the line to a String
                 let string = String::from_utf8(line)?;
 
-                Ok(Frame::Error(string))
+                Ok((Frame::Error(string), 1))
             }
             b':' => {
                 let len = get_decimal(src)?;
-                Ok(Frame::Integer(len))
+                Ok((Frame::Integer(len), 1))
             }
             b'$' => {
                 if b'-' == peek_u8(src)? {
@@ -146,7 +146,7 @@ impl Frame {
                         return Err("protocol error; invalid frame format".into());
                     }
 
-                    Ok(Frame::Null)
+                    Ok((Frame::Null, 0))
                 } else {
                     // Read the bulk string
                     let len = get_decimal(src)?.try_into()?;
@@ -161,18 +161,21 @@ impl Frame {
                     // skip that number of bytes + 2 (\r\n).
                     skip(src, n)?;
 
-                    Ok(Frame::Bulk(data))
+                    Ok((Frame::Bulk(data), 1))
                 }
             }
             b'*' => {
                 let len = get_decimal(src)?.try_into()?;
                 let mut out = Vec::with_capacity(len);
 
+                let mut frame_cnt = 0;
                 for _ in 0..len {
-                    out.push(Frame::parse(src)?);
+                    let (f, fcnt) = Frame::parse(src)?;
+                    out.push(f);
+                    frame_cnt += fcnt;
                 }
 
-                Ok(Frame::Array(out))
+                Ok((Frame::Array(out), frame_cnt))
             }
             _ => unimplemented!(),
         }

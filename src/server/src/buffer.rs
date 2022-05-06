@@ -36,7 +36,7 @@ impl ReadBuf {
     /// data, the frame is returned and the data removed from the buffer. If not
     /// enough data has been buffered yet, `Ok(None)` is returned. If the
     /// buffered data does not represent a valid frame, `Err` is returned.
-    pub fn parse_frame(&mut self) -> Option<Frame> {
+    pub fn parse_frame(&mut self) -> Option<(Frame, usize)> {
         use FrameError::Incomplete;
 
         // Cursor is used to track the "current" location in the

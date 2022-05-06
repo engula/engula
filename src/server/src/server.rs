@@ -427,7 +427,7 @@ impl Handler {
     /// it reaches a safe state, at which point it is terminated.
     #[instrument(skip(self))]
     async fn run(&mut self) -> crate::Result<()> {
-        let cmds = cmd::Commands::new();
+        let cmds = cmd::CommandDescs::new();
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         while !self.shutdown.is_shutdown() {
@@ -447,7 +447,7 @@ impl Handler {
             // If `None` is returned from `read_frame()` then the peer closed
             // the socket. There is no further work to do and the task can be
             // terminated.
-            let frame = match maybe_frame {
+            let (frame, frame_cnt) = match maybe_frame {
                 Some(frame) => frame,
                 None => return Ok(()),
             };
@@ -455,7 +455,7 @@ impl Handler {
             // Convert the redis frame into a command struct. This returns an
             // error if the frame is not a valid redis command or it is an
             // unsupported command.
-            let cmd = cmds.lookup_command(frame)?;
+            let cmd = cmds.lookup_command(frame, frame_cnt)?;
 
             // Logs the `cmd` object. The syntax here is a shorthand provided by
             // the `tracing` crate. It can be thought of as similar to:
