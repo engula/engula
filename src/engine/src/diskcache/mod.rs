@@ -55,6 +55,7 @@ impl DiskCache {
     pub async fn set(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         let handle = self.store.write(key, value).await?;
         self.table.insert(key, handle);
+        // TODO: GC indices of evicted files
         Ok(())
     }
 }

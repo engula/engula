@@ -65,6 +65,7 @@ impl HashTable {
             length: handle.length,
             next,
         };
+        // TODO: limits memory usage
         let pos = self.next;
         if pos == self.slab.len() as u32 {
             self.slab.push(index);
