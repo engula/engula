@@ -71,7 +71,6 @@ pub trait CommandAction {
 #[derive(Clone)]
 pub struct CommandDesc {
     pub name: String,
-    pub fullname: String,
     pub arity: i64, // -N means ">= N"
     pub flags: u64,
     pub sub_cmds: Option<HashMap<String, CommandDesc>>,
@@ -81,6 +80,12 @@ pub struct CommandDesc {
     pub key_specs: Vec<KeySpec>,
     pub since: String,
     pub summary: String,
+
+    pub complexity: String,
+    pub doc_flags: u64,
+    pub acl_categories: u64,
+    pub deprecated_since: String,
+    pub replaced_by: String,
 
     pub parse: fn(&CommandDescs, &mut Parse) -> Result<Box<dyn CommandAction>>,
 }
@@ -109,6 +114,7 @@ pub enum Group {
 
 #[derive(Clone)]
 pub struct KeySpec {
+    pub notes: String,
     pub flags: u64,
     pub bs: BeginSearch,
     pub fk: FindKeys,
@@ -116,12 +122,14 @@ pub struct KeySpec {
 
 #[derive(Clone)]
 pub enum BeginSearch {
+    Unknown,
     Index(i64),
     Keyword { keyword: String, start_from: i64 },
 }
 
 #[derive(Clone)]
 pub enum FindKeys {
+    Unknown,
     Range {
         last_key: i64,
         key_step: i64,
@@ -138,21 +146,20 @@ pub enum FindKeys {
 pub struct Arg {
     pub name: String,
     pub typ: ArgType,
-    pub key_spec_index: usize,
+    pub key_spec_index: i64,
     pub token: String,
     pub flag: u64,
     pub sub_args: Vec<Arg>,
-    pub optional: bool,
-    pub multiple: bool,
 
     pub since: String,
     pub summary: String,
+    pub deprecated_since: String,
 }
 
 #[derive(Clone)]
 pub enum ArgType {
     String,
-    Int,
+    Integer,
     Double,
     Key, /* A string, but represents a keyname */
     Pattern,
@@ -169,63 +176,63 @@ impl Default for ArgType {
 }
 
 // Command Arg Flags.
-pub const CMD_ARG_NONE: u8 = 0;
-pub const CMD_ARG_OPTIONAL: u8 = 1 << 0;
-pub const CMD_ARG_MULTIPLE: u8 = 1 << 1;
-pub const CMD_ARG_MULTIPLE_TOKEN: u8 = 1 << 2;
+pub const CMD_ARG_NONE: u64 = 0;
+pub const CMD_ARG_OPTIONAL: u64 = 1 << 0;
+pub const CMD_ARG_MULTIPLE: u64 = 1 << 1;
+pub const CMD_ARG_MULTIPLE_TOKEN: u64 = 1 << 2;
 
 // Command Flags
-pub const CMD_FLAG_WRITE: u64 = 1 << 0;
-pub const CMD_FLAG_READONLY: u64 = 1 << 1;
-pub const CMD_FLAG_DENYOOM: u64 = 1 << 2;
-pub const CMD_FLAG_MODULE: u64 = 1 << 3; /* Command exported by module. */
-pub const CMD_FLAG_ADMIN: u64 = 1 << 4;
-pub const CMD_FLAG_PUBSUB: u64 = 1 << 5;
-pub const CMD_FLAG_NOSCRIPT: u64 = 1 << 6;
-pub const CMD_FLAG_BLOCKING: u64 = 1 << 8; /* Has potential to block. */
-pub const CMD_FLAG_LOADING: u64 = 1 << 9;
-pub const CMD_FLAG_STALE: u64 = 1 << 10;
-pub const CMD_FLAG_SKIP_MONITOR: u64 = 1 << 11;
-pub const CMD_FLAG_SKIP_SLOWLOG: u64 = 1 << 12;
-pub const CMD_FLAG_ASKING: u64 = 1 << 13;
-pub const CMD_FLAG_FAST: u64 = 1 << 14;
-pub const CMD_FLAG_NO_AUTH: u64 = 1 << 15;
-pub const CMD_FLAG_MAY_REPLICATE: u64 = 1 << 16;
-pub const CMD_FLAG_SENTINEL: u64 = 1 << 17;
-pub const CMD_FLAG_ONLY_SENTINEL: u64 = 1 << 18;
-pub const CMD_FLAG_NO_MANDATORY_KEYS: u64 = 1 << 19;
-pub const CMD_FLAG_PROTECTED: u64 = 1 << 20;
-pub const CMD_FLAG_MODULE_GETKEYS: u64 = 1 << 21; /* Use the modules getkeys interface. */
-pub const CMD_FLAG_MODULE_NO_CLUSTER: u64 = 1 << 22; /* Deny on Redis Cluster. */
-pub const CMD_FLAG_NO_ASYNC_LOADING: u64 = 1 << 23;
-pub const CMD_FLAG_NO_MULTI: u64 = 1 << 24;
-pub const CMD_FLAG_MOVABLE_KEYS: u64 = 1 << 25; /* populated by populateCommandMovableKeys */
-pub const CMD_FLAG_ALLOW_BUSY: u64 = 1 << 26;
-pub const CMD_FLAG_MODULE_GETCHANNELS: u64 = 1 << 27;
+pub const CMD_WRITE: u64 = 1 << 0;
+pub const CMD_READONLY: u64 = 1 << 1;
+pub const CMD_DENYOOM: u64 = 1 << 2;
+pub const CMD_MODULE: u64 = 1 << 3; /* Command exported by module. */
+pub const CMD_ADMIN: u64 = 1 << 4;
+pub const CMD_PUBSUB: u64 = 1 << 5;
+pub const CMD_NOSCRIPT: u64 = 1 << 6;
+pub const CMD_BLOCKING: u64 = 1 << 8; /* Has potential to block. */
+pub const CMD_LOADING: u64 = 1 << 9;
+pub const CMD_STALE: u64 = 1 << 10;
+pub const CMD_SKIP_MONITOR: u64 = 1 << 11;
+pub const CMD_SKIP_SLOWLOG: u64 = 1 << 12;
+pub const CMD_ASKING: u64 = 1 << 13;
+pub const CMD_FAST: u64 = 1 << 14;
+pub const CMD_NO_AUTH: u64 = 1 << 15;
+pub const CMD_MAY_REPLICATE: u64 = 1 << 16;
+pub const CMD_SENTINEL: u64 = 1 << 17;
+pub const CMD_ONLY_SENTINEL: u64 = 1 << 18;
+pub const CMD_NO_MANDATORY_KEYS: u64 = 1 << 19;
+pub const CMD_PROTECTED: u64 = 1 << 20;
+pub const CMD_MODULE_GETKEYS: u64 = 1 << 21; /* Use the modules getkeys interface. */
+pub const CMD_MODULE_NO_CLUSTER: u64 = 1 << 22; /* Deny on Redis Cluster. */
+pub const CMD_NO_ASYNC_LOADING: u64 = 1 << 23;
+pub const CMD_NO_MULTI: u64 = 1 << 24;
+pub const CMD_MOVABLE_KEYS: u64 = 1 << 25; /* populated by populateCommandMovableKeys */
+pub const CMD_ALLOW_BUSY: u64 = 1 << 26;
+pub const CMD_MODULE_GETCHANNELS: u64 = 1 << 27;
 
 pub fn cmd_flag_name(flag: u64) -> Vec<String> {
     let flags = [
-        (CMD_FLAG_WRITE, "write"),
-        (CMD_FLAG_READONLY, "readonly"),
-        (CMD_FLAG_DENYOOM, "denyoom"),
-        (CMD_FLAG_MODULE, "module"),
-        (CMD_FLAG_ADMIN, "admin"),
-        (CMD_FLAG_PUBSUB, "pubsub"),
-        (CMD_FLAG_NOSCRIPT, "noscript"),
-        (CMD_FLAG_BLOCKING, "blocking"),
-        (CMD_FLAG_LOADING, "loading"),
-        (CMD_FLAG_STALE, "stale"),
-        (CMD_FLAG_SKIP_MONITOR, "skip_monitor"),
-        (CMD_FLAG_SKIP_SLOWLOG, "skip_slowlog"),
-        (CMD_FLAG_ASKING, "asking"),
-        (CMD_FLAG_FAST, "fast"),
-        (CMD_FLAG_NO_AUTH, "no_auth"),
-        (CMD_FLAG_MAY_REPLICATE, "may_replicate"),
-        (CMD_FLAG_NO_MANDATORY_KEYS, "no_mandatory_keys"),
-        (CMD_FLAG_NO_ASYNC_LOADING, "no_async_loading"),
-        (CMD_FLAG_NO_MULTI, "no_multi"),
-        (CMD_FLAG_MOVABLE_KEYS, "movablekeys"),
-        (CMD_FLAG_ALLOW_BUSY, "allow_busy"),
+        (CMD_WRITE, "write"),
+        (CMD_READONLY, "readonly"),
+        (CMD_DENYOOM, "denyoom"),
+        (CMD_MODULE, "module"),
+        (CMD_ADMIN, "admin"),
+        (CMD_PUBSUB, "pubsub"),
+        (CMD_NOSCRIPT, "noscript"),
+        (CMD_BLOCKING, "blocking"),
+        (CMD_LOADING, "loading"),
+        (CMD_STALE, "stale"),
+        (CMD_SKIP_MONITOR, "skip_monitor"),
+        (CMD_SKIP_SLOWLOG, "skip_slowlog"),
+        (CMD_ASKING, "asking"),
+        (CMD_FAST, "fast"),
+        (CMD_NO_AUTH, "no_auth"),
+        (CMD_MAY_REPLICATE, "may_replicate"),
+        (CMD_NO_MANDATORY_KEYS, "no_mandatory_keys"),
+        (CMD_NO_ASYNC_LOADING, "no_async_loading"),
+        (CMD_NO_MULTI, "no_multi"),
+        (CMD_MOVABLE_KEYS, "movablekeys"),
+        (CMD_ALLOW_BUSY, "allow_busy"),
     ];
     flags
         .into_iter()
@@ -236,33 +243,32 @@ pub fn cmd_flag_name(flag: u64) -> Vec<String> {
 
 // Key Spec FLags.
 // TODO: add comments
-pub const CMD_KEY_SPEC_FLAG_RO: u64 = 1 << 0;
-pub const CMD_KEY_SPEC_FLAG_RW: u64 = 1 << 1;
-pub const CMD_KEY_SPEC_FLAG_OW: u64 = 1 << 2;
-pub const CMD_KEY_SPEC_FLAG_RM: u64 = 1 << 3;
-pub const CMD_KEY_SPEC_FLAG_ACCESS: u64 = 1 << 4;
-pub const CMD_KEY_SPEC_FLAG_UPDATE: u64 = 1 << 5;
-pub const CMD_KEY_SPEC_FLAG_INSERT: u64 = 1 << 6;
-pub const CMD_KEY_SPEC_FLAG_DELETE: u64 = 1 << 7;
-pub const CMD_KEY_SPEC_FLAG_NOT_KEY: u64 = 1 << 8;
-pub const CMD_KEY_SPEC_FLAG_INCOMPLETE: u64 = 1 << 9;
-pub const CMD_KEY_SPEC_FLAG_VARIABLE_FLAGS: u64 = 1 << 10;
-pub const CMD_KEY_SPEC_FLAG_FULL_ACCESS: u64 =
-    CMD_KEY_SPEC_FLAG_RW | CMD_KEY_SPEC_FLAG_ACCESS | CMD_KEY_SPEC_FLAG_UPDATE;
+pub const CMD_KEY_RO: u64 = 1 << 0;
+pub const CMD_KEY_RW: u64 = 1 << 1;
+pub const CMD_KEY_OW: u64 = 1 << 2;
+pub const CMD_KEY_RM: u64 = 1 << 3;
+pub const CMD_KEY_ACCESS: u64 = 1 << 4;
+pub const CMD_KEY_UPDATE: u64 = 1 << 5;
+pub const CMD_KEY_INSERT: u64 = 1 << 6;
+pub const CMD_KEY_DELETE: u64 = 1 << 7;
+pub const CMD_KEY_NOT_KEY: u64 = 1 << 8;
+pub const CMD_KEY_INCOMPLETE: u64 = 1 << 9;
+pub const CMD_KEY_VARIABLE_FLAGS: u64 = 1 << 10;
+pub const CMD_KEY_FULL_ACCESS: u64 = CMD_KEY_RW | CMD_KEY_ACCESS | CMD_KEY_UPDATE;
 
 pub fn keyspec_flag_name(flag: u64) -> Vec<String> {
     let flags = [
-        (CMD_KEY_SPEC_FLAG_RO, "RO"),
-        (CMD_KEY_SPEC_FLAG_RW, "RW"),
-        (CMD_KEY_SPEC_FLAG_OW, "OW"),
-        (CMD_KEY_SPEC_FLAG_RM, "RM"),
-        (CMD_KEY_SPEC_FLAG_ACCESS, "access"),
-        (CMD_KEY_SPEC_FLAG_UPDATE, "update"),
-        (CMD_KEY_SPEC_FLAG_INSERT, "insert"),
-        (CMD_KEY_SPEC_FLAG_DELETE, "delete"),
-        (CMD_KEY_SPEC_FLAG_NOT_KEY, "not_key"),
-        (CMD_KEY_SPEC_FLAG_INCOMPLETE, "incomplete"),
-        (CMD_KEY_SPEC_FLAG_VARIABLE_FLAGS, "variable_flags"),
+        (CMD_KEY_RO, "RO"),
+        (CMD_KEY_RW, "RW"),
+        (CMD_KEY_OW, "OW"),
+        (CMD_KEY_RM, "RM"),
+        (CMD_KEY_ACCESS, "access"),
+        (CMD_KEY_UPDATE, "update"),
+        (CMD_KEY_INSERT, "insert"),
+        (CMD_KEY_DELETE, "delete"),
+        (CMD_KEY_NOT_KEY, "not_key"),
+        (CMD_KEY_INCOMPLETE, "incomplete"),
+        (CMD_KEY_VARIABLE_FLAGS, "variable_flags"),
     ];
     flags
         .into_iter()
@@ -270,3 +276,31 @@ pub fn keyspec_flag_name(flag: u64) -> Vec<String> {
         .map(|f| f.1.to_owned())
         .collect()
 }
+
+// Doc Flags.
+pub const CMD_DOC_NONE: u64 = 0;
+pub const CMD_DOC_DEPRECATED: u64 = 1 << 0; /* Command is deprecated */
+pub const CMD_DOC_SYSCMD: u64 = 1 << 1; /* System (internal) command */
+
+// ACL Flags.
+pub const ACL_CATEGORY_KEYSPACE: u64 = 1 << 0;
+pub const ACL_CATEGORY_READ: u64 = 1 << 1;
+pub const ACL_CATEGORY_WRITE: u64 = 1 << 2;
+pub const ACL_CATEGORY_SET: u64 = 1 << 3;
+pub const ACL_CATEGORY_SORTEDSET: u64 = 1 << 4;
+pub const ACL_CATEGORY_LIST: u64 = 1 << 5;
+pub const ACL_CATEGORY_HASH: u64 = 1 << 6;
+pub const ACL_CATEGORY_STRING: u64 = 1 << 7;
+pub const ACL_CATEGORY_BITMAP: u64 = 1 << 8;
+pub const ACL_CATEGORY_HYPERLOGLOG: u64 = 1 << 9;
+pub const ACL_CATEGORY_GEO: u64 = 1 << 10;
+pub const ACL_CATEGORY_STREAM: u64 = 1 << 11;
+pub const ACL_CATEGORY_PUBSUB: u64 = 1 << 12;
+pub const ACL_CATEGORY_ADMIN: u64 = 1 << 13;
+pub const ACL_CATEGORY_FAST: u64 = 1 << 14;
+pub const ACL_CATEGORY_SLOW: u64 = 1 << 15;
+pub const ACL_CATEGORY_BLOCKING: u64 = 1 << 16;
+pub const ACL_CATEGORY_DANGEROUS: u64 = 1 << 17;
+pub const ACL_CATEGORY_CONNECTION: u64 = 1 << 18;
+pub const ACL_CATEGORY_TRANSACTION: u64 = 1 << 19;
+pub const ACL_CATEGORY_SCRIPTING: u64 = 1 << 20;
