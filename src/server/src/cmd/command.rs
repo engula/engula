@@ -86,7 +86,7 @@ fn cmd_to_frame(desc: &CommandDesc) -> Frame {
     let last_key = 0;
     let key_step = 0;
     let cmd_frames = vec![
-        Frame::Bulk(desc.fullname.to_owned().into()),
+        Frame::Bulk(desc.name.to_owned().into()),
         Frame::Integer(desc.arity),
         Frame::Array(
             cmd_flag_name(desc.flags)
@@ -152,6 +152,9 @@ fn keyspec_to_frame(spec: &KeySpec) -> Frame {
                 Frame::Integer(start_from.to_owned()),
             ]));
         }
+        BeginSearch::Unknown => {
+            frames.push(Frame::Bulk("unknown".into()));
+        }
     };
     frames.push(Frame::Bulk("find_keys".into()));
     frames.push(Frame::Bulk("type".into()));
@@ -187,6 +190,9 @@ fn keyspec_to_frame(spec: &KeySpec) -> Frame {
                 Frame::Bulk("keystep".into()),
                 Frame::Integer(key_step.to_owned()),
             ]));
+        }
+        FindKeys::Unknown => {
+            frames.push(Frame::Bulk("unknown".into()));
         }
     }
     Frame::Array(frames)
