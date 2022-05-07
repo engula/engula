@@ -62,7 +62,7 @@ impl CommandDescs {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait CommandAction {
     async fn apply(&self, db: &Db) -> crate::Result<Frame>;
     fn get_name(&self) -> &str;

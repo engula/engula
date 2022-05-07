@@ -292,6 +292,16 @@ impl KeySpace {
         }
     }
 
+    pub fn select_random_object(&mut self) -> Option<RawObject> {
+        let mut raw_objects = self.objects.random_objects(10);
+        raw_objects.sort_unstable_by(compare_raw_objects);
+        if !raw_objects.is_empty() {
+            Some(raw_objects[0])
+        } else {
+            None
+        }
+    }
+
     #[inline]
     pub fn stats(&self) -> DbStats {
         self.stats.clone()
@@ -329,6 +339,10 @@ where
 
 fn equivalent_key(k: &[u8]) -> impl Fn(&ObjectEntry) -> bool + '_ {
     move |x| k.eq(x.raw_object.key())
+}
+
+fn compare_raw_objects(lhs: &RawObject, rhs: &RawObject) -> std::cmp::Ordering {
+    lhs.object_meta().lru().cmp(&rhs.object_meta().lru())
 }
 
 #[cfg(test)]

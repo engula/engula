@@ -81,25 +81,19 @@ impl ObjectMeta {
     pub fn object_type(&self) -> u16 {
         self.meta.user_defined_tag()
     }
+}
 
-    #[inline]
-    pub fn key_len(&self) -> usize {
-        self.meta.key_len() as usize
+impl Deref for ObjectMeta {
+    type Target = RecordMeta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.meta
     }
+}
 
-    #[inline]
-    pub fn set_tombstone(&mut self) {
-        self.meta.set_tombstone();
-    }
-
-    #[inline]
-    pub fn lru(&self) -> u32 {
-        self.meta.lru()
-    }
-
-    #[inline]
-    pub fn set_lru(&mut self, lru: u32) {
-        self.meta.set_lru(lru)
+impl DerefMut for ObjectMeta {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.meta
     }
 }
 
@@ -212,19 +206,12 @@ impl RawObject {
         RawObject { ptr }
     }
 
-    /// # Safety
-    ///
-    /// TODO(walter)
     pub fn object_meta(&self) -> &ObjectMeta {
         unsafe { self.ptr.as_ref() }
     }
 
-    /// # Safety
-    ///
-    /// TODO(walter)
-    #[allow(dead_code)]
-    pub unsafe fn object_meta_mut(&mut self) -> &mut ObjectMeta {
-        self.ptr.as_mut()
+    pub fn object_meta_mut(&mut self) -> &mut ObjectMeta {
+        unsafe { self.ptr.as_mut() }
     }
 
     /// # Safety

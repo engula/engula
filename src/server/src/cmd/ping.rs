@@ -71,7 +71,7 @@ pub(crate) fn parse_frames(
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Ping {
     /// Apply the `Ping` command and return the message.
     ///

@@ -33,7 +33,7 @@ impl Unknown {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Unknown {
     /// Responds to the client, indicating the command is not recognized.
     ///

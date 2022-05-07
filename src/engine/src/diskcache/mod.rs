@@ -21,10 +21,10 @@ mod table;
 use table::HashTable;
 
 pub struct DiskOptions {
-    mem_capacity: usize,
-    disk_capacity: usize,
-    file_size: usize,
-    write_buffer_size: usize,
+    pub mem_capacity: usize,
+    pub disk_capacity: usize,
+    pub file_size: usize,
+    pub write_buffer_size: usize,
 }
 
 pub struct DiskCache {

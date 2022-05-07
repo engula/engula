@@ -58,11 +58,11 @@ pub(crate) fn parse_frames(
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Info {
     /// Apply the `INFO` command and return the message.
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
-        let db_stats = db.stats();
+        let db_stats = db.stats().await;
         let content = format!(
             r#"# Stats
 evicted_keys:{evicted_keys}

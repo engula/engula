@@ -177,7 +177,7 @@ impl Set {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Set {
     /// Apply the `Set` command to the specified `Db` instance.
     ///
@@ -190,7 +190,8 @@ impl CommandAction for Set {
         if self.flags.contains(Flags::SET_EXPIRE) {
             object.meta.set_deadline(self.expire);
         }
-        let response = match db.get(self.key.as_ref()) {
+
+        let response = match db.get(self.key.as_ref()).await {
             Some(raw_object) if !self.flags.contains(Flags::SET_NX) => {
                 if self.flags.contains(Flags::SET_KEEP_TTL) {
                     object
@@ -207,17 +208,17 @@ impl CommandAction for Set {
                             let data = old_string.data_slice();
                             let mut bytes = BytesMut::with_capacity(data.len());
                             bytes.put_slice(data);
-                            db.insert(object);
+                            db.insert(object).await;
                             Frame::Bulk(bytes.into())
                         }
                     }
                 } else {
-                    db.insert(object);
+                    db.insert(object).await;
                     Frame::Simple("OK".into())
                 }
             }
             None if !self.flags.contains(Flags::SET_XX) => {
-                db.insert(object);
+                db.insert(object).await;
                 if self.flags.contains(Flags::SET_GET) {
                     Frame::Null
                 } else {

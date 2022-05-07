@@ -15,4 +15,6 @@ hashbrown = { git = "https://github.com/w41ter/hashbrown.git", features = [
   "raw",
 ] }
 rand = "0.8.5"
+tracing = "0.1"
 monoio = "0.0.4"
+tokio = { version = "1.17.0", features = ["io-util", "sync"] }

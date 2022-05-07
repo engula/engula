@@ -15,8 +15,8 @@
 #![feature(ptr_as_uninit)]
 #![allow(clippy::missing_safety_doc)]
 
+pub mod alloc;
 mod db;
-#[allow(dead_code)]
 mod diskcache;
 pub mod elements;
 mod key_space;
@@ -26,3 +26,4 @@ pub mod stats;
 pub mod time;
 
 pub use db::Db;
+pub use diskcache::{DiskCache, DiskOptions};
