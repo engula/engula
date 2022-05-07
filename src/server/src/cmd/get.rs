@@ -16,7 +16,8 @@ use bytes::Bytes;
 use engula_engine::objects::string::RawString;
 use tracing::debug;
 
-use crate::{Db, Frame, Parse};
+use super::*;
+use crate::{async_trait, Db, Frame, Parse};
 
 /// Get the value of key.
 ///
@@ -34,49 +35,50 @@ impl Get {
     pub fn new(key: Bytes) -> Get {
         Get { key }
     }
+}
 
-    /// Get the key
-    pub fn key(&self) -> &[u8] {
-        &self.key
+/// Parse a `Get` instance from a received frame.
+///
+/// The `Parse` argument provides a cursor-like API to read fields from the
+/// `Frame`. At this point, the entire frame has already been received from
+/// the socket.
+///
+/// The `GET` string has already been consumed.
+///
+/// # Returns
+///
+/// Returns the `Get` value on success. If the frame is malformed, `Err` is
+/// returned.
+///
+/// # Format
+///
+/// Expects an array frame containing two entries.
+///
+/// ```text
+/// GET key
+/// ```
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
+    // The `GET` string has already been consumed. The next value is the
+    // name of the key to get. If the next value is not a string or the
+    // input is fully consumed, then an error is returned.
+    let key = parse.next_bytes()?;
+
+    match parse.finish() {
+        Ok(()) => Ok(Box::new(Get { key })),
+        Err(_) => Err("wrong number of arguments for 'get' command".into()),
     }
+}
 
-    /// Parse a `Get` instance from a received frame.
-    ///
-    /// The `Parse` argument provides a cursor-like API to read fields from the
-    /// `Frame`. At this point, the entire frame has already been received from
-    /// the socket.
-    ///
-    /// The `GET` string has already been consumed.
-    ///
-    /// # Returns
-    ///
-    /// Returns the `Get` value on success. If the frame is malformed, `Err` is
-    /// returned.
-    ///
-    /// # Format
-    ///
-    /// Expects an array frame containing two entries.
-    ///
-    /// ```text
-    /// GET key
-    /// ```
-    pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Get> {
-        // The `GET` string has already been consumed. The next value is the
-        // name of the key to get. If the next value is not a string or the
-        // input is fully consumed, then an error is returned.
-        let key = parse.next_bytes()?;
-
-        match parse.finish() {
-            Ok(()) => Ok(Get { key }),
-            Err(_) => Err("wrong number of arguments for 'get' command".into()),
-        }
-    }
-
+#[async_trait]
+impl CommandAction for Get {
     /// Apply the `Get` command to the specified `Db` instance.
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
+    async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
         let response = if let Some(object_ref) = db.get(&self.key) {
             if let Some(value) = object_ref.data::<RawString>() {
@@ -96,14 +98,7 @@ impl Get {
         Ok(response)
     }
 
-    /// Converts the command into an equivalent `Frame`.
-    ///
-    /// This is called by the client when encoding a `Get` command to send to
-    /// the server.
-    pub(crate) fn into_frame(self) -> Frame {
-        let mut frame = Frame::array();
-        frame.push_bulk(Bytes::from("get".as_bytes()));
-        frame.push_bulk(self.key);
-        frame
+    fn get_name(&self) -> &str {
+        "get"
     }
 }

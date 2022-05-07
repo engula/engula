@@ -30,102 +30,10 @@ pub use info::Info;
 mod unknown;
 pub use unknown::Unknown;
 
-use crate::{connection::Connection, Db, Frame, Parse, ParseError, Result};
+mod command;
 
-/// Enumeration of supported Redis commands.
-///
-/// Methods called on `Command` are delegated to the command implementation.
-#[derive(Debug)]
-pub enum Command {
-    Get(Get),
-    Set(Set),
-    Del(Del),
-    Ping(Ping),
-    Info(Info),
-    Unknown(Unknown),
-}
+mod cmd_des;
+pub use cmd_des::*;
 
-impl Command {
-    /// Parse a command from a received frame.
-    ///
-    /// The `Frame` must represent a Redis command supported by `mini-redis` and
-    /// be the array variant.
-    ///
-    /// # Returns
-    ///
-    /// On success, the command value is returned, otherwise, `Err` is returned.
-    pub fn from_frame(frame: Frame) -> crate::Result<Command> {
-        // The frame  value is decorated with `Parse`. `Parse` provides a
-        // "cursor" like API which makes parsing the command easier.
-        //
-        // The frame value must be an array variant. Any other frame variants
-        // result in an error being returned.
-        let mut parse = Parse::new(frame)?;
-
-        // All redis commands begin with the command name as a string. The name
-        // is read and converted to lower cases in order to do case sensitive
-        // matching.
-        let mut command_name = parse.next_string()?;
-        command_name.make_ascii_lowercase();
-
-        // Match the command name, delegating the rest of the parsing to the
-        // specific command.
-        let command = match &command_name[..] {
-            "get" => Command::Get(Get::parse_frames(&mut parse)?),
-            "set" => Command::Set(Set::parse_frames(&mut parse)?),
-            "del" => Command::Del(Del::parse_frames(&mut parse)?),
-            "ping" => Command::Ping(Ping::parse_frames(&mut parse)?),
-            "info" => Command::Info(Info::parse_frames(&mut parse)?),
-            _ => {
-                // The command is not recognized and an Unknown command is
-                // returned.
-                //
-                // `return` is called here to skip the `finish()` call below. As
-                // the command is not recognized, there is most likely
-                // unconsumed fields remaining in the `Parse` instance.
-                return Ok(Command::Unknown(Unknown::new(command_name)));
-            }
-        };
-
-        // Check if there is any remaining unconsumed fields in the `Parse`
-        // value. If fields remain, this indicates an unexpected frame format
-        // and an error is returned.
-        parse.finish()?;
-
-        // The command has been successfully parsed
-        Ok(command)
-    }
-
-    /// Apply the command to the specified `Db` instance.
-    ///
-    /// The response is written to `dst`. This is called by the server in order
-    /// to execute a received command.
-    pub async fn apply(self, db: &Db, dst: &mut Connection) -> Result<()> {
-        use Command::*;
-
-        let respose = match self {
-            Get(cmd) => cmd.apply(db),
-            Set(cmd) => cmd.apply(db),
-            Del(cmd) => cmd.apply(db),
-            Ping(cmd) => cmd.apply(),
-            Info(cmd) => cmd.apply(db),
-            Unknown(cmd) => cmd.apply(),
-        }?;
-
-        dst.write_frame(&respose).await?;
-
-        Ok(())
-    }
-
-    /// Returns the command name
-    pub(crate) fn get_name(&self) -> &str {
-        match self {
-            Command::Get(_) => "get",
-            Command::Set(_) => "set",
-            Command::Del(_) => "del",
-            Command::Ping(_) => "ping",
-            Command::Info(_) => "info",
-            Command::Unknown(cmd) => cmd.get_name(),
-        }
-    }
-}
+mod cmd_tables;
+pub use cmd_tables::all_cmd_tables;

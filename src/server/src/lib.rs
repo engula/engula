@@ -45,6 +45,7 @@ use connection::Connection;
 mod server;
 mod shutdown;
 
+pub use async_trait::async_trait;
 use monoio::net::TcpListener;
 
 pub fn run(config: Config) -> Result<()> {

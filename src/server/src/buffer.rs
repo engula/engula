@@ -36,7 +36,7 @@ impl ReadBuf {
     /// data, the frame is returned and the data removed from the buffer. If not
     /// enough data has been buffered yet, `Ok(None)` is returned. If the
     /// buffered data does not represent a valid frame, `Err` is returned.
-    pub fn parse_frame(&mut self) -> Option<Frame> {
+    pub fn parse_frame(&mut self) -> Option<(Frame, usize)> {
         use FrameError::Incomplete;
 
         // Cursor is used to track the "current" location in the
@@ -144,7 +144,7 @@ impl WriteBuf {
                 self.buf.put_slice(b"*");
 
                 // Encode the length of the array.
-                self.write_decimal(val.len() as u64);
+                self.write_decimal(val.len() as i64);
 
                 // Iterate and encode each entry in the array.
                 for entry in &**val {
@@ -180,7 +180,7 @@ impl WriteBuf {
                 let len = val.len();
 
                 self.buf.put_slice(b"$");
-                self.write_decimal(len as u64);
+                self.write_decimal(len as i64);
                 self.buf.put_slice(val);
                 self.buf.put_slice(b"\r\n");
             }
@@ -193,7 +193,7 @@ impl WriteBuf {
     }
 
     /// Write a decimal frame to the stream
-    pub fn write_decimal(&mut self, val: u64) {
+    pub fn write_decimal(&mut self, val: i64) {
         use std::io::Write;
 
         // Convert the value to a string

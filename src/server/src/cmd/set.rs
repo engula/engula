@@ -21,10 +21,8 @@ use engula_engine::{
 };
 use tracing::debug;
 
-use crate::{
-    cmd::{Parse, ParseError},
-    Db, Frame,
-};
+use super::*;
+use crate::{async_trait, parse::Parse, Db, Frame};
 
 bitflags! {
     pub struct Flags: u32 {
@@ -68,6 +66,105 @@ pub struct Set {
     flags: Flags,
 }
 
+/// Parse a `Set` instance from a received frame.
+///
+/// The `Parse` argument provides a cursor-like API to read fields from the
+/// `Frame`. At this point, the entire frame has already been received from
+/// the socket.
+///
+/// The `SET` string has already been consumed.
+///
+/// # Returns
+///
+/// Returns the `Set` value on success. If the frame is malformed, `Err` is
+/// returned.
+///
+/// # Format
+///
+/// Expects an array frame containing at least 3 entries.
+///
+/// ```text
+/// SET key value [EX seconds|PX milliseconds]
+/// ```
+pub(crate) fn parse_frames(
+    _: &CommandDescs,
+    parse: &mut Parse,
+) -> crate::Result<Box<dyn CommandAction>> {
+    use crate::ParseError::EndOfStream;
+
+    // Read the key to set. This is a required field
+    let key = parse.next_bytes()?;
+
+    // Read the value to set. This is a required field.
+    let value = parse.next_bytes()?;
+
+    let mut expire = 0;
+    let mut flags = Flags::NONE;
+
+    loop {
+        match parse.next_string() {
+            Ok(s) => match s.to_uppercase().as_str() {
+                "NX" if !flags.intersects(Flags::SET_GET | Flags::SET_XX) => {
+                    flags |= Flags::SET_NX;
+                }
+                "XX" if !flags.intersects(Flags::SET_NX) => {
+                    flags |= Flags::SET_XX;
+                }
+                "GET" if !flags.intersects(Flags::SET_NX) => {
+                    flags |= Flags::SET_GET;
+                }
+                "KEEPTTL" if !flags.intersects(Flags::SET_EXPIRE) => {
+                    flags |= Flags::SET_KEEP_TTL;
+                }
+                "EX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                    // An expiration is specified in seconds. The next value is an
+                    // integer.
+                    let secs = parse.next_int()?;
+                    expire = unix_timestamp_millis() + secs * 1000;
+                    flags |= Flags::SET_EXPIRE;
+                }
+                "PX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                    // An expiration is specified in milliseconds. The next value is
+                    // an integer.
+                    let ms = parse.next_int()?;
+                    expire = unix_timestamp_millis() + ms;
+                    flags |= Flags::SET_EXPIRE;
+                }
+                "EXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                    // An expiration is specified in seconds. The next value is an
+                    // integer.
+                    let secs = parse.next_int()?;
+                    expire = secs * 1000;
+                    flags |= Flags::SET_EXPIRE;
+                }
+                "PXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                    // An expiration is specified in milliseconds. The next value is
+                    // an integer.
+                    expire = parse.next_int()?;
+                    flags |= Flags::SET_EXPIRE;
+                }
+                _ => {
+                    return Err("syntax error".into());
+                }
+            },
+            // The `EndOfStream` error indicates there is no further data to
+            // parse. In this case, it is a normal run time situation and
+            // indicates there are no specified `SET` options.
+            Err(EndOfStream) => break,
+            // All other errors are bubbled up, resulting in the connection
+            // being terminated.
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Ok(Box::new(Set {
+        key,
+        value,
+        expire,
+        flags,
+    }))
+}
+
 impl Set {
     /// Create a new `Set` command which sets `key` to `value`.
     pub fn new(key: Bytes, value: Bytes) -> Set {
@@ -78,123 +175,15 @@ impl Set {
             flags: Flags::NONE,
         }
     }
+}
 
-    /// Get the key
-    pub fn key(&self) -> &[u8] {
-        &self.key
-    }
-
-    /// Get the value
-    pub fn value(&self) -> &Bytes {
-        &self.value
-    }
-
-    /// Get the expire
-    pub fn expire(&self) -> u64 {
-        self.expire
-    }
-
-    /// Parse a `Set` instance from a received frame.
-    ///
-    /// The `Parse` argument provides a cursor-like API to read fields from the
-    /// `Frame`. At this point, the entire frame has already been received from
-    /// the socket.
-    ///
-    /// The `SET` string has already been consumed.
-    ///
-    /// # Returns
-    ///
-    /// Returns the `Set` value on success. If the frame is malformed, `Err` is
-    /// returned.
-    ///
-    /// # Format
-    ///
-    /// Expects an array frame containing at least 3 entries.
-    ///
-    /// ```text
-    /// SET key value [EX seconds|PX milliseconds]
-    /// ```
-    pub(crate) fn parse_frames(parse: &mut Parse) -> crate::Result<Set> {
-        use ParseError::EndOfStream;
-
-        // Read the key to set. This is a required field
-        let key = parse.next_bytes()?;
-
-        // Read the value to set. This is a required field.
-        let value = parse.next_bytes()?;
-
-        let mut expire = 0;
-        let mut flags = Flags::NONE;
-
-        loop {
-            match parse.next_string() {
-                Ok(s) => match s.to_uppercase().as_str() {
-                    "NX" if !flags.intersects(Flags::SET_GET | Flags::SET_XX) => {
-                        flags |= Flags::SET_NX;
-                    }
-                    "XX" if !flags.intersects(Flags::SET_NX) => {
-                        flags |= Flags::SET_XX;
-                    }
-                    "GET" if !flags.intersects(Flags::SET_NX) => {
-                        flags |= Flags::SET_GET;
-                    }
-                    "KEEPTTL" if !flags.intersects(Flags::SET_EXPIRE) => {
-                        flags |= Flags::SET_KEEP_TTL;
-                    }
-                    "EX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
-                        // An expiration is specified in seconds. The next value is an
-                        // integer.
-                        let secs = parse.next_int()?;
-                        expire = unix_timestamp_millis() + secs * 1000;
-                        flags |= Flags::SET_EXPIRE;
-                    }
-                    "PX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
-                        // An expiration is specified in milliseconds. The next value is
-                        // an integer.
-                        let ms = parse.next_int()?;
-                        expire = unix_timestamp_millis() + ms;
-                        flags |= Flags::SET_EXPIRE;
-                    }
-                    "EXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
-                        // An expiration is specified in seconds. The next value is an
-                        // integer.
-                        let secs = parse.next_int()?;
-                        expire = secs * 1000;
-                        flags |= Flags::SET_EXPIRE;
-                    }
-                    "PXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
-                        // An expiration is specified in milliseconds. The next value is
-                        // an integer.
-                        expire = parse.next_int()?;
-                        flags |= Flags::SET_EXPIRE;
-                    }
-                    _ => {
-                        return Err("syntax error".into());
-                    }
-                },
-                // The `EndOfStream` error indicates there is no further data to
-                // parse. In this case, it is a normal run time situation and
-                // indicates there are no specified `SET` options.
-                Err(EndOfStream) => break,
-                // All other errors are bubbled up, resulting in the connection
-                // being terminated.
-                Err(err) => return Err(err.into()),
-            }
-        }
-
-        Ok(Set {
-            key,
-            value,
-            expire,
-            flags,
-        })
-    }
-
+#[async_trait]
+impl CommandAction for Set {
     /// Apply the `Set` command to the specified `Db` instance.
     ///
     /// The response is written to `dst`. This is called by the server in order
     /// to execute a received command.
-    pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
+    async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Set the value in the shared database state.
         let value = BoxElement::<Array>::from_slice(self.value.as_ref());
         let mut object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), value);
@@ -243,25 +232,7 @@ impl Set {
         Ok(response)
     }
 
-    /// Converts the command into an equivalent `Frame`.
-    ///
-    /// This is called by the client when encoding a `Set` command to send to
-    /// the server.
-    pub(crate) fn into_frame(self) -> Frame {
-        let mut frame = Frame::array();
-        frame.push_bulk(Bytes::from("set".as_bytes()));
-        frame.push_bulk(self.key);
-        frame.push_bulk(self.value);
-        if self.flags.contains(Flags::SET_EXPIRE) {
-            // Expirations in Redis protocol can be specified in two ways
-            // 1. SET key value EX seconds
-            // 2. SET key value PX milliseconds
-            // We the second option because it allows greater precision and
-            // src/bin/cli.rs parses the expiration argument as milliseconds
-            // in duration_from_ms_str()
-            frame.push_bulk(Bytes::from("pxat".as_bytes()));
-            frame.push_int(self.expire);
-        }
-        frame
+    fn get_name(&self) -> &str {
+        "set"
     }
 }
