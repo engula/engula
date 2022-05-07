@@ -17,15 +17,8 @@ use std::sync::{Arc, Mutex};
 use crate::{
     key_space::KeySpace,
     objects::{BoxObject, ObjectLayout, RawObject},
+    stats::DbStats,
 };
-
-#[derive(Default, Clone, Debug)]
-pub struct DbStats {
-    pub num_keys: usize,
-    pub evicted_keys: usize,
-    pub keyspace_hits: usize,
-    pub keyspace_misses: usize,
-}
 
 #[derive(Default, Clone)]
 pub struct Db {
@@ -39,7 +32,6 @@ unsafe impl Sync for Db {}
 #[derive(Default)]
 struct DbState {
     lru: u32,
-    stats: DbStats,
     key_space: KeySpace,
 }
 
@@ -54,13 +46,9 @@ impl Db {
                         object_meta.set_lru(state.lru);
                     }
                 };
-                state.stats.keyspace_hits += 1;
                 Some(raw_object)
             }
-            None => {
-                state.stats.keyspace_misses += 1;
-                None
-            }
+            None => None,
         }
     }
 
@@ -70,55 +58,34 @@ impl Db {
     {
         let mut state = self.state.lock().unwrap();
 
-        let key = object.key();
         object.meta.set_lru(state.lru);
-        if let Some(raw_object) = state.key_space.insert(key, BoxObject::leak(object)) {
-            raw_object.drop_in_place();
-        } else {
-            state.stats.num_keys += 1;
-        }
+        state.key_space.insert(object);
     }
 
     pub fn remove(&self, key: &[u8]) {
         let mut state = self.state.lock().unwrap();
-        if let Some(raw_object) = state.key_space.remove(key) {
-            raw_object.drop_in_place();
-            state.stats.num_keys = state.stats.num_keys.saturating_sub(1);
-        }
+        state.key_space.remove(key);
     }
 
     pub fn delete_keys<'a, K: IntoIterator<Item = &'a [u8]>>(&self, keys: K) -> u64 {
-        let objects = {
-            let mut state = self.state.lock().unwrap();
-            let objects = keys
-                .into_iter()
-                .filter_map(|key| state.key_space.remove(key))
-                .collect::<Vec<_>>();
-            state.stats.num_keys = state.stats.num_keys.saturating_sub(objects.len());
-            objects
-        };
-
-        let num_deleted = objects.len();
-        for object_ref in objects {
-            object_ref.drop_in_place();
+        let mut state = self.state.lock().unwrap();
+        let mut num_deleted = 0;
+        for key in keys {
+            if state.key_space.remove(key) {
+                num_deleted += 1;
+            }
         }
-        num_deleted as u64
+        num_deleted
+    }
+
+    pub fn on_tick(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.key_space.recycle_some_expired_keys();
+        state.key_space.try_resize_space();
     }
 
     pub fn stats(&self) -> DbStats {
-        self.state.lock().unwrap().stats.clone()
-    }
-}
-
-impl Drop for DbState {
-    fn drop(&mut self) {
-        if let Some(drain) = self.key_space.drain_next_space() {
-            for raw_object in drain {
-                raw_object.drop_in_place();
-            }
-        }
-        for raw_object in self.key_space.drain_current_space() {
-            raw_object.drop_in_place();
-        }
+        let state = self.state.lock().unwrap();
+        state.key_space.stats()
     }
 }

@@ -63,6 +63,11 @@ impl ObjectMeta {
     }
 
     #[inline]
+    pub fn has_deadline(&self) -> bool {
+        self.deadline > 0
+    }
+
+    #[inline]
     pub fn set_deadline(&mut self, val: u64) {
         self.deadline = val;
     }
@@ -210,8 +215,8 @@ impl RawObject {
     /// # Safety
     ///
     /// TODO(walter)
-    pub unsafe fn object_meta(&self) -> &ObjectMeta {
-        self.ptr.as_ref()
+    pub fn object_meta(&self) -> &ObjectMeta {
+        unsafe { self.ptr.as_ref() }
     }
 
     /// # Safety

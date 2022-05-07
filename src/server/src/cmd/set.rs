@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
-
-use bytes::Bytes;
+use bitflags::bitflags;
+use bytes::{BufMut, Bytes, BytesMut};
 use engula_engine::{
     elements::{array::Array, BoxElement},
     objects::{string::RawString, BoxObject},
+    time::unix_timestamp_millis,
 };
 use tracing::debug;
 
@@ -25,6 +25,22 @@ use crate::{
     cmd::{Parse, ParseError},
     Db, Frame,
 };
+
+bitflags! {
+    pub struct Flags: u32 {
+        const NONE = 0;
+        /// Only set the key if it does not already exists
+        const SET_NX = 0b0001;
+        /// Only set the key if it already exists
+        const SET_XX = 0b0010;
+        /// Whether return the old string stored at key
+        const SET_GET = 0b0100;
+        /// Retain the time to live associated with the key
+        const SET_KEEP_TTL = 0b1000;
+        /// With the specified expire time
+        const SET_EXPIRE = 0b10000;
+    }
+}
 
 /// Set `key` to hold the string `value`.
 ///
@@ -47,16 +63,20 @@ pub struct Set {
     value: Bytes,
 
     /// When to expire the key
-    expire: Option<Duration>,
+    expire: u64,
+
+    flags: Flags,
 }
 
 impl Set {
     /// Create a new `Set` command which sets `key` to `value`.
-    ///
-    /// If `expire` is `Some`, the value should expire after the specified
-    /// duration.
-    pub fn new(key: Bytes, value: Bytes, expire: Option<Duration>) -> Set {
-        Set { key, value, expire }
+    pub fn new(key: Bytes, value: Bytes) -> Set {
+        Set {
+            key,
+            value,
+            expire: 0,
+            flags: Flags::NONE,
+        }
     }
 
     /// Get the key
@@ -70,7 +90,7 @@ impl Set {
     }
 
     /// Get the expire
-    pub fn expire(&self) -> Option<Duration> {
+    pub fn expire(&self) -> u64 {
         self.expire
     }
 
@@ -103,38 +123,71 @@ impl Set {
         // Read the value to set. This is a required field.
         let value = parse.next_bytes()?;
 
-        // The expiration is optional. If nothing else follows, then it is
-        // `None`.
-        let mut expire = None;
+        let mut expire = 0;
+        let mut flags = Flags::NONE;
 
-        // Attempt to parse another string.
-        match parse.next_string() {
-            Ok(s) if s.to_uppercase() == "EX" => {
-                // An expiration is specified in seconds. The next value is an
-                // integer.
-                let secs = parse.next_int()?;
-                expire = Some(Duration::from_secs(secs));
+        loop {
+            match parse.next_string() {
+                Ok(s) => match s.to_uppercase().as_str() {
+                    "NX" if !flags.intersects(Flags::SET_GET | Flags::SET_XX) => {
+                        flags |= Flags::SET_NX;
+                    }
+                    "XX" if !flags.intersects(Flags::SET_NX) => {
+                        flags |= Flags::SET_XX;
+                    }
+                    "GET" if !flags.intersects(Flags::SET_NX) => {
+                        flags |= Flags::SET_GET;
+                    }
+                    "KEEPTTL" if !flags.intersects(Flags::SET_EXPIRE) => {
+                        flags |= Flags::SET_KEEP_TTL;
+                    }
+                    "EX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                        // An expiration is specified in seconds. The next value is an
+                        // integer.
+                        let secs = parse.next_int()?;
+                        expire = unix_timestamp_millis() + secs * 1000;
+                        flags |= Flags::SET_EXPIRE;
+                    }
+                    "PX" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                        // An expiration is specified in milliseconds. The next value is
+                        // an integer.
+                        let ms = parse.next_int()?;
+                        expire = unix_timestamp_millis() + ms;
+                        flags |= Flags::SET_EXPIRE;
+                    }
+                    "EXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                        // An expiration is specified in seconds. The next value is an
+                        // integer.
+                        let secs = parse.next_int()?;
+                        expire = secs * 1000;
+                        flags |= Flags::SET_EXPIRE;
+                    }
+                    "PXAT" if !flags.intersects(Flags::SET_EXPIRE | Flags::SET_KEEP_TTL) => {
+                        // An expiration is specified in milliseconds. The next value is
+                        // an integer.
+                        expire = parse.next_int()?;
+                        flags |= Flags::SET_EXPIRE;
+                    }
+                    _ => {
+                        return Err("syntax error".into());
+                    }
+                },
+                // The `EndOfStream` error indicates there is no further data to
+                // parse. In this case, it is a normal run time situation and
+                // indicates there are no specified `SET` options.
+                Err(EndOfStream) => break,
+                // All other errors are bubbled up, resulting in the connection
+                // being terminated.
+                Err(err) => return Err(err.into()),
             }
-            Ok(s) if s.to_uppercase() == "PX" => {
-                // An expiration is specified in milliseconds. The next value is
-                // an integer.
-                let ms = parse.next_int()?;
-                expire = Some(Duration::from_millis(ms));
-            }
-            // Currently, mini-redis does not support any of the other SET
-            // options. An error here results in the connection being
-            // terminated. Other connections will continue to operate normally.
-            Ok(_) => return Err("currently `SET` only supports the expiration option".into()),
-            // The `EndOfStream` error indicates there is no further data to
-            // parse. In this case, it is a normal run time situation and
-            // indicates there are no specified `SET` options.
-            Err(EndOfStream) => {}
-            // All other errors are bubbled up, resulting in the connection
-            // being terminated.
-            Err(err) => return Err(err.into()),
         }
 
-        Ok(Set { key, value, expire })
+        Ok(Set {
+            key,
+            value,
+            expire,
+            flags,
+        })
     }
 
     /// Apply the `Set` command to the specified `Db` instance.
@@ -144,11 +197,47 @@ impl Set {
     pub(crate) fn apply(self, db: &Db) -> crate::Result<Frame> {
         // Set the value in the shared database state.
         let value = BoxElement::<Array>::from_slice(self.value.as_ref());
-        let object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), value);
-        db.insert(object);
+        let mut object = BoxObject::<RawString>::with_key_value(self.key.as_ref(), value);
+        if self.flags.contains(Flags::SET_EXPIRE) {
+            object.meta.set_deadline(self.expire);
+        }
+        let response = match db.get(self.key.as_ref()) {
+            Some(raw_object) if !self.flags.contains(Flags::SET_NX) => {
+                if self.flags.contains(Flags::SET_KEEP_TTL) {
+                    object
+                        .meta
+                        .set_deadline(raw_object.object_meta().deadline());
+                }
+                if self.flags.contains(Flags::SET_GET) {
+                    match raw_object.data::<RawString>() {
+                        None => Frame::Error(
+                            "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                .into(),
+                        ),
+                        Some(old_string) => {
+                            let data = old_string.data_slice();
+                            let mut bytes = BytesMut::with_capacity(data.len());
+                            bytes.put_slice(data);
+                            db.insert(object);
+                            Frame::Bulk(bytes.into())
+                        }
+                    }
+                } else {
+                    db.insert(object);
+                    Frame::Simple("OK".into())
+                }
+            }
+            None if !self.flags.contains(Flags::SET_XX) => {
+                db.insert(object);
+                if self.flags.contains(Flags::SET_GET) {
+                    Frame::Null
+                } else {
+                    Frame::Simple("OK".into())
+                }
+            }
+            _ => Frame::Null,
+        };
 
-        // Create a success response and write it to `dst`.
-        let response = Frame::Simple("OK".to_string());
         debug!(?response);
 
         Ok(response)
@@ -163,15 +252,15 @@ impl Set {
         frame.push_bulk(Bytes::from("set".as_bytes()));
         frame.push_bulk(self.key);
         frame.push_bulk(self.value);
-        if let Some(ms) = self.expire {
+        if self.flags.contains(Flags::SET_EXPIRE) {
             // Expirations in Redis protocol can be specified in two ways
             // 1. SET key value EX seconds
             // 2. SET key value PX milliseconds
             // We the second option because it allows greater precision and
             // src/bin/cli.rs parses the expiration argument as milliseconds
             // in duration_from_ms_str()
-            frame.push_bulk(Bytes::from("px".as_bytes()));
-            frame.push_int(ms.as_millis() as u64);
+            frame.push_bulk(Bytes::from("pxat".as_bytes()));
+            frame.push_int(self.expire);
         }
         frame
     }

@@ -152,6 +152,7 @@ name = "engula-server"
 version = "0.3.0"
 dependencies = [
  "atoi",
+ "bitflags",
  "bytes",
  "engula-engine",
  "monoio",
