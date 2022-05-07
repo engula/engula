@@ -66,12 +66,14 @@ impl CommandAction for Info {
         let content = format!(
             r#"# Stats
 evicted_keys:{evicted_keys}
+expired_keys:{expired_keys}
 keyspace_hits:{keyspace_hits}
 keyspace_misses:{keyspace_misses}
 # Keyspace
 keys:{num_keys}
 "#,
             evicted_keys = db_stats.evicted_keys,
+            expired_keys = db_stats.expired_keys,
             keyspace_hits = db_stats.keyspace_hits,
             keyspace_misses = db_stats.keyspace_misses,
             num_keys = db_stats.num_keys,

@@ -384,13 +384,14 @@ impl Server {
 
     fn register_scheduled_tasks(&mut self) {
         let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
+        let db = self.db.clone();
         monoio::spawn(async move {
-            let db_tick_interval = Duration::from_millis(100);
+            let db_tick_interval = Duration::from_millis(10);
             monoio::select! {
                 _ = monoio::time::sleep(db_tick_interval) => {},
                 _ = shutdown.recv() => {},
             };
-            Self::on_db_tick().await;
+            Self::on_db_tick(db).await;
         });
 
         let mut shutdown = Shutdown::new(self.notify_shutdown.subscribe());
@@ -409,7 +410,9 @@ impl Server {
         }
     }
 
-    async fn on_db_tick() {}
+    async fn on_db_tick(db: Db) {
+        db.on_tick();
+    }
 }
 
 impl Handler {

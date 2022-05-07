@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(ptr_as_uninit)]
-#![allow(clippy::missing_safety_doc)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
-mod db;
-#[allow(dead_code)]
-mod diskcache;
-pub mod elements;
-mod key_space;
-pub mod objects;
-pub mod record;
-pub mod stats;
-pub mod time;
-
-pub use db::Db;
+pub fn unix_timestamp_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}

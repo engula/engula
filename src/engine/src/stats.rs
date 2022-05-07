@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(ptr_as_uninit)]
-#![allow(clippy::missing_safety_doc)]
-
-mod db;
-#[allow(dead_code)]
-mod diskcache;
-pub mod elements;
-mod key_space;
-pub mod objects;
-pub mod record;
-pub mod stats;
-pub mod time;
-
-pub use db::Db;
+#[derive(Default, Clone, Debug)]
+pub struct DbStats {
+    pub num_keys: usize,
+    pub evicted_keys: usize,
+    pub expired_keys: usize,
+    pub keyspace_hits: usize,
+    pub keyspace_misses: usize,
+}
