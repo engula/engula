@@ -50,12 +50,14 @@ impl Del {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Del {
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
-        let response =
-            Frame::Integer(db.delete_keys(self.keys.iter().map(|bytes| bytes.as_ref())) as i64);
+        let response = Frame::Integer(
+            db.delete_keys(self.keys.iter().map(|bytes| bytes.as_ref()))
+                .await as i64,
+        );
 
         debug!(?response);
 

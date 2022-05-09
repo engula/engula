@@ -411,7 +411,7 @@ impl Server {
     }
 
     async fn on_db_tick(db: Db) {
-        db.on_tick();
+        db.on_tick().await;
     }
 }
 

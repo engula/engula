@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub const RECORD_ELEMENT: u16 = 0b00;
-pub const RECORD_OBJECT: u16 = 0b10;
-const RECORD_USED_MASK: u16 = 0b01;
-const RECORD_TYPE_MASK: u16 = 0b10;
-const RECORD_TOMBSTOME: u16 = 0b100;
+pub const RECORD_ELEMENT: u16 = 0b0000;
+pub const RECORD_OBJECT: u16 = 0b0010;
+const RECORD_USED_MASK: u16 = 0b0001;
+const RECORD_TYPE_MASK: u16 = 0b0010;
+const RECORD_TOMBSTONE: u16 = 0b0100;
+const RECORD_EVICTED: u16 = 0b1000;
 const RECORD_META_SHIFT: u32 = 4;
 
 pub trait RecordType {
@@ -32,7 +33,8 @@ pub struct RecordMeta {
     /// - 0: is this memory used?
     /// - 1: object or element
     /// - 2: tombstone?
-    /// - 3-15: object or element defined
+    /// - 3: evicted?
+    /// - 4-15: object or element defined
     tag: u16,
     left: [u8; 6],
 }
@@ -93,15 +95,27 @@ impl RecordMeta {
     }
 
     pub fn is_tombstone(self) -> bool {
-        self.tag & RECORD_TOMBSTOME != 0
+        self.tag & RECORD_TOMBSTONE != 0
     }
 
     pub fn set_tombstone(&mut self) {
-        self.tag |= RECORD_TOMBSTOME;
+        self.tag |= RECORD_TOMBSTONE;
     }
 
     pub fn clear_tombstone(&mut self) {
-        self.tag &= !RECORD_TOMBSTOME;
+        self.tag &= !RECORD_TOMBSTONE;
+    }
+
+    pub fn is_evicted(self) -> bool {
+        self.tag & RECORD_EVICTED != 0
+    }
+
+    pub fn set_evicted(&mut self) {
+        self.tag |= RECORD_EVICTED;
+    }
+
+    pub fn clear_evicted(&mut self) {
+        self.tag &= !RECORD_EVICTED;
     }
 
     pub fn tag(&self) -> u16 {

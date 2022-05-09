@@ -18,7 +18,8 @@ extern crate core;
 
 use std::net::ToSocketAddrs;
 
-use engula_engine::Db;
+use engula_engine::{Db, DiskCache};
+use tracing::info;
 
 mod error;
 pub use error::{Error, Result};
@@ -49,20 +50,23 @@ pub use async_trait::async_trait;
 use monoio::net::TcpListener;
 
 pub fn run(config: Config) -> Result<()> {
-    // Resolve & Bind a TCP listener
-    let db = Db::default();
-
-    let addr = config.addr.to_socket_addrs()?.next().unwrap();
-    let listener = TcpListener::bind(addr)?;
-
     let mut rt = monoio::RuntimeBuilder::new()
         .with_entries(32768)
         .enable_timer()
         .build()
         .unwrap();
     rt.block_on(async {
+        let disk_cache = DiskCache::new(&config.root, config.disk_opts.clone()).await?;
+        let db = Db::new(config.max_memory, disk_cache);
+
+        // Resolve & Bind a TCP listener
+        let addr = config.addr.to_socket_addrs()?.next().unwrap();
+        let listener = TcpListener::bind(addr)?;
+        info!("bind address {}", addr);
+
         server::run(db, listener, config).await;
-    });
+        Ok::<(), Error>(())
+    })?;
 
     Ok(())
 }

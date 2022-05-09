@@ -72,7 +72,7 @@ pub(crate) fn parse_frames(
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Get {
     /// Apply the `Get` command to the specified `Db` instance.
     ///
@@ -80,7 +80,7 @@ impl CommandAction for Get {
     /// to execute a received command.
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         // Get the value from the shared database state
-        let response = if let Some(object_ref) = db.get(&self.key) {
+        let response = if let Some(object_ref) = db.get(&self.key).await {
             if let Some(value) = object_ref.data::<RawString>() {
                 // If a value is present, it is written to the client in "bulk"
                 // format.

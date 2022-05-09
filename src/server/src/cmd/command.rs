@@ -33,7 +33,7 @@ pub(crate) fn parse_command(
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for Command {
     async fn apply(&self, _: &Db) -> crate::Result<Frame> {
         let mut cmds = Vec::new();
@@ -66,7 +66,7 @@ pub(crate) fn parse_command_info(
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl CommandAction for CommandInfo {
     async fn apply(&self, _: &Db) -> crate::Result<Frame> {
         let mut cmds = Vec::new();

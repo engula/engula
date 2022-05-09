@@ -86,6 +86,13 @@ fn apply_from_values(config_builder: &mut ConfigBuilder, values: Option<ConfigBu
     if let Some(timeout) = values.timeout {
         config_builder.timeout = Some(timeout);
     }
+    if let Some(root) = values.root {
+        config_builder.root = Some(root);
+    }
+    if let Some(max_memory) = values.max_memory {
+        config_builder.max_memory = Some(max_memory);
+    }
+    config_builder.disk_opts = values.disk_opts;
 }
 
 fn apply_from_args(config_builder: &mut ConfigBuilder, args: StartCommand) {

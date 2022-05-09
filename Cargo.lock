@@ -156,6 +156,9 @@ dependencies = [
  "hashbrown 0.12.0",
  "monoio",
  "rand",
+ "serde",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

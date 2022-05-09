@@ -34,7 +34,12 @@ struct ActiveFile {
 impl ActiveFile {
     async fn open(path: impl Into<PathBuf>, buffer_size: usize) -> Result<ActiveFile> {
         let path = path.into();
-        let file = OpenOptions::new().create(true).open(&path).await?;
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .read(true)
+            .open(&path)
+            .await?;
         Ok(Self {
             path,
             file,
@@ -194,7 +199,7 @@ impl DiskStore {
 
     async fn evict_files(&mut self) -> Result<()> {
         while self.store_size + self.options.file_size >= self.options.disk_capacity {
-            if let Some(file) = self.sealed_files.pop_back() {
+            if let Some(file) = self.sealed_files.pop_front() {
                 self.store_size -= file.size();
                 file.remove()?;
                 self.oldest_fileno += 1;
@@ -219,7 +224,7 @@ fn parse_block(block: &[u8], target: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-fn encode_object(mut buf: &mut [u8], key: &[u8], value: &[u8]) -> u32 {
+fn encode_object(buf: &mut Vec<u8>, key: &[u8], value: &[u8]) -> u32 {
     buf.put_u32(key.len() as u32);
     buf.put_u32(value.len() as u32);
     buf.put(key);
@@ -230,6 +235,7 @@ fn encode_object(mut buf: &mut [u8], key: &[u8], value: &[u8]) -> u32 {
 fn decode_object(mut buf: &[u8]) -> (&[u8], &[u8]) {
     let klen = buf.get_u32() as usize;
     let vlen = buf.get_u32() as usize;
+    debug_assert!(klen + vlen < buf.len());
     let key = &buf[..klen];
     buf.advance(klen);
     let value = &buf[..vlen];
