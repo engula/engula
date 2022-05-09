@@ -18,7 +18,8 @@ extern crate core;
 
 use std::net::ToSocketAddrs;
 
-use engula_engine::{Db, DiskCache, DiskOptions};
+use engula_engine::{Db, DiskCache};
+use tracing::info;
 
 mod error;
 pub use error::{Error, Result};
@@ -55,18 +56,13 @@ pub fn run(config: Config) -> Result<()> {
         .build()
         .unwrap();
     rt.block_on(async {
-        let options = DiskOptions {
-            mem_capacity: 128 * 1024 * 1024,
-            disk_capacity: 1024 * 1024 * 1024 * 1024,
-            file_size: 1024 * 1024 * 32,
-            write_buffer_size: 32 * 1024,
-        };
-        let disk_cache = DiskCache::new("/tmp/disk-cache", options).await?;
-        let db = Db::new(0, disk_cache);
+        let disk_cache = DiskCache::new(&config.root, config.disk_opts.clone()).await?;
+        let db = Db::new(config.max_memory, disk_cache);
 
         // Resolve & Bind a TCP listener
         let addr = config.addr.to_socket_addrs()?.next().unwrap();
         let listener = TcpListener::bind(addr)?;
+        info!("bind address {}", addr);
 
         server::run(db, listener, config).await;
         Ok::<(), Error>(())

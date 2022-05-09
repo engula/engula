@@ -295,11 +295,9 @@ impl KeySpace {
     pub fn select_random_object(&mut self) -> Option<RawObject> {
         let mut raw_objects = self.objects.random_objects(10);
         raw_objects.sort_unstable_by(compare_raw_objects);
-        if !raw_objects.is_empty() {
-            Some(raw_objects[0])
-        } else {
-            None
-        }
+        raw_objects
+            .into_iter()
+            .find(|raw_object| !raw_object.object_meta().is_evicted())
     }
 
     #[inline]

@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use engula_engine::alloc::allocated;
 use tracing::debug;
 
 use super::*;
@@ -64,7 +65,9 @@ impl CommandAction for Info {
     async fn apply(&self, db: &Db) -> crate::Result<Frame> {
         let db_stats = db.stats().await;
         let content = format!(
-            r#"# Stats
+            r#"# Memory
+used_memory:{used_memory}
+# Stats
 evicted_keys:{evicted_keys}
 expired_keys:{expired_keys}
 keyspace_hits:{keyspace_hits}
@@ -72,6 +75,7 @@ keyspace_misses:{keyspace_misses}
 # Keyspace
 keys:{num_keys}
 "#,
+            used_memory = allocated(),
             evicted_keys = db_stats.evicted_keys,
             expired_keys = db_stats.expired_keys,
             keyspace_hits = db_stats.keyspace_hits,

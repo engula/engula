@@ -15,11 +15,13 @@
 use std::{io::Result, path::PathBuf};
 
 mod store;
+use serde::Deserialize;
 use store::{BlockHandle, DiskStore};
 
 mod table;
 use table::HashTable;
 
+#[derive(Deserialize, Debug, Clone)]
 pub struct DiskOptions {
     pub mem_capacity: usize,
     pub disk_capacity: usize,

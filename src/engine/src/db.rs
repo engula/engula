@@ -39,6 +39,7 @@ struct DbState {
     /// The size of memory used after system initialization.
     // initial_used: usize,
     max_memory: usize,
+    num_evicted: usize,
     key_space: KeySpace,
     disk_cache: DiskCache,
 }
@@ -50,6 +51,7 @@ impl Db {
                 lru_clock: 0,
                 num_tick: 0,
                 max_memory,
+                num_evicted: 0,
                 // initial_used: crate::alloc::allocated(),
                 key_space: KeySpace::default(),
                 disk_cache,
@@ -129,7 +131,9 @@ impl Db {
 
     pub async fn stats(&self) -> DbStats {
         let state = self.state.lock().await;
-        state.key_space.stats()
+        let mut stats = state.key_space.stats();
+        stats.evicted_keys = state.num_evicted;
+        stats
     }
 
     async fn ensure_memory_hard_limit(state: &mut DbState) {
@@ -148,6 +152,7 @@ impl Db {
             // TODO(walter) now only support `RawString`.
             if let Some(string) = raw_object.data_mut::<RawString>() {
                 trace!(key = ?string.key(), "evict key to disk cache");
+                state.num_evicted += 1;
                 state
                     .disk_cache
                     .set(string.key(), string.data_slice())
