@@ -103,6 +103,12 @@ impl Db {
         state.key_space.insert(object);
     }
 
+    pub async fn update_deadline(&self, key: &[u8], deadline: Option<u64>) {
+        let mut state = self.state.lock().await;
+
+        state.key_space.update_deadline(key, deadline);
+    }
+
     pub async fn remove(&self, key: &[u8]) {
         let mut state = self.state.lock().await;
         state.key_space.remove(key);

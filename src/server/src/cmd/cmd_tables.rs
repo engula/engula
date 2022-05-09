@@ -157,6 +157,156 @@ pub fn all_cmd_tables() -> HashMap<String, CommandDesc> {
         sub_args: vec![],
     }];
 
+    // ********** GETDEL ********************
+
+    // GETDEL tips
+    let getdel_tips = vec![];
+
+    // GETDEL argument table
+    let getdel_args = vec![Arg {
+        name: "key".to_string(),
+        typ: ArgType::Key,
+        key_spec_index: 0,
+        token: "".to_string(),
+        summary: "".to_string(),
+        since: "".to_string(),
+        flag: CMD_ARG_NONE,
+        deprecated_since: "".to_string(),
+        sub_args: vec![],
+    }];
+
+    // ********** GETEX ********************
+
+    // GETEX tips
+    let getex_tips = vec![];
+
+    // GETEX expiration argument table
+    let getex_expiration_aubargs = vec![
+        Arg {
+            name: "seconds".to_string(),
+            typ: ArgType::Integer,
+            key_spec_index: -1,
+            token: "EX".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "milliseconds".to_string(),
+            typ: ArgType::Integer,
+            key_spec_index: -1,
+            token: "PX".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "unix-time-seconds".to_string(),
+            typ: ArgType::UnixTime,
+            key_spec_index: -1,
+            token: "EXAT".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "unix-time-milliseconds".to_string(),
+            typ: ArgType::UnixTime,
+            key_spec_index: -1,
+            token: "PXAT".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "persist".to_string(),
+            typ: ArgType::UnixTime,
+            key_spec_index: -1,
+            token: "PERSIST".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+    ];
+
+    // GETEX argument table
+    let getex_args = vec![
+        Arg {
+            name: "key".to_string(),
+            typ: ArgType::Key,
+            key_spec_index: 0,
+            token: "".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "expiration".to_string(),
+            typ: ArgType::OneOf,
+            key_spec_index: -1,
+            token: "".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_OPTIONAL,
+            deprecated_since: "".to_string(),
+            sub_args: getex_expiration_aubargs,
+        },
+    ];
+
+    // ********** GETRANGE ********************
+
+    // GETRANGE tips
+    let getrange_tips = vec![];
+
+    // GETRANGE argument table
+    let getrange_args = vec![
+        Arg {
+            name: "key".to_string(),
+            typ: ArgType::Key,
+            key_spec_index: 0,
+            token: "".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "start".to_string(),
+            typ: ArgType::Integer,
+            key_spec_index: -1,
+            token: "".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+        Arg {
+            name: "end".to_string(),
+            typ: ArgType::Integer,
+            key_spec_index: -1,
+            token: "".to_string(),
+            summary: "".to_string(),
+            since: "".to_string(),
+            flag: CMD_ARG_NONE,
+            deprecated_since: "".to_string(),
+            sub_args: vec![],
+        },
+    ];
+
     // ********** SET ********************
 
     // SET tips
@@ -317,6 +467,9 @@ CommandDesc {name: "command".to_string(), summary: "Get array of Redis command d
 CommandDesc {name: "info".to_string(), summary: "Get information and statistics about the server".to_string(), complexity: "O(1)".to_string(), since: "1.0.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::Server, tips: info_tips, parse: info::parse_frames, arity: -1, flags: CMD_LOADING|CMD_STALE|CMD_SENTINEL, acl_categories: ACL_CATEGORY_DANGEROUS,key_specs: vec![],sub_cmds: None,args: info_args},
 // string
 CommandDesc {name: "get".to_string(), summary: "Get the value of a key".to_string(), complexity: "O(1)".to_string(), since: "1.0.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::String, tips: get_tips, parse: get::parse_frames, arity: 2, flags: CMD_READONLY|CMD_FAST, acl_categories: ACL_CATEGORY_STRING,key_specs: vec![KeySpec{notes: "".to_string(), flags: CMD_KEY_RO|CMD_KEY_ACCESS, bs: BeginSearch::Index(1), fk: FindKeys::Range { last_key: 0, key_step: 1, limit: 0 }}],sub_cmds: None,args: get_args},
+CommandDesc {name: "getdel".to_string(), summary: "Get the value of a key and delete the key".to_string(), complexity: "O(1)".to_string(), since: "6.2.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::String, tips: getdel_tips, parse: get::parse_del_frames, arity: 2, flags: CMD_WRITE|CMD_FAST, acl_categories: ACL_CATEGORY_STRING,key_specs: vec![KeySpec{notes: "".to_string(), flags: CMD_KEY_RW|CMD_KEY_ACCESS|CMD_KEY_DELETE, bs: BeginSearch::Index(1), fk: FindKeys::Range { last_key: 0, key_step: 1, limit: 0 }}],sub_cmds: None,args: getdel_args},
+CommandDesc {name: "getex".to_string(), summary: "Get the value of a key and optionally set its expiration".to_string(), complexity: "O(1)".to_string(), since: "6.2.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::String, tips: getex_tips, parse: get::parse_ext_frames, arity: -2, flags: CMD_WRITE|CMD_FAST, acl_categories: ACL_CATEGORY_STRING,key_specs: vec![KeySpec{notes: "RW and UPDATE because it changes the TTL".to_string(), flags: CMD_KEY_RW|CMD_KEY_ACCESS|CMD_KEY_UPDATE, bs: BeginSearch::Index(1), fk: FindKeys::Range { last_key: 0, key_step: 1, limit: 0 }}],sub_cmds: None,args: getex_args},
+CommandDesc {name: "getrange".to_string(), summary: "Get a substring of the string stored at a key".to_string(), complexity: "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.".to_string(), since: "2.4.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::String, tips: getrange_tips, parse: get::parse_range_frames, arity: 4, flags: CMD_READONLY, acl_categories: ACL_CATEGORY_STRING,key_specs: vec![KeySpec{notes: "".to_string(), flags: CMD_KEY_RO|CMD_KEY_ACCESS, bs: BeginSearch::Index(1), fk: FindKeys::Range { last_key: 0, key_step: 1, limit: 0 }}],sub_cmds: None,args: getrange_args},
 CommandDesc {name: "set".to_string(), summary: "Set the string value of a key".to_string(), complexity: "O(1)".to_string(), since: "1.0.0".to_string(), doc_flags: CMD_DOC_NONE,replaced_by: "".to_string(),deprecated_since: "".to_string(), group: Group::String, tips: set_tips, parse: set::parse_frames, arity: -3, flags: CMD_WRITE|CMD_DENYOOM, acl_categories: ACL_CATEGORY_STRING,key_specs: vec![KeySpec{notes: "RW and ACCESS due to the optional `GET` argument".to_string(), flags: CMD_KEY_RW|CMD_KEY_ACCESS|CMD_KEY_UPDATE|CMD_KEY_VARIABLE_FLAGS, bs: BeginSearch::Index(1), fk: FindKeys::Range { last_key: 0, key_step: 1, limit: 0 }}],sub_cmds: None,args: set_args},
 ].into_iter().map(|e| (e.name.clone(), e)).collect()
 }

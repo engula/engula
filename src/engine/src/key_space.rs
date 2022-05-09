@@ -249,6 +249,23 @@ impl KeySpace {
         }
     }
 
+    pub fn update_deadline(&mut self, key: &[u8], deadline: Option<u64>) {
+        let hash = make_hash(&key);
+        if let Some(entry) = self.objects.get_mut(hash, &equivalent_key(key)) {
+            let object_meta = entry.raw_object.object_meta_mut();
+            match deadline {
+                Some(deadline) => {
+                    object_meta.set_deadline(deadline);
+                    self.expires.insert(*entry, &equivalent_key(key));
+                }
+                None => {
+                    object_meta.clear_deadline();
+                    self.expires.remove(entry.hash, &equivalent_key(key));
+                }
+            }
+        }
+    }
+
     pub fn get(&mut self, key: &[u8]) -> Option<RawObject> {
         let hash = make_hash(&key);
         if let Some(entry) = self.objects.get_mut(hash, &equivalent_key(key)) {
