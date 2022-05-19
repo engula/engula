@@ -71,6 +71,10 @@ impl MasterInner {
 
     fn join_member(&mut self, desc: NodeDescriptor) -> MemberId {
         let id = self.next_node_id();
+        let desc = NodeDescriptor {
+            id: Some(id.id),
+            ..desc
+        };
         self.nodes.insert(id.id, desc);
         id
     }

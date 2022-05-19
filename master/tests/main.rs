@@ -44,7 +44,13 @@ async fn master_liveness() -> anyhow::Result<()> {
 
     let descs = client.lookup_member(vec![id.clone()]).await?;
     assert_eq!(descs.len(), 1);
-    assert_eq!(descs[0], desc.clone());
+    assert_eq!(
+        descs[0],
+        NodeDescriptor {
+            id: Some(id.id),
+            ..desc.clone()
+        }
+    );
 
     let ids = client.leave_member(vec![id.clone()]).await?;
     assert_eq!(ids.len(), 1);
