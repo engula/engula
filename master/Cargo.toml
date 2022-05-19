@@ -1,0 +1,23 @@
+[package]
+name = "engula-master"
+version = "0.4.0"
+edition = "2021"
+license = "Apache-2.0"
+homepage = "https://engula.io"
+repository = "https://github.com/engula/engula"
+keywords = ["cache", "database"]
+categories = ["database", "data-structures"]
+description = "A distributed key-value store."
+
+
+[dependencies]
+prost = "0.10"
+tokio = { version = "1.18", features = ["full"] }
+tonic = "0.7"
+
+[dev-dependencies]
+anyhow = "1.0"
+tokio-stream = { version = "0.1", features = ["net"] }
+
+[build-dependencies]
+tonic-build = "0.7"
