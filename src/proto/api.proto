@@ -16,20 +16,41 @@ syntax = "proto3";
 
 package engula.proto.v1;
 
-import "proto/metadata.proto";
 import "proto/error.proto";
+import "proto/data.proto";
+import "proto/metadata.proto";
 
-message GetRequest {}
+message RequestHeader {
+    bytes key = 1;
+}
 
-message GetResponse {}
+message ResponseHeader {}
 
-message PutRequest {}
+message GetRequest {
+    RequestHeader header = 1;
+}
 
-message PutResponse {}
+message GetResponse {
+    ResponseHeader header = 1;
+    Value value = 2;
+}
 
-message DeleteRequest {}
+message PutRequest {
+    RequestHeader header = 1;
+    Value value = 2;
+}
 
-message DeleteResponse {}
+message PutResponse {
+    ResponseHeader header = 1;
+}
+
+message DeleteRequest {
+    RequestHeader header = 1;
+}
+
+message DeleteResponse {
+    ResponseHeader header = 1;
+}
 
 message RequestUnion {
     oneof value {
@@ -43,20 +64,26 @@ message ResponseUnion {
     oneof value {
         GetResponse get = 1;
         PutResponse put = 2;
+        DeleteResponse delete = 3;
     }
 }
 
-message RequestHeader {}
-
 message BatchRequest {
-    RequestHeader header = 1;
+    message Header {
+        uint64 group_id = 1;
+        uint64 shard_id = 2;
+        ReplicaDescriptor replia = 3;
+    }
+
+    Header header = 1;
     repeated RequestUnion requests = 2;
 }
 
-message ResponseHeader {}
-
 message BatchResponse {
-    ResponseHeader header = 1;
+    message Header {
+        Error error = 1;
+    }
+    Header header = 1;
     repeated ResponseUnion responses = 2;
 }
 
@@ -66,6 +93,8 @@ message ShardLookupRequest {
 
 message ShardLookupResponse {
     GroupDescriptor descriptor = 1;
+    // If non-nil, the other fields will be empty.
+    Error error = 2;
 }
 
 message GossipSubscriptionRequest {
@@ -74,7 +103,7 @@ message GossipSubscriptionRequest {
 
 message GossipSubscriptionEvent {
     string key = 1;
-    bytes content = 2;
+    Value content = 2;
     /// Which pattern does this gossip information match?
     string pattern_matched = 3;
 
