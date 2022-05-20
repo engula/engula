@@ -12,8 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod proto;
+use std::{error::Error, result::Result};
 
-fn main() {
-    println!("Hello, world!");
+fn main() -> Result<(), Box<dyn Error>> {
+    tonic_build::configure().compile(
+        &["proto/api.proto", "proto/metadata.proto"],
+        &["src"],
+    )?;
+    Ok(())
 }

@@ -10,3 +10,8 @@ categories = ["database", "data-structures"]
 description = "A distributed key-value store."
 
 [dependencies]
+tonic = "0.7.2"
+prost = "0.10.3"
+
+[build-dependencies]
+tonic-build = "0.7.2"

@@ -12,8 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod proto;
+syntax = "proto3";
 
-fn main() {
-    println!("Hello, world!");
+package engula.proto.v1;
+
+/// Error is a generic representation including a string message and information about retryability.
+message Error {
+    /// Node at which the error was generated (zero if does not apply).
+    uint32 origin_node_id = 1;
+
+    uint32 code = 2;
+    string reason = 3;
 }

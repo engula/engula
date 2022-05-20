@@ -12,8 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod proto;
+syntax = "proto3";
 
-fn main() {
-    println!("Hello, world!");
+package engula.proto.v1;
+
+message Version {
+    uint32 major_val = 1;
+    uint32 minor_val = 2;
+}
+
+message ShardDescriptor {
+    uint64 shard_id = 1;
+    bytes start_key = 2;
+    bytes end_key = 3;
+}
+
+message ReplicaDescriptor {
+    uint32 node_id = 1;
+    uint32 replica_id = 2;
+}
+
+message GroupDescriptor {
+    uint64 group_id = 1;
+    repeated ShardDescriptor shards = 2;
+    repeated ReplicaDescriptor internal_replicas = 3;
 }
