@@ -12,4 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-tonic::include_proto!("engula.proto");
+syntax = "proto3";
+
+import "proto/metadata.proto";
+
+package engula.proto.v1;
+
+message Message {
+    // TODO
+}
+
+message RaftMessage {
+    uint64 group_id = 1;
+    ReplicaDescriptor from_replica = 2;
+    ReplicaDescriptor to_replica = 3;
+
+    Message message = 4;
+}
+
+message RaftDone {
+    // TODO
+}
+
+message SnapshotChunk {
+    RaftMessage message = 1;
+    bytes chunk = 2;
+    bool final = 3;
+}

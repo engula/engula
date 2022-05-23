@@ -16,20 +16,24 @@ syntax = "proto3";
 
 package engula.proto.v1;
 
-import "proto/error.proto";
 import "proto/data.proto";
+import "proto/error.proto";
 import "proto/metadata.proto";
+import "proto/raft.proto";
 
+/// `RequestHeader` is the common parts of command's argument.
 message RequestHeader {
     bytes key = 1;
 }
 
+/// `ResponseHeader` is the common parts of command's response.
 message ResponseHeader {}
 
 message GetRequest {
     RequestHeader header = 1;
 }
 
+/// If the key doesn't exists, the field `value` will be `None`.
 message GetResponse {
     ResponseHeader header = 1;
     Value value = 2;
@@ -41,6 +45,24 @@ message PutRequest {
 }
 
 message PutResponse {
+    ResponseHeader header = 1;
+}
+
+/// A `ConditionalPutRequest` is the argument of `conditional_put`.
+///
+/// - Returns true and sets value if `expected_bytes` equals existing value.
+/// - If key doesn't exists and `expected_bytes` is empty, sets value.
+/// - Otherwise, returns a ConditionalFailedError containing the actual value of the key.
+message ConditionalPutRequest {
+    RequestHeader header = 1;
+    Value value = 2;
+
+    /// `expected_bytes` specifies the expected existing value of the key.
+    bytes expected_bytes = 3;
+}
+
+/// A `ConditionalPutResponse` is the return value from `conditional_put`.
+message ConditionalPutResponse {
     ResponseHeader header = 1;
 }
 
@@ -57,6 +79,7 @@ message RequestUnion {
         GetRequest get = 1;
         PutRequest put = 2;
         DeleteRequest delete = 3;
+        ConditionalPutRequest conditional_put = 4;
     }
 }
 
@@ -65,20 +88,27 @@ message ResponseUnion {
         GetResponse get = 1;
         PutResponse put = 2;
         DeleteResponse delete = 3;
+        ConditionalPutResponse conditional_put = 4;
     }
 }
 
+/// A `BatchRequest` contains one or more requests to be executed in parallel, or as a single update.
 message BatchRequest {
     message Header {
+        /// `group_id` specifies the ID of the Raft consensus group which the requests should routed to.
         uint64 group_id = 1;
         uint64 shard_id = 2;
-        ReplicaDescriptor replia = 3;
+        /// `Replica` specifies the destination of the request.
+        ReplicaDescriptor replica = 3;
     }
 
     Header header = 1;
     repeated RequestUnion requests = 2;
 }
 
+/// A `BatchResponse` contains one or more requests, one per request corresponding to the requests in
+/// the matching `BatchRequest`.  The error in the response header is set to the first error from the
+/// slice of response.
 message BatchResponse {
     message Header {
         Error error = 1;
@@ -110,24 +140,53 @@ message GossipSubscriptionEvent {
     Error error = 4;
 }
 
+/// A `JoinNodeRequest` is the argument of `Join()` method.
+/// It is used to specify the binary version and node ID of the server.  If the bianry version is
+/// not compatible with the rest of the cluser, the join attempt is refused.
 message JoinNodeRequest {
     Version binary_version = 1;
+
+    /// `node_id` specifies the corresponding id that this node has already allocated from master
+    /// service.  Master will update the corresponding location cache if the associated address of
+    /// this node id has been changed.
+    optional uint32 node_id = 2;
+
+    /// `cluster_id` specifies the unique id of target cluster.  If it is not equals to the
+    /// destination, a appropriate error is returned.
+    uint64 cluster_id = 3;
 }
 
 message JoinNodeResponse {
-    uint64 cluster_id = 1;
-    int32 node_id = 2;
+    uint32 node_id = 1;
 
-    Version active_version = 3;
+    Version active_version = 2;
+}
+
+message BatchRaftRequest {
+    repeated RaftMessage requests = 1;
+}
+
+message GossipRequest {
+    // TODO
+}
+
+message GossipResponse {
+    // TODO
 }
 
 service Internal {
     rpc Batch(BatchRequest) returns (BatchResponse) {}
     rpc ShardLookup(ShardLookupRequest) returns (ShardLookupResponse) {}
 
-    rpc GossipSubscription(GossipSubscriptionRequest) returns (stream GossipSubscriptionEvent) {}
-
     /// Join a bootstrapted cluster. If the target node is not a part of a bootstrapted cluster,
     /// an appropriate error is returned.
     rpc Join(JoinNodeRequest) returns (JoinNodeResponse) {}
+
+    /// Raft commands (send between nodes)
+    rpc BatchRaft(stream BatchRaftRequest) returns (RaftDone) {}
+    rpc Snapshot(stream SnapshotChunk) returns (RaftDone) {}
+
+    /// Gossip commands
+    rpc GossipSubscription(GossipSubscriptionRequest) returns (stream GossipSubscriptionEvent) {}
+    rpc Gossip(stream GossipRequest) returns (stream GossipResponse) {}
 }

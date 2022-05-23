@@ -12,18 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error, result::Result};
-
-fn main() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().compile(
-        &[
-            "proto/api.proto",
-            "proto/data.proto",
-            "proto/error.proto",
-            "proto/metadata.proto",
-            "proto/raft.proto",
-        ],
-        &["src"],
-    )?;
-    Ok(())
-}
+tonic::include_proto!("engula.proto.v1");
