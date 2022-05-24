@@ -21,6 +21,37 @@ message NodeDesc {
   string addr = 2;
 }
 
+message ShardDesc {
+  uint64 id = 1;
+  uint64 collection_id = 2;
+
+  message HashPartition {
+    // TODO: hash function
+    uint64 slot = 1;
+  }
+
+  message RangePartition {
+    bytes start = 1;
+    bytes end = 2;
+  }
+
+  oneof partition {
+    HashPartition hash = 3;
+    RangePartition range = 4;
+  }
+}
+
+message GroupDesc {
+  uint64 id = 1;
+  repeated ShardDesc shards = 2;
+  repeated ReplicaDesc replicas = 3;
+}
+
+message ReplicaDesc {
+  uint64 id = 1;
+  uint64 node_id = 2;
+}
+
 message DatabaseDesc {
   uint64 id = 1;
   string name = 2;
@@ -29,5 +60,5 @@ message DatabaseDesc {
 message CollectionDesc {
   uint64 id = 1;
   string name = 2;
-  uint64 parent_id = 3;
+  uint64 database_id = 3;
 }
