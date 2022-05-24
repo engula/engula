@@ -10,3 +10,4 @@ categories = ["database", "data-structures"]
 description = "A distributed key-value store."
 
 [dependencies]
+clap = { version = "3.1", features = ["derive"] }
