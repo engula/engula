@@ -12,4 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod proto;
+syntax = "proto3";
+
+package engula.server.v1;
+
+message NodeDesc {
+  uint64 id = 1;
+  string addr = 2;
+}
+
+message DatabaseDesc {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message CollectionDesc {
+  uint64 id = 1;
+  string name = 2;
+  uint64 parent_id = 3;
+}
