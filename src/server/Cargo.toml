@@ -8,3 +8,8 @@ repository = "https://github.com/engula/engula"
 description = "The Engula server."
 
 [dependencies]
+tonic = "0.7.2"
+prost = "0.10.3"
+
+[build-dependencies]
+tonic-build = "0.7.2"

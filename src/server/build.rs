@@ -12,4 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod proto;
+use std::{error::Error, result::Result};
+
+fn main() -> Result<(), Box<dyn Error>> {
+    tonic_build::configure().compile(
+        &["src/proto/metadata.proto", "src/proto/root.proto"],
+        &["src/proto"],
+    )?;
+    Ok(())
+}

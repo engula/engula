@@ -19,3 +19,4 @@ header:
   paths:
     - '**/*.rs'
     - '**/*.yml'
+    - '**/*.proto'
