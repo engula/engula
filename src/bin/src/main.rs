@@ -12,6 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[clap(version)]
+struct Command {
+    #[clap(subcommand)]
+    subcmd: SubCommand,
+}
+
+impl Command {
+    fn run(self) {
+        self.subcmd.run();
+    }
+}
+
+#[derive(Subcommand)]
+enum SubCommand {
+    Start(StartCommand),
+}
+
+impl SubCommand {
+    fn run(self) {
+        match self {
+            SubCommand::Start(cmd) => cmd.run(),
+        }
+    }
+}
+
+#[derive(Parser)]
+struct StartCommand {
+    #[clap(long, default_value = "127.0.0.1:21805")]
+    addr: String,
+    #[clap(long)]
+    init: bool,
+    #[clap(long)]
+    join: Option<String>,
+}
+
+impl StartCommand {
+    fn run(self) {
+        println!("Hello, Engula!");
+    }
+}
+
 fn main() {
-    println!("Hello, world!");
+    let cmd = Command::parse();
+    cmd.run();
 }
