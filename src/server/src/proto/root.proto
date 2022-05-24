@@ -19,20 +19,30 @@ package engula.server.v1;
 import "metadata.proto";
 
 service Root {
-  rpc AddNode(AddNodeRequest) returns (AddNodeResponse) {}
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {}
+  rpc CreateNode(CreateNodeRequest) returns (CreateNodeResponse) {}
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
   rpc CreateDatabase(CreateDatabaseRequest) returns (CreateDatabaseResponse) {}
   rpc CreateCollection(CreateCollectionRequest)
       returns (CreateCollectionResponse) {}
 }
 
-message AddNodeRequest { NodeDesc desc = 1; }
+message ListNodesRequest {}
 
-message AddNodeResponse { NodeDesc desc = 1; }
+message ListNodesResponse { repeated NodeDesc nodes = 1; }
 
-message CreateDatabaseRequest { DatabaseDesc desc = 1; }
+message CreateNodeRequest { NodeDesc node = 1; }
 
-message CreateDatabaseResponse { DatabaseDesc desc = 1; }
+message CreateNodeResponse { NodeDesc node = 1; }
 
-message CreateCollectionRequest { CollectionDesc desc = 1; }
+message ListGroupsRequest {}
 
-message CreateCollectionResponse { CollectionDesc desc = 1; }
+message ListGroupsResponse { repeated GroupDesc groups = 1; }
+
+message CreateDatabaseRequest { DatabaseDesc database = 1; }
+
+message CreateDatabaseResponse { DatabaseDesc database = 1; }
+
+message CreateCollectionRequest { CollectionDesc collection = 1; }
+
+message CreateCollectionResponse { CollectionDesc collection = 1; }
