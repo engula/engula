@@ -16,10 +16,6 @@ An Engula deployment is called a cluster. A cluster serves multiple databases, e
 
 A cluster is bootstrapped when the first node is started. The first node creates a root group (group 0).
 
-## Replication group
-
-A replication group consists of a group of replicas. Each group serves one or more shards.
-
 ## Root group
 
 A root group is the first group created when a cluster is bootstrapped. A root group has group id 0.
@@ -28,7 +24,6 @@ A root group serves an internal database named system. The system database consi
 
 - nodes: contains node descriptors
 - groups: contains group descriptors
-- shards: contains shard descriptors
 - databases: contains database descriptors
 - collections: contains collection descriptors
 
@@ -52,9 +47,13 @@ To create a group, the root group allocates a unique group id and selects a few 
 
 ## Shard management
 
-Shards are created when collections are created. Shards in the same group can be split or merged. Shards can also be moved among different groups.
+Shards are created when collections are created. Shards of the same collection in the same group can be split or merged. Shards can also be moved among different groups.
 
 Groups contain the single point of truth about shards?
+
+### Add a shard
+
+To add a shard, the root group sends a shard descriptor to a data group. The data group then replicates the shard descriptor to its replicas.
 
 ## Database management
 
@@ -69,3 +68,17 @@ To create a database, a client sends a database descriptor to the root group. Th
 To create a collection, a client sends a collection descriptor to the root group. The root group allocates a unique collection id to the collection and adds the collection descriptor to the collections collection.
 
 A collection consists of at least one shard. When a collection is created, the root group also creates one or more shards for the collection and then assigns the shards to some groups before the collection is available.
+
+## Load balance
+
+The root group pulls all nodes to collection statistics about nodes and groups.
+
+## Group
+
+A replication group consists of a group of replicas. Each group serves one or more shards.
+
+## Store
+
+A node stores all data in a single local store.
+
+A store consists of multiple tables. Each collection in a node is stored in an individual table.
