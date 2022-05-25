@@ -1,0 +1,170 @@
+// Copyright 2022 The Engula Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package engula.v1;
+
+import "engula/v1/metadata.proto";
+
+service Engula {
+  rpc Admin(AdminRequest) returns (AdminResponse) {}
+  rpc Database(DatabaseRequest) returns (DatabaseResponse) {}
+}
+
+message AdminRequest { AdminRequestUnion request = 1; }
+
+message AdminResponse { AdminResponseUnion response = 1; }
+
+message AdminRequestUnion {
+  oneof request {
+    GetDatabaseRequest get_database = 1;
+    ListDatabasesRequest list_databases = 2;
+    CreateDatabaseRequest create_database = 3;
+    UpdateDatabaseRequest update_database = 4;
+    DeleteDatabaseRequest delete_database = 5;
+    GetCollectionRequest get_collection = 6;
+    ListCollectionsRequest list_collections = 7;
+    CreateCollectionRequest create_collection = 8;
+    UpdateCollectionRequest update_collection = 9;
+    DeleteCollectionRequest delete_collection = 10;
+  }
+}
+
+message AdminResponseUnion {
+  oneof request {
+    GetDatabaseResponse get_database = 1;
+    ListDatabasesResponse list_databases = 2;
+    CreateDatabaseResponse create_database = 3;
+    UpdateDatabaseResponse update_database = 4;
+    DeleteDatabaseResponse delete_database = 5;
+    GetCollectionResponse get_collection = 6;
+    ListCollectionsResponse list_collections = 7;
+    CreateCollectionResponse create_collection = 8;
+    UpdateCollectionResponse update_collection = 9;
+    DeleteCollectionResponse delete_collection = 10;
+  }
+}
+
+message GetDatabaseRequest {
+  // Required. The name of the database.
+  string name = 1;
+}
+
+message GetDatabaseResponse { DatabaseDesc database = 1; }
+
+message ListDatabasesRequest {}
+
+message ListDatabasesResponse { repeated DatabaseDesc databases = 1; }
+
+message CreateDatabaseRequest {
+  // Required. The name of the database.
+  string name = 1;
+}
+
+message CreateDatabaseResponse { DatabaseDesc database = 1; }
+
+message UpdateDatabaseRequest {}
+
+message UpdateDatabaseResponse {}
+
+message DeleteDatabaseRequest {
+  // Required. The name of the database.
+  string name = 1;
+}
+
+message DeleteDatabaseResponse {}
+
+message GetCollectionRequest {
+  // Required. The name of the collection.
+  string name = 1;
+  // Required. The name of the parent database.
+  string parent = 2;
+}
+
+message GetCollectionResponse { CollectionDesc collection = 1; }
+
+message ListCollectionsRequest {
+  // Required. The name of the parent database.
+  string parent = 1;
+}
+
+message ListCollectionsResponse { repeated CollectionDesc collections = 1; }
+
+message CreateCollectionRequest {
+  // Required. The name of the collection.
+  string name = 1;
+  // Required. The name of the parent database.
+  string parent = 2;
+}
+
+message CreateCollectionResponse {}
+
+message UpdateCollectionRequest {}
+
+message UpdateCollectionResponse {}
+
+message DeleteCollectionRequest {
+  // Required. The name of the collection.
+  string name = 1;
+  // Required. The name of the parent database.
+  string parent = 2;
+}
+
+message DeleteCollectionResponse {}
+
+message DatabaseRequest {
+  string database = 1;
+  CollectionRequest request = 2;
+}
+
+message DatabaseResponse { CollectionResponse response = 1; }
+
+message CollectionRequest {
+  string collection = 1;
+  CollectionRequestUnion request = 2;
+}
+
+message CollectionResponse { CollectionResponseUnion response = 1; }
+
+message CollectionRequestUnion {
+  oneof request {
+    GetRequest get = 1;
+    PutRequest put = 2;
+    DeleteRequest delete = 3;
+  }
+}
+
+message CollectionResponseUnion {
+  oneof response {
+    GetResponse get = 1;
+    PutResponse put = 2;
+    DeleteResponse delete = 3;
+  }
+}
+
+message GetRequest { bytes key = 1; }
+
+message GetResponse { bytes value = 1; }
+
+message PutRequest {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message PutResponse {}
+
+message DeleteRequest { bytes key = 1; }
+
+message DeleteResponse {}
