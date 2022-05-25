@@ -12,17 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error, result::Result};
+syntax = "proto3";
 
-fn main() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().compile(
-        &[
-            "engula/v1/admin.proto",
-            "engula/v1/store.proto",
-            "engula/server/v1/node.proto",
-            "engula/server/v1/root.proto",
-        ],
-        &["."],
-    )?;
-    Ok(())
+package engula.server.v1;
+
+import "engula/v1/metadata.proto";
+import "engula/server/v1/metadata.proto";
+
+service Root {
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {}
+}
+
+message WatchRequest { uint64 sequence = 1; }
+
+message WatchResponse {
+  uint64 sequence = 1;
+
+  message Snapshot {
+    repeated NodeDesc nodes = 1;
+    repeated GroupDesc groups = 2;
+    repeated engula.v1.DatabaseDesc databases = 3;
+    repeated engula.v1.CollectionDesc collections = 4;
+  }
+
+  Snapshot snapshot = 2;
 }

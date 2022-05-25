@@ -12,8 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod v1 {
+    tonic::include_proto!("engula.v1");
+}
+
 pub mod server {
     pub mod v1 {
-        tonic::include_proto!("engula.v1");
+        tonic::include_proto!("engula.server.v1");
     }
 }

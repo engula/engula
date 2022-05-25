@@ -12,17 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error, result::Result};
+syntax = "proto3";
 
-fn main() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().compile(
-        &[
-            "engula/v1/admin.proto",
-            "engula/v1/store.proto",
-            "engula/server/v1/node.proto",
-            "engula/server/v1/root.proto",
-        ],
-        &["."],
-    )?;
-    Ok(())
+package engula.server.v1;
+
+service Node {
+  rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
 }
+
+message GetRootRequest {}
+
+message GetRootResponse { repeated string addrs = 1; }

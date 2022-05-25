@@ -16,6 +16,8 @@ syntax = "proto3";
 
 package engula.v1;
 
+import "engula/v1/metadata.proto";
+
 service Admin {
   rpc GetDatabase(GetDatabaseRequest) returns (GetDatabaseResponse) {}
   rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {}
@@ -32,18 +34,18 @@ message GetDatabaseRequest {
   string name = 1;
 }
 
-message GetDatabaseResponse { Database database = 1; }
+message GetDatabaseResponse { DatabaseDesc database = 1; }
 
 message ListDatabasesRequest {}
 
-message ListDatabasesResponse { repeated Database databases = 1; }
+message ListDatabasesResponse { repeated DatabaseDesc databases = 1; }
 
 message CreateDatabaseRequest {
   // Required. The name of the database.
   string name = 1;
 }
 
-message CreateDatabaseResponse { Database database = 1; }
+message CreateDatabaseResponse { DatabaseDesc database = 1; }
 
 message GetCollectionRequest {
   // Required. The name of the collection.
@@ -52,31 +54,20 @@ message GetCollectionRequest {
   string parent = 2;
 }
 
-message GetCollectionResponse { Collection collection = 1; }
+message GetCollectionResponse { CollectionDesc collection = 1; }
 
 message ListCollectionsRequest {
   // Required. The name of the parent database.
   string parent = 1;
 }
 
-message ListCollectionsResponse { repeated Collection collections = 1; }
+message ListCollectionsResponse { repeated CollectionDesc collections = 1; }
 
 message CreateCollectionRequest {
   // Required. The name of the collection.
   string name = 1;
   // Required. The name of the parent database.
   string parent = 2;
-  CollectionOptions options = 3;
 }
 
 message CreateCollectionResponse {}
-
-message Database { string name = 1; }
-
-message Collection {
-  string name = 1;
-  string parent = 2;
-  CollectionOptions options = 3;
-}
-
-message CollectionOptions { uint64 num_replicas = 1; }
