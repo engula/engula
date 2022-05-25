@@ -17,8 +17,7 @@ use std::{error::Error, result::Result};
 fn main() -> Result<(), Box<dyn Error>> {
     tonic_build::configure().compile(
         &[
-            "engula/v1/admin.proto",
-            "engula/v1/store.proto",
+            "engula/v1/engula.proto",
             "engula/server/v1/node.proto",
             "engula/server/v1/root.proto",
         ],
