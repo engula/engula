@@ -28,12 +28,24 @@ message WatchRequest { uint64 sequence = 1; }
 message WatchResponse {
   uint64 sequence = 1;
 
-  message Snapshot {
-    repeated NodeDesc nodes = 1;
-    repeated GroupDesc groups = 2;
-    repeated engula.v1.DatabaseDesc databases = 3;
-    repeated engula.v1.CollectionDesc collections = 4;
+  message UpdateEvent {
+    oneof event {
+      NodeDesc node = 1;
+      GroupDesc group = 2;
+      engula.v1.DatabaseDesc database = 3;
+      engula.v1.CollectionDesc collection = 4;
+    }
   }
 
-  Snapshot snapshot = 2;
+  message DeleteEvent {
+    oneof event {
+      uint64 node = 1;
+      uint64 group = 2;
+      uint64 database = 3;
+      uint64 collection = 4;
+    }
+  }
+
+  repeated UpdateEvent updates = 2;
+  repeated DeleteEvent deletes = 3;
 }

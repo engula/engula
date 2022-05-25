@@ -16,8 +16,42 @@ syntax = "proto3";
 
 package engula.server.v1;
 
+import "engula/v1/engula.proto";
+
 service Node {
+  rpc Batch(BatchRequest) returns (BatchResponse) {}
   rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
+}
+
+message BatchRequest {
+  uint64 node_id = 1;
+  repeated GroupRequest requests = 2;
+}
+
+message BatchResponse { repeated GroupResponse responses = 1; }
+
+message GroupRequest {
+  uint64 group_id = 1;
+  uint64 shard_id = 2;
+  GroupRequestUnion request = 3;
+}
+
+message GroupResponse { GroupResponseUnion response = 1; }
+
+message GroupRequestUnion {
+  oneof request {
+    engula.v1.GetRequest get = 1;
+    engula.v1.PutRequest put = 2;
+    engula.v1.DeleteRequest delete = 3;
+  }
+}
+
+message GroupResponseUnion {
+  oneof response {
+    engula.v1.GetResponse get = 1;
+    engula.v1.PutResponse put = 2;
+    engula.v1.DeleteResponse delete = 3;
+  }
 }
 
 message GetRootRequest {}
