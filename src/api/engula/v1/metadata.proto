@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error, result::Result};
+syntax = "proto3";
 
-fn main() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().compile(
-        &[
-            "engula/v1/admin.proto",
-            "engula/v1/store.proto",
-            "engula/server/v1/node.proto",
-            "engula/server/v1/root.proto",
-        ],
-        &["."],
-    )?;
-    Ok(())
+package engula.v1;
+
+message DatabaseDesc {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message CollectionDesc {
+  uint64 id = 1;
+  string name = 2;
+  uint64 parent_id = 3;
 }
