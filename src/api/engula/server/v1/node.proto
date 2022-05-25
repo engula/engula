@@ -17,10 +17,12 @@ syntax = "proto3";
 package engula.server.v1;
 
 import "engula/v1/engula.proto";
+import "engula/server/v1/metadata.proto";
 
 service Node {
   rpc Batch(BatchRequest) returns (BatchResponse) {}
   rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
+  rpc CreateReplica(CreateReplicaRequest) returns (CreateReplicaResponse) {}
 }
 
 message BatchRequest {
@@ -57,3 +59,7 @@ message GroupResponseUnion {
 message GetRootRequest {}
 
 message GetRootResponse { repeated string addrs = 1; }
+
+message CreateReplicaRequest { GroupDesc group = 1; }
+
+message CreateReplicaResponse {}
