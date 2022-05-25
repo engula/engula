@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/bin", "src/engine", "src/server"]
+members = ["src/api", "src/bin", "src/client", "src/engine", "src/server"]

@@ -192,6 +192,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "engula-api"
+version = "0.4.0"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "engula-client"
+version = "0.4.0"
+dependencies = [
+ "engula-api",
+]
+
+[[package]]
 name = "engula-engine"
 version = "0.4.0"
 
