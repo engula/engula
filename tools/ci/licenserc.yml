@@ -20,3 +20,5 @@ header:
     - '**/*.rs'
     - '**/*.yml'
     - '**/*.proto'
+  paths-ignore:
+    - 'src/server/proto/include/*.proto'
