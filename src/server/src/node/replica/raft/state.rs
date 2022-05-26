@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod node;
-mod runtime;
+use std::future::Future;
 
-pub use raft::eraftpb;
+use raft::StateRole;
 
-pub use crate::error::{Error, Result};
-
-pub mod engula {
-    pub mod server {
-        pub mod v1 {
-            tonic::include_proto!("engula.server.v1");
-        }
-    }
+/// An abstraction which support watch the
+#[allow(unused)]
+pub trait StateObserver {
+    fn on_state_updated(&mut self, role: StateRole, term: u64) -> Box<dyn Future<Output = ()>>;
 }
