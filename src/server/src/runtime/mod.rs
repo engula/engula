@@ -1,4 +1,3 @@
-use std::{future::Future, task::Poll};
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +11,11 @@ use std::{future::Future, task::Poll};
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::{pin::Pin, task::Context};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 #[allow(unused)]
 #[derive(Debug)]
@@ -38,13 +41,22 @@ pub struct JoinHandle<T> {
 #[allow(unused)]
 pub struct Executor
 where
-    Self: Send + Sync, {}
+    Self: Send + Sync,
+{
+    runtime: tokio::runtime::Runtime,
+}
 
 #[allow(unused)]
 impl Executor {
     /// New executor and setup the underlying threads, scheduler.
     pub fn new(num_threads: usize) -> Self {
-        todo!()
+        use tokio::runtime::Builder;
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(num_threads)
+            .enable_all()
+            .build()
+            .expect("build tokio runtime");
+        Executor { runtime }
     }
 
     /// Spawns a task.
@@ -52,12 +64,31 @@ impl Executor {
     /// [`tag`]: specify the tag of task, the underlying scheduler should ensure that all tasks
     ///          with the same tag will be scheduled on the same core.
     /// [`priority`]: specify the task priority.
-    pub fn spawn<F, T>(tag: &[u8], priority: TaskPriority, future: F) -> JoinHandle<T>
+    pub fn spawn<F, T>(
+        &self,
+        tag: Option<&[u8]>,
+        priority: TaskPriority,
+        future: F,
+    ) -> JoinHandle<F::Output>
     where
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        todo!()
+        // TODO(walter) support per thread task set.
+        let _ = tag;
+        let _ = priority;
+
+        let inner = self.runtime.spawn(future);
+        JoinHandle { inner }
+    }
+
+    /// Runs a future to completion on the executor. This is the executor’s entry point.
+    pub fn block_on<F, T>(&self, future: F) -> T
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        self.runtime.block_on(future)
     }
 }
 

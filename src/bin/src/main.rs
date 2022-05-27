@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use clap::{Parser, Subcommand};
+use engula_server::Result;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -22,8 +23,8 @@ struct Command {
 }
 
 impl Command {
-    fn run(self) {
-        self.subcmd.run();
+    fn run(self) -> Result<()> {
+        self.subcmd.run()
     }
 }
 
@@ -33,7 +34,7 @@ enum SubCommand {
 }
 
 impl SubCommand {
-    fn run(self) {
+    fn run(self) -> Result<()> {
         match self {
             SubCommand::Start(cmd) => cmd.run(),
         }
@@ -51,12 +52,15 @@ struct StartCommand {
 }
 
 impl StartCommand {
-    fn run(self) {
-        println!("Hello, Engula!");
+    fn run(self) -> Result<()> {
+        use engula_server::runtime::Executor;
+
+        let executor = Executor::new(num_cpus::get());
+        engula_server::run(executor, self.addr, self.init, self.join)
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cmd = Command::parse();
-    cmd.run();
+    cmd.run()
 }

@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod bootstrap;
 mod error;
 mod node;
-mod runtime;
+pub mod runtime;
+mod service;
 
 pub use raft::eraftpb;
 
-pub use crate::error::{Error, Result};
+pub use crate::{
+    bootstrap::run,
+    error::{Error, Result},
+    service::Server,
+};
 
 pub mod engula {
     pub mod server {

@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("invalid {0}")]
-    Invalid(String),
+pub mod node;
+pub mod raft;
+pub mod root;
 
-    #[error("transport {0}")]
-    Transport(#[from] tonic::transport::Error),
-
-    #[error("io {0}")]
-    Io(#[from] std::io::Error),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+#[allow(unused)]
+#[derive(Clone)]
+pub struct Server {}
