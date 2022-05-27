@@ -195,6 +195,8 @@ name = "engula"
 version = "0.4.0"
 dependencies = [
  "clap",
+ "engula-server",
+ "num_cpus",
 ]
 
 [[package]]
@@ -227,6 +229,7 @@ dependencies = [
  "raft",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
 ]

@@ -10,4 +10,7 @@ categories = ["database", "data-structures"]
 description = "A distributed key-value store."
 
 [dependencies]
+engula-server = { path = "../server", version = "0.4.0" }
+
 clap = { version = "3.1.18", features = ["derive"] }
+num_cpus = "1.13.1"
