@@ -19,7 +19,7 @@ use std::{
 
 use tonic::{Request, Response, Status, Streaming};
 
-use crate::{engula::server::v1::*, Server};
+use crate::{serverpb::v1::*, Server};
 
 pub struct SnapshotStream;
 

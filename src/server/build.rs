@@ -15,6 +15,14 @@
 use std::{error::Error, result::Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().compile(&["v1/raft.proto"], &["proto", "proto/include", "../api/"])?;
+    let mut config = prost_build::Config::default();
+    config.extern_path(".engula.server.v1", "::engula_api::server::v1");
+    config.extern_path(".engula.v1", "::engula_api::v1");
+    config.extern_path(".eraftpb", "::raft::eraftpb");
+    tonic_build::configure().compile_with_config(
+        config,
+        &["v1/raft.proto", "v1/metadata.proto"],
+        &["proto", "proto/include", "../api/"],
+    )?;
     Ok(())
 }

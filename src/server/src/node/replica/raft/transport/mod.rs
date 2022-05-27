@@ -16,7 +16,7 @@ use std::future::Future;
 use engula_api::server::v1::NodeDesc;
 
 use crate::{
-    engula::server::v1::{RaftMessage, SnapshotRequest},
+    serverpb::v1::{RaftMessage, SnapshotRequest},
     Result,
 };
 

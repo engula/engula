@@ -16,6 +16,7 @@ use super::Replica;
 
 /// A structure support replica route queries.
 #[allow(unused)]
+#[derive(Clone)]
 pub struct ReplicaRouteTable
 where
     Self: Send + Sync, {}
@@ -26,6 +27,11 @@ pub struct RootReplica {}
 
 #[allow(unused)]
 impl ReplicaRouteTable {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        ReplicaRouteTable {}
+    }
+
     pub fn find(&self, replica_id: u64) -> Option<&Replica> {
         todo!()
     }
@@ -49,12 +55,18 @@ impl ReplicaRouteTable {
 
 /// A structure support raft route table query.
 #[allow(unused)]
+#[derive(Clone)]
 pub struct RaftRouteTable
 where
     Self: Send + Sync, {}
 
 #[allow(unused)]
 impl RaftRouteTable {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        RaftRouteTable {}
+    }
+
     pub fn find(&self, replica_id: u64) -> Option<()> {
         todo!("define raft sender")
     }

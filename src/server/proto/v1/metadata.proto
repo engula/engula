@@ -12,45 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This file contains data structures that only node will use.
+
 syntax = "proto3";
 
 package serverpb.v1;
 
-import "eraft.proto";
 import "engula/server/v1/metadata.proto";
 
-service Raft {
-  rpc SendMessage(stream RaftMessage) returns (RaftDone) {}
-  rpc RetriveSnapshot(SnapshotRequest) returns (stream SnapshotResponse) {}
+/// A NodeIdent uniquely identifies a node in the cluster.
+message NodeIdent {
+  bytes cluster_id = 1;
+  uint64 node_id = 2;
 }
 
-message RaftMessage {
+message RootDesc {
+  repeated engula.server.v1.NodeDesc root_nodes = 1;
+}
+
+enum ReplicaState {
+  /// With membership, but couldn't supply service.  It is used in group creation.
+  INITIAL = 0;
+  /// Without membership, only response raft messages.
+  PENDING = 1;
+  NORMAL = 2;
+  /// The service and memory states are shutdown and cleans, but disk data still exists.
+  TERMINATED = 3;
+  TOMBSTONE = 4;
+}
+
+message ReplicaMeta {
   uint64 group_id = 1;
-
-  engula.server.v1.ReplicaDesc from_replica = 2;
-  engula.server.v1.ReplicaDesc to_replica = 3;
-
-  repeated eraftpb.Message message = 4;
-}
-
-message RaftDone {}
-
-message SnapshotRequest {
-  uint64 group_id = 1;
-
-  bytes snapshot_id = 2;
-}
-
-message SnapshotResponse {
-  uint64 group_id = 1;
-
-  SnapshotChunk chunk = 2;
-}
-
-message SnapshotChunk {
-  bytes name = 1;
-  uint32 crc32 = 2;
-  uint64 size = 3;
-  bytes chunk_data = 4;
-  bool finished = 5;
+  uint64 replica_id = 2;
+  ReplicaState state = 3;
 }

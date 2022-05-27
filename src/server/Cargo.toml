@@ -11,12 +11,22 @@ description = "The Engula server."
 engula-api = { path = "../api", version = "0.4.0" }
 
 futures = "0.3.21"
-raft = { git = "https://github.com/w41ter/raft-rs.git", features = ["prost-codec"], default-features = false }
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
 tokio-stream = { version = "0.1.8", features = ["net"] }
 tonic = "0.7.2"
 prost = "0.10.3"
 
+[dependencies.raft]
+git = "https://github.com/w41ter/raft-rs.git"
+features = ["prost-codec"]
+default-features = false
+
+[dependencies.rocksdb]
+default-features = false
+features = ["multi-threaded-cf"]
+version = "0.18.0"
+
 [build-dependencies]
+prost-build = "0.10.3"
 tonic-build = "0.7.2"
