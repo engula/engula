@@ -12,18 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod node;
-mod runtime;
+use super::raft::{ApplyEntry, StateMachine};
+use crate::{node::group_engine::GroupEngine, Result};
 
-pub use raft::eraftpb;
+#[allow(unused)]
+pub struct GroupStateMachine {
+    group_engine: GroupEngine,
+}
 
-pub use crate::error::{Error, Result};
+#[allow(unused)]
+impl StateMachine for GroupStateMachine {
+    fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> crate::Result<()> {
+        todo!()
+    }
 
-pub mod engula {
-    pub mod server {
-        pub mod v1 {
-            tonic::include_proto!("engula.server.v1");
-        }
+    fn apply_snapshot(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    fn snapshot(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    fn flushed_index(&self) -> u64 {
+        todo!()
     }
 }

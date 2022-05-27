@@ -12,18 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod node;
-mod runtime;
+use std::{error::Error, result::Result};
 
-pub use raft::eraftpb;
-
-pub use crate::error::{Error, Result};
-
-pub mod engula {
-    pub mod server {
-        pub mod v1 {
-            tonic::include_proto!("engula.server.v1");
-        }
-    }
+fn main() -> Result<(), Box<dyn Error>> {
+    tonic_build::configure().compile(&["v1/raft.proto"], &["proto", "proto/include", "../api/"])?;
+    Ok(())
 }
