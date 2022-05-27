@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use engula_api::server::v1::GroupDesc;
 
 // Copyright 2022 The Engula Authors.
@@ -14,28 +16,49 @@ use engula_api::server::v1::GroupDesc;
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod group_engine;
+pub mod group_engine;
 mod replica;
 mod route_table;
-mod state_engine;
+pub mod state_engine;
 
 use self::{
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
+    state_engine::StateEngine,
 };
 use crate::Result;
 
 #[allow(unused)]
+#[derive(Clone)]
 pub struct Node
 where
     Self: Send + Sync,
 {
+    raw_db: Arc<rocksdb::DB>,
+    state_engine: StateEngine,
     raft_route_table: RaftRouteTable,
     replica_route_table: ReplicaRouteTable,
 }
 
 #[allow(unused)]
 impl Node {
+    pub fn new(raw_db: Arc<rocksdb::DB>, state_engine: StateEngine) -> Self {
+        Node {
+            raw_db,
+            state_engine,
+            raft_route_table: RaftRouteTable::new(),
+            replica_route_table: ReplicaRouteTable::new(),
+        }
+    }
+
+    #[allow(unused)]
+    pub async fn recover(&self) -> Result<()> {
+        for (group_id, replica_id, state) in self.state_engine.iterate_replica_states().await {
+            // TODO(walter)
+        }
+        todo!()
+    }
+
     /// Create a replica.
     ///
     /// The replica state is determined by the `GroupDesc`.
@@ -58,5 +81,10 @@ impl Node {
     #[inline]
     pub fn raft_route_table(&self) -> &RaftRouteTable {
         &self.raft_route_table
+    }
+
+    #[inline]
+    pub fn state_engine(&self) -> &StateEngine {
+        &self.state_engine
     }
 }

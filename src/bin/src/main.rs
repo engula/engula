@@ -48,7 +48,7 @@ struct StartCommand {
     #[clap(long)]
     init: bool,
     #[clap(long)]
-    join: Option<String>,
+    join: Vec<String>,
 }
 
 impl StartCommand {

@@ -85,7 +85,7 @@ impl Executor {
     /// Runs a future to completion on the executor. This is the executor’s entry point.
     pub fn block_on<F, T>(&self, future: F) -> T
     where
-        F: Future<Output = T> + Send + 'static,
+        F: Future<Output = T> + Send,
         T: Send + 'static,
     {
         self.runtime.block_on(future)

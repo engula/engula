@@ -26,10 +26,8 @@ pub use crate::{
     service::Server,
 };
 
-pub mod engula {
-    pub mod server {
-        pub mod v1 {
-            tonic::include_proto!("engula.server.v1");
-        }
+pub mod serverpb {
+    pub mod v1 {
+        tonic::include_proto!("serverpb.v1");
     }
 }
