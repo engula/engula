@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{pin::Pin, task::{Context, Poll}};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use tonic::{Request, Response, Status, Streaming};
 
@@ -44,10 +47,7 @@ impl raft_server::Raft for Server {
 impl futures::Stream for SnapshotStream {
     type Item = Result<SnapshotResponse, Status>;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!()
     }
 }
