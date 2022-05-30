@@ -15,24 +15,31 @@
 use std::{
     collections::HashMap,
     marker::PhantomData,
+    ops::{Deref, DerefMut},
     sync::{Arc, RwLock},
 };
 
 use engula_api::server::v1::GroupDesc;
+use prost::Message;
 
 use crate::Result;
 
 /// The collection id of local states, which allows commit without replicating.
 const LOCAL_COLLECTION_ID: u64 = 0;
 
-pub type WriteBatch = rocksdb::WriteBatch;
+#[derive(Default)]
+pub struct WriteBatch {
+    applied_index: Option<u64>,
+    descriptor: Option<GroupDesc>,
+    inner: rocksdb::WriteBatch,
+}
 
 /// A structure supports grouped data, metadata saving and retriving.
 ///
 /// NOTE: Shard are managed by `GroupEngine` instead of a shard engine, because shards from
 /// different collections in the same group needs to persist on disk at the same time, to guarantee
 /// the accuracy of applied index.
-#[allow(unused)]
+#[derive(Clone)]
 pub struct GroupEngine
 where
     Self: Send,
@@ -49,14 +56,105 @@ pub struct GroupEngineIterator<'a> {
 
 #[allow(unused)]
 impl GroupEngine {
+    /// Create a new instance of group engine.
+    pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<Self> {
+        use rocksdb::Options;
+
+        let group_id = group_desc.id;
+        let name = group_id.to_string();
+        raw_db.create_cf(&name, &Options::default())?;
+
+        let collections = group_desc
+            .shards
+            .iter()
+            .map(|shard| (shard.id, shard.parent_id))
+            .collect::<HashMap<_, _>>();
+        let collections = Arc::new(RwLock::new(collections));
+        let engine = GroupEngine {
+            name,
+            raw_db,
+            collections,
+        };
+
+        let desc = GroupDesc {
+            id: group_id,
+            shards: group_desc.shards.clone(),
+            replicas: vec![],
+        };
+
+        let mut wb = WriteBatch::default();
+        engine.set_applied_index(&mut wb, 0);
+        engine.set_group_desc(&mut wb, &desc);
+        engine.commit(wb)?;
+
+        Ok(engine)
+    }
+
+    /// Open the exists instance of group engine.
+    pub async fn open(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<Option<Self>> {
+        use rocksdb::Options;
+
+        let name = group_id.to_string();
+        let cf_handle = match raw_db.cf_handle(&name) {
+            Some(cf_handle) => cf_handle,
+            None => {
+                return Ok(None);
+            }
+        };
+        let raw_key = keys::descriptor();
+        let value = raw_db
+            .get_pinned_cf(&cf_handle, raw_key)?
+            .expect("group descriptor will persisted when creating group");
+        let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
+        let collections = desc
+            .shards
+            .iter()
+            .map(|shard| (shard.id, shard.parent_id))
+            .collect::<HashMap<_, _>>();
+        Ok(Some(GroupEngine {
+            name,
+            raw_db: raw_db.clone(),
+            collections: Arc::new(RwLock::new(collections)),
+        }))
+    }
+
     /// Return the group descriptor
-    pub fn descriptor(&self) -> GroupDesc {
-        todo!()
+    pub fn descriptor(&self) -> Result<GroupDesc> {
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+        let raw_key = keys::descriptor();
+        let value = self
+            .raw_db
+            .get_pinned_cf(&cf_handle, raw_key)?
+            .expect("group descriptor will persisted when creating group");
+        let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
+        Ok(desc)
     }
 
     /// Return the persisted applied index of raft.
     pub fn flushed_index(&self) -> u64 {
-        todo!()
+        use rocksdb::ReadOptions;
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+        // FIXME(walter) ignore memtables.
+        let raw_key = keys::applied_index();
+        let value = self
+            .raw_db
+            .get_pinned_cf(&cf_handle, raw_key)
+            .unwrap()
+            .expect("group descriptor will persisted when creating group");
+        let value = value.as_ref();
+        if value.len() != core::mem::size_of::<u64>() {
+            panic!("invalid applied index format");
+        }
+
+        let mut buf = [0u8; core::mem::size_of::<u64>()];
+        buf.as_mut_slice().copy_from_slice(value);
+        u64::from_le_bytes(buf)
     }
 
     /// Get key value from the corresponding shard.
@@ -108,22 +206,48 @@ impl GroupEngine {
     }
 
     /// Set the applied index of this group.
+    #[inline]
     pub(super) fn set_applied_index(&self, wb: &mut WriteBatch, applied_index: u64) {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
+        wb.applied_index = Some(applied_index);
+    }
 
-        let raw_key = keys::applied_index();
-        wb.put_cf(&cf_handle, raw_key, applied_index.to_le_bytes().as_slice());
+    #[inline]
+    pub(super) fn set_group_desc(&self, wb: &mut WriteBatch, desc: &GroupDesc) {
+        wb.descriptor = Some(desc.clone());
     }
 
     pub fn commit(&self, wb: WriteBatch) -> Result<()> {
         use rocksdb::WriteOptions;
 
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+
+        let mut inner_wb = wb.inner;
+        if let Some(applied_index) = wb.applied_index {
+            inner_wb.put_cf(
+                &cf_handle,
+                keys::applied_index(),
+                applied_index.to_le_bytes().as_slice(),
+            );
+        }
+        if let Some(desc) = &wb.descriptor {
+            inner_wb.put_cf(&cf_handle, keys::descriptor(), desc.encode_to_vec());
+        }
+
         let mut opts = WriteOptions::default();
         opts.disable_wal(true);
-        self.raw_db.write_opt(wb, &opts)?;
+        self.raw_db.write_opt(inner_wb, &opts)?;
+
+        if let Some(desc) = wb.descriptor {
+            let mut collections = self.collections.write().unwrap();
+            collections.clear();
+            for shard in desc.shards {
+                collections.insert(shard.id, shard.parent_id);
+            }
+        }
+
         Ok(())
     }
 
@@ -169,7 +293,9 @@ impl<'a> Iterator for GroupEngineIterator<'a> {
 #[allow(unused)]
 mod keys {
     const APPLIED_INDEX: &[u8] = b"APPLIED_INDEX";
+    const DESCRIPTOR: &[u8] = b"DESCRIPTOR";
 
+    #[inline]
     pub fn raw(collection_id: u64, key: &[u8]) -> Vec<u8> {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + key.len());
         buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
@@ -177,10 +303,42 @@ mod keys {
         buf
     }
 
+    #[inline]
     pub fn applied_index() -> Vec<u8> {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + APPLIED_INDEX.len());
         buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
         buf.extend_from_slice(APPLIED_INDEX);
         buf
+    }
+
+    #[inline]
+    pub fn descriptor() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + DESCRIPTOR.len());
+        buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
+        buf.extend_from_slice(DESCRIPTOR);
+        buf
+    }
+}
+
+impl WriteBatch {
+    pub fn new(content: &[u8]) -> Self {
+        WriteBatch {
+            inner: rocksdb::WriteBatch::new(content),
+            ..Default::default()
+        }
+    }
+}
+
+impl Deref for WriteBatch {
+    type Target = rocksdb::WriteBatch;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for WriteBatch {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

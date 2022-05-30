@@ -15,6 +15,7 @@ thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
 tokio-stream = { version = "0.1.8", features = ["net"] }
 tonic = "0.7.2"
+tracing = "0.1"
 prost = "0.10.3"
 
 [dependencies.raft]
@@ -31,3 +32,6 @@ version = "0.18.0"
 [build-dependencies]
 prost-build = "0.10.3"
 tonic-build = "0.7.2"
+
+[dev-dependencies]
+tempdir = "0.3.7"

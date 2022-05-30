@@ -18,7 +18,6 @@ use tonic::{Request, Response, Status};
 
 use crate::{runtime::TaskPriority, Error, Server};
 
-#[allow(unused)]
 #[tonic::async_trait]
 impl node_server::Node for Server {
     async fn batch(
@@ -52,6 +51,7 @@ impl node_server::Node for Server {
         Ok(Response::new(BatchResponse { responses }))
     }
 
+    #[allow(unused)]
     async fn get_root(
         &self,
         request: Request<GetRootRequest>,
@@ -67,7 +67,6 @@ impl node_server::Node for Server {
         let group_desc = request
             .group
             .ok_or_else(|| Status::invalid_argument("group is empty"))?;
-        let group_id = group_desc.id;
         let replica_id = request.replica_id;
         self.node.create_replica(replica_id, group_desc).await?;
         Ok(Response::new(CreateReplicaResponse {}))

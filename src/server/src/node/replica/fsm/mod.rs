@@ -19,8 +19,17 @@ use crate::{
 };
 
 #[allow(unused)]
-pub struct GroupStateMachine {
+pub struct GroupStateMachine
+where
+    Self: Send,
+{
     group_engine: GroupEngine,
+}
+
+impl GroupStateMachine {
+    pub fn new(group_engine: GroupEngine) -> Self {
+        GroupStateMachine { group_engine }
+    }
 }
 
 #[allow(unused)]

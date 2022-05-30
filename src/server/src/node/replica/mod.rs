@@ -19,17 +19,16 @@ mod raft;
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request, group_response_union::Response, GroupRequest, GroupResponse,
-        GroupResponseUnion,
+        group_request_union::Request, group_response_union::Response, GroupDesc, GroupRequest,
+        GroupResponse, GroupResponseUnion,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
 
-use self::raft::RaftNodeFacade;
+use self::{fsm::GroupStateMachine, raft::RaftNodeFacade};
 use super::group_engine::GroupEngine;
 use crate::{serverpb::v1::EvalResult, Error, Result};
 
-#[allow(unused)]
 pub struct Replica
 where
     Self: Send,
@@ -42,6 +41,34 @@ where
 
 #[allow(unused)]
 impl Replica {
+    /// Create new instance of the specified raft node.
+    pub async fn create(
+        replica_id: u64,
+        group_engine: GroupEngine,
+        target_desc: &GroupDesc,
+    ) -> Result<()> {
+        let replicas = target_desc
+            .replicas
+            .iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>();
+        let fsm = Box::new(GroupStateMachine::new(group_engine));
+        RaftNodeFacade::create(replica_id, replicas, fsm).await?;
+        Ok(())
+    }
+
+    /// Open the existed replica of raft group.
+    pub async fn open(group_id: u64, replica_id: u64, group_engine: GroupEngine) -> Result<Self> {
+        let fsm = Box::new(GroupStateMachine::new(group_engine.clone()));
+        let raft_node = RaftNodeFacade::open(replica_id, fsm).await?;
+        Ok(Replica {
+            replica_id,
+            group_id,
+            group_engine,
+            raft_node,
+        })
+    }
+
     /// Execute group request and fill response.
     pub async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
         let shard_id = group_request.shard_id;
@@ -99,5 +126,15 @@ impl Replica {
     async fn propose(&self, eval_result: EvalResult) -> Result<()> {
         self.raft_node.propose(eval_result).await?;
         Ok(())
+    }
+
+    #[inline]
+    pub fn replica_id(&self) -> u64 {
+        self.replica_id
+    }
+
+    #[inline]
+    pub fn group_id(&self) -> u64 {
+        self.group_id
     }
 }
