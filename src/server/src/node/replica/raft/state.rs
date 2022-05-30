@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::future::Future;
-
 use raft::StateRole;
 
-/// An abstraction which support watch the
-#[allow(unused)]
+/// An abstraction for observing raft roles and state changes.
+#[tonic::async_trait]
 pub trait StateObserver {
-    fn on_state_updated(&mut self, role: StateRole, term: u64) -> Box<dyn Future<Output = ()>>;
+    async fn on_state_updated(&mut self, role: StateRole, term: u64);
 }

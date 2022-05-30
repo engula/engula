@@ -20,6 +20,9 @@ pub enum Error {
     #[error("staled request to {0}")]
     StaledRequest(u64),
 
+    #[error("invalid lease")]
+    InvalidLease,
+
     #[error("transport {0}")]
     Transport(#[from] tonic::transport::Error),
 
@@ -39,6 +42,7 @@ impl From<Error> for tonic::Status {
         // FIXME(walter) error details.
         match e {
             Error::Invalid(msg) => Status::invalid_argument(msg),
+            Error::InvalidLease => Status::failed_precondition(""),
             Error::StaledRequest(group_id) => Status::failed_precondition(group_id.to_string()),
             Error::Transport(inner) => Status::unknown(inner.to_string()),
             Error::Io(inner) => Status::unknown(inner.to_string()),
