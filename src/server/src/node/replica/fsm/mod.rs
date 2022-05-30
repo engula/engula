@@ -13,7 +13,10 @@
 // limitations under the License.
 
 use super::raft::{ApplyEntry, StateMachine};
-use crate::{node::group_engine::GroupEngine, Result};
+use crate::{
+    node::group_engine::{GroupEngine, WriteBatch},
+    Result,
+};
 
 #[allow(unused)]
 pub struct GroupStateMachine {
@@ -22,8 +25,20 @@ pub struct GroupStateMachine {
 
 #[allow(unused)]
 impl StateMachine for GroupStateMachine {
+    // FIXME(walter) support async?
     fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> crate::Result<()> {
-        todo!()
+        match entry {
+            ApplyEntry::Empty => {}
+            ApplyEntry::ConfigChange {} => {}
+            ApplyEntry::Proposal { eval_result } => {
+                if let Some(wb) = eval_result.batch {
+                    let mut wb = WriteBatch::new(&wb.data);
+                    self.group_engine.set_applied_index(&mut wb, index);
+                    self.group_engine.commit(wb)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn apply_snapshot(&mut self) -> Result<()> {

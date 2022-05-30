@@ -53,10 +53,10 @@ struct StartCommand {
 
 impl StartCommand {
     fn run(self) -> Result<()> {
-        use engula_server::runtime::Executor;
+        use engula_server::runtime::ExecutorOwner;
 
-        let executor = Executor::new(num_cpus::get());
-        engula_server::run(executor, self.addr, self.init, self.join)
+        let owner = ExecutorOwner::new(num_cpus::get());
+        engula_server::run(owner.executor(), self.addr, self.init, self.join)
     }
 }
 

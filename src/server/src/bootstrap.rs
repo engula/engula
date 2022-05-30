@@ -28,7 +28,7 @@ use crate::{
 pub fn run(executor: Executor, addr: String, init: bool, join_list: Vec<String>) -> Result<()> {
     let raw_db = Arc::new(open_engine()?);
     let state_engine = StateEngine::new(raw_db.clone())?;
-    let node = Node::new(raw_db, state_engine);
+    let node = Node::new(raw_db, state_engine, executor.clone());
 
     executor.block_on(async {
         bootstrap_or_join_cluster(&node, init, join_list).await?;

@@ -13,9 +13,10 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
+use futures::{channel::mpsc, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::Server;
+use crate::{runtime::TaskPriority, Error, Server};
 
 #[allow(unused)]
 #[tonic::async_trait]
@@ -24,7 +25,31 @@ impl node_server::Node for Server {
         &self,
         request: Request<BatchRequest>,
     ) -> Result<Response<BatchResponse>, Status> {
-        todo!()
+        let batch_request = request.into_inner();
+        let (sender, mut receiver) = mpsc::channel(batch_request.requests.len());
+        for request in batch_request.requests {
+            let server = self.clone();
+            let task_tag = request.group_id.to_le_bytes();
+            let mut task_tx = sender.clone();
+            self.node.executor().spawn(
+                Some(task_tag.as_slice()),
+                TaskPriority::Middle,
+                async move {
+                    let response = server
+                        .execute_request(request)
+                        .await
+                        .unwrap_or_else(error_2_response);
+                    task_tx.try_send(response).unwrap_or_default();
+                },
+            );
+        }
+
+        let mut responses = vec![];
+        while let Some(response) = receiver.next().await {
+            responses.push(response);
+        }
+
+        Ok(Response::new(BatchResponse { responses }))
     }
 
     async fn get_root(
@@ -38,6 +63,39 @@ impl node_server::Node for Server {
         &self,
         request: Request<CreateReplicaRequest>,
     ) -> Result<Response<CreateReplicaResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let group_desc = request
+            .group
+            .ok_or_else(|| Status::invalid_argument("group is empty"))?;
+        let group_id = group_desc.id;
+        let replica_id = request.replica_id;
+        self.node.create_replica(replica_id, group_desc).await?;
+        Ok(Response::new(CreateReplicaResponse {}))
+    }
+}
+
+impl Server {
+    async fn execute_request(&self, request: GroupRequest) -> crate::Result<GroupResponse> {
+        let route_table = self.node.replica_table();
+        let replica = match route_table.find(request.group_id) {
+            Some(replica) => replica,
+            None => {
+                return Err(Error::StaledRequest(request.group_id));
+            }
+        };
+        replica.execute(&request).await
+    }
+}
+
+fn error_2_response(err: Error) -> GroupResponse {
+    use engula_api::server::v1::Status;
+
+    let status: tonic::Status = err.into();
+    GroupResponse {
+        response: None,
+        status: Some(Status {
+            code: status.code() as i32,
+            message: status.message().to_owned(),
+        }),
     }
 }

@@ -23,6 +23,7 @@ features = ["prost-codec"]
 default-features = false
 
 [dependencies.rocksdb]
+git = "https://github.com/w41ter/rust-rocksdb.git"
 default-features = false
 features = ["multi-threaded-cf"]
 version = "0.18.0"

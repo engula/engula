@@ -46,3 +46,13 @@ message ReplicaMeta {
   uint64 replica_id = 2;
   ReplicaState state = 3;
 }
+
+/// WriteBatch is the serialized representation of DB write batch.
+message WriteBatchRep {
+  bytes data = 1;
+}
+
+/// EvalResult is the structured proposal payload.
+message EvalResult {
+  WriteBatchRep batch = 1;
+}

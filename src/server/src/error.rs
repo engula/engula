@@ -17,6 +17,9 @@ pub enum Error {
     #[error("invalid {0}")]
     Invalid(String),
 
+    #[error("staled request to {0}")]
+    StaledRequest(u64),
+
     #[error("transport {0}")]
     Transport(#[from] tonic::transport::Error),
 
@@ -28,3 +31,24 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for tonic::Status {
+    fn from(e: Error) -> Self {
+        use tonic::Status;
+
+        // FIXME(walter) error details.
+        match e {
+            Error::Invalid(msg) => Status::invalid_argument(msg),
+            Error::StaledRequest(group_id) => Status::failed_precondition(group_id.to_string()),
+            Error::Transport(inner) => Status::unknown(inner.to_string()),
+            Error::Io(inner) => Status::unknown(inner.to_string()),
+            Error::RocksDb(inner) => Status::unknown(inner.to_string()),
+        }
+    }
+}
+
+impl From<futures::channel::oneshot::Canceled> for Error {
+    fn from(_: futures::channel::oneshot::Canceled) -> Self {
+        todo!()
+    }
+}

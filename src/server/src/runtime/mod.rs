@@ -37,17 +37,20 @@ pub struct JoinHandle<T> {
     inner: tokio::task::JoinHandle<T>,
 }
 
+pub struct ExecutorOwner {
+    runtime: tokio::runtime::Runtime,
+}
+
 /// An execution service.
-#[allow(unused)]
+#[derive(Clone)]
 pub struct Executor
 where
     Self: Send + Sync,
 {
-    runtime: tokio::runtime::Runtime,
+    handle: tokio::runtime::Handle,
 }
 
-#[allow(unused)]
-impl Executor {
+impl ExecutorOwner {
     /// New executor and setup the underlying threads, scheduler.
     pub fn new(num_threads: usize) -> Self {
         use tokio::runtime::Builder;
@@ -56,9 +59,18 @@ impl Executor {
             .enable_all()
             .build()
             .expect("build tokio runtime");
-        Executor { runtime }
+        ExecutorOwner { runtime }
     }
 
+    pub fn executor(&self) -> Executor {
+        Executor {
+            handle: self.runtime.handle().clone(),
+        }
+    }
+}
+
+#[allow(unused)]
+impl Executor {
     /// Spawns a task.
     ///
     /// [`tag`]: specify the tag of task, the underlying scheduler should ensure that all tasks
@@ -78,7 +90,7 @@ impl Executor {
         let _ = tag;
         let _ = priority;
 
-        let inner = self.runtime.spawn(future);
+        let inner = self.handle.spawn(future);
         JoinHandle { inner }
     }
 
@@ -88,7 +100,7 @@ impl Executor {
         F: Future<Output = T> + Send,
         T: Send + 'static,
     {
-        self.runtime.block_on(future)
+        self.handle.block_on(future)
     }
 }
 
