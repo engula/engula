@@ -38,7 +38,7 @@ impl node_server::Node for Server {
                     let response = server
                         .execute_request(request)
                         .await
-                        .unwrap_or_else(error_2_response);
+                        .unwrap_or_else(error_to_response);
                     task_tx.try_send(response).unwrap_or_default();
                 },
             );
@@ -87,7 +87,7 @@ impl Server {
     }
 }
 
-fn error_2_response(err: Error) -> GroupResponse {
+fn error_to_response(err: Error) -> GroupResponse {
     use engula_api::server::v1::Status;
 
     let status: tonic::Status = err.into();
