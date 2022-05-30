@@ -11,3 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+use crate::{node::group_engine::GroupEngine, Result};
+
+/// Get the value of the specified key.
+pub async fn get(engine: &GroupEngine, shard_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    engine.get(shard_id, key).await
+}

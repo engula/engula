@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use engula_api::server::v1::GroupDesc;
-
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,16 +13,20 @@ use engula_api::server::v1::GroupDesc;
 // limitations under the License.
 
 pub mod group_engine;
-mod replica;
+pub mod replica;
 mod route_table;
 pub mod state_engine;
+
+use std::sync::Arc;
+
+use engula_api::server::v1::GroupDesc;
 
 use self::{
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
     state_engine::StateEngine,
 };
-use crate::Result;
+use crate::{runtime::Executor, Result};
 
 #[allow(unused)]
 #[derive(Clone)]
@@ -38,16 +38,18 @@ where
     state_engine: StateEngine,
     raft_route_table: RaftRouteTable,
     replica_route_table: ReplicaRouteTable,
+    executor: Executor,
 }
 
 #[allow(unused)]
 impl Node {
-    pub fn new(raw_db: Arc<rocksdb::DB>, state_engine: StateEngine) -> Self {
+    pub fn new(raw_db: Arc<rocksdb::DB>, state_engine: StateEngine, executor: Executor) -> Self {
         Node {
             raw_db,
             state_engine,
             raft_route_table: RaftRouteTable::new(),
             replica_route_table: ReplicaRouteTable::new(),
+            executor,
         }
     }
 
@@ -86,5 +88,10 @@ impl Node {
     #[inline]
     pub fn state_engine(&self) -> &StateEngine {
         &self.state_engine
+    }
+
+    #[inline]
+    pub fn executor(&self) -> &Executor {
+        &self.executor
     }
 }

@@ -16,11 +16,13 @@ mod snap;
 mod state;
 mod transport;
 
+use std::sync::{Arc, Mutex};
+
 use futures::channel::oneshot;
 use raft::prelude::*;
 
 pub use self::fsm::{ApplyEntry, StateMachine};
-use crate::Result;
+use crate::{serverpb::v1::EvalResult, Result};
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
 #[derive(Debug)]
@@ -38,7 +40,12 @@ pub enum ReadPolicy {
 /// `RaftNodeFacade` wraps the operations of raft.
 #[derive(Clone)]
 #[allow(unused)]
-pub struct RaftNodeFacade {}
+pub struct RaftNodeFacade
+where
+    Self: Send,
+{
+    fsm: Arc<Mutex<Box<dyn StateMachine + Send>>>,
+}
 
 #[allow(unused)]
 impl RaftNodeFacade {
@@ -49,13 +56,19 @@ impl RaftNodeFacade {
     ///
     /// TODO(walter) support return user defined error.
     #[allow(unused)]
-    pub fn propose(&mut self, context: Vec<u8>, data: Vec<u8>) -> oneshot::Receiver<Result<()>> {
-        todo!()
+    pub fn propose(&self, eval_result: EvalResult) -> oneshot::Receiver<Result<()>> {
+        self.fsm
+            .lock()
+            .unwrap()
+            .apply(0, 0, ApplyEntry::Proposal { eval_result });
+        let (sender, receiver) = oneshot::channel();
+        sender.send(Ok(())).unwrap();
+        receiver
     }
 
     /// Try to campaign leader.
     #[allow(unused)]
-    pub fn campaign(&mut self) -> oneshot::Receiver<Result<()>> {
+    pub fn campaign(&self) -> oneshot::Receiver<Result<()>> {
         todo!()
     }
 

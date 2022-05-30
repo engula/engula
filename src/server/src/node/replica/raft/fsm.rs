@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Result;
+use crate::{serverpb::v1::EvalResult, Result};
 
 /// A helper structure to used to access the internal field of entries.
 #[allow(unused)]
 pub enum ApplyEntry {
     Empty,
     ConfigChange {},
-    Proposal { data: Vec<u8>, context: Vec<u8> },
+    Proposal { eval_result: EvalResult },
 }
 
 /// An abstraction of finate state machine. It is used by `RaftNode` to apply entries.

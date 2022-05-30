@@ -38,7 +38,12 @@ message GroupRequest {
   GroupRequestUnion request = 3;
 }
 
-message GroupResponse { GroupResponseUnion response = 1; }
+message GroupResponse {
+    GroupResponseUnion response = 1;
+
+    /// Only used in BatchResponse.
+    Status status = 2;
+}
 
 message GroupRequestUnion {
   oneof request {
@@ -60,6 +65,14 @@ message GetRootRequest {}
 
 message GetRootResponse { repeated string addrs = 1; }
 
-message CreateReplicaRequest { GroupDesc group = 1; }
+message CreateReplicaRequest {
+  uint64 replica_id = 1;
+  GroupDesc group = 2;
+}
 
 message CreateReplicaResponse {}
+
+message Status {
+  int32 code = 1;
+  string message = 2;
+}

@@ -15,3 +15,7 @@
 mod cmd_delete;
 mod cmd_get;
 mod cmd_put;
+
+pub use cmd_delete::delete;
+pub use cmd_get::get;
+pub use cmd_put::put;

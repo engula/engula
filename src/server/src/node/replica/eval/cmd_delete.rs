@@ -11,3 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use crate::{
+    node::group_engine::{GroupEngine, WriteBatch},
+    serverpb::v1::{EvalResult, WriteBatchRep},
+    Result,
+};
+
+pub async fn delete(group_engine: &GroupEngine, shard_id: u64, key: &[u8]) -> Result<EvalResult> {
+    let mut wb = WriteBatch::default();
+    group_engine.delete(&mut wb, shard_id, key)?;
+    Ok(EvalResult {
+        batch: Some(WriteBatchRep {
+            data: wb.data().to_owned(),
+        }),
+    })
+}
