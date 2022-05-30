@@ -31,6 +31,7 @@ use self::{
 };
 use crate::{runtime::Executor, serverpb::v1::ReplicaState, Result};
 
+#[derive(Clone)]
 struct ReplicaInfo {
     group_id: u64,
     state: ReplicaState,
