@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(drain_filter)]
+
 mod bootstrap;
 mod error;
 mod node;

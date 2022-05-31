@@ -56,9 +56,11 @@ pub fn run(
     init: bool,
     join_list: Vec<String>,
 ) -> Result<()> {
-    let raw_db = Arc::new(open_engine(path)?);
+    let db_path = path.join("db");
+    let log_path = path.join("log");
+    let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
-    let node = Node::new(raw_db, state_engine, executor.clone());
+    let node = Node::new(log_path, raw_db, state_engine, executor.clone())?;
     let mut root = Root::new(executor.clone());
 
     executor.block_on(async {

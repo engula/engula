@@ -15,9 +15,9 @@
 mod acl;
 mod eval;
 pub mod fsm;
-mod raft;
+pub mod raft;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use engula_api::{
     server::v1::{
@@ -26,11 +26,11 @@ use engula_api::{
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
-use futures::lock::Mutex;
 
+pub use self::raft::RaftNodeFacade as RaftSender;
 use self::{
     fsm::GroupStateMachine,
-    raft::{RaftNodeFacade, StateObserver},
+    raft::{RaftManager, RaftNodeFacade, StateObserver},
 };
 use super::group_engine::GroupEngine;
 use crate::{
@@ -64,25 +64,31 @@ impl Replica {
     /// Create new instance of the specified raft node.
     pub async fn create(
         replica_id: u64,
-        group_engine: GroupEngine,
         target_desc: &GroupDesc,
+        raft_mgr: &RaftManager,
     ) -> Result<()> {
         let replicas = target_desc
             .replicas
             .iter()
             .map(|r| r.id)
             .collect::<Vec<_>>();
-        let fsm = Box::new(GroupStateMachine::new(group_engine));
-        RaftNodeFacade::create(replica_id, replicas, fsm).await?;
+        raft::write_initial_state(raft_mgr.engine(), replica_id, replicas).await?;
         Ok(())
     }
 
     /// Open the existed replica of raft group.
-    pub async fn open(group_id: u64, replica_id: u64, group_engine: GroupEngine) -> Result<Self> {
-        let fsm = Box::new(GroupStateMachine::new(group_engine.clone()));
+    pub async fn recover(
+        group_id: u64,
+        replica_id: u64,
+        group_engine: GroupEngine,
+        raft_mgr: &RaftManager,
+    ) -> Result<Self> {
+        let fsm = GroupStateMachine::new(group_engine.clone());
         let lease_state: Arc<Mutex<LeaseState>> = Arc::default();
         let observer = Box::new(RoleObserver::new(lease_state.clone()));
-        let raft_node = RaftNodeFacade::open(replica_id, fsm, observer).await?;
+        let raft_node = raft_mgr
+            .start_raft_group(group_id, replica_id, fsm, observer)
+            .await?;
         Ok(Replica {
             replica_id,
             group_id,
@@ -102,7 +108,7 @@ impl Replica {
             .and_then(|request| request.request.as_ref())
             .ok_or_else(|| Error::InvalidArgument("GroupRequest::request".into()))?;
 
-        self.check_request_early(group_id, request).await?;
+        self.check_request_early(group_id, request)?;
         let resp = self.evaluate_command(shard_id, request).await?;
         Ok(GroupResponse::new(resp))
     }
@@ -162,12 +168,12 @@ impl Replica {
     }
 
     async fn propose(&self, eval_result: EvalResult) -> Result<()> {
-        self.raft_node.propose(eval_result).await?;
+        self.raft_node.clone().propose(eval_result).await?;
         Ok(())
     }
 
-    async fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
-        let lease_state = self.lease_state.lock().await;
+    fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
+        let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.still_valid() {
             Err(Error::NotLeader(group_id, None))
         } else {
@@ -184,6 +190,11 @@ impl Replica {
     pub fn group_id(&self) -> u64 {
         self.group_id
     }
+
+    #[inline]
+    pub fn raft_node(&self) -> RaftNodeFacade {
+        self.raft_node.clone()
+    }
 }
 
 impl LeaseState {
@@ -199,10 +210,9 @@ impl RoleObserver {
     }
 }
 
-#[tonic::async_trait]
 impl StateObserver for RoleObserver {
-    async fn on_state_updated(&mut self, role: ::raft::StateRole, term: u64) {
-        let mut lease_state = self.lease_state.lock().await;
+    fn on_state_updated(&mut self, _leader_id: u64, term: u64, role: ::raft::StateRole) {
+        let mut lease_state = self.lease_state.lock().unwrap();
         lease_state.role = role;
         lease_state.term = term;
     }

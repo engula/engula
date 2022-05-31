@@ -24,7 +24,7 @@ pub enum ApplyEntry {
 
 /// An abstraction of finate state machine. It is used by `RaftNode` to apply entries.
 #[allow(unused)]
-pub trait StateMachine {
+pub trait StateMachine: Send {
     fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> Result<()>;
 
     // TODO(walter) define snapshot

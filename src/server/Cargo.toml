@@ -23,8 +23,13 @@ uuid = { version = "1.1.1", features = ["v4"] }
 
 [dependencies.raft]
 git = "https://github.com/w41ter/raft-rs.git"
-features = ["prost-codec"]
+features = ["prost-codec", "default-logger"]
 default-features = false
+
+[dependencies.raft-engine]
+git = "https://github.com/w41ter/raft-engine.git"
+default-features = false
+features = ["prost"]
 
 [dependencies.rocksdb]
 git = "https://github.com/w41ter/rust-rocksdb.git"

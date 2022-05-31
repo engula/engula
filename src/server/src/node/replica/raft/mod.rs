@@ -11,21 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+mod applier;
+mod facade;
 mod fsm;
+mod node;
 mod snap;
-mod state;
+mod storage;
 mod transport;
+mod worker;
 
-use std::sync::{Arc, Mutex};
-
-use futures::channel::oneshot;
-use raft::{prelude::*, StateRole};
+use std::{path::Path, sync::Arc};
 
 pub use self::{
+    facade::RaftNodeFacade,
     fsm::{ApplyEntry, StateMachine},
-    state::StateObserver,
+    storage::write_initial_state,
+    transport::{AddressResolver, TransportManager},
+    worker::StateObserver,
 };
-use crate::{serverpb::v1::EvalResult, Result};
+use crate::{
+    node::replica::raft::worker::RaftWorker,
+    runtime::{Executor, TaskPriority},
+    Result,
+};
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
 #[derive(Debug)]
@@ -40,90 +48,55 @@ pub enum ReadPolicy {
     ReadIndex,
 }
 
-/// `RaftNodeFacade` wraps the operations of raft.
 #[derive(Clone)]
-#[allow(unused)]
-pub struct RaftNodeFacade
-where
-    Self: Send,
-{
-    fsm: Arc<Mutex<Box<dyn StateMachine + Send>>>,
-    observer: Arc<Mutex<Box<dyn StateObserver + Send>>>,
+pub struct RaftManager {
+    executor: Executor,
+    engine: Arc<raft_engine::Engine>,
+    transport_mgr: TransportManager,
 }
 
-#[allow(unused)]
-impl RaftNodeFacade {
-    /// Create new raft node.
-    ///
-    /// `replicas` specific the initial membership of raft group.
-    pub async fn create(
-        replica_id: u64,
-        replicas: Vec<u64>,
-        fsm: Box<dyn StateMachine + Send>,
-    ) -> Result<()> {
-        // TODO(walter) add implementation.
-        Ok(())
-    }
-
-    /// Open the existed raft node.
-    pub async fn open(
-        replica_id: u64,
-        fsm: Box<dyn StateMachine + Send>,
-        mut observer: Box<dyn StateObserver + Send>,
+impl RaftManager {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        executor: Executor,
+        transport_mgr: TransportManager,
     ) -> Result<Self> {
-        // TODO(walter) add implementation.
-        observer.on_state_updated(StateRole::Leader, 1).await;
-        Ok(RaftNodeFacade {
-            fsm: Arc::new(Mutex::new(fsm)),
-            observer: Arc::new(Mutex::new(observer)),
+        use raft_engine::{Config, Engine};
+        let cfg = Config {
+            dir: path.as_ref().to_str().unwrap().to_owned(),
+            ..Default::default()
+        };
+        let engine = Arc::new(Engine::open(cfg)?);
+        Ok(RaftManager {
+            executor,
+            engine,
+            transport_mgr,
         })
     }
 
-    /// Submit a data to replicate, and returns corresponding future value.
-    ///
-    /// Once the data is applied to the [`StateMachine`], the value of future will be set to
-    /// [`Ok(())`]. The future is set to specific error if the data cannot be applied.
-    ///
-    /// TODO(walter) support return user defined error.
-    #[allow(unused)]
-    pub fn propose(&self, eval_result: EvalResult) -> oneshot::Receiver<Result<()>> {
-        self.fsm
-            .lock()
-            .unwrap()
-            .apply(0, 0, ApplyEntry::Proposal { eval_result });
-        let (sender, receiver) = oneshot::channel();
-        sender.send(Ok(())).unwrap();
-        receiver
+    #[inline]
+    pub fn engine(&self) -> &raft_engine::Engine {
+        &self.engine
     }
 
-    /// Try to campaign leader.
-    #[allow(unused)]
-    pub fn campaign(&self) -> oneshot::Receiver<Result<()>> {
-        todo!()
+    #[inline]
+    pub async fn list_groups(&self) -> Vec<u64> {
+        self.engine.raft_groups()
     }
 
-    /// Execute reading operations with the specified read policy.
-    #[allow(unused)]
-    pub fn read(&mut self, policy: ReadPolicy) -> oneshot::Receiver<Result<()>> {
-        todo!()
-    }
-
-    /// Step raft messages.
-    #[allow(unused)]
-    pub fn step(&mut self, msg: Message) -> Result<()> {
-        todo!()
-    }
-
-    /// Acquire the latest snapshot, create it no such snapshot exists.
-    pub fn acquire_snapshot(&mut self) -> oneshot::Receiver<Result<u64>> {
-        todo!()
-    }
-
-    pub fn transfer_leader(&mut self, target_id: u64) -> Result<()> {
-        todo!()
-    }
-
-    pub fn change_config(&mut self, change: ConfChangeV2) -> oneshot::Receiver<Result<()>> {
-        todo!()
+    pub async fn start_raft_group<M: 'static + StateMachine>(
+        &self,
+        group_id: u64,
+        replica_id: u64,
+        state_machine: M,
+        observer: Box<dyn StateObserver>,
+    ) -> Result<RaftNodeFacade> {
+        let worker = RaftWorker::open(group_id, replica_id, state_machine, self, observer).await?;
+        let facade = RaftNodeFacade::open(worker.request_sender());
+        self.executor.spawn(None, TaskPriority::High, async move {
+            // TODO(walter) handle result.
+            worker.run().await.unwrap();
+        });
+        Ok(facade)
     }
 }

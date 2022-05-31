@@ -11,11 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use engula_api::server::v1::NodeDesc;
 
-use raft::StateRole;
+use crate::Result;
 
-/// An abstraction for observing raft roles and state changes.
+pub struct AddressResolver {}
+
 #[tonic::async_trait]
-pub trait StateObserver {
-    async fn on_state_updated(&mut self, role: StateRole, term: u64);
+impl crate::node::replica::raft::AddressResolver for AddressResolver {
+    async fn resolve(&self, _node_id: u64) -> Result<NodeDesc> {
+        todo!()
+    }
 }

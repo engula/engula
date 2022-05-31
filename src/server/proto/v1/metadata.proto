@@ -47,6 +47,17 @@ message ReplicaMeta {
   ReplicaState state = 3;
 }
 
+message EntryID {
+  uint64 index = 1;
+  uint64 term = 2;
+}
+
+message RaftLocalState {
+  uint64 replica_id = 1;
+  EntryID commit = 2;
+  EntryID last_truncated = 3;
+}
+
 /// EvalResult is the structured proposal payload.
 message EvalResult {
   WriteBatchRep batch = 1;

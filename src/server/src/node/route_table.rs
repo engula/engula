@@ -17,7 +17,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use super::Replica;
+use super::{replica::RaftSender, Replica};
 use crate::bootstrap::ROOT_GROUP_ID;
 
 /// A structure support replica route queries.
@@ -80,28 +80,33 @@ impl ReplicaRouteTable {
 }
 
 /// A structure support raft route table query.
-#[allow(unused)]
 #[derive(Clone)]
 pub struct RaftRouteTable
 where
-    Self: Send + Sync, {}
+    Self: Send + Sync,
+{
+    // FIXME(walter) more efficient implementation.
+    senders: Arc<RwLock<HashMap<u64, RaftSender>>>,
+}
 
 #[allow(unused)]
 impl RaftRouteTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        RaftRouteTable {}
+        RaftRouteTable {
+            senders: Arc::default(),
+        }
     }
 
-    pub fn find(&self, replica_id: u64) -> Option<()> {
-        todo!("define raft sender")
+    pub fn find(&self, replica_id: u64) -> Option<RaftSender> {
+        self.senders.read().unwrap().get(&replica_id).cloned()
     }
 
-    pub fn upsert(&self, replica_id: u64, sender: ()) -> Option<()> {
-        todo!()
+    pub fn update(&self, replica_id: u64, sender: RaftSender) {
+        self.senders.write().unwrap().insert(replica_id, sender);
     }
 
     pub fn delete(&self, replica_id: u64) {
-        todo!()
+        self.senders.write().unwrap().remove(&replica_id);
     }
 }

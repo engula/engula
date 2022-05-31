@@ -98,6 +98,8 @@ fn error_to_response(err: Error) -> GroupResponse {
         Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
         Error::Transport(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
         Error::RocksDb(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
+        Error::Raft(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
+        Error::RaftEngine(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
         Error::Io(inner) => {
             let status: Status = inner.into();
             v1::Error::status(status.code().into(), status.message())
@@ -108,6 +110,9 @@ fn error_to_response(err: Error) -> GroupResponse {
         err @ Error::InvalidData(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
         err @ Error::NotRootLeader => v1::Error::status(Code::Internal.into(), err.to_string()),
         err @ Error::ClusterNotMatch => v1::Error::status(Code::Internal.into(), err.to_string()),
+        err @ Error::Canceled => v1::Error::status(Code::Cancelled.into(), err.to_string()),
+        err @ Error::Rpc(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
+        Error::DeadlineExceeded(msg) => v1::Error::status(Code::DeadlineExceeded.into(), msg),
     };
 
     GroupResponse {
