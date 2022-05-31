@@ -135,6 +135,9 @@ impl Replica {
                 let eval_result = eval::delete(&self.group_engine, shard_id, &req.key).await?;
                 Some(eval_result)
             }
+            Request::CreateShard(req) => {
+                todo!("add new shard to an existing group");
+            }
         };
 
         if let Some(eval_result) = eval_result_opt {

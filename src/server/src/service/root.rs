@@ -42,6 +42,13 @@ impl root_server::Root for Server {
     ) -> Result<Response<Self::WatchStream>, Status> {
         todo!()
     }
+
+    async fn join(
+        &self,
+        request: Request<JoinNodeRequest>,
+    ) -> Result<Response<JoinNodeResponse>, Status> {
+        todo!()
+    }
 }
 
 #[allow(unused)]
