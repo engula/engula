@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use engula_server::Result;
 
@@ -49,6 +51,8 @@ struct StartCommand {
     init: bool,
     #[clap(long)]
     join: Vec<String>,
+    #[clap(long, parse(from_os_str))]
+    db: PathBuf,
 }
 
 impl StartCommand {
@@ -56,7 +60,7 @@ impl StartCommand {
         use engula_server::runtime::ExecutorOwner;
 
         let owner = ExecutorOwner::new(num_cpus::get());
-        engula_server::run(owner.executor(), self.addr, self.init, self.join)
+        engula_server::run(owner.executor(), self.db, self.addr, self.init, self.join)
     }
 }
 

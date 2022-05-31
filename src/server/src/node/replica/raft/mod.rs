@@ -19,9 +19,12 @@ mod transport;
 use std::sync::{Arc, Mutex};
 
 use futures::channel::oneshot;
-use raft::prelude::*;
+use raft::{prelude::*, StateRole};
 
-pub use self::fsm::{ApplyEntry, StateMachine};
+pub use self::{
+    fsm::{ApplyEntry, StateMachine},
+    state::StateObserver,
+};
 use crate::{serverpb::v1::EvalResult, Result};
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
@@ -45,10 +48,37 @@ where
     Self: Send,
 {
     fsm: Arc<Mutex<Box<dyn StateMachine + Send>>>,
+    observer: Arc<Mutex<Box<dyn StateObserver + Send>>>,
 }
 
 #[allow(unused)]
 impl RaftNodeFacade {
+    /// Create new raft node.
+    ///
+    /// `replicas` specific the initial membership of raft group.
+    pub async fn create(
+        replica_id: u64,
+        replicas: Vec<u64>,
+        fsm: Box<dyn StateMachine + Send>,
+    ) -> Result<()> {
+        // TODO(walter) add implementation.
+        Ok(())
+    }
+
+    /// Open the existed raft node.
+    pub async fn open(
+        replica_id: u64,
+        fsm: Box<dyn StateMachine + Send>,
+        mut observer: Box<dyn StateObserver + Send>,
+    ) -> Result<Self> {
+        // TODO(walter) add implementation.
+        observer.on_state_updated(StateRole::Leader, 1).await;
+        Ok(RaftNodeFacade {
+            fsm: Arc::new(Mutex::new(fsm)),
+            observer: Arc::new(Mutex::new(observer)),
+        })
+    }
+
     /// Submit a data to replicate, and returns corresponding future value.
     ///
     /// Once the data is applied to the [`StateMachine`], the value of future will be set to

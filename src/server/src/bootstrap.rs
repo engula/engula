@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, GroupDesc};
+use engula_api::server::v1::{
+    node_server::NodeServer, root_server::RootServer, GroupDesc, NodeDesc, ReplicaDesc,
+};
+use tracing::info;
 
 use crate::{
     node::{state_engine::StateEngine, Node},
@@ -23,15 +29,26 @@ use crate::{
     Result, Server,
 };
 
+// TODO(walter) root cluster and first replica id.
+const ROOT_GROUP_ID: u64 = 0;
+const FIRST_REPLICA_ID: u64 = 0;
+const FIRST_NODE_ID: u64 = 0;
+
 /// The main entrance of engula server.
 #[allow(unused)]
-pub fn run(executor: Executor, addr: String, init: bool, join_list: Vec<String>) -> Result<()> {
-    let raw_db = Arc::new(open_engine()?);
+pub fn run(
+    executor: Executor,
+    path: PathBuf,
+    addr: String,
+    init: bool,
+    join_list: Vec<String>,
+) -> Result<()> {
+    let raw_db = Arc::new(open_engine(path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
     let node = Node::new(raw_db, state_engine, executor.clone());
 
     executor.block_on(async {
-        bootstrap_or_join_cluster(&node, init, join_list).await?;
+        bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
         recover_groups(&node).await
     })?;
 
@@ -64,27 +81,34 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     Ok(())
 }
 
-fn open_engine() -> Result<rocksdb::DB> {
+pub(crate) fn open_engine<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
     use rocksdb::{Options, DB};
 
-    // FIXME(walter) config engine path.
-    let path = "/tmp/engula-server/";
     std::fs::create_dir_all(&path)?;
 
+    // Creates database if not exists, drops it immediately.
     let mut opts = Options::default();
     opts.create_if_missing(true);
-    opts.create_missing_column_families(true);
-    Ok(DB::open(&opts, path)?)
+    DB::open(&opts, &path)?;
+
+    // List column families and open database with column families.
+    let column_families = DB::list_cf(&Options::default(), &path)?;
+    Ok(DB::open_cf(&opts, path, column_families)?)
 }
 
-async fn bootstrap_or_join_cluster(node: &Node, init: bool, join_list: Vec<String>) -> Result<()> {
+async fn bootstrap_or_join_cluster(
+    node: &Node,
+    addr: &str,
+    init: bool,
+    join_list: Vec<String>,
+) -> Result<()> {
     let state_engine = node.state_engine();
     if state_engine.read_ident().await?.is_some() {
         return Ok(());
     }
 
     if init {
-        bootstrap_cluster(node).await?;
+        bootstrap_cluster(node, addr).await?;
     } else {
         try_join_cluster(state_engine, join_list).await?;
     }
@@ -98,56 +122,56 @@ async fn try_join_cluster(state_engine: &StateEngine, join_list: Vec<String>) ->
     todo!()
 }
 
-async fn bootstrap_cluster(node: &Node) -> Result<()> {
+async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<()> {
     // TODO(walter) clean staled data in db.
-    write_initial_cluster_data(node).await?;
+    write_initial_cluster_data(node, addr).await?;
 
-    // TODO(walter) root cluster and first replica id.
-    const ROOT_GROUP_ID: u64 = 0;
-    const FIRST_REPLICA_ID: u64 = 0;
+    // The first replica in the cluster has been created. It has only one member
+    // and does not need to wait for other replicas, so it can directly enter the
+    // normal state.
     let state_engine = node.state_engine();
     state_engine
         .save_replica_state(ROOT_GROUP_ID, FIRST_REPLICA_ID, ReplicaState::Normal)
         .await?;
 
-    // TODO(walter) first node id and generate cluster id.
-    const FIRST_NODE_ID: u64 = 0;
+    // TODO(walter) generate cluster id.
     let node_ident = NodeIdent {
         cluster_id: vec![],
         node_id: FIRST_NODE_ID,
     };
     state_engine.save_ident(node_ident).await?;
 
-    // TODO(walter) log cluster is bootstrapted.
+    info!("bootstrap cluster successfully");
 
     Ok(())
 }
 
-async fn write_initial_cluster_data(node: &Node) -> Result<()> {
+async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     let state_engine = node.state_engine();
-
-    // TODO(walter) root cluster and first replica id.
-    const ROOT_GROUP_ID: u64 = 0;
-    const FIRST_REPLICA_ID: u64 = 0;
 
     // TODO(walter) write initial cluster data.
     // - meta shards
+    // Create the first raft group of cluster, this node is the only member of the raft group.
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
         shards: vec![],
-        replicas: vec![],
+        replicas: vec![ReplicaDesc {
+            id: FIRST_REPLICA_ID,
+            node_id: FIRST_NODE_ID,
+        }],
     };
     node.create_replica(FIRST_REPLICA_ID, group).await?;
 
-    // FIXME(walter) fill root nodes.
-    state_engine.save_root_nodes(vec![]).await?;
+    let node_desc = NodeDesc {
+        id: FIRST_NODE_ID,
+        addr: addr.to_owned(),
+    };
+    state_engine.save_root_nodes(vec![node_desc]).await?;
 
     Ok(())
 }
 
-#[allow(unused)]
 async fn recover_groups(node: &Node) -> Result<()> {
-    // TODO(walter) recover groups
     node.recover().await?;
     Ok(())
 }

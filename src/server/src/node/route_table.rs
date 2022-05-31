@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
+
 use super::Replica;
 
 /// A structure support replica route queries.
@@ -19,7 +24,11 @@ use super::Replica;
 #[derive(Clone)]
 pub struct ReplicaRouteTable
 where
-    Self: Send + Sync, {}
+    Self: Send + Sync,
+{
+    // FIXME(walter) more efficient implementation.
+    replicas: Arc<RwLock<HashMap<u64, Arc<Replica>>>>,
+}
 
 // FIXME(walter) define.
 #[allow(unused)]
@@ -29,19 +38,23 @@ pub struct RootReplica {}
 impl ReplicaRouteTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        ReplicaRouteTable {}
+        ReplicaRouteTable {
+            replicas: Arc::new(RwLock::new(HashMap::default())),
+        }
     }
 
-    pub fn find(&self, replica_id: u64) -> Option<&Replica> {
-        todo!()
+    /// Find the corresponding replica.
+    pub fn find(&self, replica_id: u64) -> Option<Arc<Replica>> {
+        self.replicas.read().unwrap().get(&replica_id).cloned()
     }
 
     pub fn find_root(&self) -> Option<&RootReplica> {
         todo!()
     }
 
-    pub fn upsert(&self, replica: &Replica) {
-        todo!()
+    pub fn update(&self, replica: Arc<Replica>) {
+        let replica_id = replica.replica_id();
+        self.replicas.write().unwrap().insert(replica_id, replica);
     }
 
     pub fn upsert_root(&self, root_replica: &RootReplica) {
@@ -49,7 +62,7 @@ impl ReplicaRouteTable {
     }
 
     pub fn remove(&self, replica_id: u64) {
-        todo!()
+        self.replicas.write().unwrap().remove(&replica_id);
     }
 }
 
