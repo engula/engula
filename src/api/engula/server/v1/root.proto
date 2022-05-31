@@ -23,6 +23,10 @@ import "engula/server/v1/metadata.proto";
 service Root {
   rpc Admin(engula.v1.AdminRequest) returns (engula.v1.AdminResponse) {}
   rpc Watch(WatchRequest) returns (stream WatchResponse) {}
+
+  /// Join a bootstraped cluster. If the target node is itself not part of a
+  /// bootstraped cluster, an appropriate error is returned.
+  rpc Join(JoinNodeRequest) returns (JoinNodeResponse) {}
 }
 
 message WatchRequest { uint64 sequence = 1; }
@@ -51,3 +55,14 @@ message WatchResponse {
   repeated UpdateEvent updates = 2;
   repeated DeleteEvent deletes = 3;
 }
+
+message JoinNodeRequest {
+  string addr = 1;
+}
+
+message JoinNodeResponse {
+  bytes cluster_id = 1;
+
+  uint64 node_id = 2;
+}
+
