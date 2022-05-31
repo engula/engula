@@ -22,7 +22,7 @@ use crate::{
     Result,
 };
 
-const STATE_CF_NAME: &'static str = "state";
+const STATE_CF_NAME: &str = "state";
 
 /// A structure supports saving and loading local states.
 ///

@@ -103,7 +103,7 @@ pub(crate) fn open_engine<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
                 info!("create new local db");
                 Ok(DB::open(&opts, &path)?)
             } else {
-                Err(e)?
+                Err(e.into())
             }
         }
     }
@@ -153,9 +153,9 @@ async fn try_join_cluster(
     let mut backoff: u64 = 1;
     'OUTER: loop {
         for addr in &join_list {
-            match issue_join_request(&addr, local_addr).await {
+            match issue_join_request(addr, local_addr).await {
                 Ok(resp) => {
-                    save_node_ident(&state_engine, resp.cluster_id, resp.node_id).await?;
+                    save_node_ident(state_engine, resp.cluster_id, resp.node_id).await?;
                     break 'OUTER;
                 }
                 Err(e) => {
@@ -199,7 +199,7 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<()> {
         .await?;
 
     // TODO(walter) generate cluster id.
-    save_node_ident(&state_engine, vec![], FIRST_NODE_ID).await?;
+    save_node_ident(state_engine, vec![], FIRST_NODE_ID).await?;
 
     info!("bootstrap cluster successfully");
 
