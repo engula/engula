@@ -47,7 +47,14 @@ impl root_server::Root for Server {
         &self,
         request: Request<JoinNodeRequest>,
     ) -> Result<Response<JoinNodeResponse>, Status> {
-        todo!()
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static COUNTER: AtomicU64 = AtomicU64::new(2);
+
+        Ok(Response::new(JoinNodeResponse {
+            cluster_id: vec![],
+            node_id: COUNTER.fetch_add(1, Ordering::Relaxed),
+        }))
     }
 }
 

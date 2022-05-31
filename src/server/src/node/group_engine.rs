@@ -82,10 +82,11 @@ impl GroupEngine {
             replicas: vec![],
         };
 
+        // The group descriptor should be persisted into disk.
         let mut wb = WriteBatch::default();
         engine.set_applied_index(&mut wb, 0);
         engine.set_group_desc(&mut wb, &desc);
-        engine.commit(wb)?;
+        engine.commit(wb, true)?;
 
         Ok(engine)
     }
@@ -216,7 +217,7 @@ impl GroupEngine {
         wb.descriptor = Some(desc.clone());
     }
 
-    pub fn commit(&self, wb: WriteBatch) -> Result<()> {
+    pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
         let cf_handle = self
@@ -237,7 +238,11 @@ impl GroupEngine {
         }
 
         let mut opts = WriteOptions::default();
-        opts.disable_wal(true);
+        if persisted {
+            opts.set_sync(true);
+        } else {
+            opts.disable_wal(true);
+        }
         self.raw_db.write_opt(inner_wb, &opts)?;
 
         if let Some(desc) = wb.descriptor {

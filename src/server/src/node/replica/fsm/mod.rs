@@ -43,7 +43,7 @@ impl StateMachine for GroupStateMachine {
                 if let Some(wb) = eval_result.batch {
                     let mut wb = WriteBatch::new(&wb.data);
                     self.group_engine.set_applied_index(&mut wb, index);
-                    self.group_engine.commit(wb)?;
+                    self.group_engine.commit(wb, false)?;
                 }
             }
         }

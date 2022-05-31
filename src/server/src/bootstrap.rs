@@ -15,18 +15,20 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use engula_api::server::v1::{
-    node_server::NodeServer, root_server::RootServer, GroupDesc, NodeDesc, ReplicaDesc,
+    node_server::NodeServer, root_server::RootServer, GroupDesc, JoinNodeRequest, JoinNodeResponse,
+    NodeDesc, ReplicaDesc,
 };
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::{
     node::{state_engine::StateEngine, Node},
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaState},
-    Result, Server,
+    Error, Result, Server,
 };
 
 // TODO(walter) root cluster and first replica id.
@@ -86,14 +88,25 @@ pub(crate) fn open_engine<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
 
     std::fs::create_dir_all(&path)?;
 
-    // Creates database if not exists, drops it immediately.
     let mut opts = Options::default();
     opts.create_if_missing(true);
-    DB::open(&opts, &path)?;
+    opts.create_missing_column_families(true);
 
     // List column families and open database with column families.
-    let column_families = DB::list_cf(&Options::default(), &path)?;
-    Ok(DB::open_cf(&opts, path, column_families)?)
+    match DB::list_cf(&Options::default(), &path) {
+        Ok(cfs) => {
+            debug!("open local db with {} column families", cfs.len());
+            Ok(DB::open_cf(&opts, path, cfs)?)
+        }
+        Err(e) => {
+            if e.as_ref().ends_with("CURRENT: No such file or directory") {
+                info!("create new local db");
+                Ok(DB::open(&opts, &path)?)
+            } else {
+                Err(e.into())
+            }
+        }
+    }
 }
 
 async fn bootstrap_or_join_cluster(
@@ -103,26 +116,77 @@ async fn bootstrap_or_join_cluster(
     join_list: Vec<String>,
 ) -> Result<()> {
     let state_engine = node.state_engine();
-    if state_engine.read_ident().await?.is_some() {
+    if let Some(node_ident) = state_engine.read_ident().await? {
+        info!(
+            "both cluster and node are initialized, node id {}",
+            node_ident.node_id
+        );
         return Ok(());
     }
 
     if init {
         bootstrap_cluster(node, addr).await?;
     } else {
-        try_join_cluster(state_engine, join_list).await?;
+        try_join_cluster(state_engine, addr, join_list).await?;
     }
 
     Ok(())
 }
 
 #[allow(unused)]
-async fn try_join_cluster(state_engine: &StateEngine, join_list: Vec<String>) -> Result<()> {
-    // TODO(walter) filter self
-    todo!()
+async fn try_join_cluster(
+    state_engine: &StateEngine,
+    local_addr: &str,
+    join_list: Vec<String>,
+) -> Result<()> {
+    info!("try join a bootstrapted cluster");
+
+    let join_list = join_list
+        .iter()
+        .filter(|addr| *addr != local_addr)
+        .collect::<Vec<_>>();
+
+    if join_list.is_empty() {
+        return Err(Error::Invalid("the filtered join list is empty".into()));
+    }
+
+    let mut backoff: u64 = 1;
+    'OUTER: loop {
+        for addr in &join_list {
+            match issue_join_request(addr, local_addr).await {
+                Ok(resp) => {
+                    save_node_ident(state_engine, resp.cluster_id, resp.node_id).await?;
+                    break 'OUTER;
+                }
+                Err(e) => {
+                    warn!(err = ?e, root = ?addr, "issue join request to root server");
+                }
+            }
+        }
+
+        std::thread::sleep(Duration::from_secs(backoff));
+        backoff = std::cmp::min(backoff, 120);
+    }
+    Ok(())
+}
+
+async fn issue_join_request(target_addr: &str, local_addr: &str) -> Result<JoinNodeResponse> {
+    use engula_api::server::v1::root_client::RootClient;
+    use tonic::Request;
+
+    let mut client = RootClient::connect(format!("http://{}", target_addr)).await?;
+    let resp = client
+        .join(Request::new(JoinNodeRequest {
+            addr: local_addr.to_owned(),
+        }))
+        .await
+        .unwrap();
+    Ok(resp.into_inner())
 }
 
 async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<()> {
+    info!("'--init' is specified, try bootstrap cluster");
+
     // TODO(walter) clean staled data in db.
     write_initial_cluster_data(node, addr).await?;
 
@@ -135,13 +199,25 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<()> {
         .await?;
 
     // TODO(walter) generate cluster id.
+    save_node_ident(state_engine, vec![], FIRST_NODE_ID).await?;
+
+    info!("bootstrap cluster successfully");
+
+    Ok(())
+}
+
+async fn save_node_ident(
+    state_engine: &StateEngine,
+    cluster_id: Vec<u8>,
+    node_id: u64,
+) -> Result<()> {
     let node_ident = NodeIdent {
-        cluster_id: vec![],
-        node_id: FIRST_NODE_ID,
+        cluster_id,
+        node_id,
     };
     state_engine.save_ident(node_ident).await?;
 
-    info!("bootstrap cluster successfully");
+    info!("save node ident, node id {}", node_id);
 
     Ok(())
 }
@@ -160,7 +236,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
             node_id: FIRST_NODE_ID,
         }],
     };
-    node.create_replica(FIRST_REPLICA_ID, group).await?;
+    node.create_replica(FIRST_REPLICA_ID, group, false).await?;
 
     let node_desc = NodeDesc {
         id: FIRST_NODE_ID,
