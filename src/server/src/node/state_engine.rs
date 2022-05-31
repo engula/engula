@@ -22,6 +22,8 @@ use crate::{
     Result,
 };
 
+const STATE_CF_NAME: &'static str = "state";
+
 /// A structure supports saving and loading local states.
 ///
 /// Local states:
@@ -46,17 +48,21 @@ pub struct ReplicaStateIterator<'a> {
 
 impl StateEngine {
     pub fn new(raw_db: Arc<rocksdb::DB>) -> Result<Self> {
-        use rocksdb::Options;
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
-        raw_db.create_cf("state", &opts)?;
+        if raw_db.cf_handle(STATE_CF_NAME).is_none() {
+            use rocksdb::Options;
+            let mut opts = Options::default();
+            opts.create_missing_column_families(true);
+            raw_db.create_cf(STATE_CF_NAME, &opts)?;
+        }
         Ok(StateEngine { raw_db })
     }
 
     /// Read node ident from engine. `None` is returned if no such ident exists.
     pub async fn read_ident(&self) -> Result<Option<NodeIdent>> {
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
         match self.raw_db.get_pinned_cf(&cf_handle, keys::node_ident())? {
             Some(value) => {
                 let ident = NodeIdent::decode(value.as_ref()).expect("valid node ident format");
@@ -71,7 +77,10 @@ impl StateEngine {
         use rocksdb::{WriteBatch, WriteOptions};
 
         // FIXME(walter) check existence.
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
 
         let mut opts = WriteOptions::default();
         opts.set_sync(true);
@@ -87,7 +96,10 @@ impl StateEngine {
         use rocksdb::{WriteBatch, WriteOptions};
 
         let root_desc = RootDesc { root_nodes };
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
 
         let mut opts = WriteOptions::default();
         opts.set_sync(true);
@@ -101,7 +113,10 @@ impl StateEngine {
     /// Load root nodes. `None` is returned if there no any root node records exists.
     #[allow(dead_code)]
     pub async fn load_root_nodes(&self) -> Result<Option<Vec<NodeDesc>>> {
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
         match self.raw_db.get_pinned_cf(&cf_handle, keys::node_ident())? {
             Some(value) => {
                 let root_desc = RootDesc::decode(value.as_ref()).expect("valid root desc format");
@@ -125,7 +140,10 @@ impl StateEngine {
             replica_id,
             state: state.into(),
         };
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
 
         let mut opts = WriteOptions::default();
         opts.set_sync(true);
@@ -145,7 +163,10 @@ impl StateEngine {
     pub async fn iterate_replica_states(&self) -> ReplicaStateIterator<'_> {
         use rocksdb::{Direction, IteratorMode};
 
-        let cf_handle = self.raw_db.cf_handle("state").expect("state column family");
+        let cf_handle = self
+            .raw_db
+            .cf_handle(STATE_CF_NAME)
+            .expect("state column family");
         let mode = IteratorMode::From(keys::replica_state_prefix(), Direction::Forward);
         let it = self.raw_db.iterator_cf(&cf_handle, mode);
         ReplicaStateIterator { inner: it }

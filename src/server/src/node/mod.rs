@@ -107,7 +107,12 @@ impl Node {
     /// The replica state is determined by the `GroupDesc`.
     ///
     /// NOTE: This function is idempotent.
-    pub async fn create_replica(&self, replica_id: u64, group: GroupDesc) -> Result<()> {
+    pub async fn create_replica(
+        &self,
+        replica_id: u64,
+        group: GroupDesc,
+        recovered: bool,
+    ) -> Result<()> {
         let mut node_state = self.node_state.lock().await;
         if node_state.replicas.contains_key(&replica_id) {
             debug!(replica = replica_id, "replica already exists");
@@ -127,11 +132,13 @@ impl Node {
             .save_replica_state(group_id, replica_id, replica_state)
             .await?;
 
-        let replica_info = ReplicaInfo {
-            group_id,
-            state: replica_state,
-        };
-        node_state.replicas.insert(replica_id, replica_info);
+        if recovered {
+            let replica_info = ReplicaInfo {
+                group_id,
+                state: replica_state,
+            };
+            node_state.replicas.insert(replica_id, replica_info);
+        }
 
         Ok(())
     }
@@ -241,7 +248,7 @@ mod tests {
         };
 
         executor.block_on(async {
-            node.create_replica(replica_id, group).await.unwrap();
+            node.create_replica(replica_id, group, false).await.unwrap();
 
             assert!(matches!(
                 replica_state(node, replica_id).await,
@@ -268,7 +275,7 @@ mod tests {
         };
 
         executor.block_on(async {
-            node.create_replica(replica_id, group).await.unwrap();
+            node.create_replica(replica_id, group, false).await.unwrap();
 
             assert!(matches!(
                 replica_state(node, replica_id).await,
@@ -292,7 +299,7 @@ mod tests {
         };
 
         executor.block_on(async {
-            node.create_replica(replica_id, group).await.unwrap();
+            node.create_replica(replica_id, group, false).await.unwrap();
         });
 
         drop(node);
