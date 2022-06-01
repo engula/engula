@@ -15,6 +15,7 @@
 use super::raft::{ApplyEntry, StateMachine};
 use crate::{
     node::group_engine::{GroupEngine, WriteBatch},
+    serverpb::v1::*,
     Result,
 };
 
@@ -32,6 +33,37 @@ impl GroupStateMachine {
     }
 }
 
+impl GroupStateMachine {
+    fn apply_proposal(&mut self, index: u64, eval_result: EvalResult) -> crate::Result<()> {
+        let mut wb = if let Some(wb) = eval_result.batch {
+            WriteBatch::new(&wb.data)
+        } else {
+            WriteBatch::default()
+        };
+
+        if let Some(op) = eval_result.op {
+            let mut desc = self
+                .group_engine
+                .descriptor()
+                .expect("GroupEngine::descriptor");
+            if let Some(AddShard { shard: Some(shard) }) = op.add_shard {
+                for existed_shard in &desc.shards {
+                    if existed_shard.id == shard.id {
+                        todo!("shard {} already existed in group", shard.id);
+                    }
+                }
+                desc.shards.push(shard);
+            }
+            self.group_engine.set_group_desc(&mut wb, &desc);
+        }
+
+        self.group_engine.set_applied_index(&mut wb, index);
+        self.group_engine.commit(wb, false)?;
+
+        Ok(())
+    }
+}
+
 #[allow(unused)]
 impl StateMachine for GroupStateMachine {
     // FIXME(walter) support async?
@@ -40,11 +72,7 @@ impl StateMachine for GroupStateMachine {
             ApplyEntry::Empty => {}
             ApplyEntry::ConfigChange {} => {}
             ApplyEntry::Proposal { eval_result } => {
-                if let Some(wb) = eval_result.batch {
-                    let mut wb = WriteBatch::new(&wb.data);
-                    self.group_engine.set_applied_index(&mut wb, index);
-                    self.group_engine.commit(wb, false)?;
-                }
+                self.apply_proposal(index, eval_result)?;
             }
         }
         Ok(())

@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request, group_response_union::Response, GroupDesc, GroupRequest,
-        GroupResponse, GroupResponseUnion,
+        group_request_union::Request, group_response_union::Response, CreateShardResponse,
+        GroupDesc, GroupRequest, GroupResponse, GroupResponseUnion,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
@@ -33,7 +33,10 @@ use self::{
     raft::{RaftNodeFacade, StateObserver},
 };
 use super::group_engine::GroupEngine;
-use crate::{serverpb::v1::EvalResult, Error, Result};
+use crate::{
+    serverpb::v1::{AddShard, EvalResult, SyncOp},
+    Error, Result,
+};
 
 #[derive(Default)]
 struct LeaseState {
@@ -136,7 +139,22 @@ impl Replica {
                 Some(eval_result)
             }
             Request::CreateShard(req) => {
-                todo!("add new shard to an existing group");
+                // TODO(walter) check the existing of shard.
+                let shard = req
+                    .shard
+                    .as_ref()
+                    .cloned()
+                    .ok_or_else(|| Error::Invalid("CreateShard::shard".into()))?;
+                resp = Response::CreateShard(CreateShardResponse {});
+
+                #[allow(clippy::needless_update)]
+                Some(EvalResult {
+                    op: Some(SyncOp {
+                        add_shard: Some(AddShard { shard: Some(shard) }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
             }
         };
 
