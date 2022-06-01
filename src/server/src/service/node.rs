@@ -66,7 +66,7 @@ impl node_server::Node for Server {
         let request = request.into_inner();
         let group_desc = request
             .group
-            .ok_or_else(|| Status::invalid_argument("group is empty"))?;
+            .ok_or_else(|| Status::invalid_argument("the field `group` is empty"))?;
         let replica_id = request.replica_id;
         self.node
             .create_replica(replica_id, group_desc, true)
@@ -81,7 +81,7 @@ impl Server {
         let replica = match route_table.find(request.group_id) {
             Some(replica) => replica,
             None => {
-                return Err(Error::StaledRequest(request.group_id));
+                return Err(Error::GroupNotFound(request.group_id));
             }
         };
         replica.execute(&request).await
@@ -89,14 +89,23 @@ impl Server {
 }
 
 fn error_to_response(err: Error) -> GroupResponse {
-    use engula_api::server::v1::Status;
+    use engula_api::server::v1;
+    use tonic::Code;
 
-    let status: tonic::Status = err.into();
+    let net_err = match err {
+        Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
+        Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
+        Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
+        Error::Transport(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
+        Error::RocksDb(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
+        Error::Io(inner) => {
+            let status: Status = inner.into();
+            v1::Error::status(status.code().into(), status.message())
+        }
+    };
+
     GroupResponse {
         response: None,
-        status: Some(Status {
-            code: status.code() as i32,
-            message: status.message().to_owned(),
-        }),
+        error: Some(net_err),
     }
 }

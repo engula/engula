@@ -22,7 +22,7 @@ use std::sync::Arc;
 use engula_api::{
     server::v1::{
         group_request_union::Request, group_response_union::Response, CreateShardResponse,
-        GroupDesc, GroupRequest, GroupResponse, GroupResponseUnion,
+        GroupDesc, GroupRequest, GroupResponse,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
@@ -94,21 +94,17 @@ impl Replica {
 
     /// Execute group request and fill response.
     pub async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
+        let group_id = group_request.group_id;
         let shard_id = group_request.shard_id;
         let request = group_request
             .request
             .as_ref()
             .and_then(|request| request.request.as_ref())
-            .ok_or_else(|| Error::Invalid("GroupRequest".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("GroupRequest::request".into()))?;
 
-        self.check_request_early(request).await?;
+        self.check_request_early(group_id, request).await?;
         let resp = self.evaluate_command(shard_id, request).await?;
-        Ok(GroupResponse {
-            response: Some(GroupResponseUnion {
-                response: Some(resp),
-            }),
-            status: None,
-        })
+        Ok(GroupResponse::new(resp))
     }
 
     /// Change the configuration of raft group.
@@ -144,7 +140,7 @@ impl Replica {
                     .shard
                     .as_ref()
                     .cloned()
-                    .ok_or_else(|| Error::Invalid("CreateShard::shard".into()))?;
+                    .ok_or_else(|| Error::InvalidArgument("CreateShard::shard".into()))?;
                 resp = Response::CreateShard(CreateShardResponse {});
 
                 #[allow(clippy::needless_update)]
@@ -170,10 +166,10 @@ impl Replica {
         Ok(())
     }
 
-    async fn check_request_early(&self, _request: &Request) -> Result<()> {
+    async fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
         let lease_state = self.lease_state.lock().await;
         if !lease_state.still_valid() {
-            Err(Error::InvalidLease)
+            Err(Error::NotLeader(group_id, None))
         } else {
             Ok(())
         }

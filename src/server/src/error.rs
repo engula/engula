@@ -1,3 +1,5 @@
+use engula_api::server::v1::ReplicaDesc;
+
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,14 +16,14 @@
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("invalid {0}")]
-    Invalid(String),
+    #[error("invalid argument {0}")]
+    InvalidArgument(String),
 
-    #[error("staled request to {0}")]
-    StaledRequest(u64),
+    #[error("group {0} not found")]
+    GroupNotFound(u64),
 
-    #[error("invalid lease")]
-    InvalidLease,
+    #[error("not leader of group {0}")]
+    NotLeader(u64, Option<ReplicaDesc>),
 
     #[error("transport {0}")]
     Transport(#[from] tonic::transport::Error),
@@ -37,16 +39,27 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<Error> for tonic::Status {
     fn from(e: Error) -> Self {
-        use tonic::Status;
+        use engula_api::server::v1;
+        use prost::Message;
+        use tonic::{Code, Status};
 
-        // FIXME(walter) error details.
         match e {
-            Error::Invalid(msg) => Status::invalid_argument(msg),
-            Error::InvalidLease => Status::failed_precondition(""),
-            Error::StaledRequest(group_id) => Status::failed_precondition(group_id.to_string()),
-            Error::Transport(inner) => Status::unknown(inner.to_string()),
-            Error::Io(inner) => Status::unknown(inner.to_string()),
-            Error::RocksDb(inner) => Status::unknown(inner.to_string()),
+            Error::InvalidArgument(msg) => Status::invalid_argument(msg),
+            Error::GroupNotFound(group_id) => Status::with_details(
+                Code::Unknown,
+                e.to_string(),
+                v1::Error::group_not_found(group_id).encode_to_vec().into(),
+            ),
+            Error::NotLeader(group_id, leader) => Status::with_details(
+                Code::Unknown,
+                format!("not leader of group {}", group_id),
+                v1::Error::not_leader(group_id, leader)
+                    .encode_to_vec()
+                    .into(),
+            ),
+            Error::Transport(inner) => Status::internal(inner.to_string()),
+            Error::Io(inner) => inner.into(),
+            Error::RocksDb(inner) => Status::internal(inner.to_string()),
         }
     }
 }
