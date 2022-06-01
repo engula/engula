@@ -61,8 +61,8 @@ impl root_server::Root for Server {
         let schema = self.root.schema()?;
         let node = schema
             .add_node(NodeDesc {
-                id: 0,
                 addr: request.into_inner().addr,
+                ..Default::default()
             })
             .await?;
         let cluster_id = schema.cluster_id().await?.unwrap();
@@ -138,8 +138,8 @@ impl Server {
             .root
             .schema()?
             .create_database(DatabaseDesc {
-                id: 0,
                 name: req.name,
+                ..Default::default()
             })
             .await?;
         Ok(CreateDatabaseResponse {
@@ -171,9 +171,9 @@ impl Server {
         }
         let desc = schema
             .create_collection(CollectionDesc {
-                id: 0,
                 name: req.name,
                 parent_id: db.unwrap().id,
+                ..Default::default()
             })
             .await?;
         Ok(CreateCollectionResponse {
