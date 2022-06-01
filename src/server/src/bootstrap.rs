@@ -147,7 +147,9 @@ async fn try_join_cluster(
         .collect::<Vec<_>>();
 
     if join_list.is_empty() {
-        return Err(Error::InvalidArgument("the filtered join list is empty".into()));
+        return Err(Error::InvalidArgument(
+            "the filtered join list is empty".into(),
+        ));
     }
 
     let mut backoff: u64 = 1;
