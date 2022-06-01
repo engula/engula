@@ -9,3 +9,4 @@ description = "The Engula API."
 
 [dependencies]
 engula-api = { version = "0.4", path = "../api" }
+tonic = "0.7.2"
