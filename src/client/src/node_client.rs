@@ -108,6 +108,21 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn create_shard(mut self, group_id: u64, shard_desc: ShardDesc) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            shard_id: 0, // create_shard doesn't take this field
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::CreateShard(
+                    CreateShardRequest {
+                        shard: Some(shard_desc),
+                    },
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn build(self) -> BatchRequest {
         BatchRequest {
             node_id: self.node_id,
