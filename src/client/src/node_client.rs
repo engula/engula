@@ -34,17 +34,30 @@ impl Client {
         Ok(res.into_inner().addrs)
     }
 
+    // NOTE: This method is always called by the root group.
     pub async fn create_replica(
         &self,
         replica_id: u64,
-        group: GroupDesc,
+        group_desc: GroupDesc,
     ) -> Result<(), tonic::Status> {
         let mut client = self.client.clone();
         let req = CreateReplicaRequest {
             replica_id,
-            group: Some(group),
+            group: Some(group_desc),
         };
         client.create_replica(req).await?;
         Ok(())
+    }
+
+    // NOTE: This method is a low-level interface.
+    pub async fn batch_group_request(
+        &self,
+        node_id: u64,
+        requests: Vec<GroupRequest>,
+    ) -> Result<Vec<GroupResponse>, tonic::Status> {
+        let mut client = self.client.clone();
+        let req = BatchRequest { node_id, requests };
+        let res = client.batch(req).await?;
+        Ok(res.into_inner().responses)
     }
 }
