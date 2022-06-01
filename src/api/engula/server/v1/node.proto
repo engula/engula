@@ -17,6 +17,7 @@ syntax = "proto3";
 package engula.server.v1;
 
 import "engula/v1/engula.proto";
+import "engula/server/v1/error.proto";
 import "engula/server/v1/metadata.proto";
 
 service Node {
@@ -42,7 +43,7 @@ message GroupResponse {
     GroupResponseUnion response = 1;
 
     /// Only used in BatchResponse.
-    Status status = 2;
+    Error error = 2;
 }
 
 message GroupRequestUnion {
@@ -75,11 +76,6 @@ message CreateReplicaRequest {
 }
 
 message CreateReplicaResponse {}
-
-message Status {
-  int32 code = 1;
-  string message = 2;
-}
 
 message CreateShardRequest {
   ShardDesc shard = 1;
