@@ -13,3 +13,5 @@
 // limitations under the License.
 
 mod node_client;
+
+pub use node_client::Client as NodeClient;

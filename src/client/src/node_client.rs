@@ -49,15 +49,67 @@ impl Client {
         Ok(())
     }
 
-    // NOTE: This method is a low-level interface.
-    pub async fn batch_group_request(
+    pub async fn batch_group_requests(
         &self,
-        node_id: u64,
-        requests: Vec<GroupRequest>,
+        req: BatchRequest,
     ) -> Result<Vec<GroupResponse>, tonic::Status> {
         let mut client = self.client.clone();
-        let req = BatchRequest { node_id, requests };
         let res = client.batch(req).await?;
         Ok(res.into_inner().responses)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestBatchBuilder {
+    node_id: u64,
+    requests: Vec<GroupRequest>,
+}
+
+impl RequestBatchBuilder {
+    pub fn new(node_id: u64) -> Self {
+        Self {
+            node_id,
+            requests: vec![],
+        }
+    }
+
+    pub fn get(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            shard_id,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::Get(GetRequest { key })),
+            }),
+        });
+        self
+    }
+
+    pub fn put(mut self, group_id: u64, shard_id: u64, key: Vec<u8>, value: Vec<u8>) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            shard_id,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::Put(PutRequest { key, value })),
+            }),
+        });
+        self
+    }
+
+    pub fn delete(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            shard_id,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::Delete(DeleteRequest { key })),
+            }),
+        });
+        self
+    }
+
+    pub fn build(self) -> BatchRequest {
+        BatchRequest {
+            node_id: self.node_id,
+            requests: self.requests,
+        }
     }
 }
