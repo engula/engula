@@ -16,6 +16,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
+    vec,
 };
 
 use engula_api::server::v1::{
@@ -26,15 +27,23 @@ use tracing::{debug, info, warn};
 
 use crate::{
     node::{state_engine::StateEngine, Node},
+    root::Root,
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaState},
     Error, Result, Server,
 };
 
 // TODO(walter) root cluster and first replica id.
-const ROOT_GROUP_ID: u64 = 0;
-const FIRST_REPLICA_ID: u64 = 0;
-const FIRST_NODE_ID: u64 = 0;
+pub const ROOT_GROUP_ID: u64 = 0;
+pub const NA_SHARD_ID: u64 = 0;
+pub const ROOT_SHARD_ID: u64 = 1;
+pub const FIRST_REPLICA_ID: u64 = 0;
+pub const FIRST_NODE_ID: u64 = 0;
+
+lazy_static::lazy_static! {
+    pub static ref MIN_KEY: Vec<u8> = vec![];
+    pub static ref MAX_KEY: Vec<u8> = vec![0xff, 0xff];
+}
 
 /// The main entrance of engula server.
 #[allow(unused)]
@@ -48,14 +57,17 @@ pub fn run(
     let raw_db = Arc::new(open_engine(path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
     let node = Node::new(raw_db, state_engine, executor.clone());
+    let mut root = Root::new(executor.clone());
 
     executor.block_on(async {
         bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
-        recover_groups(&node).await
+        recover_groups(&node).await?;
+        root.bootstrap(&node, &addr, init).await
     })?;
 
     let server = Server {
         node: Arc::new(node),
+        root: Arc::new(root),
     };
     let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
         bootstrap_services(&addr, server).await

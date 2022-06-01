@@ -15,10 +15,12 @@
 mod bootstrap;
 mod error;
 mod node;
+mod root;
 pub mod runtime;
 mod service;
 
 pub use raft::eraftpb;
+pub use tonic::async_trait;
 
 pub use crate::{
     bootstrap::run,

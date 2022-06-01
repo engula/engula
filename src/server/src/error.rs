@@ -22,6 +22,15 @@ pub enum Error {
     #[error("group {0} not found")]
     GroupNotFound(u64),
 
+    #[error("database {0} not found")]
+    DatabaseNotFound(String),
+
+    #[error("invalid {0} data")]
+    InvalidData(String),
+
+    #[error("not root leader")]
+    NotRootLeader,
+
     #[error("not leader of group {0}")]
     NotLeader(u64, Option<ReplicaDesc>),
 
@@ -34,7 +43,6 @@ pub enum Error {
     #[error("rocksdb {0}")]
     RocksDb(#[from] rocksdb::Error),
 }
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<Error> for tonic::Status {
@@ -50,6 +58,9 @@ impl From<Error> for tonic::Status {
                 e.to_string(),
                 v1::Error::group_not_found(group_id).encode_to_vec().into(),
             ),
+            err @ Error::DatabaseNotFound(_) => Status::internal(err.to_string()),
+            err @ Error::NotRootLeader => Status::internal(err.to_string()),
+            err @ Error::InvalidData(_) => Status::internal(err.to_string()),
             Error::NotLeader(group_id, leader) => Status::with_details(
                 Code::Unknown,
                 format!("not leader of group {}", group_id),

@@ -18,6 +18,7 @@ use std::{
 };
 
 use super::Replica;
+use crate::bootstrap::ROOT_GROUP_ID;
 
 /// A structure support replica route queries.
 #[allow(unused)]
@@ -48,8 +49,20 @@ impl ReplicaRouteTable {
         self.replicas.read().unwrap().get(&replica_id).cloned()
     }
 
-    pub fn find_root(&self) -> Option<&RootReplica> {
+    pub fn find_root(&self) -> Option<RootReplica> {
         todo!()
+    }
+
+    pub fn current_root_replica(&self) -> Option<Arc<Replica>> {
+        let replicas = self.replicas.read().unwrap();
+        for replica in replicas.values() {
+            if replica.group_id() == ROOT_GROUP_ID
+            /* && TODO(zojw): is_leader */
+            {
+                return Some(replica.clone());
+            }
+        }
+        None
     }
 
     pub fn update(&self, replica: Arc<Replica>) {

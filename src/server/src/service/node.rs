@@ -102,6 +102,11 @@ fn error_to_response(err: Error) -> GroupResponse {
             let status: Status = inner.into();
             v1::Error::status(status.code().into(), status.message())
         }
+        err @ Error::DatabaseNotFound(_) => {
+            v1::Error::status(Code::Internal.into(), err.to_string())
+        }
+        err @ Error::InvalidData(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
+        err @ Error::NotRootLeader => v1::Error::status(Code::Internal.into(), err.to_string()),
     };
 
     GroupResponse {
