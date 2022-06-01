@@ -30,5 +30,6 @@ pub async fn put(
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),
         }),
+        ..Default::default()
     })
 }

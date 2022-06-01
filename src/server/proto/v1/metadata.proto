@@ -47,12 +47,23 @@ message ReplicaMeta {
   ReplicaState state = 3;
 }
 
-/// WriteBatch is the serialized representation of DB write batch.
+/// EvalResult is the structured proposal payload.
+message EvalResult {
+  WriteBatchRep batch = 1;
+  SyncOp op = 2;
+}
+
+/// WriteBatchRep is the serialized representation of DB write batch.
 message WriteBatchRep {
   bytes data = 1;
 }
 
-/// EvalResult is the structured proposal payload.
-message EvalResult {
-  WriteBatchRep batch = 1;
+/// SyncOp is a structured message which contain operations must be executed in order in all replicas.
+message SyncOp {
+  /// Add new shard to existing group.
+  AddShard add_shard = 1;
+}
+
+message AddShard {
+  engula.server.v1.ShardDesc shard = 1;
 }

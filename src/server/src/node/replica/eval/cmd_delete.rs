@@ -24,5 +24,6 @@ pub async fn delete(group_engine: &GroupEngine, shard_id: u64, key: &[u8]) -> Re
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),
         }),
+        ..Default::default()
     })
 }
