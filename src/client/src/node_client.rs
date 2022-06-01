@@ -33,4 +33,18 @@ impl Client {
         let res = client.get_root(req).await?;
         Ok(res.into_inner().addrs)
     }
+
+    pub async fn create_replica(
+        &self,
+        replica_id: u64,
+        group: GroupDesc,
+    ) -> Result<(), tonic::Status> {
+        let mut client = self.client.clone();
+        let req = CreateReplicaRequest {
+            replica_id,
+            group: Some(group),
+        };
+        client.create_replica(req).await?;
+        Ok(())
+    }
 }
