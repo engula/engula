@@ -22,7 +22,6 @@ use engula_api::{
     v1::{CollectionDesc, DatabaseDesc},
 };
 use prost::Message;
-use uuid::Uuid;
 
 use super::store::RootStore;
 use crate::{
@@ -66,13 +65,10 @@ impl Schema {
         Self { store }
     }
 
-    pub async fn cluster_id(&self) -> Result<Option<Uuid>> {
+    pub async fn cluster_id(&self) -> Result<Option<Vec<u8>>> {
         let id = self.get_meta(META_CLUSTER_ID_KEY.as_bytes()).await?;
         if let Some(id) = id {
-            return Ok(Some(uuid::Uuid::from_bytes(
-                id.try_into()
-                    .map_err(|_| Error::InvalidData("cluster_id".into()))?,
-            )));
+            return Ok(Some(id));
         }
         Ok(None)
     }
@@ -146,14 +142,18 @@ impl Schema {
 
 // bootstrap schema.
 impl Schema {
-    pub async fn try_bootstrap(&mut self, addr: &str) -> Result<Uuid> {
-        if let Some(cluster_id) = self.cluster_id().await? {
-            return Ok(cluster_id);
+    pub async fn try_bootstrap(&mut self, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
+        if let Some(exist_cluster_id) = self.cluster_id().await? {
+            if exist_cluster_id != cluster_id {
+                return Err(Error::ClusterNotMatch);
+            }
+            return Ok(());
         }
 
         let next_collection_id = self.init_system_collections().await?;
 
-        let cluster_id = self.init_meta_collection(next_collection_id).await?;
+        self.init_meta_collection(next_collection_id, cluster_id)
+            .await?;
 
         self.put_database(DatabaseDesc {
             id: SYSTEM_DATABASE_ID.to_owned(),
@@ -184,20 +184,7 @@ impl Schema {
         })
         .await?;
 
-        Ok(cluster_id)
-    }
-
-    pub async fn init_root_group_shard(&self) -> Result<()> {
-        self.store
-            .create_shard(ShardDesc {
-                id: ROOT_SHARD_ID,
-                parent_id: NA_SHARD_ID,
-                partition: Some(Partition::Range(RangePartition {
-                    start: MIN_KEY.to_owned(),
-                    end: MAX_KEY.to_owned(),
-                })),
-            })
-            .await
+        Ok(())
     }
 
     async fn init_system_collections(&self) -> Result<u64> {
@@ -238,9 +225,12 @@ impl Schema {
         Ok(group_collection.id + 1)
     }
 
-    async fn init_meta_collection(&self, next_collection_id: u64) -> Result<Uuid> {
-        let cluster_id = uuid::Uuid::new_v4();
-        self.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id.as_bytes().to_vec())
+    async fn init_meta_collection(
+        &self,
+        next_collection_id: u64,
+        cluster_id: Vec<u8>,
+    ) -> Result<()> {
+        self.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id)
             .await?;
         self.put_meta(
             META_DATABASE_ID_KEY.into(),
@@ -271,8 +261,7 @@ impl Schema {
             META_SHARD_ID_KEY.into(),
             (ROOT_SHARD_ID + 1).to_le_bytes().to_vec(),
         )
-        .await?;
-        Ok(cluster_id)
+        .await
     }
 }
 

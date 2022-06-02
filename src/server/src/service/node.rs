@@ -107,6 +107,7 @@ fn error_to_response(err: Error) -> GroupResponse {
         }
         err @ Error::InvalidData(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
         err @ Error::NotRootLeader => v1::Error::status(Code::Internal.into(), err.to_string()),
+        err @ Error::ClusterNotMatch => v1::Error::status(Code::Internal.into(), err.to_string()),
     };
 
     GroupResponse {

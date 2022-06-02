@@ -29,7 +29,7 @@ pub struct Root {
     is_root: bool,
     executor: Executor,
     schema: Option<Arc<Schema>>,
-    cluster_id: Option<uuid::Uuid>,
+    cluster_id: Option<Vec<u8>>,
 }
 
 impl Root {
@@ -46,16 +46,14 @@ impl Root {
         self.is_root
     }
 
-    pub async fn bootstrap(&mut self, node: &Node, addr: &str, init: bool) -> Result<()> {
+    pub async fn bootstrap(&mut self, node: &Node, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
         let root_replica = node.replica_table().current_root_replica().unwrap();
         let store = Arc::new(RootStore::new(root_replica));
         let mut schema = Schema::new(store.clone());
 
-        if init {
-            schema.init_root_group_shard().await?;
-        }
+        schema.try_bootstrap(addr, cluster_id.to_owned()).await?;
 
-        self.cluster_id = Some(schema.try_bootstrap(addr).await?);
+        self.cluster_id = Some(cluster_id);
 
         self.refresh_root_owner(node);
         self.executor

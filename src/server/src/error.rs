@@ -31,6 +31,9 @@ pub enum Error {
     #[error("not root leader")]
     NotRootLeader,
 
+    #[error("cluster not match")]
+    ClusterNotMatch,
+
     #[error("not leader of group {0}")]
     NotLeader(u64, Option<ReplicaDesc>),
 
@@ -61,6 +64,7 @@ impl From<Error> for tonic::Status {
             err @ Error::DatabaseNotFound(_) => Status::internal(err.to_string()),
             err @ Error::NotRootLeader => Status::internal(err.to_string()),
             err @ Error::InvalidData(_) => Status::internal(err.to_string()),
+            err @ Error::ClusterNotMatch => Status::internal(err.to_string()),
             Error::NotLeader(group_id, leader) => Status::with_details(
                 Code::Unknown,
                 format!("not leader of group {}", group_id),

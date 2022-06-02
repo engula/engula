@@ -58,16 +58,22 @@ impl root_server::Root for Server {
         &self,
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
+        let request = request.into_inner();
         let schema = self.root.schema()?;
         let node = schema
             .add_node(NodeDesc {
-                addr: request.into_inner().addr,
+                addr: request.addr,
                 ..Default::default()
             })
             .await?;
         let cluster_id = schema.cluster_id().await?.unwrap();
+        if let Some(prev_cluster_id) = request.cluster_id {
+            if prev_cluster_id != cluster_id {
+                return Err(Error::ClusterNotMatch.into())
+            }
+        }
         Ok(Response::new(JoinNodeResponse {
-            cluster_id: cluster_id.as_bytes().to_vec(),
+            cluster_id,
             node_id: node.id,
         }))
     }
