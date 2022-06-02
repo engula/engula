@@ -150,24 +150,23 @@ impl Schema {
             return Ok(());
         }
 
-        let next_collection_id = self.init_system_collections().await?;
+        let mut batch = PutBatchBuilder::default();
 
-        self.init_meta_collection(next_collection_id, cluster_id)
-            .await?;
+        let next_collection_id = Self::init_system_collections(&mut batch);
 
-        self.put_database(DatabaseDesc {
+        Self::init_meta_collection(&mut batch, next_collection_id, cluster_id);
+
+        batch.put_database(DatabaseDesc {
             id: SYSTEM_DATABASE_ID.to_owned(),
             name: SYSTEM_DATABASE_NAME.to_owned(),
-        })
-        .await?;
+        });
 
-        self.put_node(NodeDesc {
+        batch.put_node(NodeDesc {
             id: FIRST_NODE_ID,
             addr: addr.into(),
-        })
-        .await?;
+        });
 
-        self.put_group(GroupDesc {
+        batch.put_group(GroupDesc {
             id: ROOT_GROUP_ID,
             replicas: vec![ReplicaDesc {
                 id: FIRST_REPLICA_ID,
@@ -181,101 +180,86 @@ impl Schema {
                     end: MAX_KEY.to_owned(),
                 })),
             }],
-        })
-        .await?;
+        });
+
+        self.batch_put(batch.build()).await?;
 
         Ok(())
     }
 
-    async fn init_system_collections(&self) -> Result<u64> {
+    fn init_system_collections(batch: &mut PutBatchBuilder) -> u64 {
         let self_collection = CollectionDesc {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        self.put_collection(self_collection).await?;
+        batch.put_collection(self_collection);
 
         let db_collection = CollectionDesc {
             id: SYSTEM_DATABASE_COLLECTION_ID,
             name: SYSTEM_DATABASE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        self.put_collection(db_collection).await?;
+        batch.put_collection(db_collection);
 
         let meta_collection = CollectionDesc {
             id: SYSTEM_MATE_COLLECTION_ID,
             name: SYSTEM_MATE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        self.put_collection(meta_collection).await?;
+        batch.put_collection(meta_collection);
 
         let node_collection = CollectionDesc {
             id: SYSTEM_NODE_COLLECTION_ID,
             name: SYSTEM_NODE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        self.put_collection(node_collection).await?;
+        batch.put_collection(node_collection);
 
         let group_collection = CollectionDesc {
             id: SYSTEM_GROUP_COLLECTION_ID,
             name: SYSTEM_GROUP_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        self.put_collection(group_collection.to_owned()).await?;
-        Ok(group_collection.id + 1)
+        batch.put_collection(group_collection.to_owned());
+        group_collection.id + 1
     }
 
-    async fn init_meta_collection(
-        &self,
+    fn init_meta_collection(
+        batch: &mut PutBatchBuilder,
         next_collection_id: u64,
         cluster_id: Vec<u8>,
-    ) -> Result<()> {
-        self.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id)
-            .await?;
-        self.put_meta(
+    ) {
+        batch.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id);
+        batch.put_meta(
             META_DATABASE_ID_KEY.into(),
             (SYSTEM_DATABASE_ID + 1).to_le_bytes().to_vec(),
-        )
-        .await?;
-        self.put_meta(
+        );
+        batch.put_meta(
             META_COLLECTION_ID_KEY.into(),
             next_collection_id.to_le_bytes().to_vec(),
-        )
-        .await?;
-        self.put_meta(
+        );
+        batch.put_meta(
             META_GROUP_ID_KEY.into(),
             (ROOT_GROUP_ID + 1).to_le_bytes().to_vec(),
-        )
-        .await?;
-        self.put_meta(
+        );
+        batch.put_meta(
             META_NODE_ID_KEY.into(),
             (FIRST_NODE_ID + 1).to_le_bytes().to_vec(),
-        )
-        .await?;
-        self.put_meta(
+        );
+        batch.put_meta(
             META_REPLICA_ID_KEY.into(),
             (FIRST_REPLICA_ID + 1).to_le_bytes().to_vec(),
-        )
-        .await?;
-        self.put_meta(
+        );
+        batch.put_meta(
             META_SHARD_ID_KEY.into(),
             (ROOT_SHARD_ID + 1).to_le_bytes().to_vec(),
-        )
-        .await
+        );
     }
 }
 
 // internal methods.
 impl Schema {
-    async fn put_database(&self, desc: DatabaseDesc) -> Result<()> {
-        self.put(
-            SYSTEM_DATABASE_COLLECTION_ID,
-            desc.name.as_bytes().to_vec(),
-            desc.encode_to_vec(),
-        )
-        .await
-    }
-
     async fn get_database_internal(&self, name: &str) -> Result<Option<DatabaseDesc>> {
         let val = self
             .get(SYSTEM_DATABASE_COLLECTION_ID, name.as_bytes())
@@ -288,15 +272,6 @@ impl Schema {
         Ok(Some(desc))
     }
 
-    async fn put_collection(&self, desc: CollectionDesc) -> Result<()> {
-        self.put(
-            SYSTEM_COLLECTION_COLLECTION_ID,
-            Self::collection_key(desc.parent_id, &desc.name),
-            desc.encode_to_vec(),
-        )
-        .await
-    }
-
     async fn get_collection_internal(
         &self,
         database_id: u64,
@@ -305,7 +280,7 @@ impl Schema {
         let val = self
             .get(
                 SYSTEM_COLLECTION_COLLECTION_ID,
-                &Self::collection_key(database_id, name),
+                &collection_key(database_id, name),
             )
             .await?;
         if val.is_none() {
@@ -315,15 +290,6 @@ impl Schema {
             Error::InvalidData(format!("collection desc: {}, {}", database_id, name))
         })?;
         Ok(Some(desc))
-    }
-
-    async fn put_node(&self, desc: NodeDesc) -> Result<()> {
-        self.put(
-            SYSTEM_NODE_COLLECTION_ID,
-            desc.id.to_le_bytes().to_vec(),
-            desc.encode_to_vec(),
-        )
-        .await
     }
 
     async fn get_node_internal(&self, id: u64) -> Result<Option<NodeDesc>> {
@@ -338,51 +304,24 @@ impl Schema {
         Ok(Some(desc))
     }
 
-    async fn put_group(&self, desc: GroupDesc) -> Result<()> {
-        self.put(
-            SYSTEM_GROUP_COLLECTION_ID,
-            desc.id.to_le_bytes().to_vec(),
-            desc.encode_to_vec(),
-        )
-        .await
-    }
-
-    async fn put_meta(&self, key: Vec<u8>, val: Vec<u8>) -> Result<()> {
-        self.put(SYSTEM_MATE_COLLECTION_ID, key, val).await
-    }
-
     async fn get_meta(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.get(SYSTEM_MATE_COLLECTION_ID, key).await
     }
 
-    async fn put(&self, collection_id: u64, key: Vec<u8>, val: Vec<u8>) -> Result<()> {
-        self.store
-            .put(Self::data_key(collection_id, &key), val)
-            .await
+    async fn batch_put(&self, batch: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()> {
+        // TODO(zojw): support atomic batch put command.
+        for (k, v) in batch {
+            self.store.put(k, v).await?;
+        }
+        Ok(())
     }
 
     async fn get(&self, collection_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.store.get(&Self::data_key(collection_id, key)).await
+        self.store.get(&data_key(collection_id, key)).await
     }
 
     async fn delete(&self, collection_id: u64, key: &[u8]) -> Result<()> {
-        self.store.delete(&Self::data_key(collection_id, key)).await
-    }
-
-    #[inline]
-    fn collection_key(database_id: u64, collection_name: &str) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + collection_name.len());
-        buf.extend_from_slice(database_id.to_le_bytes().as_slice());
-        buf.extend_from_slice(collection_name.as_bytes());
-        buf
-    }
-
-    #[inline]
-    fn data_key(collection_id: u64, key: &[u8]) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + key.len());
-        buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
-        buf.extend_from_slice(key);
-        buf
+        self.store.delete(&data_key(collection_id, key)).await
     }
 
     async fn next_id(&self, id_type: &str) -> Result<u64> {
@@ -395,8 +334,84 @@ impl Schema {
             id.try_into()
                 .map_err(|_| Error::InvalidData(format!("{} id", id_type)))?,
         );
-        self.put_meta(id_type.as_bytes().to_vec(), (id + 1).to_le_bytes().to_vec())
-            .await?;
+        self.batch_put(
+            PutBatchBuilder::default()
+                .put_meta(id_type.as_bytes().to_vec(), (id + 1).to_le_bytes().to_vec())
+                .build(),
+        )
+        .await?;
         Ok(id)
     }
+}
+
+#[derive(Default)]
+struct PutBatchBuilder {
+    batch: Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+impl PutBatchBuilder {
+    fn put(&mut self, collection_id: u64, key: Vec<u8>, val: Vec<u8>) {
+        self.batch.push((data_key(collection_id, &key), val));
+    }
+
+    fn build(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        self.batch.to_owned()
+    }
+
+    fn put_meta(&mut self, key: Vec<u8>, val: Vec<u8>) -> &mut Self {
+        self.put(SYSTEM_MATE_COLLECTION_ID, key, val);
+        self
+    }
+
+    fn put_group(&mut self, desc: GroupDesc) -> &mut Self {
+        self.put(
+            SYSTEM_GROUP_COLLECTION_ID,
+            desc.id.to_le_bytes().to_vec(),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+
+    fn put_node(&mut self, desc: NodeDesc) -> &mut Self {
+        self.put(
+            SYSTEM_NODE_COLLECTION_ID,
+            desc.id.to_le_bytes().to_vec(),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+
+    fn put_database(&mut self, desc: DatabaseDesc) -> &mut Self {
+        self.put(
+            SYSTEM_DATABASE_COLLECTION_ID,
+            desc.name.as_bytes().to_vec(),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+
+    fn put_collection(&mut self, desc: CollectionDesc) -> &mut Self {
+        self.put(
+            SYSTEM_COLLECTION_COLLECTION_ID,
+            collection_key(desc.parent_id, &desc.name),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+}
+
+#[inline]
+fn collection_key(database_id: u64, collection_name: &str) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + collection_name.len());
+    buf.extend_from_slice(database_id.to_le_bytes().as_slice());
+    buf.extend_from_slice(collection_name.as_bytes());
+    buf
+}
+
+#[inline]
+fn data_key(collection_id: u64, key: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + key.len());
+    buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
+    buf.extend_from_slice(key);
+    buf
 }

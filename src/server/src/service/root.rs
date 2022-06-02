@@ -69,7 +69,7 @@ impl root_server::Root for Server {
         let cluster_id = schema.cluster_id().await?.unwrap();
         if let Some(prev_cluster_id) = request.cluster_id {
             if prev_cluster_id != cluster_id {
-                return Err(Error::ClusterNotMatch.into())
+                return Err(Error::ClusterNotMatch.into());
             }
         }
         Ok(Response::new(JoinNodeResponse {
