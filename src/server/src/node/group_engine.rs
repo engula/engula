@@ -25,7 +25,7 @@ use prost::Message;
 use crate::Result;
 
 /// The collection id of local states, which allows commit without replicating.
-const LOCAL_COLLECTION_ID: u64 = 0;
+pub const LOCAL_COLLECTION_ID: u64 = 0;
 
 #[derive(Default)]
 pub struct WriteBatch {

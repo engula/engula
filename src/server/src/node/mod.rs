@@ -122,7 +122,6 @@ impl Node {
         let group_id = group.id;
         let group_engine = GroupEngine::create(self.raw_db.clone(), &group).await?;
         Replica::create(replica_id, group_engine, &group).await?;
-
         let replica_state = if group.replicas.is_empty() {
             ReplicaState::Pending
         } else {

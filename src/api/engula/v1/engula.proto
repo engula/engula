@@ -43,7 +43,7 @@ message AdminRequestUnion {
 }
 
 message AdminResponseUnion {
-  oneof request {
+  oneof response {
     GetDatabaseResponse get_database = 1;
     ListDatabasesResponse list_databases = 2;
     CreateDatabaseResponse create_database = 3;
@@ -109,7 +109,7 @@ message CreateCollectionRequest {
   string parent = 2;
 }
 
-message CreateCollectionResponse {}
+message CreateCollectionResponse { CollectionDesc collection = 1; }
 
 message UpdateCollectionRequest {}
 
