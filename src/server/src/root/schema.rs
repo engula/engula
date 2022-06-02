@@ -76,6 +76,12 @@ impl Schema {
     pub async fn create_database(&self, desc: DatabaseDesc) -> Result<DatabaseDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_DATABASE_ID_KEY).await?;
+        self.batch_put(
+            PutBatchBuilder::default()
+                .put_database(desc.to_owned())
+                .build(),
+        )
+        .await?;
         Ok(desc)
     }
 
@@ -99,6 +105,12 @@ impl Schema {
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
+        self.batch_put(
+            PutBatchBuilder::default()
+                .put_collection(desc.to_owned())
+                .build(),
+        )
+        .await?;
         Ok(desc)
     }
 
