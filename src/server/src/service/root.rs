@@ -34,7 +34,7 @@ impl root_server::Root for Server {
         &self,
         req: Request<AdminRequest>,
     ) -> std::result::Result<Response<AdminResponse>, Status> {
-        if !self.root.as_ref().is_root() {
+        if !self.root.is_root() {
             todo!("forward")
         }
         let req = req.into_inner();
@@ -46,7 +46,7 @@ impl root_server::Root for Server {
         &self,
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
-        if !self.root.as_ref().is_root() {
+        if !self.root.is_root() {
             todo!("forward")
         }
         let req = req.into_inner();

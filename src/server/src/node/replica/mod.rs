@@ -17,7 +17,10 @@ mod eval;
 pub mod fsm;
 mod raft;
 
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    task::{Poll, Waker},
+};
 
 use engula_api::{
     server::v1::{
@@ -26,7 +29,6 @@ use engula_api::{
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
-use futures::lock::Mutex;
 
 use self::{
     fsm::GroupStateMachine,
@@ -42,6 +44,7 @@ use crate::{
 struct LeaseState {
     role: ::raft::StateRole,
     term: u64,
+    leader_subscribers: Vec<Waker>,
 }
 
 struct RoleObserver {
@@ -102,7 +105,7 @@ impl Replica {
             .and_then(|request| request.request.as_ref())
             .ok_or_else(|| Error::InvalidArgument("GroupRequest::request".into()))?;
 
-        self.check_request_early(group_id, request).await?;
+        self.check_request_early(group_id, request)?;
         let resp = self.evaluate_command(shard_id, request).await?;
         Ok(GroupResponse::new(resp))
     }
@@ -110,6 +113,25 @@ impl Replica {
     /// Change the configuration of raft group.
     pub async fn change_config(&self) {
         todo!()
+    }
+
+    pub async fn on_leader(&self) -> Result<()> {
+        use futures::future::poll_fn;
+
+        poll_fn(|ctx| {
+            let mut lease_state = self.lease_state.lock().unwrap();
+            if lease_state.still_valid() {
+                Poll::Ready(())
+            } else {
+                lease_state.leader_subscribers.push(ctx.waker().clone());
+                Poll::Pending
+            }
+        })
+        .await;
+
+        // FIXME(walter) support shutdown a replica.
+
+        Ok(())
     }
 
     /// Delegates the eval method for the given `Request`.
@@ -166,8 +188,8 @@ impl Replica {
         Ok(())
     }
 
-    async fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
-        let lease_state = self.lease_state.lock().await;
+    fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
+        let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.still_valid() {
             Err(Error::NotLeader(group_id, None))
         } else {
@@ -199,11 +221,15 @@ impl RoleObserver {
     }
 }
 
-#[tonic::async_trait]
 impl StateObserver for RoleObserver {
-    async fn on_state_updated(&mut self, role: ::raft::StateRole, term: u64) {
-        let mut lease_state = self.lease_state.lock().await;
+    fn on_state_updated(&mut self, role: ::raft::StateRole, term: u64) {
+        let mut lease_state = self.lease_state.lock().unwrap();
         lease_state.role = role;
         lease_state.term = term;
+        if role == ::raft::StateRole::Leader {
+            for waker in std::mem::take(&mut lease_state.leader_subscribers) {
+                waker.wake();
+            }
+        }
     }
 }

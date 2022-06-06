@@ -14,7 +14,7 @@
 
 mod bootstrap;
 mod error;
-mod node;
+pub mod node;
 mod root;
 pub mod runtime;
 mod service;

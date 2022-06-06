@@ -60,7 +60,14 @@ impl StartCommand {
         use engula_server::runtime::ExecutorOwner;
 
         let owner = ExecutorOwner::new(num_cpus::get());
-        engula_server::run(owner.executor(), self.db, self.addr, self.init, self.join)
+        engula_server::run(
+            owner.executor(),
+            self.db,
+            self.addr,
+            self.init,
+            self.join,
+            None,
+        )
     }
 }
 

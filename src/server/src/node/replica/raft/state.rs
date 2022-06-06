@@ -15,7 +15,6 @@
 use raft::StateRole;
 
 /// An abstraction for observing raft roles and state changes.
-#[tonic::async_trait]
 pub trait StateObserver {
-    async fn on_state_updated(&mut self, role: StateRole, term: u64);
+    fn on_state_updated(&mut self, role: StateRole, term: u64);
 }

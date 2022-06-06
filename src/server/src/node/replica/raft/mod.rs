@@ -72,7 +72,7 @@ impl RaftNodeFacade {
         mut observer: Box<dyn StateObserver + Send>,
     ) -> Result<Self> {
         // TODO(walter) add implementation.
-        observer.on_state_updated(StateRole::Leader, 1).await;
+        observer.on_state_updated(StateRole::Leader, 1);
         Ok(RaftNodeFacade {
             fsm: Arc::new(Mutex::new(fsm)),
             observer: Arc::new(Mutex::new(observer)),

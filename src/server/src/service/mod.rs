@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use crate::node::Node;
-
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,14 +11,16 @@ use crate::node::Node;
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use std::sync::Arc;
+
+use crate::{node::Node, root::Root};
 
 pub mod node;
 pub mod raft;
 pub mod root;
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct Server {
     pub node: Arc<Node>,
-    pub root: Arc<crate::root::Root>,
+    pub root: Root,
 }
