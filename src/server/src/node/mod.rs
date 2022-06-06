@@ -15,14 +15,14 @@
 pub mod group_engine;
 pub mod replica;
 pub mod resolver;
-mod route_table;
+pub mod route_table;
 pub mod state_engine;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use engula_api::server::v1::GroupDesc;
 use futures::lock::Mutex;
-use tracing::debug;
+use tracing::{debug, info};
 
 use self::{
     group_engine::GroupEngine,
@@ -152,6 +152,11 @@ impl Node {
         self.state_engine
             .save_replica_state(group_id, replica_id, replica_state)
             .await?;
+
+        info!(
+            "create replica {} of group {} and write initial state success",
+            replica_id, group_id
+        );
 
         // If this node has not completed initialization, then there is no need to record
         // `ReplicaInfo`. Because the recovery operation will be performed later, `ReplicaMeta` will

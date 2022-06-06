@@ -16,7 +16,7 @@ use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 
 use futures::{
     channel::{mpsc, oneshot},
-    FutureExt, StreamExt,
+    FutureExt, SinkExt, StreamExt,
 };
 use raft::{prelude::*, StateRole};
 use raft_engine::{Engine, LogBatch};
@@ -57,6 +57,7 @@ pub enum Request {
     Unreachable {
         target_id: u64,
     },
+    Start,
 }
 
 /// An abstraction for observing raft roles and state changes.
@@ -104,6 +105,7 @@ pub struct RaftWorker<M: StateMachine> {
     request_receiver: mpsc::Receiver<Request>,
 
     group_id: u64,
+    replica_id: u64,
     raft_node: RaftNode<M>,
 
     channels: HashMap<u64, Channel>,
@@ -127,11 +129,14 @@ where
     ) -> Result<Self> {
         let raft_node = RaftNode::new(group_id, replica_id, raft_mgr, state_machine).await?;
         // TODO(walter) config channel size.
-        let (request_sender, request_receiver) = mpsc::channel(10240);
+        let (mut request_sender, request_receiver) = mpsc::channel(10240);
+        request_sender.send(Request::Start).await.unwrap();
+
         Ok(RaftWorker {
             request_sender,
             request_receiver,
             group_id,
+            replica_id,
             raft_node,
             channels: HashMap::new(),
             trans_mgr: raft_mgr.transport_mgr.clone(),
@@ -149,6 +154,11 @@ where
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
     #[allow(unused)]
     pub async fn run(mut self) -> Result<()> {
+        tracing::info!(
+            "raft worker of replica {} group {} start running",
+            self.replica_id,
+            self.group_id
+        );
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(500));
         loop {
@@ -213,6 +223,7 @@ where
             Request::Unreachable { target_id } => {
                 self.raft_node.report_unreachable(target_id);
             }
+            Request::Start => {}
         }
         Ok(())
     }

@@ -136,16 +136,17 @@ impl GroupEngine {
 
     /// Return the persisted applied index of raft.
     pub fn flushed_index(&self) -> u64 {
-        use rocksdb::ReadOptions;
+        use rocksdb::{ReadOptions, ReadTier};
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
             .expect("column family handle");
-        // FIXME(walter) ignore memtables.
+        let mut opt = ReadOptions::default();
+        opt.set_read_tier(ReadTier::Persisted);
         let raw_key = keys::applied_index();
         let value = self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)
+            .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
             .unwrap()
             .expect("group descriptor will persisted when creating group");
         let value = value.as_ref();

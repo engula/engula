@@ -19,17 +19,18 @@ use crate::{
     Result,
 };
 
-#[allow(unused)]
 pub struct GroupStateMachine
 where
     Self: Send,
 {
+    flushed_index: u64,
     group_engine: GroupEngine,
 }
 
 impl GroupStateMachine {
     pub fn new(group_engine: GroupEngine) -> Self {
-        GroupStateMachine { group_engine }
+        let flushed_index = group_engine.flushed_index();
+        GroupStateMachine { flushed_index, group_engine }
     }
 }
 
@@ -87,6 +88,7 @@ impl StateMachine for GroupStateMachine {
     }
 
     fn flushed_index(&self) -> u64 {
-        todo!()
+        // TODO(walter) update flushed index in periodic.
+        self.flushed_index
     }
 }

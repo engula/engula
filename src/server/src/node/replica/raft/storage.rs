@@ -17,6 +17,7 @@ use std::{cell::RefCell, collections::VecDeque, ops::Range, sync::Arc};
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Engine, LogBatch, MessageExt};
+use tracing::debug;
 
 use super::node::WriteTask;
 use crate::{
@@ -67,6 +68,11 @@ pub struct Storage {
 
 impl Storage {
     pub async fn open(replica_id: u64, applied_index: u64, engine: Arc<Engine>) -> Result<Self> {
+        debug!(
+            "open storage of replica {} applied index {}",
+            replica_id, applied_index
+        );
+
         let hs = engine
             .get_message::<HardState>(replica_id, keys::HARD_STATE_KEY)?
             .expect("hard state must be initialized");
@@ -78,10 +84,16 @@ impl Storage {
             .expect("raft local state must be initialized");
 
         let first_index = engine.first_index(replica_id).unwrap_or(1);
-        let last_index = engine.last_index(replica_id).unwrap_or(1);
+        let last_index = engine.last_index(replica_id).unwrap_or(0);
 
         let cache = if applied_index < last_index {
             // There exists some entries haven't been applied.
+            debug!(
+                "replica {} fetch uncommitted entries in range [{}, {})",
+                replica_id,
+                applied_index + 1,
+                last_index + 1
+            );
             let mut entries = vec![];
             engine.fetch_entries_to::<MessageExtTyped>(
                 replica_id,
@@ -351,6 +363,8 @@ pub async fn write_initial_state(engine: &Engine, replica_id: u64, voters: Vec<u
     batch
         .put_message(replica_id, keys::LOCAL_STATE_KEY.to_owned(), &local_state)
         .unwrap();
+
+    debug!("write initial state of {}", replica_id);
 
     engine.write(&mut batch, true)?;
     Ok(())
