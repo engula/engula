@@ -42,5 +42,6 @@ prost-build = "0.10.3"
 tonic-build = "0.7.2"
 
 [dev-dependencies]
+ctor = "0.1.22"
 tempdir = "0.3.7"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }

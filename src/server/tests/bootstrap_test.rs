@@ -12,33 +12,60 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{sync::mpsc, thread};
+use std::{net::SocketAddr, sync::mpsc, thread, time::Duration};
 
 use engula_server::{runtime::ExecutorOwner, Result};
 use tempdir::TempDir;
 
-#[test]
-fn bootstrap_cluster() -> Result<()> {
+#[ctor::ctor]
+fn init() {
     tracing_subscriber::fmt::init();
+}
 
-    let (sender, first_node_receiver) = mpsc::channel();
-    thread::spawn(|| {
+fn spawn_server(
+    name: &'static str,
+    init: bool,
+    join_list: Vec<String>,
+) -> mpsc::Receiver<SocketAddr> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
         let owner = ExecutorOwner::new(1);
-        let tmp_dir = TempDir::new("bootstrap-node-1").unwrap().into_path();
+        let tmp_dir = TempDir::new(name).unwrap().into_path();
 
         engula_server::run(
             owner.executor(),
             tmp_dir,
             "localhost:0".to_string(),
-            true,
-            vec![],
+            init,
+            join_list,
             Some(sender),
         )
         .unwrap()
     });
+    receiver
+}
 
-    first_node_receiver.recv().unwrap();
+#[test]
+fn bootstrap_cluster() -> Result<()> {
+    let receiver = spawn_server("bootstrap-node", true, vec![]);
+    receiver.recv().unwrap();
+
+    // FIXME(walter) find a more efficient way to detect leader elections.
+    thread::sleep(Duration::from_secs(2));
 
     // At this point, initialization has been completed.
+    Ok(())
+}
+
+#[test]
+fn join_node() -> Result<()> {
+    let node_1_addr = spawn_server("join-node-1", true, vec![]).recv().unwrap();
+    let _node_2_addr = spawn_server("join-node-2", false, vec![node_1_addr.to_string()])
+        .recv()
+        .unwrap();
+
+    // FIXME(walter) find a more efficient way to detect leader elections.
+    thread::sleep(Duration::from_secs(2));
+
     Ok(())
 }
