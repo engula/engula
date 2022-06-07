@@ -14,6 +14,7 @@
 
 use std::{cell::RefCell, collections::VecDeque, ops::Range, sync::Arc};
 
+use engula_api::server::v1::{ChangeReplica, ChangeReplicaType, ChangeReplicas};
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Engine, LogBatch, MessageExt};
@@ -355,7 +356,7 @@ impl EntryCache {
 pub async fn write_initial_state(
     engine: &Engine,
     replica_id: u64,
-    mut voters: Vec<u64>,
+    mut voters: Vec<(u64, u64)>,
     initial_eval_results: Vec<EvalResult>,
 ) -> Result<()> {
     use raft_engine::Command;
@@ -365,18 +366,19 @@ pub async fn write_initial_state(
     if !voters.is_empty() {
         voters.sort_unstable();
         last_index += 1;
-        let conf_change = ConfChangeV2 {
-            transition: ConfChangeTransition::Auto.into(),
-            context: vec![],
+
+        let change_replicas = ChangeReplicas {
             changes: voters
-                .into_iter()
-                .map(|v| ConfChangeSingle {
-                    node_id: v,
-                    change_type: ConfChangeType::AddNode.into(),
+                .iter()
+                .cloned()
+                .map(|(replica_id, node_id)| ChangeReplica {
+                    change_type: ChangeReplicaType::Add.into(),
+                    replica_id,
+                    node_id,
                 })
                 .collect(),
         };
-
+        let conf_change = super::encode_to_conf_change(change_replicas);
         let mut e = Entry::default();
         e.index = last_index;
         e.term = 0;

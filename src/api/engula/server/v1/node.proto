@@ -54,6 +54,9 @@ message GroupRequestUnion {
 
     /// Add a new shard to an existing group.
     CreateShardRequest create_shard = 4;
+
+    /// Change replicas of an existing group.
+    ChangeReplicasRequest change_replicas = 5;
   }
 }
 
@@ -63,6 +66,7 @@ message GroupResponseUnion {
     engula.v1.PutResponse put = 2;
     engula.v1.DeleteResponse delete = 3;
     CreateShardResponse create_shard = 4;
+    ChangeReplicasResponse change_replicas = 5;
   }
 }
 
@@ -82,3 +86,26 @@ message CreateShardRequest {
 }
 
 message CreateShardResponse {}
+
+message ChangeReplicasRequest {
+  ChangeReplicas change_replicas = 1;
+}
+
+message ChangeReplicasResponse {}
+
+message ChangeReplicas {
+  repeated ChangeReplica changes = 1;
+}
+
+message ChangeReplica {
+  ChangeReplicaType change_type = 1;
+
+  uint64 replica_id = 2;
+  uint64 node_id = 3;
+}
+
+enum ChangeReplicaType {
+  ADD = 0;
+  REMOVE = 1;
+  ADD_LEARNER = 2;
+}

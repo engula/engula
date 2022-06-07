@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::{GroupDesc, ReplicaDesc, ReplicaRole};
-use raft::prelude::{ConfChangeSingle, ConfChangeType, ConfChangeV2, ConfState};
+use engula_api::server::v1::{
+    ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
+};
+use raft::prelude::ConfState;
 use tracing::trace;
 
 use super::raft::{ApplyEntry, StateMachine};
@@ -24,7 +26,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-enum ConfChangeKind {
+enum ChangeReplicaKind {
     Simple,
     EnterJoint,
     LeaveJoint,
@@ -49,16 +51,18 @@ impl GroupStateMachine {
 }
 
 impl GroupStateMachine {
-    fn apply_conf_change(&mut self, index: u64, cc: ConfChangeV2) -> Result<()> {
+    fn apply_change_replicas(&mut self, index: u64, change_replicas: ChangeReplicas) -> Result<()> {
         let mut wb = WriteBatch::default();
         let mut desc = self
             .group_engine
             .descriptor()
             .expect("GroupEngine::descriptor");
-        match ConfChangeKind::new(&cc) {
-            ConfChangeKind::LeaveJoint => apply_leave_joint(&mut desc),
-            ConfChangeKind::EnterJoint => apply_enter_joint(&mut desc, &cc.changes),
-            ConfChangeKind::Simple => apply_simple_change(&mut desc, &cc.changes[0]),
+        match ChangeReplicaKind::new(&change_replicas) {
+            ChangeReplicaKind::LeaveJoint => apply_leave_joint(&mut desc),
+            ChangeReplicaKind::EnterJoint => apply_enter_joint(&mut desc, &change_replicas.changes),
+            ChangeReplicaKind::Simple => {
+                apply_simple_change(&mut desc, &change_replicas.changes[0])
+            }
         }
         self.group_engine.set_applied_index(&mut wb, index);
         self.group_engine.set_group_desc(&mut wb, &desc);
@@ -103,8 +107,8 @@ impl StateMachine for GroupStateMachine {
         trace!("apply entry index {} term {}", index, _term);
         match entry {
             ApplyEntry::Empty => {}
-            ApplyEntry::ConfigChange { conf_change: cc } => {
-                self.apply_conf_change(index, cc)?;
+            ApplyEntry::ConfigChange { change_replicas } => {
+                self.apply_change_replicas(index, change_replicas)?;
             }
             ApplyEntry::Proposal { eval_result } => {
                 self.apply_proposal(index, eval_result)?;
@@ -160,12 +164,12 @@ impl StateMachine for GroupStateMachine {
     }
 }
 
-impl ConfChangeKind {
-    fn new(cc: &ConfChangeV2) -> Self {
+impl ChangeReplicaKind {
+    fn new(cc: &ChangeReplicas) -> Self {
         match cc.changes.len() {
-            0 => ConfChangeKind::LeaveJoint,
-            1 => ConfChangeKind::Simple,
-            _ => ConfChangeKind::EnterJoint,
+            0 => ChangeReplicaKind::LeaveJoint,
+            1 => ChangeReplicaKind::Simple,
+            _ => ChangeReplicaKind::EnterJoint,
         }
     }
 }
@@ -181,40 +185,44 @@ fn apply_leave_joint(desc: &mut GroupDesc) {
     }
 }
 
-fn apply_simple_change(desc: &mut GroupDesc, change: &ConfChangeSingle) {
-    let replica_id = change.node_id;
+fn apply_simple_change(desc: &mut GroupDesc, change: &ChangeReplica) {
+    let replica_id = change.replica_id;
+    let node_id = change.node_id;
     let exist = find_replica_mut(desc, replica_id);
     check_not_in_joint_state(&exist);
-    match change.get_change_type() {
-        ConfChangeType::AddNode => {
+    match ChangeReplicaType::from_i32(change.change_type) {
+        Some(ChangeReplicaType::Add) => {
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Voter.into();
             } else {
                 desc.replicas.push(ReplicaDesc {
                     id: replica_id,
-                    node_id: 0, // FIXME(walter)
+                    node_id,
                     role: ReplicaRole::Voter.into(),
                 });
             }
         }
-        ConfChangeType::AddLearnerNode => {
+        Some(ChangeReplicaType::AddLearner) => {
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Learner.into();
             } else {
                 desc.replicas.push(ReplicaDesc {
                     id: replica_id,
-                    node_id: 0, // FIXME(walter)
+                    node_id,
                     role: ReplicaRole::Voter.into(),
                 });
             }
         }
-        ConfChangeType::RemoveNode => {
+        Some(ChangeReplicaType::Remove) => {
             desc.replicas.drain_filter(|rep| rep.id == replica_id);
+        }
+        None => {
+            panic!("such change replica operation isn't supported")
         }
     }
 }
 
-fn apply_enter_joint(desc: &mut GroupDesc, changes: &[ConfChangeSingle]) {
+fn apply_enter_joint(desc: &mut GroupDesc, changes: &[ChangeReplica]) {
     for change in changes {
         apply_simple_change(desc, change);
     }

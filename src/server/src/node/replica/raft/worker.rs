@@ -14,6 +14,7 @@
 
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 
+use engula_api::server::v1::ChangeReplicas;
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, SinkExt, StreamExt,
@@ -47,7 +48,7 @@ pub enum Request {
         sender: oneshot::Sender<Result<u64>>,
     },
     ChangeConfig {
-        change: ConfChangeV2,
+        change: ChangeReplicas,
         sender: oneshot::Sender<Result<()>>,
     },
     Transfer {
@@ -207,9 +208,7 @@ where
                 sender,
             } => self.handle_proposal(eval_result, sender),
             Request::Read { policy, sender } => self.handle_read(policy, sender),
-            Request::ChangeConfig { change, sender } => {
-                self.raft_node.propose_conf_change(vec![], change, sender);
-            }
+            Request::ChangeConfig { change, sender } => self.handle_conf_change(change, sender),
             Request::Snapshot { .. } => {
                 todo!()
             }
@@ -240,6 +239,11 @@ where
 
         let data = eval_result.encode_to_vec();
         self.raft_node.propose(data, vec![], sender);
+    }
+
+    fn handle_conf_change(&mut self, change: ChangeReplicas, sender: oneshot::Sender<Result<()>>) {
+        let cc = super::encode_to_conf_change(change);
+        self.raft_node.propose_conf_change(vec![], cc, sender);
     }
 
     fn handle_read(&mut self, policy: ReadPolicy, sender: oneshot::Sender<Result<()>>) {

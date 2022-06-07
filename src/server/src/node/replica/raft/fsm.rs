@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use raft::prelude::{ConfChangeV2, ConfState};
+use engula_api::server::v1::ChangeReplicas;
+use raft::prelude::ConfState;
 
 use crate::{serverpb::v1::EvalResult, Result};
 
 /// A helper structure to used to access the internal field of entries.
 pub enum ApplyEntry {
     Empty,
-    ConfigChange { conf_change: ConfChangeV2 },
+    ConfigChange { change_replicas: ChangeReplicas },
     Proposal { eval_result: EvalResult },
 }
 

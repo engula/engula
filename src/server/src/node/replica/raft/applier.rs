@@ -118,11 +118,14 @@ impl<M: StateMachine> Applier<M> {
                 continue;
             }
 
+            let index = entry.index;
+            let term = entry.term;
             match entry.get_entry_type() {
                 EntryType::EntryNormal => self.apply_normal_entry(entry),
                 EntryType::EntryConfChange => panic!("ConfChangeV1 not supported"),
                 EntryType::EntryConfChangeV2 => self.apply_conf_change(raw_node, entry),
             }
+            self.response_proposal(index, term);
         }
 
         // Since the `last_applied_index` updated, try advance cached read states.
@@ -139,13 +142,12 @@ impl<M: StateMachine> Applier<M> {
         ));
 
         let conf_change = ConfChangeV2::decode(&*entry.data).expect("decode ConfChangeV2");
+        let change_replicas = super::decode_from_conf_change(&conf_change);
         self.state_machine
             .apply(
                 entry.index,
                 entry.term,
-                ApplyEntry::ConfigChange {
-                    conf_change: conf_change.clone(),
-                },
+                ApplyEntry::ConfigChange { change_replicas },
             )
             .expect("apply config change");
         raw_node.apply_conf_change(&conf_change).unwrap_or_default();
@@ -164,7 +166,6 @@ impl<M: StateMachine> Applier<M> {
                 ApplyEntry::Proposal { eval_result },
             )
             .expect("apply normal entry");
-        self.response_proposal(entry.index, entry.term);
     }
 
     fn response_proposal(&mut self, index: u64, term: u64) {

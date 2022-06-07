@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
 use raft::prelude::*;
 
@@ -110,7 +111,7 @@ impl RaftNodeFacade {
         }
     }
 
-    pub fn change_config(&mut self, change: ConfChangeV2) -> oneshot::Receiver<Result<()>> {
+    pub fn change_config(&mut self, change: ChangeReplicas) -> oneshot::Receiver<Result<()>> {
         let (sender, receiver) = oneshot::channel();
 
         let request = Request::ChangeConfig { change, sender };

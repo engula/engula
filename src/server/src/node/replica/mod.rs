@@ -24,8 +24,8 @@ use std::{
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request, group_response_union::Response, CreateShardResponse,
-        GroupDesc, GroupRequest, GroupResponse,
+        group_request_union::Request, group_response_union::Response, ChangeReplicasResponse,
+        CreateShardResponse, GroupDesc, GroupRequest, GroupResponse,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
@@ -70,7 +70,7 @@ impl Replica {
         let voters = target_desc
             .replicas
             .iter()
-            .map(|r| r.id)
+            .map(|r| (r.id, r.node_id))
             .collect::<Vec<_>>();
         let eval_results = target_desc
             .shards
@@ -175,6 +175,15 @@ impl Replica {
                 resp = Response::CreateShard(CreateShardResponse {});
 
                 Some(eval::add_shard(shard))
+            }
+            Request::ChangeReplicas(req) => {
+                if let Some(change) = &req.change_replicas {
+                    self.raft_node
+                        .clone()
+                        .change_config(change.clone())
+                        .await??;
+                }
+                return Ok(Response::ChangeReplicas(ChangeReplicasResponse {}));
             }
         };
 
