@@ -24,8 +24,8 @@ service Root {
   rpc Admin(engula.v1.AdminRequest) returns (engula.v1.AdminResponse) {}
   rpc Watch(WatchRequest) returns (stream WatchResponse) {}
 
-  /// Join a bootstraped cluster. If the target node is itself not part of a
-  /// bootstraped cluster, an appropriate error is returned.
+  /// Join a bootstrapped cluster. If the target node is itself not part of a
+  /// bootstrapped cluster, an appropriate error is returned.
   rpc Join(JoinNodeRequest) returns (JoinNodeResponse) {}
 }
 
