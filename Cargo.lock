@@ -425,6 +425,7 @@ dependencies = [
  "async-stream",
  "ctor",
  "engula-api",
+ "engula-client",
  "futures",
  "lazy_static",
  "prost",
