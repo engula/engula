@@ -17,7 +17,10 @@ mod eval;
 pub mod fsm;
 pub mod raft;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    task::{Poll, Waker},
+};
 
 use engula_api::{
     server::v1::{
@@ -42,6 +45,7 @@ use crate::{
 struct LeaseState {
     role: ::raft::StateRole,
     term: u64,
+    leader_subscribers: Vec<Waker>,
 }
 
 struct RoleObserver {
@@ -116,6 +120,25 @@ impl Replica {
     /// Change the configuration of raft group.
     pub async fn change_config(&self) {
         todo!()
+    }
+
+    pub async fn on_leader(&self) -> Result<()> {
+        use futures::future::poll_fn;
+
+        poll_fn(|ctx| {
+            let mut lease_state = self.lease_state.lock().unwrap();
+            if lease_state.still_valid() {
+                Poll::Ready(())
+            } else {
+                lease_state.leader_subscribers.push(ctx.waker().clone());
+                Poll::Pending
+            }
+        })
+        .await;
+
+        // FIXME(walter) support shutdown a replica.
+
+        Ok(())
     }
 
     /// Delegates the eval method for the given `Request`.
@@ -215,5 +238,10 @@ impl StateObserver for RoleObserver {
         let mut lease_state = self.lease_state.lock().unwrap();
         lease_state.role = role;
         lease_state.term = term;
+        if role == ::raft::StateRole::Leader {
+            for waker in std::mem::take(&mut lease_state.leader_subscribers) {
+                waker.wake();
+            }
+        }
     }
 }

@@ -15,67 +15,68 @@
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
+    task::Waker,
 };
 
 use super::{replica::RaftSender, Replica};
 use crate::bootstrap::ROOT_GROUP_ID;
 
 /// A structure support replica route queries.
-#[allow(unused)]
 #[derive(Clone)]
 pub struct ReplicaRouteTable
 where
     Self: Send + Sync,
 {
     // FIXME(walter) more efficient implementation.
-    replicas: Arc<RwLock<HashMap<u64, Arc<Replica>>>>,
+    core: Arc<RwLock<ReplicaRouteTableCore>>,
 }
 
-// FIXME(walter) define.
-#[allow(unused)]
-pub struct RootReplica {}
+#[derive(Default)]
+struct ReplicaRouteTableCore {
+    replicas: HashMap<u64, Arc<Replica>>,
+    root_wakers: Vec<Waker>,
+}
 
 #[allow(unused)]
 impl ReplicaRouteTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ReplicaRouteTable {
-            replicas: Arc::new(RwLock::new(HashMap::default())),
+            core: Arc::default(),
         }
     }
 
     /// Find the corresponding replica.
-    pub fn find(&self, replica_id: u64) -> Option<Arc<Replica>> {
-        self.replicas.read().unwrap().get(&replica_id).cloned()
+    pub fn find(&self, group_id: u64) -> Option<Arc<Replica>> {
+        let core = self.core.read().unwrap();
+        core.replicas.get(&group_id).cloned()
     }
 
-    pub fn find_root(&self) -> Option<RootReplica> {
-        todo!()
-    }
-
-    pub fn current_root_replica(&self) -> Option<Arc<Replica>> {
-        let replicas = self.replicas.read().unwrap();
-        for replica in replicas.values() {
-            if replica.group_id() == ROOT_GROUP_ID
-            /* && TODO(zojw): is_leader */
-            {
-                return Some(replica.clone());
-            }
+    pub fn current_root_replica(&self, waker: Option<Waker>) -> Option<Arc<Replica>> {
+        let mut core = self.core.write().unwrap();
+        if let Some(replica) = core.replicas.get(&ROOT_GROUP_ID) {
+            return Some(replica.clone());
+        }
+        if let Some(waker) = waker {
+            core.root_wakers.push(waker);
         }
         None
     }
 
     pub fn update(&self, replica: Arc<Replica>) {
-        let replica_id = replica.replica_id();
-        self.replicas.write().unwrap().insert(replica_id, replica);
-    }
-
-    pub fn upsert_root(&self, root_replica: &RootReplica) {
-        todo!()
+        let group_id = replica.group_id();
+        let mut core = self.core.write().unwrap();
+        core.replicas.insert(group_id, replica);
+        if group_id == ROOT_GROUP_ID {
+            for waker in std::mem::take(&mut core.root_wakers) {
+                waker.wake();
+            }
+        }
     }
 
     pub fn remove(&self, replica_id: u64) {
-        self.replicas.write().unwrap().remove(&replica_id);
+        let mut core = self.core.write().unwrap();
+        core.replicas.remove(&replica_id);
     }
 }
 

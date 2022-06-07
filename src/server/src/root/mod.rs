@@ -16,68 +16,140 @@ mod job;
 mod schema;
 mod store;
 
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    task::Poll,
+    time::Duration,
+};
 
 use self::{schema::Schema, store::RootStore};
 use crate::{
-    node::Node,
+    node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
     Error, Result,
 };
 
+#[derive(Clone)]
 pub struct Root {
-    is_root: bool,
+    shared: Arc<RootShared>,
+}
+
+struct RootShared {
     executor: Executor,
-    schema: Option<Arc<Schema>>,
-    cluster_id: Option<Vec<u8>>,
+    cluster_id: Vec<u8>,
+    local_addr: String,
+    core: Mutex<Option<RootCore>>,
+}
+
+struct RootCore {
+    schema: Arc<Schema>,
 }
 
 impl Root {
-    pub fn new(executor: Executor) -> Self {
+    pub fn new(executor: Executor, cluster_id: Vec<u8>, local_addr: String) -> Self {
         Self {
-            is_root: false,
-            executor,
-            schema: None,
-            cluster_id: None,
+            shared: Arc::new(RootShared {
+                executor,
+                cluster_id,
+                local_addr,
+                core: Mutex::new(None),
+            }),
         }
     }
 
     pub fn is_root(&self) -> bool {
-        self.is_root
+        self.shared.core.lock().unwrap().is_some()
     }
 
-    pub async fn bootstrap(&mut self, node: &Node, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
-        let root_replica = node.replica_table().current_root_replica().unwrap();
-        let store = Arc::new(RootStore::new(root_replica));
-        let mut schema = Schema::new(store.clone());
-
-        schema.try_bootstrap(addr, cluster_id.to_owned()).await?;
-
-        self.cluster_id = Some(cluster_id);
-
-        self.refresh_root_owner(node);
-        self.executor
-            .spawn(None, TaskPriority::Middle, async move {}); // TODO(zojw): refresh owner, heartbeat node, rebalance
+    pub async fn bootstrap(&mut self, node: &Node) -> Result<()> {
+        let replica_table = node.replica_table().clone();
+        let root = self.clone();
+        self.shared
+            .executor
+            .spawn(None, TaskPriority::Middle, async move {
+                root.run(replica_table).await;
+            });
         Ok(())
     }
 
     pub fn schema(&self) -> Result<Arc<Schema>> {
-        self.schema.to_owned().ok_or(Error::NotRootLeader)
+        let core = self.shared.core.lock().unwrap();
+        core.as_ref()
+            .map(|c| c.schema.clone())
+            .ok_or(Error::NotRootLeader)
     }
 
-    fn refresh_root_owner(&mut self, node: &Node) {
-        let store = node
-            .replica_table()
-            .current_root_replica()
-            .map(RootStore::new);
-        if let Some(store) = store {
-            let schema = Schema::new(Arc::new(store));
-            self.schema = Some(Arc::new(schema));
-            self.is_root = true;
-        } else {
-            self.schema = None;
-            self.is_root = false;
+    async fn run(&self, replica_table: ReplicaRouteTable) -> ! {
+        let mut bootstrapped = false;
+        loop {
+            let root_replica = self.fetch_root_replica(&replica_table).await;
+
+            // Wait the current root replica becomes a leader.
+            if root_replica.on_leader().await.is_ok() {
+                match self
+                    .step_leader(&self.shared.local_addr, root_replica, &mut bootstrapped)
+                    .await
+                {
+                    Ok(()) | Err(Error::NotLeader(_, _)) => {
+                        // Step follower
+                        continue;
+                    }
+                    Err(err) => {
+                        todo!("handle error: {}", err)
+                    }
+                }
+            }
         }
+    }
+
+    async fn fetch_root_replica(&self, replica_table: &ReplicaRouteTable) -> Arc<Replica> {
+        use futures::future::poll_fn;
+        poll_fn(
+            |ctx| match replica_table.current_root_replica(Some(ctx.waker().clone())) {
+                Some(root_replica) => Poll::Ready(root_replica),
+                None => Poll::Pending,
+            },
+        )
+        .await
+    }
+
+    async fn step_leader(
+        &self,
+        local_addr: &str,
+        root_replica: Arc<Replica>,
+        bootstrapped: &mut bool,
+    ) -> Result<()> {
+        let store = Arc::new(RootStore::new(root_replica));
+        let mut schema = Schema::new(store.clone());
+
+        // Only when the program is initialized is it checked for bootstrap, after which the
+        // leadership change does not need to check for whether bootstrap or not.
+        if !*bootstrapped {
+            schema
+                .try_bootstrap(local_addr, self.shared.cluster_id.clone())
+                .await?;
+            *bootstrapped = true;
+        }
+
+        {
+            let mut core = self.shared.core.lock().unwrap();
+            *core = Some(RootCore {
+                schema: Arc::new(schema),
+            });
+        }
+
+        // TODO(zojw): refresh owner, heartbeat node, rebalance
+        for _ in 0..1000 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        // After that, RootCore needs to be set to None before returning.
+        {
+            let mut core = self.shared.core.lock().unwrap();
+            *core = None;
+        }
+
+        Ok(())
     }
 }
 

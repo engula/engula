@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use std::{
+    net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{mpsc, Arc},
     time::Duration,
     vec,
 };
@@ -39,7 +40,7 @@ use crate::{
 pub const ROOT_GROUP_ID: u64 = 0;
 pub const NA_SHARD_ID: u64 = 0;
 pub const ROOT_SHARD_ID: u64 = 1;
-pub const FIRST_REPLICA_ID: u64 = 0;
+pub const FIRST_REPLICA_ID: u64 = 1;
 pub const FIRST_NODE_ID: u64 = 0;
 
 lazy_static::lazy_static! {
@@ -55,38 +56,50 @@ pub fn run(
     addr: String,
     init: bool,
     join_list: Vec<String>,
+    socket_addr_sender: Option<mpsc::Sender<SocketAddr>>,
 ) -> Result<()> {
     let db_path = path.join("db");
     let log_path = path.join("log");
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
     let node = Node::new(log_path, raw_db, state_engine, executor.clone())?;
-    let mut root = Root::new(executor.clone());
 
-    executor.block_on(async {
+    let root = executor.block_on(async {
         let cluster_id = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
         recover_groups(&node).await?;
-        root.bootstrap(&node, &addr, cluster_id).await
+        let mut root = Root::new(executor.clone(), cluster_id, addr.to_owned());
+        root.bootstrap(&node).await?;
+        Ok::<Root, Error>(root)
     })?;
 
     let server = Server {
         node: Arc::new(node),
-        root: Arc::new(root),
+        root,
     };
     let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
-        bootstrap_services(&addr, server).await
+        bootstrap_services(&addr, server, socket_addr_sender).await
     });
 
     executor.block_on(handle)
 }
 
 /// Listen and serve incoming rpc requests.
-async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
+async fn bootstrap_services(
+    addr: &str,
+    server: Server,
+    socket_addr_sender: Option<mpsc::Sender<SocketAddr>>,
+) -> Result<()> {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
 
     let listener = TcpListener::bind(addr).await?;
+    if let Some(sender) = socket_addr_sender {
+        sender
+            .send(listener.local_addr().unwrap())
+            .unwrap_or_default();
+    }
+
     let listener = TcpListenerStream::new(listener);
 
     Server::builder()

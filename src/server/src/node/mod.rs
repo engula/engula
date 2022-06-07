@@ -24,7 +24,7 @@ use engula_api::server::v1::GroupDesc;
 use futures::lock::Mutex;
 use tracing::{debug, info};
 
-use self::{
+pub use self::{
     group_engine::GroupEngine,
     replica::{
         raft::{RaftManager, TransportManager},
