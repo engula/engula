@@ -25,7 +25,6 @@ use crate::{serverpb::v1::*, Server};
 
 pub struct SnapshotStream;
 
-#[allow(unused)]
 #[tonic::async_trait]
 impl raft_server::Raft for Server {
     type RetriveSnapshotStream = SnapshotStream;
@@ -49,6 +48,7 @@ impl raft_server::Raft for Server {
         Ok(Response::new(RaftDone {}))
     }
 
+    #[allow(unused)]
     async fn retrive_snapshot(
         &self,
         request: Request<SnapshotRequest>,

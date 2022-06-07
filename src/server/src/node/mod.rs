@@ -51,7 +51,6 @@ where
     replicas: HashMap<u64, ReplicaInfo>,
 }
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct Node
 where
@@ -70,7 +69,6 @@ where
     node_state: Arc<Mutex<NodeState>>,
 }
 
-#[allow(unused)]
 impl Node {
     pub fn new(
         log_path: PathBuf,
@@ -143,7 +141,7 @@ impl Node {
         // created, a replica can be recreated by retrying.
         let group_id = group.id;
         Replica::create(replica_id, &group, &self.raft_mgr).await?;
-        let group_engine = GroupEngine::create(self.raw_db.clone(), &group).await?;
+        GroupEngine::create(self.raw_db.clone(), &group).await?;
         let replica_state = if group.replicas.is_empty() {
             ReplicaState::Pending
         } else {
@@ -173,6 +171,7 @@ impl Node {
     }
 
     /// Terminate specified replica.
+    #[allow(unused)]
     pub async fn terminate_replica(&self, replica_id: u64) -> Result<()> {
         todo!()
     }
@@ -197,7 +196,7 @@ impl Node {
         &self,
         group_id: u64,
         replica_id: u64,
-        state: ReplicaState,
+        _state: ReplicaState,
     ) -> Result<Option<()>> {
         let group_engine = match GroupEngine::open(group_id, self.raw_db.clone()).await? {
             Some(group_engine) => group_engine,
@@ -237,7 +236,7 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use engula_api::server::v1::ReplicaDesc;
+    use engula_api::server::v1::{ReplicaDesc, ReplicaRole};
     use tempdir::TempDir;
 
     use super::*;
@@ -303,6 +302,7 @@ mod tests {
             replicas: vec![ReplicaDesc {
                 id: replica_id,
                 node_id: 1,
+                role: ReplicaRole::Voter.into(),
             }],
         };
 

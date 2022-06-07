@@ -47,7 +47,15 @@ message GroupDesc {
   repeated ReplicaDesc replicas = 3;
 }
 
+enum ReplicaRole {
+  VOTER = 0;
+  LEARNER = 1;
+  INCOMING_VOTER = 2;
+  DEMOTING_VOTER = 3;
+}
+
 message ReplicaDesc {
   uint64 id = 1;
   uint64 node_id = 2;
+  ReplicaRole role = 3;
 }

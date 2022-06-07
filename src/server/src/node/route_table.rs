@@ -37,7 +37,6 @@ struct ReplicaRouteTableCore {
     root_wakers: Vec<Waker>,
 }
 
-#[allow(unused)]
 impl ReplicaRouteTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -90,7 +89,6 @@ where
     senders: Arc<RwLock<HashMap<u64, RaftSender>>>,
 }
 
-#[allow(unused)]
 impl RaftRouteTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {

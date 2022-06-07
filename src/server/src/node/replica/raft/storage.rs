@@ -21,7 +21,7 @@ use tracing::debug;
 
 use super::node::WriteTask;
 use crate::{
-    serverpb::v1::{EntryId, RaftLocalState},
+    serverpb::v1::{EntryId, EvalResult, RaftLocalState},
     Result,
 };
 
@@ -60,25 +60,22 @@ pub struct Storage {
     last_index: u64,
     cache: EntryCache,
     local_state: RaftLocalState,
-    hard_state: RefCell<HardState>,
-    conf_state: RefCell<ConfState>,
+    hard_state: HardState,
+    initial_conf_state: RefCell<Option<ConfState>>,
 
     tasks: RefCell<Vec<AsyncFetchTask>>,
 }
 
 impl Storage {
-    pub async fn open(replica_id: u64, applied_index: u64, engine: Arc<Engine>) -> Result<Self> {
-        debug!(
-            "open storage of replica {} applied index {}",
-            replica_id, applied_index
-        );
-
-        let hs = engine
+    pub async fn open(
+        replica_id: u64,
+        applied_index: u64,
+        conf_state: ConfState,
+        engine: Arc<Engine>,
+    ) -> Result<Self> {
+        let hard_state = engine
             .get_message::<HardState>(replica_id, keys::HARD_STATE_KEY)?
             .expect("hard state must be initialized");
-        let cs = engine
-            .get_message::<ConfState>(replica_id, keys::CONF_STATE_KEY)?
-            .expect("conf state must be initialized");
         let local_state = engine
             .get_message::<RaftLocalState>(replica_id, keys::LOCAL_STATE_KEY)?
             .expect("raft local state must be initialized");
@@ -107,14 +104,22 @@ impl Storage {
             EntryCache::new()
         };
 
+        debug!(
+            "open storage of replica {} applied index {}, log range [{}, {})",
+            replica_id,
+            applied_index,
+            first_index,
+            last_index + 1,
+        );
+
         Ok(Storage {
             replica_id,
 
             first_index,
             last_index,
             cache,
-            hard_state: RefCell::new(hs),
-            conf_state: RefCell::new(cs),
+            hard_state,
+            initial_conf_state: RefCell::new(Some(conf_state)),
             local_state,
             tasks: RefCell::new(vec![]),
         })
@@ -133,7 +138,7 @@ impl Storage {
             batch
                 .put_message(self.replica_id, keys::HARD_STATE_KEY.to_owned(), hs)
                 .unwrap();
-            *self.hard_state.borrow_mut() = hs.clone();
+            self.hard_state = hs.clone();
         }
         Ok(())
     }
@@ -171,9 +176,13 @@ impl Storage {
 
 impl raft::Storage for Storage {
     fn initial_state(&self) -> raft::Result<RaftState> {
+        let conf_state = match self.initial_conf_state.borrow_mut().take() {
+            Some(cs) => cs,
+            None => panic!("invoke initial state multiple times"),
+        };
         Ok(RaftState {
-            hard_state: self.hard_state.borrow().clone(),
-            conf_state: self.conf_state.borrow().clone(),
+            hard_state: self.hard_state.clone(),
+            conf_state,
         })
     }
 
@@ -184,7 +193,6 @@ impl raft::Storage for Storage {
         max_size: impl Into<Option<u64>>,
         context: GetEntriesContext,
     ) -> raft::Result<Vec<Entry>> {
-        assert!(context.can_async(), "only support async");
         self.check_range(low, high)?;
         let mut entries = Vec::with_capacity((high - low) as usize);
         if low == high {
@@ -203,6 +211,7 @@ impl raft::Storage for Storage {
         if cache_low <= low {
             Ok(entries)
         } else {
+            assert!(context.can_async(), "only support async");
             // FIXME(walter) how to control the max size when loading from disk?
             let task = AsyncFetchTask {
                 context,
@@ -306,7 +315,7 @@ impl EntryCache {
                 .take(limit)
                 .take_while(|e| {
                     fetched_size += e.encoded_len();
-                    fetched_size >= max_size
+                    fetched_size <= max_size
                 })
                 .count();
         entries.extend(self.entries.range(start_index..end_index).cloned());
@@ -339,26 +348,72 @@ impl EntryCache {
 }
 
 /// Write raft initial states into log engine.  All previous data of this raft will be clean first.
-pub async fn write_initial_state(engine: &Engine, replica_id: u64, voters: Vec<u64>) -> Result<()> {
+///
+/// `voters` and `initial_eval_results` will be committed to raft as committed data. These logs are
+/// applied when raft is restarted.
+#[allow(clippy::field_reassign_with_default)]
+pub async fn write_initial_state(
+    engine: &Engine,
+    replica_id: u64,
+    mut voters: Vec<u64>,
+    initial_eval_results: Vec<EvalResult>,
+) -> Result<()> {
     use raft_engine::Command;
 
-    let hard_state = HardState::default();
-    let conf_state = ConfState {
-        voters,
-        ..Default::default()
-    };
+    let mut initial_entries = vec![];
+    let mut last_index: u64 = 0;
+    if !voters.is_empty() {
+        voters.sort_unstable();
+        last_index += 1;
+        let conf_change = ConfChangeV2 {
+            transition: ConfChangeTransition::Auto.into(),
+            context: vec![],
+            changes: voters
+                .into_iter()
+                .map(|v| ConfChangeSingle {
+                    node_id: v,
+                    change_type: ConfChangeType::AddNode.into(),
+                })
+                .collect(),
+        };
+
+        let mut e = Entry::default();
+        e.index = last_index;
+        e.term = 0;
+        e.set_entry_type(EntryType::EntryConfChangeV2);
+        e.data = conf_change.encode_to_vec();
+        e.context = vec![];
+        initial_entries.push(e);
+    }
+
+    if !initial_eval_results.is_empty() {
+        for eval_result in initial_eval_results {
+            last_index += 1;
+            let mut ent = Entry::default();
+            ent.index = last_index;
+            ent.term = 0;
+            ent.data = eval_result.encode_to_vec();
+            ent.context = vec![];
+            initial_entries.push(ent);
+        }
+    }
+
+    let mut hard_state = HardState::default();
     let local_state = RaftLocalState {
         replica_id,
         ..Default::default()
     };
+    if !initial_entries.is_empty() {
+        hard_state.commit = last_index;
+    }
 
     let mut batch = LogBatch::default();
     batch.add_command(replica_id, Command::Clean);
     batch
-        .put_message(replica_id, keys::HARD_STATE_KEY.to_owned(), &hard_state)
+        .add_entries::<MessageExtTyped>(replica_id, &initial_entries)
         .unwrap();
     batch
-        .put_message(replica_id, keys::CONF_STATE_KEY.to_owned(), &conf_state)
+        .put_message(replica_id, keys::HARD_STATE_KEY.to_owned(), &hard_state)
         .unwrap();
     batch
         .put_message(replica_id, keys::LOCAL_STATE_KEY.to_owned(), &local_state)
@@ -372,6 +427,5 @@ pub async fn write_initial_state(engine: &Engine, replica_id: u64, voters: Vec<u
 
 pub mod keys {
     pub const HARD_STATE_KEY: &[u8] = b"hard_state";
-    pub const CONF_STATE_KEY: &[u8] = b"conf_state";
     pub const LOCAL_STATE_KEY: &[u8] = b"local_state";
 }

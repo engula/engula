@@ -42,7 +42,6 @@ impl RaftNodeFacade {
     /// [`Ok(())`]. The future is set to specific error if the data cannot be applied.
     ///
     /// TODO(walter) support return user defined error.
-    #[allow(unused)]
     pub fn propose(&mut self, eval_result: EvalResult) -> oneshot::Receiver<Result<()>> {
         let (sender, receiver) = oneshot::channel();
 
@@ -86,7 +85,6 @@ impl RaftNodeFacade {
     }
 
     /// Step raft messages.
-    #[allow(unused)]
     pub fn step(&mut self, msg: Message) -> Result<()> {
         match self.request_sender.try_send(Request::Message(msg)) {
             Ok(()) => (),

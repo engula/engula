@@ -17,7 +17,6 @@ use std::{
     task::{Context, Poll},
 };
 
-#[allow(unused)]
 #[derive(Debug)]
 pub enum TaskPriority {
     Real,
@@ -69,7 +68,6 @@ impl ExecutorOwner {
     }
 }
 
-#[allow(unused)]
 impl Executor {
     /// Spawns a task.
     ///

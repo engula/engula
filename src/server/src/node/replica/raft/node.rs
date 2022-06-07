@@ -14,6 +14,7 @@
 
 use futures::channel::oneshot;
 use raft::{prelude::*, ConfChangeI, StateRole};
+use tracing::debug;
 
 use super::{applier::Applier, fsm::StateMachine, storage::Storage, RaftManager};
 use crate::{Error, Result};
@@ -26,7 +27,7 @@ pub struct WriteTask {
 
     /// Snapshot specifies the snapshot to be saved to stable storage.
     pub snapshot: Option<Snapshot>,
-
+    pub must_sync: bool,
     post_ready: PostReady,
 }
 
@@ -65,6 +66,7 @@ where
         state_machine: M,
     ) -> Result<Self> {
         let applied = state_machine.flushed_index();
+        let conf_state = state_machine.conf_state();
 
         let config = Config {
             id: replica_id,
@@ -78,7 +80,9 @@ where
             ..Default::default()
         };
 
-        let storage = Storage::open(replica_id, applied, mgr.engine.clone()).await.unwrap();
+        let storage = Storage::open(replica_id, applied, conf_state, mgr.engine.clone())
+            .await
+            .unwrap();
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),
@@ -183,6 +187,11 @@ where
         self.raw_node.read_index(read_state_ctx);
     }
 
+    #[inline]
+    pub fn has_ready(&mut self) -> bool {
+        self.raw_node.has_ready()
+    }
+
     /// Advance raft node, persist, apply entries and send messages.
     pub fn advance(&mut self, template: &mut impl AdvanceTemplate) -> Option<WriteTask> {
         self.advance_read_requests();
@@ -229,11 +238,17 @@ where
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());
         }
-        if !ready.committed_entries().is_empty() {
-            self.applier.apply_entries(ready.take_committed_entries());
-        }
 
-        self.raw_node.advance_apply();
+        if !ready.committed_entries().is_empty() {
+            debug!(
+                "apply committed entries {}",
+                ready.committed_entries().len()
+            );
+            let applied = self
+                .applier
+                .apply_entries(&mut self.raw_node, ready.take_committed_entries());
+            self.raw_node.advance_apply_to(applied);
+        }
     }
 
     fn build_write_task(&mut self, ready: &mut Ready) -> Option<WriteTask> {
@@ -246,6 +261,7 @@ where
             hard_state: ready.hs().cloned(),
             entries: ready.take_entries(),
             snapshot: None,
+            must_sync: ready.must_sync(),
         };
 
         if !ready.snapshot().is_empty() {

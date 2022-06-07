@@ -41,7 +41,6 @@ where
     raw_db: Arc<rocksdb::DB>,
 }
 
-#[allow(unused)]
 pub struct ReplicaStateIterator<'a> {
     inner: rocksdb::DBIteratorWithThreadMode<'a, rocksdb::DB>,
 }
@@ -194,7 +193,6 @@ impl<'a> Iterator for ReplicaStateIterator<'a> {
     }
 }
 
-#[allow(unused)]
 mod keys {
     const IDENT_KEY: &[u8] = &[0x1];
     const ROOT_DESCRIPTOR_KEY: &[u8] = &[0x2];

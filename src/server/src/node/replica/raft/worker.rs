@@ -20,6 +20,7 @@ use futures::{
 };
 use raft::{prelude::*, StateRole};
 use raft_engine::{Engine, LogBatch};
+use tracing::debug;
 
 use super::{
     fsm::StateMachine,
@@ -152,29 +153,30 @@ where
     }
 
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
-    #[allow(unused)]
     pub async fn run(mut self) -> Result<()> {
-        tracing::info!(
+        debug!(
             "raft worker of replica {} group {} start running",
-            self.replica_id,
-            self.group_id
+            self.replica_id, self.group_id
         );
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(500));
         loop {
-            futures::select_biased! {
-                _ = interval.tick().fuse() => {
-                    self.raft_node.tick();
-                },
-                request = self.request_receiver.next() => match request {
-                    Some(request) => {
-                        self.handle_request(request)?;
-                        while let Ok(Some(request)) = self.request_receiver.try_next() {
-                            self.handle_request( request)?;
-                        }
+            if !self.raft_node.has_ready() {
+                futures::select_biased! {
+                    _ = interval.tick().fuse() => {
+                        self.raft_node.tick();
                     },
-                    None => break,
-                },
+                    request = self.request_receiver.next() => match request {
+                        Some(request) => {
+                            self.handle_request(request)?;
+                        },
+                        None => break,
+                    },
+                }
+            }
+
+            while let Ok(Some(request)) = self.request_receiver.try_next() {
+                self.handle_request(request)?;
             }
 
             let mut template = AdvanceImpl {

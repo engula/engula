@@ -54,7 +54,6 @@ message EntryID {
 
 message RaftLocalState {
   uint64 replica_id = 1;
-  EntryID commit = 2;
   EntryID last_truncated = 3;
 }
 

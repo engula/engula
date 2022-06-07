@@ -158,7 +158,6 @@ impl TransportManager {
 }
 
 impl StreamingTask {
-    #[allow(unused)]
     async fn run(self) {
         let mut raft_node = self.raft_node.clone();
         let target_id = self.request.to.id;

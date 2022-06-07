@@ -16,11 +16,11 @@ use std::collections::{HashMap, VecDeque};
 
 use futures::channel::oneshot;
 use raft::{
-    prelude::{Entry, EntryType},
-    ReadState,
+    prelude::{ConfChangeV2, Entry, EntryType},
+    RawNode, ReadState,
 };
 
-use super::{fsm::StateMachine, ApplyEntry};
+use super::{fsm::StateMachine, storage::Storage, ApplyEntry};
 use crate::{serverpb::v1::EvalResult, Error, Result};
 
 struct ProposalContext {
@@ -104,28 +104,51 @@ impl<M: StateMachine> Applier<M> {
     }
 
     /// Apply entries and invoke proposal & read response.
-    pub fn apply_entries(&mut self, committed_entries: Vec<Entry>) {
+    pub fn apply_entries(
+        &mut self,
+        raw_node: &mut RawNode<Storage>,
+        committed_entries: Vec<Entry>,
+    ) -> u64 {
         for entry in committed_entries {
             self.last_applied_index = entry.index;
             if entry.data.is_empty() {
                 self.state_machine
                     .apply(entry.index, entry.term, ApplyEntry::Empty)
                     .expect("apply empty entry");
-            } else {
-                match entry.get_entry_type() {
-                    EntryType::EntryNormal => self.apply_normal_entry(entry),
-                    EntryType::EntryConfChange => panic!("not supported"),
-                    EntryType::EntryConfChangeV2 => {
-                        self.state_machine
-                            .apply(entry.index, entry.term, ApplyEntry::ConfigChange {})
-                            .expect("apply config change");
-                    }
-                }
+                continue;
+            }
+
+            match entry.get_entry_type() {
+                EntryType::EntryNormal => self.apply_normal_entry(entry),
+                EntryType::EntryConfChange => panic!("ConfChangeV1 not supported"),
+                EntryType::EntryConfChangeV2 => self.apply_conf_change(raw_node, entry),
             }
         }
 
         // Since the `last_applied_index` updated, try advance cached read states.
         self.response_cached_read_states();
+        self.last_applied_index
+    }
+
+    fn apply_conf_change(&mut self, raw_node: &mut RawNode<Storage>, entry: Entry) {
+        use prost::Message;
+
+        assert!(matches!(
+            entry.get_entry_type(),
+            EntryType::EntryConfChangeV2
+        ));
+
+        let conf_change = ConfChangeV2::decode(&*entry.data).expect("decode ConfChangeV2");
+        self.state_machine
+            .apply(
+                entry.index,
+                entry.term,
+                ApplyEntry::ConfigChange {
+                    conf_change: conf_change.clone(),
+                },
+            )
+            .expect("apply config change");
+        raw_node.apply_conf_change(&conf_change).unwrap_or_default();
     }
 
     fn apply_normal_entry(&mut self, entry: Entry) {

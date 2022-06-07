@@ -36,10 +36,7 @@ use self::{
     raft::{RaftManager, RaftNodeFacade, StateObserver},
 };
 use super::group_engine::GroupEngine;
-use crate::{
-    serverpb::v1::{AddShard, EvalResult, SyncOp},
-    Error, Result,
-};
+use crate::{serverpb::v1::EvalResult, Error, Result};
 
 #[derive(Default)]
 struct LeaseState {
@@ -63,7 +60,6 @@ where
     lease_state: Arc<Mutex<LeaseState>>,
 }
 
-#[allow(unused)]
 impl Replica {
     /// Create new instance of the specified raft node.
     pub async fn create(
@@ -71,12 +67,18 @@ impl Replica {
         target_desc: &GroupDesc,
         raft_mgr: &RaftManager,
     ) -> Result<()> {
-        let replicas = target_desc
+        let voters = target_desc
             .replicas
             .iter()
             .map(|r| r.id)
             .collect::<Vec<_>>();
-        raft::write_initial_state(raft_mgr.engine(), replica_id, replicas).await?;
+        let eval_results = target_desc
+            .shards
+            .iter()
+            .cloned()
+            .map(eval::add_shard)
+            .collect::<Vec<_>>();
+        raft::write_initial_state(raft_mgr.engine(), replica_id, voters, eval_results).await?;
         Ok(())
     }
 
@@ -172,14 +174,7 @@ impl Replica {
                     .ok_or_else(|| Error::InvalidArgument("CreateShard::shard".into()))?;
                 resp = Response::CreateShard(CreateShardResponse {});
 
-                #[allow(clippy::needless_update)]
-                Some(EvalResult {
-                    op: Some(SyncOp {
-                        add_shard: Some(AddShard { shard: Some(shard) }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                })
+                Some(eval::add_shard(shard))
             }
         };
 
@@ -191,7 +186,7 @@ impl Replica {
     }
 
     async fn propose(&self, eval_result: EvalResult) -> Result<()> {
-        self.raft_node.clone().propose(eval_result).await?;
+        self.raft_node.clone().propose(eval_result).await??;
         Ok(())
     }
 
