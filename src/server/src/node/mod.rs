@@ -23,7 +23,7 @@ use engula_api::server::v1::GroupDesc;
 use futures::lock::Mutex;
 use tracing::debug;
 
-use self::{
+pub use self::{
     group_engine::GroupEngine,
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},

@@ -38,3 +38,4 @@ tonic-build = "0.7.2"
 
 [dev-dependencies]
 tempdir = "0.3.7"
+tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }

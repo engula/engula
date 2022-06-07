@@ -302,6 +302,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -989,7 +990,7 @@ dependencies = [
 [[package]]
 name = "raft"
 version = "0.7.0"
-source = "git+https://github.com/w41ter/raft-rs.git#5db899d50822d689550c6a1951b7b03cc032992d"
+source = "git+https://github.com/w41ter/raft-rs.git#640a176751ed4b7d17a50a79fdbc3caf5dd0cb8c"
 dependencies = [
  "fxhash",
  "getset",
@@ -1003,7 +1004,7 @@ dependencies = [
 [[package]]
 name = "raft-proto"
 version = "0.7.0"
-source = "git+https://github.com/w41ter/raft-rs.git#5db899d50822d689550c6a1951b7b03cc032992d"
+source = "git+https://github.com/w41ter/raft-rs.git#640a176751ed4b7d17a50a79fdbc3caf5dd0cb8c"
 dependencies = [
  "lazy_static",
  "prost",
