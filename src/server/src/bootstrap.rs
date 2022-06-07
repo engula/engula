@@ -219,8 +219,7 @@ async fn issue_join_request(
             addr: local_addr.to_owned(),
             cluster_id,
         }))
-        .await
-        .unwrap();
+        .await?;
     Ok(resp.into_inner())
 }
 

@@ -80,9 +80,7 @@ where
             ..Default::default()
         };
 
-        let storage = Storage::open(replica_id, applied, conf_state, mgr.engine.clone())
-            .await
-            .unwrap();
+        let storage = Storage::open(replica_id, applied, conf_state, mgr.engine.clone()).await?;
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),
