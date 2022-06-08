@@ -107,5 +107,8 @@ fn add_replica() {
         let resps = client_1.batch_group_requests(req).await.unwrap();
         assert_eq!(resps.len(), 1);
         assert!(resps[0].error.is_none());
+
+        // FIXME(walter) find a more efficient way to detect leader elections.
+        thread::sleep(Duration::from_secs(2));
     });
 }

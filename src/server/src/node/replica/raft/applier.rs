@@ -78,6 +78,7 @@ impl<M: StateMachine> Applier<M> {
             sender,
         };
 
+        // FIXME(walter) invoke with NotLeader if the proposal index is go back.
         // ensure the proposals are monotonic.
         if let Some(last_ctx) = self.proposal_queue.back() {
             assert!(last_ctx.index < ctx.index);
@@ -119,22 +120,22 @@ impl<M: StateMachine> Applier<M> {
     ) -> u64 {
         for entry in committed_entries {
             self.last_applied_index = entry.index;
+            let index = entry.index;
+            let term = entry.term;
             if entry.data.is_empty() {
                 self.state_machine
                     .apply(entry.index, entry.term, ApplyEntry::Empty)
                     .expect("apply empty entry");
-                continue;
-            }
-
-            let index = entry.index;
-            let term = entry.term;
-            match entry.get_entry_type() {
-                EntryType::EntryNormal => self.apply_normal_entry(entry),
-                EntryType::EntryConfChange => panic!("ConfChangeV1 not supported"),
-                EntryType::EntryConfChangeV2 => {
-                    self.apply_conf_change(raw_node, replica_cache, entry)
+            } else {
+                match entry.get_entry_type() {
+                    EntryType::EntryNormal => self.apply_normal_entry(entry),
+                    EntryType::EntryConfChange => panic!("ConfChangeV1 not supported"),
+                    EntryType::EntryConfChangeV2 => {
+                        self.apply_conf_change(raw_node, replica_cache, entry)
+                    }
                 }
             }
+
             self.response_proposal(index, term);
         }
 
