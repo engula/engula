@@ -29,7 +29,7 @@ use engula_api::server::v1::{
 use tracing::{debug, info, warn};
 
 use crate::{
-    node::{state_engine::StateEngine, Node},
+    node::{resolver::AddressResolver, state_engine::StateEngine, Node},
     root::Root,
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaState},
@@ -61,19 +61,35 @@ pub fn run(
     let log_path = path.join("log");
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
-    let node = Node::new(log_path, raw_db, state_engine, executor.clone())?;
+    let address_resolver = Arc::new(AddressResolver::new(join_list.clone()));
+    let node = Node::new(
+        log_path,
+        raw_db,
+        state_engine,
+        executor.clone(),
+        address_resolver.clone(),
+    )?;
 
-    let root = executor.block_on(async {
-        let cluster_id = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
+    let (node_id, root) = executor.block_on(async {
+        let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
+        node.set_node_ident(&ident).await;
         recover_groups(&node).await?;
-        let mut root = Root::new(executor.clone(), cluster_id, addr.to_owned());
+        let mut root = Root::new(executor.clone(), ident.cluster_id, addr.to_owned());
         root.bootstrap(&node).await?;
-        Ok::<Root, Error>(root)
+        Ok::<(u64, Root), Error>((ident.node_id, root))
     })?;
+
+    // TODO address_resolver watches node descriptors.
+    let node_desc = NodeDesc {
+        id: node_id,
+        addr: addr.to_owned(),
+    };
+    address_resolver.insert(&node_desc);
 
     let server = Server {
         node: Arc::new(node),
         root,
+        address_resolver,
     };
     let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
         bootstrap_services(&addr, server, socket_addr_sender).await
@@ -142,30 +158,28 @@ async fn bootstrap_or_join_cluster(
     addr: &str,
     init: bool,
     join_list: Vec<String>,
-) -> Result<Vec<u8>> {
+) -> Result<NodeIdent> {
     let state_engine = node.state_engine();
     if let Some(node_ident) = state_engine.read_ident().await? {
         info!(
             "both cluster and node are initialized, node id {}",
             node_ident.node_id
         );
-        node.set_node_ident(&node_ident).await;
-        return Ok(node_ident.cluster_id);
+        return Ok(node_ident);
     }
 
     Ok(if init {
         bootstrap_cluster(node, addr).await?
     } else {
-        try_join_cluster(node, state_engine, addr, join_list).await?
+        try_join_cluster(state_engine, addr, join_list).await?
     })
 }
 
 async fn try_join_cluster(
-    node: &Node,
     state_engine: &StateEngine,
     local_addr: &str,
     join_list: Vec<String>,
-) -> Result<Vec<u8>> {
+) -> Result<NodeIdent> {
     info!("try join a bootstrapted cluster");
 
     let join_list = join_list
@@ -186,15 +200,12 @@ async fn try_join_cluster(
     };
 
     let mut backoff: u64 = 1;
-    let cluster_id: Vec<u8>;
-    'OUTER: loop {
+    loop {
         for addr in &join_list {
             match issue_join_request(addr, local_addr, prev_cluster_id.to_owned()).await {
                 Ok(resp) => {
-                    save_node_ident(node, state_engine, resp.cluster_id.to_owned(), resp.node_id)
-                        .await?;
-                    cluster_id = resp.cluster_id;
-                    break 'OUTER;
+                    return save_node_ident(state_engine, resp.cluster_id.to_owned(), resp.node_id)
+                        .await;
                 }
                 Err(e) => {
                     warn!(err = ?e, root = ?addr, "issue join request to root server");
@@ -205,7 +216,6 @@ async fn try_join_cluster(
         std::thread::sleep(Duration::from_secs(backoff));
         backoff = std::cmp::min(backoff, 120);
     }
-    Ok(cluster_id)
 }
 
 async fn issue_join_request(
@@ -226,7 +236,7 @@ async fn issue_join_request(
     Ok(resp.into_inner())
 }
 
-async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<Vec<u8>> {
+async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {
     info!("'--init' is specified, try bootstrap cluster");
 
     // TODO(walter) clean staled data in db.
@@ -242,29 +252,27 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<Vec<u8>> {
 
     let cluster_id = vec![];
 
-    save_node_ident(node, state_engine, cluster_id.to_owned(), FIRST_NODE_ID).await?;
+    let ident = save_node_ident(state_engine, cluster_id.to_owned(), FIRST_NODE_ID).await?;
 
     info!("bootstrap cluster successfully");
 
-    Ok(cluster_id)
+    Ok(ident)
 }
 
 async fn save_node_ident(
-    node: &Node,
     state_engine: &StateEngine,
     cluster_id: Vec<u8>,
     node_id: u64,
-) -> Result<()> {
+) -> Result<NodeIdent> {
     let node_ident = NodeIdent {
         cluster_id,
         node_id,
     };
     state_engine.save_ident(&node_ident).await?;
-    node.set_node_ident(&node_ident).await;
 
     info!("save node ident, node id {}", node_id);
 
-    Ok(())
+    Ok(node_ident)
 }
 
 async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {

@@ -71,6 +71,7 @@ impl node_server::Node for Server {
         self.node
             .create_replica(replica_id, group_desc, true)
             .await?;
+        self.node.start_replica(replica_id).await?;
         Ok(Response::new(CreateReplicaResponse {}))
     }
 }

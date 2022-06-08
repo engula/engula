@@ -30,7 +30,7 @@ message RaftMessage {
   engula.server.v1.ReplicaDesc from_replica = 2;
   engula.server.v1.ReplicaDesc to_replica = 3;
 
-  repeated eraftpb.Message message = 4;
+  repeated eraftpb.Message messages = 4;
 }
 
 message RaftDone {}

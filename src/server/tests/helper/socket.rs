@@ -11,20 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::sync::Arc;
 
-use crate::{
-    node::{resolver::AddressResolver, Node},
-    root::Root,
-};
+use std::net::SocketAddr;
 
-pub mod node;
-pub mod raft;
-pub mod root;
+use socket2::{Domain, Socket, Type};
 
-#[derive(Clone)]
-pub struct Server {
-    pub node: Arc<Node>,
-    pub root: Root,
-    pub address_resolver: Arc<AddressResolver>,
+/// Find the next available port to listen on.
+pub fn next_avail_port() -> u16 {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+    socket.set_reuse_address(true).unwrap();
+    socket.set_reuse_port(true).unwrap();
+    socket
+        .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
+        .unwrap();
+    socket
+        .local_addr()
+        .unwrap()
+        .as_socket_ipv4()
+        .unwrap()
+        .port()
 }

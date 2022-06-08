@@ -24,13 +24,13 @@ use engula_api::server::v1::{GroupDesc, ReplicaDesc};
 use futures::lock::Mutex;
 use tracing::{debug, info};
 
+use self::replica::raft::AddressResolver;
 pub use self::{
     group_engine::GroupEngine,
     replica::{
         raft::{RaftManager, TransportManager},
         Replica,
     },
-    resolver::AddressResolver,
     route_table::{RaftRouteTable, ReplicaRouteTable},
     state_engine::StateEngine,
 };
@@ -80,10 +80,9 @@ impl Node {
         raw_db: Arc<rocksdb::DB>,
         state_engine: StateEngine,
         executor: Executor,
+        address_resolver: Arc<dyn AddressResolver>,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
-        let address_resolver: Arc<Box<dyn crate::node::replica::raft::AddressResolver>> =
-            Arc::new(Box::new(AddressResolver {}));
         let trans_mgr =
             TransportManager::build(executor.clone(), address_resolver, raft_route_table.clone());
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
@@ -282,7 +281,8 @@ mod tests {
         let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
-        Node::new(log_dir, db, state_engine, executor).unwrap()
+        let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
+        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaState> {

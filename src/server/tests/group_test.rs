@@ -13,11 +13,14 @@
 // limitations under the License.
 #![feature(backtrace)]
 
-use std::{net::SocketAddr, sync::mpsc, thread, time::Duration};
+mod helper;
+
+use std::{thread, time::Duration};
 
 use engula_api::server::v1::GroupDesc;
 use engula_client::{NodeClient, RequestBatchBuilder};
 use engula_server::{runtime::ExecutorOwner, Result};
+use helper::socket::next_avail_port;
 use tempdir::TempDir;
 
 #[ctor::ctor]
@@ -34,45 +37,52 @@ fn init() {
     tracing_subscriber::fmt::init();
 }
 
-fn spawn_server(
-    name: &'static str,
-    init: bool,
-    join_list: Vec<String>,
-) -> mpsc::Receiver<SocketAddr> {
-    let (sender, receiver) = mpsc::channel();
+fn next_listen_address() -> String {
+    format!("localhost:{}", next_avail_port())
+}
+
+fn spawn_server(name: &'static str, addr: &str, init: bool, join_list: Vec<String>) {
+    let addr = addr.to_owned();
     thread::spawn(move || {
         let owner = ExecutorOwner::new(1);
         let tmp_dir = TempDir::new(name).unwrap().into_path();
 
-        engula_server::run(
-            owner.executor(),
-            tmp_dir,
-            "localhost:0".to_string(),
-            init,
-            join_list,
-            Some(sender),
-        )
-        .unwrap()
+        engula_server::run(owner.executor(), tmp_dir, addr, init, join_list, None).unwrap()
     });
-    receiver
+}
+
+async fn node_client_with_retry(addr: &str) -> NodeClient {
+    for _ in 0..100 {
+        match NodeClient::connect(addr.to_string()).await {
+            Ok(client) => return client,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
+    }
+    panic!("connect to {} timeout", addr);
 }
 
 #[test]
 fn add_replica() {
-    let node_1_addr = spawn_server("add-replica-node-1", true, vec![])
-        .recv()
-        .unwrap();
-    let node_2_addr = spawn_server("add-replica-node-2", false, vec![node_1_addr.to_string()])
-        .recv()
-        .unwrap();
+    let node_1_addr = next_listen_address();
+    spawn_server("add-replica-node-1", &node_1_addr, true, vec![]);
+
+    let node_2_addr = next_listen_address();
+    spawn_server(
+        "add-replica-node-2",
+        &node_2_addr,
+        false,
+        vec![node_1_addr.clone()],
+    );
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     rt.block_on(async {
-        let client_1 = NodeClient::connect(node_1_addr.to_string()).await.unwrap();
-        let client_2 = NodeClient::connect(node_2_addr.to_string()).await.unwrap();
+        let client_1 = node_client_with_retry(&node_1_addr).await;
+        let client_2 = node_client_with_retry(&node_2_addr).await;
 
         let group_id = 0;
         let new_replica_id = 123;

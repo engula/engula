@@ -238,7 +238,7 @@ impl ReplicaCache {
 
     #[inline]
     pub fn insert(&mut self, replica: ReplicaDesc) {
-        self.replicas.insert(replica.id, replica.clone());
+        self.replicas.insert(replica.id, replica);
     }
 
     pub fn get(&self, replica_id: u64) -> Option<ReplicaDesc> {

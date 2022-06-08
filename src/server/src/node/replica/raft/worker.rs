@@ -106,7 +106,7 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
                     group_id: self.group_id,
                     from_replica: Some(self.desc.clone()),
                     to_replica: Some(to_replica),
-                    message: msgs,
+                    messages: msgs,
                 });
         }
     }
@@ -266,7 +266,7 @@ where
         if let Some(from) = msg.from_replica {
             self.replica_cache.insert(from);
         }
-        for msg in msg.message {
+        for msg in msg.messages {
             self.raft_node.step(msg)?;
         }
         Ok(())
