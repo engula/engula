@@ -165,6 +165,7 @@ async fn bootstrap_or_join_cluster(
             "both cluster and node are initialized, node id {}",
             node_ident.node_id
         );
+        node.reload_root_from_engine().await?;
         return Ok(node_ident);
     }
 

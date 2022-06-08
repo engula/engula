@@ -255,8 +255,7 @@ impl Node {
         self.reload_root_from_engine().await
     }
 
-    #[inline]
-    async fn reload_root_from_engine(&self) -> Result<()> {
+    pub async fn reload_root_from_engine(&self) -> Result<()> {
         let nodes = self
             .state_engine()
             .load_root_nodes()
