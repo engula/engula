@@ -71,9 +71,20 @@ impl root_server::Root for Server {
                 return Err(Error::ClusterNotMatch.into());
             }
         }
+        self.address_resolver.insert(&node);
         Ok(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
+        }))
+    }
+
+    async fn resolve(
+        &self,
+        request: Request<ResolveNodeRequest>,
+    ) -> std::result::Result<Response<ResolveNodeResponse>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(ResolveNodeResponse {
+            node: self.address_resolver.find(request.node_id),
         }))
     }
 }

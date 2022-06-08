@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
-use raft::prelude::*;
 
 use super::{worker::Request, ReadPolicy};
-use crate::{serverpb::v1::EvalResult, Result};
+use crate::{
+    serverpb::v1::{EvalResult, RaftMessage},
+    Result,
+};
 
 /// `RaftNodeFacade` wraps the operations of raft.
 #[derive(Clone)]
@@ -85,7 +88,7 @@ impl RaftNodeFacade {
     }
 
     /// Step raft messages.
-    pub fn step(&mut self, msg: Message) -> Result<()> {
+    pub fn step(&mut self, msg: RaftMessage) -> Result<()> {
         match self.request_sender.try_send(Request::Message(msg)) {
             Ok(()) => (),
             Err(e) => {
@@ -110,7 +113,7 @@ impl RaftNodeFacade {
         }
     }
 
-    pub fn change_config(&mut self, change: ConfChangeV2) -> oneshot::Receiver<Result<()>> {
+    pub fn change_config(&mut self, change: ChangeReplicas) -> oneshot::Receiver<Result<()>> {
         let (sender, receiver) = oneshot::channel();
 
         let request = Request::ChangeConfig { change, sender };

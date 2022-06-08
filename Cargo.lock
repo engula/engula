@@ -351,6 +351,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.1.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f877be4f7c9f246b183111634f75baa039715e3f46ce860677d3b19a69fb229c"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "dirs-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,7 +423,9 @@ name = "engula-server"
 version = "0.4.0"
 dependencies = [
  "async-stream",
+ "ctor",
  "engula-api",
+ "engula-client",
  "futures",
  "lazy_static",
  "prost",
@@ -421,6 +433,7 @@ dependencies = [
  "raft",
  "raft-engine",
  "rocksdb",
+ "socket2",
  "tempdir",
  "thiserror",
  "tokio",

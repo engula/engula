@@ -20,21 +20,25 @@ pub mod state_engine;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use engula_api::server::v1::GroupDesc;
+use engula_api::server::v1::{GroupDesc, ReplicaDesc};
 use futures::lock::Mutex;
 use tracing::{debug, info};
 
+use self::replica::raft::AddressResolver;
 pub use self::{
     group_engine::GroupEngine,
     replica::{
         raft::{RaftManager, TransportManager},
         Replica,
     },
-    resolver::AddressResolver,
     route_table::{RaftRouteTable, ReplicaRouteTable},
     state_engine::StateEngine,
 };
-use crate::{runtime::Executor, serverpb::v1::ReplicaState, Result};
+use crate::{
+    runtime::Executor,
+    serverpb::v1::{NodeIdent, ReplicaState},
+    Result,
+};
 
 #[derive(Clone)]
 struct ReplicaInfo {
@@ -48,6 +52,7 @@ struct NodeState
 where
     Self: Send,
 {
+    ident: Option<NodeIdent>,
     replicas: HashMap<u64, ReplicaInfo>,
 }
 
@@ -75,10 +80,9 @@ impl Node {
         raw_db: Arc<rocksdb::DB>,
         state_engine: StateEngine,
         executor: Executor,
+        address_resolver: Arc<dyn AddressResolver>,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
-        let address_resolver: Arc<Box<dyn crate::node::replica::raft::AddressResolver>> =
-            Arc::new(Box::new(AddressResolver {}));
         let trans_mgr =
             TransportManager::build(executor.clone(), address_resolver, raft_route_table.clone());
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
@@ -93,6 +97,11 @@ impl Node {
         })
     }
 
+    pub async fn set_node_ident(&self, node_ident: &NodeIdent) {
+        let mut node_state = self.node_state.lock().await;
+        node_state.ident = Some(node_ident.to_owned());
+    }
+
     pub async fn recover(&self) -> Result<()> {
         let mut node_state = self.node_state.lock().await;
         debug_assert!(
@@ -102,8 +111,17 @@ impl Node {
 
         let it = self.state_engine.iterate_replica_states().await;
         for (group_id, replica_id, state) in it {
+            let desc = ReplicaDesc {
+                id: replica_id,
+                node_id: node_state
+                    .ident
+                    .as_ref()
+                    .expect("node should be bootstrap")
+                    .node_id,
+                ..Default::default()
+            };
             if self
-                .start_replica_with_state(group_id, replica_id, state)
+                .start_replica_with_state(group_id, desc, state)
                 .await?
                 .is_none()
             {
@@ -184,7 +202,17 @@ impl Node {
             None => return Ok(None),
         };
 
-        self.start_replica_with_state(info.group_id, replica_id, info.state)
+        let desc = ReplicaDesc {
+            id: replica_id,
+            node_id: node_state
+                .ident
+                .as_ref()
+                .expect("node should be bootstrap")
+                .node_id,
+            ..Default::default()
+        };
+
+        self.start_replica_with_state(info.group_id, desc, info.state)
             .await?
             .expect("replica state exists but group are missed?");
 
@@ -195,7 +223,7 @@ impl Node {
     async fn start_replica_with_state(
         &self,
         group_id: u64,
-        replica_id: u64,
+        desc: ReplicaDesc,
         _state: ReplicaState,
     ) -> Result<Option<()>> {
         let group_engine = match GroupEngine::open(group_id, self.raw_db.clone()).await? {
@@ -203,7 +231,8 @@ impl Node {
             None => return Ok(None),
         };
 
-        let replica = Replica::recover(group_id, replica_id, group_engine, &self.raft_mgr).await?;
+        let replica_id = desc.id;
+        let replica = Replica::recover(group_id, desc, group_engine, &self.raft_mgr).await?;
         let raft_node = replica.raft_node();
         self.replica_route_table.update(Arc::new(replica));
         self.raft_route_table.update(replica_id, raft_node);
@@ -252,7 +281,8 @@ mod tests {
         let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
-        Node::new(log_dir, db, state_engine, executor).unwrap()
+        let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
+        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaState> {

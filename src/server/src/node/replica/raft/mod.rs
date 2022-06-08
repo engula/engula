@@ -22,6 +22,13 @@ mod worker;
 
 use std::{path::Path, sync::Arc};
 
+use engula_api::server::v1::{
+    ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
+};
+use raft::prelude::{
+    ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
+};
+
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, StateMachine},
@@ -87,11 +94,12 @@ impl RaftManager {
     pub async fn start_raft_group<M: 'static + StateMachine>(
         &self,
         group_id: u64,
-        replica_id: u64,
+        desc: ReplicaDesc,
         state_machine: M,
         observer: Box<dyn StateObserver>,
     ) -> Result<RaftNodeFacade> {
-        let worker = RaftWorker::open(group_id, replica_id, state_machine, self, observer).await?;
+        // TODO(walter) config channel size.
+        let worker = RaftWorker::open(group_id, desc, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
         self.executor.spawn(None, TaskPriority::High, async move {
             // TODO(walter) handle result.
@@ -99,4 +107,64 @@ impl RaftManager {
         });
         Ok(facade)
     }
+}
+
+fn encode_to_conf_change(change_replicas: ChangeReplicas) -> ConfChangeV2 {
+    use prost::Message;
+
+    let mut conf_changes = vec![];
+    for c in &change_replicas.changes {
+        let change_type = match ChangeReplicaType::from_i32(c.change_type) {
+            Some(ChangeReplicaType::Add) => ConfChangeType::AddNode,
+            Some(ChangeReplicaType::Remove) => ConfChangeType::RemoveNode,
+            Some(ChangeReplicaType::AddLearner) => ConfChangeType::AddLearnerNode,
+            None => panic!("such change replica operation isn't supported"),
+        };
+        conf_changes.push(ConfChangeSingle {
+            change_type: change_type.into(),
+            node_id: c.replica_id,
+        });
+    }
+
+    ConfChangeV2 {
+        transition: ConfChangeTransition::Auto.into(),
+        context: change_replicas.encode_to_vec(),
+        changes: conf_changes,
+    }
+}
+
+fn decode_from_conf_change(conf_change: &ConfChangeV2) -> ChangeReplicas {
+    use prost::Message;
+
+    ChangeReplicas::decode(&*conf_change.context)
+        .expect("ChangeReplicas is saved in ConfChangeV2::context")
+}
+
+fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
+    let mut cs = ConfState::default();
+    let mut in_joint = false;
+    for replica in desc.replicas.iter() {
+        match ReplicaRole::from_i32(replica.role).unwrap_or(ReplicaRole::Voter) {
+            ReplicaRole::Voter => {
+                cs.voters.push(replica.id);
+                cs.voters_outgoing.push(replica.id);
+            }
+            ReplicaRole::Learner => {
+                cs.learners.push(replica.id);
+            }
+            ReplicaRole::IncomingVoter => {
+                in_joint = true;
+                cs.voters.push(replica.id);
+            }
+            ReplicaRole::DemotingVoter => {
+                in_joint = true;
+                cs.voters_outgoing.push(replica.id);
+                cs.learners_next.push(replica.id);
+            }
+        }
+    }
+    if !in_joint {
+        cs.voters_outgoing.clear();
+    }
+    cs
 }

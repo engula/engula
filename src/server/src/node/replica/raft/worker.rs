@@ -14,15 +14,17 @@
 
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 
+use engula_api::server::v1::{ChangeReplicas, ReplicaDesc};
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, SinkExt, StreamExt,
 };
 use raft::{prelude::*, StateRole};
 use raft_engine::{Engine, LogBatch};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::{
+    applier::ReplicaCache,
     fsm::StateMachine,
     node::RaftNode,
     transport::{Channel, TransportManager},
@@ -47,14 +49,14 @@ pub enum Request {
         sender: oneshot::Sender<Result<u64>>,
     },
     ChangeConfig {
-        change: ConfChangeV2,
+        change: ChangeReplicas,
         sender: oneshot::Sender<Result<()>>,
     },
     Transfer {
         target_id: u64,
     },
     Campaign,
-    Message(Message),
+    Message(RaftMessage),
     Unreachable {
         target_id: u64,
     },
@@ -68,9 +70,11 @@ pub trait StateObserver: Send {
 
 struct AdvanceImpl<'a> {
     group_id: u64,
+    desc: ReplicaDesc,
     channels: &'a mut HashMap<u64, Channel>,
     trans_mgr: &'a TransportManager,
     observer: &'a mut Box<dyn StateObserver>,
+    replica_cache: &'a mut ReplicaCache,
 }
 
 impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
@@ -83,14 +87,25 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
                 .push(msg);
         }
         for (target_id, msgs) in seperated_msgs {
+            let to_replica = match self.replica_cache.get(target_id) {
+                Some(to_replica) => to_replica,
+                None => {
+                    warn!(
+                        group = self.group_id,
+                        target = target_id,
+                        "send message to unknown target"
+                    );
+                    continue;
+                }
+            };
             self.channels
                 .entry(target_id)
                 .or_insert_with(|| Channel::new(self.trans_mgr.clone()))
                 .send_message(RaftMessage {
                     group_id: self.group_id,
-                    from_replica: None,
-                    to_replica: None,
-                    message: msgs,
+                    from_replica: Some(self.desc.clone()),
+                    to_replica: Some(to_replica),
+                    messages: msgs,
                 });
         }
     }
@@ -98,24 +113,35 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
     fn on_state_updated(&mut self, leader_id: u64, term: u64, role: raft::StateRole) {
         self.observer.on_state_updated(leader_id, term, role);
     }
+
+    fn mut_replica_cache(&mut self) -> &mut ReplicaCache {
+        self.replica_cache
+    }
 }
 
 /// A structure wraps raft node execution logics.
-pub struct RaftWorker<M: StateMachine> {
+pub struct RaftWorker<M: StateMachine>
+where
+    Self: Send,
+{
     request_sender: mpsc::Sender<Request>,
     request_receiver: mpsc::Receiver<Request>,
 
     group_id: u64,
-    replica_id: u64,
+    desc: ReplicaDesc,
     raft_node: RaftNode<M>,
 
     channels: HashMap<u64, Channel>,
     trans_mgr: TransportManager,
     engine: Arc<Engine>,
     observer: Box<dyn StateObserver>,
+    replica_cache: ReplicaCache,
 
     marker: PhantomData<M>,
 }
+
+// Send is safe because the ReplicaCache field is not accessible outside of RaftWorker.
+unsafe impl<M: StateMachine> Send for RaftWorker<M> {}
 
 impl<M> RaftWorker<M>
 where
@@ -123,12 +149,16 @@ where
 {
     pub async fn open(
         group_id: u64,
-        replica_id: u64,
+        desc: ReplicaDesc,
         state_machine: M,
         raft_mgr: &RaftManager,
         observer: Box<dyn StateObserver>,
     ) -> Result<Self> {
-        let raft_node = RaftNode::new(group_id, replica_id, raft_mgr, state_machine).await?;
+        let mut replica_cache = ReplicaCache::default();
+        replica_cache.insert(desc.clone());
+        replica_cache.batch_insert(&state_machine.descriptor().replicas);
+        let raft_node = RaftNode::new(group_id, desc.id, raft_mgr, state_machine).await?;
+
         // TODO(walter) config channel size.
         let (mut request_sender, request_receiver) = mpsc::channel(10240);
         request_sender.send(Request::Start).await.unwrap();
@@ -137,12 +167,13 @@ where
             request_sender,
             request_receiver,
             group_id,
-            replica_id,
+            desc,
             raft_node,
             channels: HashMap::new(),
             trans_mgr: raft_mgr.transport_mgr.clone(),
             engine: raft_mgr.engine.clone(),
             observer,
+            replica_cache,
             marker: PhantomData,
         })
     }
@@ -156,7 +187,7 @@ where
     pub async fn run(mut self) -> Result<()> {
         debug!(
             "raft worker of replica {} group {} start running",
-            self.replica_id, self.group_id
+            self.desc.id, self.group_id
         );
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -181,9 +212,11 @@ where
 
             let mut template = AdvanceImpl {
                 group_id: self.group_id,
+                desc: self.desc.clone(),
                 channels: &mut self.channels,
                 trans_mgr: &self.trans_mgr,
                 observer: &mut self.observer,
+                replica_cache: &mut self.replica_cache,
             };
             if let Some(write_task) = self.raft_node.advance(&mut template) {
                 let mut batch = LogBatch::default();
@@ -207,9 +240,7 @@ where
                 sender,
             } => self.handle_proposal(eval_result, sender),
             Request::Read { policy, sender } => self.handle_read(policy, sender),
-            Request::ChangeConfig { change, sender } => {
-                self.raft_node.propose_conf_change(vec![], change, sender);
-            }
+            Request::ChangeConfig { change, sender } => self.handle_conf_change(change, sender),
             Request::Snapshot { .. } => {
                 todo!()
             }
@@ -230,8 +261,13 @@ where
         Ok(())
     }
 
-    fn handle_msg(&mut self, msg: Message) -> Result<()> {
-        self.raft_node.step(msg)?;
+    fn handle_msg(&mut self, msg: RaftMessage) -> Result<()> {
+        if let Some(from) = msg.from_replica {
+            self.replica_cache.insert(from);
+        }
+        for msg in msg.messages {
+            self.raft_node.step(msg)?;
+        }
         Ok(())
     }
 
@@ -240,6 +276,11 @@ where
 
         let data = eval_result.encode_to_vec();
         self.raft_node.propose(data, vec![], sender);
+    }
+
+    fn handle_conf_change(&mut self, change: ChangeReplicas, sender: oneshot::Sender<Result<()>>) {
+        let cc = super::encode_to_conf_change(change);
+        self.raft_node.propose_conf_change(vec![], cc, sender);
     }
 
     fn handle_read(&mut self, policy: ReadPolicy, sender: oneshot::Sender<Result<()>>) {

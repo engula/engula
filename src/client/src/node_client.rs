@@ -123,6 +123,29 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn add_replica(mut self, group_id: u64, replica_id: u64, node_id: u64) -> Self {
+        let change_replicas = ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas {
+                changes: vec![ChangeReplica {
+                    change_type: ChangeReplicaType::Add.into(),
+                    replica_id,
+                    node_id,
+                }],
+            }),
+        };
+
+        self.requests.push(GroupRequest {
+            group_id,
+            shard_id: 0, // add_replica doesn't take this field.
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::ChangeReplicas(
+                    change_replicas,
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn build(self) -> BatchRequest {
         BatchRequest {
             node_id: self.node_id,

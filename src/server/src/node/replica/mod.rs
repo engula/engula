@@ -24,8 +24,8 @@ use std::{
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request, group_response_union::Response, CreateShardResponse,
-        GroupDesc, GroupRequest, GroupResponse,
+        group_request_union::Request, group_response_union::Response, ChangeReplicasResponse,
+        CreateShardResponse, GroupDesc, GroupRequest, GroupResponse, ReplicaDesc,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
@@ -70,7 +70,7 @@ impl Replica {
         let voters = target_desc
             .replicas
             .iter()
-            .map(|r| r.id)
+            .map(|r| (r.id, r.node_id))
             .collect::<Vec<_>>();
         let eval_results = target_desc
             .shards
@@ -85,15 +85,16 @@ impl Replica {
     /// Open the existed replica of raft group.
     pub async fn recover(
         group_id: u64,
-        replica_id: u64,
+        desc: ReplicaDesc,
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
     ) -> Result<Self> {
+        let replica_id = desc.id;
         let fsm = GroupStateMachine::new(group_engine.clone());
         let lease_state: Arc<Mutex<LeaseState>> = Arc::default();
         let observer = Box::new(RoleObserver::new(lease_state.clone()));
         let raft_node = raft_mgr
-            .start_raft_group(group_id, replica_id, fsm, observer)
+            .start_raft_group(group_id, desc, fsm, observer)
             .await?;
         Ok(Replica {
             replica_id,
@@ -175,6 +176,15 @@ impl Replica {
                 resp = Response::CreateShard(CreateShardResponse {});
 
                 Some(eval::add_shard(shard))
+            }
+            Request::ChangeReplicas(req) => {
+                if let Some(change) = &req.change_replicas {
+                    self.raft_node
+                        .clone()
+                        .change_config(change.clone())
+                        .await??;
+                }
+                return Ok(Response::ChangeReplicas(ChangeReplicasResponse {}));
             }
         };
 

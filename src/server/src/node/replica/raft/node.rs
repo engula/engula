@@ -16,7 +16,12 @@ use futures::channel::oneshot;
 use raft::{prelude::*, ConfChangeI, StateRole};
 use tracing::debug;
 
-use super::{applier::Applier, fsm::StateMachine, storage::Storage, RaftManager};
+use super::{
+    applier::{Applier, ReplicaCache},
+    fsm::StateMachine,
+    storage::Storage,
+    RaftManager,
+};
 use crate::{Error, Result};
 
 /// WriteTask records the metadata and entries to persist to disk.
@@ -39,10 +44,12 @@ pub struct PostReady {
     persisted_messages: Vec<Message>,
 }
 
-pub trait AdvanceTemplate {
+pub(super) trait AdvanceTemplate {
     fn send_messages(&mut self, msgs: Vec<Message>);
 
     fn on_state_updated(&mut self, leader_id: u64, term: u64, role: StateRole);
+
+    fn mut_replica_cache(&mut self) -> &mut ReplicaCache;
 }
 
 pub struct RaftNode<M: StateMachine> {
@@ -66,8 +73,6 @@ where
         state_machine: M,
     ) -> Result<Self> {
         let applied = state_machine.flushed_index();
-        let conf_state = state_machine.conf_state();
-
         let config = Config {
             id: replica_id,
             election_tick: 3,
@@ -80,6 +85,7 @@ where
             ..Default::default()
         };
 
+        let conf_state = super::conf_state_from_group_descriptor(&state_machine.descriptor());
         let storage = Storage::open(replica_id, applied, conf_state, mgr.engine.clone()).await?;
         Ok(RaftNode {
             group_id,
@@ -191,7 +197,7 @@ where
     }
 
     /// Advance raft node, persist, apply entries and send messages.
-    pub fn advance(&mut self, template: &mut impl AdvanceTemplate) -> Option<WriteTask> {
+    pub(super) fn advance(&mut self, template: &mut impl AdvanceTemplate) -> Option<WriteTask> {
         self.advance_read_requests();
         if !self.raw_node.has_ready() {
             return None;
@@ -206,7 +212,7 @@ where
             template.send_messages(ready.take_messages());
         }
 
-        self.handle_apply(&mut ready);
+        self.handle_apply(template.mut_replica_cache(), &mut ready);
 
         let write_task = self.build_write_task(&mut ready);
         if write_task.is_none() {
@@ -219,7 +225,11 @@ where
         write_task
     }
 
-    pub fn post_advance(&mut self, post_ready: PostReady, sender: &mut impl AdvanceTemplate) {
+    pub(super) fn post_advance(
+        &mut self,
+        post_ready: PostReady,
+        sender: &mut impl AdvanceTemplate,
+    ) {
         if !post_ready.persisted_messages.is_empty() {
             sender.send_messages(post_ready.persisted_messages);
         }
@@ -232,7 +242,7 @@ where
         self.raw_node.raft.mut_store()
     }
 
-    fn handle_apply(&mut self, ready: &mut Ready) {
+    fn handle_apply(&mut self, replica_cache: &mut ReplicaCache, ready: &mut Ready) {
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());
         }
@@ -242,9 +252,11 @@ where
                 "apply committed entries {}",
                 ready.committed_entries().len()
             );
-            let applied = self
-                .applier
-                .apply_entries(&mut self.raw_node, ready.take_committed_entries());
+            let applied = self.applier.apply_entries(
+                &mut self.raw_node,
+                replica_cache,
+                ready.take_committed_entries(),
+            );
             self.raw_node.advance_apply_to(applied);
         }
     }

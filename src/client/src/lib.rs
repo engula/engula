@@ -14,4 +14,4 @@
 
 mod node_client;
 
-pub use node_client::Client as NodeClient;
+pub use node_client::{Client as NodeClient, RequestBatchBuilder};

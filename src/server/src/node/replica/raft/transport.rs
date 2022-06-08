@@ -33,13 +33,13 @@ struct StreamingRequest {
 }
 
 struct StreamingTask {
-    resolver: Arc<Box<dyn AddressResolver>>,
+    resolver: Arc<dyn AddressResolver>,
     raft_node: RaftNodeFacade,
     request: StreamingRequest,
 }
 
 /// An abstraction for resolving address by node id.
-#[tonic::async_trait]
+#[crate::async_trait]
 pub trait AddressResolver: Send + Sync {
     async fn resolve(&self, node_id: u64) -> Result<NodeDesc>;
 }
@@ -61,7 +61,7 @@ where
     Self: Send + Sync,
 {
     executor: Executor,
-    resolver: Arc<Box<dyn AddressResolver>>,
+    resolver: Arc<dyn AddressResolver>,
     sender: mpsc::UnboundedSender<StreamingRequest>,
     route_table: RaftRouteTable,
 }
@@ -107,7 +107,7 @@ impl Channel {
 impl TransportManager {
     pub fn build(
         executor: Executor,
-        resolver: Arc<Box<dyn AddressResolver>>,
+        resolver: Arc<dyn AddressResolver>,
         route_table: RaftRouteTable,
     ) -> Self {
         let (sender, receiver) = mpsc::unbounded();

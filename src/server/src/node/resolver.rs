@@ -11,15 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use engula_api::server::v1::NodeDesc;
+use std::{collections::HashMap, sync::Mutex};
 
-use crate::Result;
+use engula_api::server::v1::{NodeDesc, ResolveNodeRequest, ResolveNodeResponse};
+use tracing::warn;
 
-pub struct AddressResolver {}
+use crate::{Error, Result};
 
-#[tonic::async_trait]
+pub struct AddressResolver {
+    root_list: Vec<String>,
+    nodes: Mutex<HashMap<u64, NodeDesc>>,
+}
+
+impl AddressResolver {
+    pub fn new(root_list: Vec<String>) -> Self {
+        AddressResolver {
+            root_list,
+            nodes: Mutex::default(),
+        }
+    }
+
+    pub fn insert(&self, desc: &NodeDesc) {
+        let mut nodes = self.nodes.lock().unwrap();
+        nodes.insert(desc.id, desc.to_owned());
+    }
+
+    pub fn find(&self, node_id: u64) -> Option<NodeDesc> {
+        let nodes = self.nodes.lock().unwrap();
+        nodes.get(&node_id).cloned()
+    }
+
+    async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<ResolveNodeResponse> {
+        use engula_api::server::v1::root_client::RootClient;
+        use tonic::Request;
+
+        let mut client = RootClient::connect(format!("http://{}", target_addr)).await?;
+        let resp = client
+            .resolve(Request::new(ResolveNodeRequest { node_id }))
+            .await?;
+        Ok(resp.into_inner())
+    }
+}
+
+#[crate::async_trait]
 impl crate::node::replica::raft::AddressResolver for AddressResolver {
-    async fn resolve(&self, _node_id: u64) -> Result<NodeDesc> {
-        todo!()
+    async fn resolve(&self, node_id: u64) -> Result<NodeDesc> {
+        if let Some(desc) = self.find(node_id) {
+            return Ok(desc);
+        }
+
+        for addr in &self.root_list {
+            match Self::issue_resolve_request(addr, node_id).await {
+                Ok(resp) => match resp.node {
+                    Some(desc) => return Ok(desc),
+                    None => continue,
+                },
+                Err(e) => {
+                    warn!(err = ?e, root = ?addr, "issue resolve request to root server");
+                }
+            }
+        }
+
+        Err(Error::InvalidArgument("no such node exists".into()))
     }
 }

@@ -26,7 +26,7 @@ impl node_server::Node for Server {
     ) -> Result<Response<BatchResponse>, Status> {
         let batch_request = request.into_inner();
         let (sender, mut receiver) = mpsc::channel(batch_request.requests.len());
-        for request in batch_request.requests {
+        for (index, request) in batch_request.requests.into_iter().enumerate() {
             let server = self.clone();
             let task_tag = request.group_id.to_le_bytes();
             let mut task_tx = sender.clone();
@@ -38,17 +38,21 @@ impl node_server::Node for Server {
                         .execute_request(request)
                         .await
                         .unwrap_or_else(error_to_response);
-                    task_tx.try_send(response).unwrap_or_default();
+                    task_tx.try_send((index, response)).unwrap_or_default();
                 },
             );
         }
+        drop(sender);
 
         let mut responses = vec![];
-        while let Some(response) = receiver.next().await {
-            responses.push(response);
+        while let Some((index, response)) = receiver.next().await {
+            responses.push((index, response));
         }
+        responses.sort_unstable_by_key(|(index, _)| *index);
 
-        Ok(Response::new(BatchResponse { responses }))
+        Ok(Response::new(BatchResponse {
+            responses: responses.into_iter().map(|(_, resp)| resp).collect(),
+        }))
     }
 
     #[allow(unused)]
@@ -71,6 +75,7 @@ impl node_server::Node for Server {
         self.node
             .create_replica(replica_id, group_desc, true)
             .await?;
+        self.node.start_replica(replica_id).await?;
         Ok(Response::new(CreateReplicaResponse {}))
     }
 }
