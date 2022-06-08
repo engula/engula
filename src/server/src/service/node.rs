@@ -79,6 +79,33 @@ impl node_server::Node for Server {
         self.node.start_replica(replica_id).await?;
         Ok(Response::new(CreateReplicaResponse {}))
     }
+
+    async fn root_heartbeat(
+        &self,
+        request: Request<HeartbeatRequest>,
+    ) -> Result<Response<HeartbeatResponse>, Status> {
+        let request = request.into_inner();
+        let mut piggybacks_resps = Vec::new();
+
+        for req in request.piggybacks {
+            match req.info.unwrap() {
+                piggyback_request::Info::SyncRoot(req) => {
+                    piggybacks_resps.push(self.update_root(req).await?);
+                }
+                piggyback_request::Info::CollectStats(_req) => {
+                    todo!()
+                }
+                piggyback_request::Info::CollectGroupDetail(_req) => {
+                    todo!()
+                }
+            }
+        }
+
+        Ok(Response::new(HeartbeatResponse {
+            timestamp: request.timestamp,
+            piggybacks: piggybacks_resps,
+        }))
+    }
 }
 
 impl Server {
@@ -91,6 +118,13 @@ impl Server {
             }
         };
         replica.execute(&request).await
+    }
+
+    async fn update_root(&self, req: SyncRootRequest) -> crate::Result<PiggybackResponse> {
+        self.node.update_root(req.roots).await?;
+        Ok(PiggybackResponse {
+            info: Some(piggyback_response::Info::SyncRoot(SyncRootResponse {})),
+        })
     }
 }
 

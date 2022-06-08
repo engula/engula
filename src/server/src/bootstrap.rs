@@ -74,7 +74,7 @@ pub fn run(
         let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
         node.set_node_ident(&ident).await;
         recover_groups(&node).await?;
-        let mut root = Root::new(executor.clone(), ident.cluster_id, addr.to_owned());
+        let mut root = Root::new(executor.clone(), &ident, addr.to_owned());
         root.bootstrap(&node).await?;
         Ok::<(u64, Root), Error>((ident.node_id, root))
     })?;
@@ -210,7 +210,7 @@ async fn try_join_cluster(
                         resp.node_id,
                     )
                     .await;
-                    node.update_root(resp.roots);
+                    node.update_root(resp.roots).await?;
                     return node_ident;
                 }
                 Err(e) => {

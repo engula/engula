@@ -243,7 +243,7 @@ impl Node {
         Ok(Some(()))
     }
 
-    /// Get root that known by node addrs.
+    /// Get root addrs that known by node.
     pub async fn get_root(&self) -> Vec<String> {
         let nodes = self.node_state.lock().await.root.to_owned();
         nodes.iter().map(|n| n.addr.to_owned()).collect()

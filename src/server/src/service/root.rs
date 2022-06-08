@@ -69,9 +69,14 @@ impl root_server::Root for Server {
             }
         }
         self.address_resolver.insert(&node);
-        Ok(Response::new(JoinNodeResponse {
+
+        let mut roots = schema.get_root_replicas().await?;
+        roots.move_first(node.id);
+
+        Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
+            roots: roots.into(),
         }))
     }
 

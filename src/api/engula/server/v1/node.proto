@@ -19,11 +19,13 @@ package engula.server.v1;
 import "engula/v1/engula.proto";
 import "engula/server/v1/error.proto";
 import "engula/server/v1/metadata.proto";
+import "google/protobuf/field_mask.proto";
 
 service Node {
   rpc Batch(BatchRequest) returns (BatchResponse) {}
   rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
   rpc CreateReplica(CreateReplicaRequest) returns (CreateReplicaResponse) {}
+  rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 }
 
 message BatchRequest {
@@ -40,10 +42,10 @@ message GroupRequest {
 }
 
 message GroupResponse {
-    GroupResponseUnion response = 1;
+  GroupResponseUnion response = 1;
 
-    /// Only used in BatchResponse.
-    Error error = 2;
+  /// Only used in BatchResponse.
+  Error error = 2;
 }
 
 message GroupRequestUnion {
@@ -81,21 +83,15 @@ message CreateReplicaRequest {
 
 message CreateReplicaResponse {}
 
-message CreateShardRequest {
-  ShardDesc shard = 1;
-}
+message CreateShardRequest { ShardDesc shard = 1; }
 
 message CreateShardResponse {}
 
-message ChangeReplicasRequest {
-  ChangeReplicas change_replicas = 1;
-}
+message ChangeReplicasRequest { ChangeReplicas change_replicas = 1; }
 
 message ChangeReplicasResponse {}
 
-message ChangeReplicas {
-  repeated ChangeReplica changes = 1;
-}
+message ChangeReplicas { repeated ChangeReplica changes = 1; }
 
 message ChangeReplica {
   ChangeReplicaType change_type = 1;
@@ -109,3 +105,68 @@ enum ChangeReplicaType {
   REMOVE = 1;
   ADD_LEARNER = 2;
 }
+
+message HeartbeatRequest {
+  uint64 timestamp = 1;
+  repeated PiggybackRequest piggybacks = 2;
+}
+
+message HeartbeatResponse {
+  uint64 timestamp = 1;
+  repeated PiggybackResponse piggybacks = 2;
+}
+
+message PiggybackRequest {
+  oneof info {
+    SyncRootRequest sync_root = 1;
+    CollectStatsRequest collect_stats = 2;
+    CollectGroupDetailRequest collect_group_detail = 3;
+  }
+}
+
+message PiggybackResponse {
+  oneof info {
+    SyncRootResponse sync_root = 1;
+    CollectStatsResponse collect_stats = 2;
+    CollectGroupDetailResponse collect_group_detail = 3;
+  }
+}
+
+message SyncRootRequest { repeated NodeDesc roots = 1; }
+
+message SyncRootResponse {}
+
+message CollectStatsRequest { google.protobuf.FieldMask field_mask = 1; }
+
+message CollectStatsResponse {
+  NodeStats node_stats = 1;
+  repeated GroupStats group_stats = 2;
+  repeated ReplicaStats replica_stats = 3;
+}
+
+message NodeStats {
+  uint64 available_space = 1;
+  uint32 group_count = 2;
+  uint32 leader_count = 3;
+  uint64 replica_count = 4;
+  float read_qps = 5;
+  float write_qps = 6;
+}
+
+message GroupStats {
+  uint64 group_id = 1;
+  uint64 shared_count = 2;
+  float read_qps = 3;
+  float write_qps = 4;
+}
+
+message ReplicaStats {
+  uint64 replica_id = 1;
+  uint64 group_id = 2;
+  float read_qps = 3;
+  float write_qps = 4;
+}
+
+message CollectGroupDetailRequest {}
+
+message CollectGroupDetailResponse {}

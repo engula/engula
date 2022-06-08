@@ -27,6 +27,7 @@ use self::store::RootStore;
 use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
+    serverpb::v1::NodeIdent,
     Error, Result,
 };
 
@@ -37,7 +38,7 @@ pub struct Root {
 
 struct RootShared {
     executor: Executor,
-    cluster_id: Vec<u8>,
+    node_ident: NodeIdent,
     local_addr: String,
     core: Mutex<Option<RootCore>>,
 }
@@ -47,19 +48,23 @@ struct RootCore {
 }
 
 impl Root {
-    pub fn new(executor: Executor, cluster_id: Vec<u8>, local_addr: String) -> Self {
+    pub fn new(executor: Executor, node_ident: &NodeIdent, local_addr: String) -> Self {
         Self {
             shared: Arc::new(RootShared {
                 executor,
-                cluster_id,
                 local_addr,
                 core: Mutex::new(None),
+                node_ident: node_ident.to_owned(),
             }),
         }
     }
 
     pub fn is_root(&self) -> bool {
         self.shared.core.lock().unwrap().is_some()
+    }
+
+    pub fn current_node_id(&self) -> u64 {
+        self.shared.node_ident.node_id
     }
 
     pub async fn bootstrap(&mut self, node: &Node) -> Result<()> {
@@ -125,7 +130,7 @@ impl Root {
         // leadership change does not need to check for whether bootstrap or not.
         if !*bootstrapped {
             schema
-                .try_bootstrap(local_addr, self.shared.cluster_id.clone())
+                .try_bootstrap(local_addr, self.shared.node_ident.cluster_id.clone())
                 .await?;
             *bootstrapped = true;
         }
@@ -133,12 +138,13 @@ impl Root {
         {
             let mut core = self.shared.core.lock().unwrap();
             *core = Some(RootCore {
-                schema: Arc::new(schema),
+                schema: Arc::new(schema.to_owned()),
             });
         }
 
         // TODO(zojw): refresh owner, heartbeat node, rebalance
         for _ in 0..1000 {
+            self.send_heartbeat(schema.to_owned()).await?;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
