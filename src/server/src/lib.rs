@@ -32,6 +32,7 @@ pub use crate::{
 
 pub mod serverpb {
     pub mod v1 {
+        #![allow(clippy::all)]
         tonic::include_proto!("serverpb.v1");
     }
 }
