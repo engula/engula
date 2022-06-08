@@ -54,32 +54,26 @@ pub struct GroupEngineIterator<'a> {
     mark: PhantomData<&'a ()>,
 }
 
-#[allow(unused)]
 impl GroupEngine {
     /// Create a new instance of group engine.
-    pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<Self> {
+    pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<()> {
         use rocksdb::Options;
 
         let group_id = group_desc.id;
         let name = group_id.to_string();
+        // FIXME(walter) clean staled data if the column families already exists.
         raw_db.create_cf(&name, &Options::default())?;
-
-        let collections = group_desc
-            .shards
-            .iter()
-            .map(|shard| (shard.id, shard.parent_id))
-            .collect::<HashMap<_, _>>();
-        let collections = Arc::new(RwLock::new(collections));
-        let engine = GroupEngine {
-            name,
-            raw_db,
-            collections,
-        };
 
         let desc = GroupDesc {
             id: group_id,
-            shards: group_desc.shards.clone(),
+            shards: vec![],
             replicas: vec![],
+        };
+
+        let engine = GroupEngine {
+            name,
+            raw_db,
+            collections: Arc::default(),
         };
 
         // The group descriptor should be persisted into disk.
@@ -88,13 +82,11 @@ impl GroupEngine {
         engine.set_group_desc(&mut wb, &desc);
         engine.commit(wb, true)?;
 
-        Ok(engine)
+        Ok(())
     }
 
     /// Open the exists instance of group engine.
     pub async fn open(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<Option<Self>> {
-        use rocksdb::Options;
-
         let name = group_id.to_string();
         let cf_handle = match raw_db.cf_handle(&name) {
             Some(cf_handle) => cf_handle,
@@ -136,16 +128,17 @@ impl GroupEngine {
 
     /// Return the persisted applied index of raft.
     pub fn flushed_index(&self) -> u64 {
-        use rocksdb::ReadOptions;
+        use rocksdb::{ReadOptions, ReadTier};
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
             .expect("column family handle");
-        // FIXME(walter) ignore memtables.
+        let mut opt = ReadOptions::default();
+        opt.set_read_tier(ReadTier::Persisted);
         let raw_key = keys::applied_index();
         let value = self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)
+            .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
             .unwrap()
             .expect("group descriptor will persisted when creating group");
         let value = value.as_ref();
@@ -295,7 +288,6 @@ impl<'a> Iterator for GroupEngineIterator<'a> {
     }
 }
 
-#[allow(unused)]
 mod keys {
     const APPLIED_INDEX: &[u8] = b"APPLIED_INDEX";
     const DESCRIPTOR: &[u8] = b"DESCRIPTOR";

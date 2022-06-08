@@ -17,13 +17,14 @@ use std::{
     task::{Context, Poll},
 };
 
+use futures::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
+use tracing::warn;
 
 use crate::{serverpb::v1::*, Server};
 
 pub struct SnapshotStream;
 
-#[allow(unused)]
 #[tonic::async_trait]
 impl raft_server::Raft for Server {
     type RetriveSnapshotStream = SnapshotStream;
@@ -32,14 +33,40 @@ impl raft_server::Raft for Server {
         &self,
         request: Request<Streaming<RaftMessage>>,
     ) -> Result<Response<RaftDone>, Status> {
-        todo!()
+        let mut in_stream = request.into_inner();
+        while let Some(result) = in_stream.next().await {
+            match result {
+                Ok(msg) => {
+                    self.handle_raft_message(msg).await;
+                }
+                Err(e) => {
+                    warn!(err = ?e, "receive messages");
+                    break;
+                }
+            }
+        }
+        Ok(Response::new(RaftDone {}))
     }
 
+    #[allow(unused)]
     async fn retrive_snapshot(
         &self,
         request: Request<SnapshotRequest>,
     ) -> Result<Response<Self::RetriveSnapshotStream>, Status> {
         todo!()
+    }
+}
+
+impl Server {
+    async fn handle_raft_message(&self, msg: RaftMessage) {
+        let target_replica = msg.to_replica.expect("to_replica is required");
+        if let Some(mut sender) = self.node.raft_route_table().find(target_replica.id) {
+            for msg in msg.message {
+                sender.step(msg).expect("raft are shutdown?");
+            }
+        } else {
+            todo!("target replica not found");
+        }
     }
 }
 

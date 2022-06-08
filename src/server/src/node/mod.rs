@@ -14,18 +14,23 @@
 
 pub mod group_engine;
 pub mod replica;
-mod route_table;
+pub mod resolver;
+pub mod route_table;
 pub mod state_engine;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use engula_api::server::v1::GroupDesc;
 use futures::lock::Mutex;
-use tracing::debug;
+use tracing::{debug, info};
 
 pub use self::{
     group_engine::GroupEngine,
-    replica::Replica,
+    replica::{
+        raft::{RaftManager, TransportManager},
+        Replica,
+    },
+    resolver::AddressResolver,
     route_table::{RaftRouteTable, ReplicaRouteTable},
     state_engine::StateEngine,
 };
@@ -46,7 +51,6 @@ where
     replicas: HashMap<u64, ReplicaInfo>,
 }
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct Node
 where
@@ -58,22 +62,35 @@ where
     raft_route_table: RaftRouteTable,
     replica_route_table: ReplicaRouteTable,
 
+    raft_mgr: RaftManager,
+
     /// `NodeState` of this node, the lock is used to ensure serialization of create/terminate
     /// replica operations.
     node_state: Arc<Mutex<NodeState>>,
 }
 
-#[allow(unused)]
 impl Node {
-    pub fn new(raw_db: Arc<rocksdb::DB>, state_engine: StateEngine, executor: Executor) -> Self {
-        Node {
+    pub fn new(
+        log_path: PathBuf,
+        raw_db: Arc<rocksdb::DB>,
+        state_engine: StateEngine,
+        executor: Executor,
+    ) -> Result<Self> {
+        let raft_route_table = RaftRouteTable::new();
+        let address_resolver: Arc<Box<dyn crate::node::replica::raft::AddressResolver>> =
+            Arc::new(Box::new(AddressResolver {}));
+        let trans_mgr =
+            TransportManager::build(executor.clone(), address_resolver, raft_route_table.clone());
+        let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
+        Ok(Node {
             raw_db,
             executor,
             state_engine,
-            raft_route_table: RaftRouteTable::new(),
+            raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
+            raft_mgr,
             node_state: Arc::new(Mutex::new(NodeState::default())),
-        }
+        })
     }
 
     pub async fn recover(&self) -> Result<()> {
@@ -119,9 +136,12 @@ impl Node {
             return Ok(());
         }
 
+        // To ensure crash-recovery consistency, first create raft metadata, and then create group
+        // metadata. In this way, even if the group is restarted before the group is successfully
+        // created, a replica can be recreated by retrying.
         let group_id = group.id;
-        let group_engine = GroupEngine::create(self.raw_db.clone(), &group).await?;
-        Replica::create(replica_id, group_engine, &group).await?;
+        Replica::create(replica_id, &group, &self.raft_mgr).await?;
+        GroupEngine::create(self.raw_db.clone(), &group).await?;
         let replica_state = if group.replicas.is_empty() {
             ReplicaState::Pending
         } else {
@@ -131,6 +151,14 @@ impl Node {
             .save_replica_state(group_id, replica_id, replica_state)
             .await?;
 
+        info!(
+            "create replica {} of group {} and write initial state success",
+            replica_id, group_id
+        );
+
+        // If this node has not completed initialization, then there is no need to record
+        // `ReplicaInfo`. Because the recovery operation will be performed later, `ReplicaMeta` will
+        // be read again and the corresponding `ReplicaInfo` will be created.
         if recovered {
             let replica_info = ReplicaInfo {
                 group_id,
@@ -143,6 +171,7 @@ impl Node {
     }
 
     /// Terminate specified replica.
+    #[allow(unused)]
     pub async fn terminate_replica(&self, replica_id: u64) -> Result<()> {
         todo!()
     }
@@ -162,21 +191,22 @@ impl Node {
         Ok(Some(()))
     }
 
+    /// Open, recover replica and start serving.
     async fn start_replica_with_state(
         &self,
         group_id: u64,
         replica_id: u64,
-        state: ReplicaState,
+        _state: ReplicaState,
     ) -> Result<Option<()>> {
         let group_engine = match GroupEngine::open(group_id, self.raw_db.clone()).await? {
             Some(group_engine) => group_engine,
             None => return Ok(None),
         };
 
-        let replica = Replica::open(group_id, replica_id, group_engine).await?;
+        let replica = Replica::recover(group_id, replica_id, group_engine, &self.raft_mgr).await?;
+        let raft_node = replica.raft_node();
         self.replica_route_table.update(Arc::new(replica));
-        // FIXME(walter) set raft sender.
-        // self.raft_route_table.upsert(replica_id, ());
+        self.raft_route_table.update(replica_id, raft_node);
 
         // TODO(walter) start replica workers.
 
@@ -206,21 +236,23 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use engula_api::server::v1::ReplicaDesc;
+    use engula_api::server::v1::{ReplicaDesc, ReplicaRole};
     use tempdir::TempDir;
 
     use super::*;
     use crate::runtime::ExecutorOwner;
 
     fn create_node(executor: Executor) -> Node {
-        let tmp_dir = TempDir::new("rocksdb").unwrap();
+        let tmp_dir = TempDir::new("engula").unwrap().into_path();
+        let db_dir = tmp_dir.join("db");
+        let log_dir = tmp_dir.join("log");
 
         use crate::bootstrap::open_engine;
 
-        let db = open_engine(tmp_dir).unwrap();
+        let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
-        Node::new(db, state_engine, executor)
+        Node::new(log_dir, db, state_engine, executor).unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaState> {
@@ -270,6 +302,7 @@ mod tests {
             replicas: vec![ReplicaDesc {
                 id: replica_id,
                 node_id: 1,
+                role: ReplicaRole::Voter.into(),
             }],
         };
 

@@ -25,7 +25,6 @@ type WatchStream = std::pin::Pin<
     Box<dyn Stream<Item = std::result::Result<WatchResponse, tonic::Status>> + Send + Sync>,
 >;
 
-#[allow(unused)]
 #[tonic::async_trait]
 impl root_server::Root for Server {
     type WatchStream = WatchStream;

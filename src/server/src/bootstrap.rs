@@ -24,7 +24,7 @@ use engula_api::server::v1::{
     node_server::NodeServer,
     root_server::RootServer,
     shard_desc::{Partition, RangePartition},
-    GroupDesc, JoinNodeRequest, JoinNodeResponse, NodeDesc, ReplicaDesc, ShardDesc,
+    GroupDesc, JoinNodeRequest, JoinNodeResponse, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
 };
 use tracing::{debug, info, warn};
 
@@ -49,7 +49,6 @@ lazy_static::lazy_static! {
 }
 
 /// The main entrance of engula server.
-#[allow(unused)]
 pub fn run(
     executor: Executor,
     path: PathBuf,
@@ -58,9 +57,11 @@ pub fn run(
     join_list: Vec<String>,
     socket_addr_sender: Option<mpsc::Sender<SocketAddr>>,
 ) -> Result<()> {
-    let raw_db = Arc::new(open_engine(path)?);
+    let db_path = path.join("db");
+    let log_path = path.join("log");
+    let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
-    let node = Node::new(raw_db, state_engine, executor.clone());
+    let node = Node::new(log_path, raw_db, state_engine, executor.clone())?;
 
     let root = executor.block_on(async {
         let cluster_id = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
@@ -158,7 +159,6 @@ async fn bootstrap_or_join_cluster(
     })
 }
 
-#[allow(unused)]
 async fn try_join_cluster(
     state_engine: &StateEngine,
     local_addr: &str,
@@ -219,8 +219,7 @@ async fn issue_join_request(
             addr: local_addr.to_owned(),
             cluster_id,
         }))
-        .await
-        .unwrap();
+        .await?;
     Ok(resp.into_inner())
 }
 
@@ -275,8 +274,6 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
         })),
     };
 
-    // TODO(walter) write initial cluster data.
-    // - meta shards
     // Create the first raft group of cluster, this node is the only member of the raft group.
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
@@ -284,6 +281,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
         replicas: vec![ReplicaDesc {
             id: FIRST_REPLICA_ID,
             node_id: FIRST_NODE_ID,
+            role: ReplicaRole::Voter.into(),
         }],
     };
     node.create_replica(FIRST_REPLICA_ID, group, false).await?;

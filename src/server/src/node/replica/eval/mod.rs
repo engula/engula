@@ -16,6 +16,20 @@ mod cmd_delete;
 mod cmd_get;
 mod cmd_put;
 
-pub use cmd_delete::delete;
-pub use cmd_get::get;
-pub use cmd_put::put;
+use engula_api::server::v1::ShardDesc;
+
+pub use self::{cmd_delete::delete, cmd_get::get, cmd_put::put};
+use crate::serverpb::v1::EvalResult;
+
+pub fn add_shard(shard: ShardDesc) -> EvalResult {
+    use crate::serverpb::v1::{AddShard, SyncOp};
+
+    #[allow(clippy::needless_update)]
+    EvalResult {
+        op: Some(SyncOp {
+            add_shard: Some(AddShard { shard: Some(shard) }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}

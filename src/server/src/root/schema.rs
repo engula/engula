@@ -17,7 +17,7 @@ use std::sync::Arc;
 use engula_api::{
     server::v1::{
         shard_desc::{Partition, RangePartition},
-        GroupDesc, NodeDesc, ReplicaDesc, ShardDesc,
+        GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
     },
     v1::{CollectionDesc, DatabaseDesc},
 };
@@ -183,6 +183,7 @@ impl Schema {
             replicas: vec![ReplicaDesc {
                 id: FIRST_REPLICA_ID,
                 node_id: FIRST_NODE_ID,
+                role: ReplicaRole::Voter.into(),
             }],
             shards: vec![ShardDesc {
                 id: ROOT_SHARD_ID,
