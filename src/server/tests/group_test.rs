@@ -19,7 +19,7 @@ use std::{thread, time::Duration};
 
 use engula_api::server::v1::GroupDesc;
 use engula_client::{NodeClient, RequestBatchBuilder};
-use engula_server::{runtime::ExecutorOwner, Result};
+use engula_server::runtime::ExecutorOwner;
 use helper::socket::next_avail_port;
 use tempdir::TempDir;
 

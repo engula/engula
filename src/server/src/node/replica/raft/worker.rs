@@ -87,7 +87,6 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
                 .push(msg);
         }
         for (target_id, msgs) in seperated_msgs {
-            tracing::info!("send msg to {}", target_id);
             let to_replica = match self.replica_cache.get(target_id) {
                 Some(to_replica) => to_replica,
                 None => {

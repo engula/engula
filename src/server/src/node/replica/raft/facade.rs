@@ -16,7 +16,10 @@ use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
 
 use super::{worker::Request, ReadPolicy};
-use crate::{serverpb::v1::{EvalResult, RaftMessage}, Result};
+use crate::{
+    serverpb::v1::{EvalResult, RaftMessage},
+    Result,
+};
 
 /// `RaftNodeFacade` wraps the operations of raft.
 #[derive(Clone)]

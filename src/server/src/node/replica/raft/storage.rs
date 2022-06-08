@@ -381,7 +381,7 @@ pub async fn write_initial_state(
         let conf_change = super::encode_to_conf_change(change_replicas);
         let mut e = Entry::default();
         e.index = last_index;
-        e.term = 0;
+        e.term = 1;
         e.set_entry_type(EntryType::EntryConfChangeV2);
         e.data = conf_change.encode_to_vec();
         e.context = vec![];
@@ -393,7 +393,7 @@ pub async fn write_initial_state(
             last_index += 1;
             let mut ent = Entry::default();
             ent.index = last_index;
-            ent.term = 0;
+            ent.term = 1;
             ent.data = eval_result.encode_to_vec();
             ent.context = vec![];
             initial_entries.push(ent);
@@ -406,7 +406,12 @@ pub async fn write_initial_state(
         ..Default::default()
     };
     if !initial_entries.is_empty() {
+        // Due to the limitations of the raft-rs implementation, 0 cannot be used here as the term
+        // of initial entries. Therefore, it is necessary to set the `vote` and `term` in the
+        // HardState to a value that ensures that the current term will not elect a new leader.
         hard_state.commit = last_index;
+        hard_state.vote = replica_id;
+        hard_state.term = 1;
     }
 
     let mut batch = LogBatch::default();

@@ -77,7 +77,6 @@ impl Channel {
     pub fn send_message(&mut self, mut msg: RaftMessage) {
         loop {
             if let Some(sender) = &mut self.sender {
-                tracing::info!("sender exists, try send");
                 match sender.unbounded_send(msg) {
                     Ok(()) => return,
                     Err(err) => {
@@ -85,7 +84,6 @@ impl Channel {
                     }
                 }
             }
-            tracing::info!("sender not exists, connect again");
 
             // Try create new connection if we reaches here.
             let (sender, receiver) = mpsc::unbounded();
@@ -129,11 +127,9 @@ impl TransportManager {
 
     #[inline]
     fn issue_streaming_request(&self, stream_request: StreamingRequest) {
-        tracing::info!("send stream request before");
         self.sender
             .unbounded_send(stream_request)
             .expect("transport worker lifetime should large that replicas");
-        tracing::info!("send stream request ok");
     }
 
     async fn run(self, mut receiver: mpsc::UnboundedReceiver<StreamingRequest>) {
@@ -172,7 +168,6 @@ impl StreamingTask {
     }
 
     async fn serve_streaming_request(self) -> Result<()> {
-        tracing::info!("serving streaming request");
         let node_desc = self.resolve_address().await?;
         let address = format!("http://{}", node_desc.addr);
         let mut client = RaftClient::connect(address).await?;

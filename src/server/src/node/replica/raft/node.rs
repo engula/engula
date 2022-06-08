@@ -225,7 +225,11 @@ where
         write_task
     }
 
-    pub(super) fn post_advance(&mut self, post_ready: PostReady, sender: &mut impl AdvanceTemplate) {
+    pub(super) fn post_advance(
+        &mut self,
+        post_ready: PostReady,
+        sender: &mut impl AdvanceTemplate,
+    ) {
         if !post_ready.persisted_messages.is_empty() {
             sender.send_messages(post_ready.persisted_messages);
         }

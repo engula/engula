@@ -128,10 +128,9 @@ impl StateMachine for GroupStateMachine {
         // TODO(walter) update flushed index in periodic.
         self.flushed_index
     }
-    
+
     fn descriptor(&self) -> GroupDesc {
-        self
-            .group_engine
+        self.group_engine
             .descriptor()
             .expect("GroupEngine::descriptor")
     }
