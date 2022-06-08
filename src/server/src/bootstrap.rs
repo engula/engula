@@ -149,17 +149,19 @@ async fn bootstrap_or_join_cluster(
             "both cluster and node are initialized, node id {}",
             node_ident.node_id
         );
+        node.set_node_ident(&node_ident).await;
         return Ok(node_ident.cluster_id);
     }
 
     Ok(if init {
         bootstrap_cluster(node, addr).await?
     } else {
-        try_join_cluster(state_engine, addr, join_list).await?
+        try_join_cluster(node, state_engine, addr, join_list).await?
     })
 }
 
 async fn try_join_cluster(
+    node: &Node,
     state_engine: &StateEngine,
     local_addr: &str,
     join_list: Vec<String>,
@@ -189,7 +191,8 @@ async fn try_join_cluster(
         for addr in &join_list {
             match issue_join_request(addr, local_addr, prev_cluster_id.to_owned()).await {
                 Ok(resp) => {
-                    save_node_ident(state_engine, resp.cluster_id.to_owned(), resp.node_id).await?;
+                    save_node_ident(node, state_engine, resp.cluster_id.to_owned(), resp.node_id)
+                        .await?;
                     cluster_id = resp.cluster_id;
                     break 'OUTER;
                 }
@@ -239,7 +242,7 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<Vec<u8>> {
 
     let cluster_id = vec![];
 
-    save_node_ident(state_engine, cluster_id.to_owned(), FIRST_NODE_ID).await?;
+    save_node_ident(node, state_engine, cluster_id.to_owned(), FIRST_NODE_ID).await?;
 
     info!("bootstrap cluster successfully");
 
@@ -247,6 +250,7 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<Vec<u8>> {
 }
 
 async fn save_node_ident(
+    node: &Node,
     state_engine: &StateEngine,
     cluster_id: Vec<u8>,
     node_id: u64,
@@ -255,7 +259,8 @@ async fn save_node_ident(
         cluster_id,
         node_id,
     };
-    state_engine.save_ident(node_ident).await?;
+    state_engine.save_ident(&node_ident).await?;
+    node.set_node_ident(&node_ident).await;
 
     info!("save node ident, node id {}", node_id);
 

@@ -15,7 +15,6 @@
 use engula_api::server::v1::{
     ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
 };
-use raft::prelude::ConfState;
 use tracing::trace;
 
 use super::raft::{ApplyEntry, StateMachine};
@@ -129,38 +128,12 @@ impl StateMachine for GroupStateMachine {
         // TODO(walter) update flushed index in periodic.
         self.flushed_index
     }
-
-    fn conf_state(&self) -> ConfState {
-        let desc = self
+    
+    fn descriptor(&self) -> GroupDesc {
+        self
             .group_engine
             .descriptor()
-            .expect("GroupEngine::descriptor");
-        let mut cs = ConfState::default();
-        let mut in_joint = false;
-        for replica in desc.replicas.iter() {
-            match ReplicaRole::from_i32(replica.role).unwrap_or(ReplicaRole::Voter) {
-                ReplicaRole::Voter => {
-                    cs.voters.push(replica.id);
-                    cs.voters_outgoing.push(replica.id);
-                }
-                ReplicaRole::Learner => {
-                    cs.learners.push(replica.id);
-                }
-                ReplicaRole::IncomingVoter => {
-                    in_joint = true;
-                    cs.voters.push(replica.id);
-                }
-                ReplicaRole::DemotingVoter => {
-                    in_joint = true;
-                    cs.voters_outgoing.push(replica.id);
-                    cs.learners_next.push(replica.id);
-                }
-            }
-        }
-        if !in_joint {
-            cs.voters_outgoing.clear();
-        }
-        cs
+            .expect("GroupEngine::descriptor")
     }
 }
 

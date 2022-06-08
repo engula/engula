@@ -59,11 +59,9 @@ impl raft_server::Raft for Server {
 
 impl Server {
     async fn handle_raft_message(&self, msg: RaftMessage) {
-        let target_replica = msg.to_replica.expect("to_replica is required");
+        let target_replica = msg.to_replica.as_ref().expect("to_replica is required");
         if let Some(mut sender) = self.node.raft_route_table().find(target_replica.id) {
-            for msg in msg.message {
-                sender.step(msg).expect("raft are shutdown?");
-            }
+            sender.step(msg).expect("raft are shutdown?");
         } else {
             todo!("target replica not found");
         }

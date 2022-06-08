@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::ChangeReplicas;
-use raft::prelude::ConfState;
+use engula_api::server::v1::{ChangeReplicas, GroupDesc};
 
 use crate::{serverpb::v1::EvalResult, Result};
 
@@ -33,7 +32,7 @@ pub trait StateMachine: Send {
 
     fn snapshot(&mut self) -> Result<()>;
 
-    fn conf_state(&self) -> ConfState;
+    fn descriptor(&self) -> GroupDesc;
 
     /// Return the latest index which persisted in disk.
     fn flushed_index(&self) -> u64;

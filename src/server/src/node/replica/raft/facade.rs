@@ -14,10 +14,9 @@
 
 use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
-use raft::prelude::*;
 
 use super::{worker::Request, ReadPolicy};
-use crate::{serverpb::v1::EvalResult, Result};
+use crate::{serverpb::v1::{EvalResult, RaftMessage}, Result};
 
 /// `RaftNodeFacade` wraps the operations of raft.
 #[derive(Clone)]
@@ -86,7 +85,7 @@ impl RaftNodeFacade {
     }
 
     /// Step raft messages.
-    pub fn step(&mut self, msg: Message) -> Result<()> {
+    pub fn step(&mut self, msg: RaftMessage) -> Result<()> {
         match self.request_sender.try_send(Request::Message(msg)) {
             Ok(()) => (),
             Err(e) => {

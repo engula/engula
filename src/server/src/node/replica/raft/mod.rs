@@ -22,8 +22,12 @@ mod worker;
 
 use std::{path::Path, sync::Arc};
 
-use engula_api::server::v1::{ChangeReplicaType, ChangeReplicas};
-use raft::prelude::{ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2};
+use engula_api::server::v1::{
+    ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
+};
+use raft::prelude::{
+    ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
+};
 
 pub use self::{
     facade::RaftNodeFacade,
@@ -90,11 +94,12 @@ impl RaftManager {
     pub async fn start_raft_group<M: 'static + StateMachine>(
         &self,
         group_id: u64,
-        replica_id: u64,
+        desc: ReplicaDesc,
         state_machine: M,
         observer: Box<dyn StateObserver>,
     ) -> Result<RaftNodeFacade> {
-        let worker = RaftWorker::open(group_id, replica_id, state_machine, self, observer).await?;
+        // TODO(walter) config channel size.
+        let worker = RaftWorker::open(group_id, desc, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
         self.executor.spawn(None, TaskPriority::High, async move {
             // TODO(walter) handle result.
@@ -133,4 +138,33 @@ fn decode_from_conf_change(conf_change: &ConfChangeV2) -> ChangeReplicas {
 
     ChangeReplicas::decode(&*conf_change.context)
         .expect("ChangeReplicas is saved in ConfChangeV2::context")
+}
+
+fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
+    let mut cs = ConfState::default();
+    let mut in_joint = false;
+    for replica in desc.replicas.iter() {
+        match ReplicaRole::from_i32(replica.role).unwrap_or(ReplicaRole::Voter) {
+            ReplicaRole::Voter => {
+                cs.voters.push(replica.id);
+                cs.voters_outgoing.push(replica.id);
+            }
+            ReplicaRole::Learner => {
+                cs.learners.push(replica.id);
+            }
+            ReplicaRole::IncomingVoter => {
+                in_joint = true;
+                cs.voters.push(replica.id);
+            }
+            ReplicaRole::DemotingVoter => {
+                in_joint = true;
+                cs.voters_outgoing.push(replica.id);
+                cs.learners_next.push(replica.id);
+            }
+        }
+    }
+    if !in_joint {
+        cs.voters_outgoing.clear();
+    }
+    cs
 }

@@ -14,6 +14,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use engula_api::server::v1::ReplicaDesc;
 use futures::channel::oneshot;
 use raft::{
     prelude::{ConfChangeV2, Entry, EntryType},
@@ -27,6 +28,12 @@ struct ProposalContext {
     index: u64,
     term: u64,
     sender: oneshot::Sender<Result<()>>,
+}
+
+/// Cache the descriptor of other replicas in the same group.
+#[derive(Clone, Default)]
+pub(super) struct ReplicaCache {
+    replicas: HashMap<u64, ReplicaDesc>,
 }
 
 /// Applier records the context of requests.
@@ -104,9 +111,10 @@ impl<M: StateMachine> Applier<M> {
     }
 
     /// Apply entries and invoke proposal & read response.
-    pub fn apply_entries(
+    pub(super) fn apply_entries(
         &mut self,
         raw_node: &mut RawNode<Storage>,
+        replica_cache: &mut ReplicaCache,
         committed_entries: Vec<Entry>,
     ) -> u64 {
         for entry in committed_entries {
@@ -123,7 +131,9 @@ impl<M: StateMachine> Applier<M> {
             match entry.get_entry_type() {
                 EntryType::EntryNormal => self.apply_normal_entry(entry),
                 EntryType::EntryConfChange => panic!("ConfChangeV1 not supported"),
-                EntryType::EntryConfChangeV2 => self.apply_conf_change(raw_node, entry),
+                EntryType::EntryConfChangeV2 => {
+                    self.apply_conf_change(raw_node, replica_cache, entry)
+                }
             }
             self.response_proposal(index, term);
         }
@@ -133,7 +143,12 @@ impl<M: StateMachine> Applier<M> {
         self.last_applied_index
     }
 
-    fn apply_conf_change(&mut self, raw_node: &mut RawNode<Storage>, entry: Entry) {
+    fn apply_conf_change(
+        &mut self,
+        raw_node: &mut RawNode<Storage>,
+        replica_cache: &mut ReplicaCache,
+        entry: Entry,
+    ) {
         use prost::Message;
 
         assert!(matches!(
@@ -150,6 +165,7 @@ impl<M: StateMachine> Applier<M> {
                 ApplyEntry::ConfigChange { change_replicas },
             )
             .expect("apply config change");
+        replica_cache.batch_insert(&self.state_machine.descriptor().replicas);
         raw_node.apply_conf_change(&conf_change).unwrap_or_default();
     }
 
@@ -208,5 +224,24 @@ impl<M: StateMachine> Applier<M> {
                 }
             }
         }
+    }
+}
+
+impl ReplicaCache {
+    #[inline]
+    pub fn batch_insert(&mut self, replicas: &[ReplicaDesc]) {
+        let cache = &mut self.replicas;
+        for replica in replicas {
+            cache.insert(replica.id, replica.clone());
+        }
+    }
+
+    #[inline]
+    pub fn insert(&mut self, replica: ReplicaDesc) {
+        self.replicas.insert(replica.id, replica.clone());
+    }
+
+    pub fn get(&self, replica_id: u64) -> Option<ReplicaDesc> {
+        self.replicas.get(&replica_id).cloned()
     }
 }

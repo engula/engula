@@ -72,7 +72,7 @@ impl StateEngine {
     }
 
     /// Save node ident, return appropriate error if ident already exists.
-    pub async fn save_ident(&self, ident: NodeIdent) -> Result<()> {
+    pub async fn save_ident(&self, ident: &NodeIdent) -> Result<()> {
         use rocksdb::{WriteBatch, WriteOptions};
 
         // FIXME(walter) check existence.

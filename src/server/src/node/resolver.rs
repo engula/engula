@@ -13,13 +13,13 @@
 // limitations under the License.
 use engula_api::server::v1::NodeDesc;
 
-use crate::Result;
+use crate::{Result, Error};
 
 pub struct AddressResolver {}
 
-#[tonic::async_trait]
+#[crate::async_trait]
 impl crate::node::replica::raft::AddressResolver for AddressResolver {
     async fn resolve(&self, _node_id: u64) -> Result<NodeDesc> {
-        todo!()
+        Err(Error::InvalidArgument("not such node exists".into()))
     }
 }
