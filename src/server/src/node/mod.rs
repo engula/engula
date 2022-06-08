@@ -20,7 +20,7 @@ pub mod state_engine;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use engula_api::server::v1::{GroupDesc, ReplicaDesc};
+use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
 use futures::lock::Mutex;
 use tracing::{debug, info};
 
@@ -37,7 +37,7 @@ pub use self::{
 use crate::{
     runtime::Executor,
     serverpb::v1::{NodeIdent, ReplicaState},
-    Result,
+    Error, Result,
 };
 
 #[derive(Clone)]
@@ -54,6 +54,7 @@ where
 {
     ident: Option<NodeIdent>,
     replicas: HashMap<u64, ReplicaInfo>,
+    root: Vec<NodeDesc>,
 }
 
 #[derive(Clone)]
@@ -240,6 +241,29 @@ impl Node {
         // TODO(walter) start replica workers.
 
         Ok(Some(()))
+    }
+
+    /// Get root that known by node addrs.
+    pub async fn get_root(&self) -> Vec<String> {
+        let nodes = self.node_state.lock().await.root.to_owned();
+        nodes.iter().map(|n| n.addr.to_owned()).collect()
+    }
+
+    // Update recent known root nodes.
+    pub async fn update_root(&self, roots: Vec<NodeDesc>) -> Result<()> {
+        self.state_engine().save_root_nodes(roots).await?;
+        self.reload_root_from_engine().await
+    }
+
+    #[inline]
+    async fn reload_root_from_engine(&self) -> Result<()> {
+        let nodes = self
+            .state_engine()
+            .load_root_nodes()
+            .await?
+            .ok_or_else(|| Error::InvalidData("root not found".into()))?;
+        self.node_state.lock().await.root = nodes;
+        Ok(())
     }
 
     #[inline]

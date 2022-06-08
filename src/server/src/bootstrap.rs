@@ -171,12 +171,12 @@ async fn bootstrap_or_join_cluster(
     Ok(if init {
         bootstrap_cluster(node, addr).await?
     } else {
-        try_join_cluster(state_engine, addr, join_list).await?
+        try_join_cluster(node, addr, join_list).await?
     })
 }
 
 async fn try_join_cluster(
-    state_engine: &StateEngine,
+    node: &Node,
     local_addr: &str,
     join_list: Vec<String>,
 ) -> Result<NodeIdent> {
@@ -193,7 +193,7 @@ async fn try_join_cluster(
         ));
     }
 
-    let prev_cluster_id = if let Some(ident) = state_engine.read_ident().await? {
+    let prev_cluster_id = if let Some(ident) = node.state_engine().read_ident().await? {
         Some(ident.cluster_id)
     } else {
         None
@@ -204,15 +204,20 @@ async fn try_join_cluster(
         for addr in &join_list {
             match issue_join_request(addr, local_addr, prev_cluster_id.to_owned()).await {
                 Ok(resp) => {
-                    return save_node_ident(state_engine, resp.cluster_id.to_owned(), resp.node_id)
-                        .await;
+                    let node_ident = save_node_ident(
+                        node.state_engine(),
+                        resp.cluster_id.to_owned(),
+                        resp.node_id,
+                    )
+                    .await;
+                    node.update_root(resp.roots);
+                    return node_ident;
                 }
                 Err(e) => {
                     warn!(err = ?e, root = ?addr, "issue join request to root server");
                 }
             }
         }
-
         std::thread::sleep(Duration::from_secs(backoff));
         backoff = std::cmp::min(backoff, 120);
     }
@@ -276,8 +281,7 @@ async fn save_node_ident(
 }
 
 async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
-    let state_engine = node.state_engine();
-
+    // Create the first raft group of cluster, this node is the only member of the raft group.
     let shard = ShardDesc {
         id: ROOT_SHARD_ID,
         parent_id: NA_SHARD_ID,
@@ -287,7 +291,6 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
         })),
     };
 
-    // Create the first raft group of cluster, this node is the only member of the raft group.
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
         shards: vec![shard],
@@ -299,11 +302,11 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     };
     node.create_replica(FIRST_REPLICA_ID, group, false).await?;
 
-    let node_desc = NodeDesc {
+    let root_node = NodeDesc {
         id: FIRST_NODE_ID,
         addr: addr.to_owned(),
     };
-    state_engine.save_root_nodes(vec![node_desc]).await?;
+    node.update_root(vec![root_node]).await?;
 
     Ok(())
 }

@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_api::{server::v1::*, v1::*};
 use futures::Stream;
 use tonic::{Request, Response, Status};
 
 use crate::{
+    root::Schema,
     service::root::watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
     Error, Result, Server,
 };
@@ -33,9 +36,6 @@ impl root_server::Root for Server {
         &self,
         req: Request<AdminRequest>,
     ) -> std::result::Result<Response<AdminResponse>, Status> {
-        if !self.root.is_root() {
-            todo!("forward")
-        }
         let req = req.into_inner();
         let res = self.handle_admin(req).await?;
         Ok(Response::new(res))
@@ -45,9 +45,6 @@ impl root_server::Root for Server {
         &self,
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
-        if !self.root.is_root() {
-            todo!("forward")
-        }
         let req = req.into_inner();
         let cf = ChangeFetcher { seq: req.sequence };
         Ok(Response::new(cf.into_stream()))
@@ -58,7 +55,7 @@ impl root_server::Root for Server {
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
         let request = request.into_inner();
-        let schema = self.root.schema()?;
+        let schema = self.schema().await?;
         let node = schema
             .add_node(NodeDesc {
                 addr: request.addr,
@@ -151,8 +148,8 @@ impl Server {
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
         let desc = self
-            .root
-            .schema()?
+            .schema()
+            .await?
             .create_database(DatabaseDesc {
                 name: req.name,
                 ..Default::default()
@@ -167,12 +164,12 @@ impl Server {
         &self,
         req: DeleteDatabaseRequest,
     ) -> Result<DeleteDatabaseResponse> {
-        self.root.schema()?.delete_database(&req.name).await?;
+        self.schema().await?.delete_database(&req.name).await?;
         Ok(DeleteDatabaseResponse {})
     }
 
     async fn handle_get_database(&self, req: GetDatabaseRequest) -> Result<GetDatabaseResponse> {
-        let resp = self.root.schema()?.get_database(&req.name).await?;
+        let resp = self.schema().await?.get_database(&req.name).await?;
         Ok(GetDatabaseResponse { database: resp })
     }
 
@@ -180,7 +177,7 @@ impl Server {
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let schema = self.root.schema()?;
+        let schema = self.schema().await?;
         let db = schema.get_database(&req.parent).await?;
         if db.is_none() {
             return Err(Error::DatabaseNotFound(req.parent));
@@ -201,7 +198,7 @@ impl Server {
         &self,
         req: DeleteCollectionRequest,
     ) -> Result<DeleteCollectionResponse> {
-        let schema = self.root.schema()?;
+        let schema = self.schema().await?;
         let collection = schema.get_collection(&req.parent, &req.name).await?;
         if collection.is_none() {
             return Ok(DeleteCollectionResponse {});
@@ -215,11 +212,20 @@ impl Server {
         req: GetCollectionRequest,
     ) -> Result<GetCollectionResponse> {
         let resp = self
-            .root
-            .schema()?
+            .schema()
+            .await?
             .get_collection(&req.parent, &req.name)
             .await?;
         Ok(GetCollectionResponse { collection: resp })
+    }
+
+    async fn schema(&self) -> Result<Arc<Schema>> {
+        let s = self.root.schema();
+        if s.is_none() {
+            let roots = self.node.get_root().await;
+            return Err(Error::NotRootLeader(roots));
+        }
+        Ok(s.unwrap())
     }
 }
 

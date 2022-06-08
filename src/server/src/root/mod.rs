@@ -22,7 +22,8 @@ use std::{
     time::Duration,
 };
 
-use self::{schema::Schema, store::RootStore};
+pub use self::schema::Schema;
+use self::store::RootStore;
 use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
@@ -72,11 +73,9 @@ impl Root {
         Ok(())
     }
 
-    pub fn schema(&self) -> Result<Arc<Schema>> {
+    pub fn schema(&self) -> Option<Arc<Schema>> {
         let core = self.shared.core.lock().unwrap();
-        core.as_ref()
-            .map(|c| c.schema.clone())
-            .ok_or(Error::NotRootLeader)
+        core.as_ref().map(|c| c.schema.clone())
     }
 
     async fn run(&self, replica_table: ReplicaRouteTable) -> ! {

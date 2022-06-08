@@ -60,7 +60,8 @@ impl node_server::Node for Server {
         &self,
         request: Request<GetRootRequest>,
     ) -> Result<Response<GetRootResponse>, Status> {
-        todo!()
+        let addrs = self.node.get_root().await;
+        Ok(Response::new(GetRootResponse { addrs }))
     }
 
     async fn create_replica(
@@ -101,6 +102,7 @@ fn error_to_response(err: Error) -> GroupResponse {
         Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
         Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
         Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
+        Error::NotRootLeader(roots) => v1::Error::not_root_leader(roots),
         Error::Transport(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
         Error::RocksDb(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
         Error::Raft(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
@@ -113,7 +115,6 @@ fn error_to_response(err: Error) -> GroupResponse {
             v1::Error::status(Code::Internal.into(), err.to_string())
         }
         err @ Error::InvalidData(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
-        err @ Error::NotRootLeader => v1::Error::status(Code::Internal.into(), err.to_string()),
         err @ Error::ClusterNotMatch => v1::Error::status(Code::Internal.into(), err.to_string()),
         err @ Error::Canceled => v1::Error::status(Code::Cancelled.into(), err.to_string()),
         err @ Error::Rpc(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
