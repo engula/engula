@@ -26,6 +26,7 @@ use engula_api::server::v1::{
     shard_desc::{Partition, RangePartition},
     GroupDesc, JoinNodeRequest, JoinNodeResponse, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
 };
+use engula_client::RootClient;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -229,17 +230,14 @@ async fn issue_join_request(
     local_addr: &str,
     cluster_id: Option<Vec<u8>>,
 ) -> Result<JoinNodeResponse> {
-    use engula_api::server::v1::root_client::RootClient;
-    use tonic::Request;
-
-    let mut client = RootClient::connect(format!("http://{}", target_addr)).await?;
+    let mut client = RootClient::connect(target_addr.to_string()).await?;
     let resp = client
-        .join(Request::new(JoinNodeRequest {
+        .join_node(JoinNodeRequest {
             addr: local_addr.to_owned(),
             cluster_id,
-        }))
+        })
         .await?;
-    Ok(resp.into_inner())
+    Ok(resp)
 }
 
 async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {
