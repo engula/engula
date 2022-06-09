@@ -24,8 +24,9 @@ use std::{
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request, group_response_union::Response, ChangeReplicasResponse,
-        CreateShardResponse, GroupDesc, GroupRequest, GroupResponse, ReplicaDesc,
+        group_request_union::Request, group_response_union::Response, BatchWriteResponse,
+        ChangeReplicasResponse, CreateShardResponse, GroupDesc, GroupRequest, GroupResponse,
+        ReplicaDesc,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
@@ -165,6 +166,10 @@ impl Replica {
                 resp = Response::Delete(DeleteResponse {});
                 let eval_result = eval::delete(&self.group_engine, shard_id, &req.key).await?;
                 Some(eval_result)
+            }
+            Request::BatchWrite(req) => {
+                resp = Response::BatchWrite(BatchWriteResponse {});
+                eval::batch_write(&self.group_engine, shard_id, req).await?
             }
             Request::CreateShard(req) => {
                 // TODO(walter) check the existing of shard.

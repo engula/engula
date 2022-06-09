@@ -51,12 +51,13 @@ message GroupRequestUnion {
     engula.v1.GetRequest get = 1;
     engula.v1.PutRequest put = 2;
     engula.v1.DeleteRequest delete = 3;
+    BatchWriteRequest batch_write = 4;
 
     /// Add a new shard to an existing group.
-    CreateShardRequest create_shard = 4;
+    CreateShardRequest create_shard = 5;
 
     /// Change replicas of an existing group.
-    ChangeReplicasRequest change_replicas = 5;
+    ChangeReplicasRequest change_replicas = 6;
   }
 }
 
@@ -65,10 +66,22 @@ message GroupResponseUnion {
     engula.v1.GetResponse get = 1;
     engula.v1.PutResponse put = 2;
     engula.v1.DeleteResponse delete = 3;
-    CreateShardResponse create_shard = 4;
-    ChangeReplicasResponse change_replicas = 5;
+    BatchWriteResponse batch_write = 4;
+    CreateShardResponse create_shard = 5;
+    ChangeReplicasResponse change_replicas = 6;
   }
 }
+
+/// Execute batch write to a shard to ensure atomic writes.
+///
+/// Since the interface does not need to be exposed to users, the definition is placed in
+/// this file.
+message BatchWriteRequest {
+  repeated engula.v1.DeleteRequest deletes = 1;
+  repeated engula.v1.PutRequest puts = 2;
+}
+
+message BatchWriteResponse {}
 
 message GetRootRequest {}
 

@@ -17,9 +17,9 @@ use std::sync::Arc;
 use engula_api::{
     server::v1::{
         shard_desc::{Partition, RangePartition},
-        GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
+        BatchWriteRequest, GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
     },
-    v1::{CollectionDesc, DatabaseDesc},
+    v1::{CollectionDesc, DatabaseDesc, PutRequest},
 };
 use prost::Message;
 
@@ -76,7 +76,7 @@ impl Schema {
     pub async fn create_database(&self, desc: DatabaseDesc) -> Result<DatabaseDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_DATABASE_ID_KEY).await?;
-        self.batch_put(
+        self.batch_write(
             PutBatchBuilder::default()
                 .put_database(desc.to_owned())
                 .build(),
@@ -105,7 +105,7 @@ impl Schema {
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
-        self.batch_put(
+        self.batch_write(
             PutBatchBuilder::default()
                 .put_collection(desc.to_owned())
                 .build(),
@@ -195,7 +195,7 @@ impl Schema {
             }],
         });
 
-        self.batch_put(batch.build()).await?;
+        self.batch_write(batch.build()).await?;
 
         Ok(())
     }
@@ -321,12 +321,8 @@ impl Schema {
         self.get(SYSTEM_MATE_COLLECTION_ID, key).await
     }
 
-    async fn batch_put(&self, batch: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()> {
-        // TODO(zojw): support atomic batch put command.
-        for (k, v) in batch {
-            self.store.put(k, v).await?;
-        }
-        Ok(())
+    async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {
+        self.store.batch_write(batch).await
     }
 
     async fn get(&self, collection_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -347,7 +343,7 @@ impl Schema {
             id.try_into()
                 .map_err(|_| Error::InvalidData(format!("{} id", id_type)))?,
         );
-        self.batch_put(
+        self.batch_write(
             PutBatchBuilder::default()
                 .put_meta(id_type.as_bytes().to_vec(), (id + 1).to_le_bytes().to_vec())
                 .build(),
@@ -367,8 +363,17 @@ impl PutBatchBuilder {
         self.batch.push((data_key(collection_id, &key), val));
     }
 
-    fn build(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
-        self.batch.to_owned()
+    fn build(&self) -> BatchWriteRequest {
+        let puts = self
+            .batch
+            .iter()
+            .cloned()
+            .map(|(key, value)| PutRequest { key, value })
+            .collect::<Vec<_>>();
+        BatchWriteRequest {
+            puts,
+            ..Default::default()
+        }
     }
 
     fn put_meta(&mut self, key: Vec<u8>, val: Vec<u8>) -> &mut Self {
