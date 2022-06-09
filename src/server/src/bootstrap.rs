@@ -230,7 +230,7 @@ async fn issue_join_request(
     local_addr: &str,
     cluster_id: Option<Vec<u8>>,
 ) -> Result<JoinNodeResponse> {
-    let mut client = RootClient::connect(target_addr.to_string()).await?;
+    let client = RootClient::connect(target_addr.to_string()).await?;
     let resp = client
         .join_node(JoinNodeRequest {
             addr: local_addr.to_owned(),

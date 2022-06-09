@@ -13,7 +13,7 @@
 // limitations under the License.
 use std::{collections::HashMap, sync::Mutex};
 
-use engula_api::server::v1::{NodeDesc, ResolveNodeRequest, ResolveNodeResponse};
+use engula_api::server::v1::NodeDesc;
 use engula_client::RootClient;
 use tracing::warn;
 
@@ -43,7 +43,7 @@ impl AddressResolver {
     }
 
     async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<Option<NodeDesc>> {
-        let mut client = RootClient::connect(target_addr.to_string()).await?;
+        let client = RootClient::connect(target_addr.to_string()).await?;
         let node_desc = client.resolve(node_id).await?;
         Ok(node_desc)
     }
