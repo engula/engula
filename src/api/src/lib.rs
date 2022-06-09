@@ -13,11 +13,14 @@
 // limitations under the License.
 
 pub mod v1 {
+    #![allow(clippy::all)]
     tonic::include_proto!("engula.v1");
 }
 
 pub mod server {
+
     pub mod v1 {
+        #![allow(clippy::all)]
         tonic::include_proto!("engula.server.v1");
 
         impl GroupResponse {
