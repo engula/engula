@@ -139,7 +139,7 @@ impl Schema {
     pub async fn add_node(&self, desc: NodeDesc) -> Result<NodeDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_NODE_ID_KEY).await?;
-        self.batch_put(PutBatchBuilder::default().put_node(desc.to_owned()).build())
+        self.batch_write(PutBatchBuilder::default().put_node(desc.to_owned()).build())
             .await?;
         Ok(desc)
     }
