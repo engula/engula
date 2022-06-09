@@ -57,6 +57,15 @@ impl Client {
         let res = client.batch(req).await?;
         Ok(res.into_inner().responses)
     }
+
+    pub async fn root_heartbeat(
+        &self,
+        req: HeartbeatRequest,
+    ) -> Result<HeartbeatResponse, tonic::Status> {
+        let mut client = self.client.clone();
+        let res = client.root_heartbeat(req).await?;
+        Ok(res.into_inner())
+    }
 }
 
 #[allow(unused)]

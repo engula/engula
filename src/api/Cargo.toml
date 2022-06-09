@@ -10,6 +10,7 @@ description = "The Engula API."
 [dependencies]
 tonic = "0.7.2"
 prost = "0.10.3"
+prost-types = "0.10.1"
 
 [build-dependencies]
 tonic-build = "0.7.2"

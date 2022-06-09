@@ -39,7 +39,8 @@ message ErrorDetailUnion {
         NotMatch not_match = 2;
         ServerIsBusy server_is_busy = 3;
         GroupNotFound group_not_found = 4;
-        int32 status_code = 5;
+        NotRoot not_root = 5;
+        int32 status_code = 6;
     }
 }
 
@@ -47,6 +48,10 @@ message NotLeader {
     uint64 group_id = 1;
     /// The leader of the requested group.
     ReplicaDesc leader = 2;
+}
+
+message NotRoot {
+    repeated string root = 1;
 }
 
 message NotMatch {

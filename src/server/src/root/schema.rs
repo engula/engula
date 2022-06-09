@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use engula_api::{
     server::v1::{
@@ -139,16 +139,70 @@ impl Schema {
     pub async fn add_node(&self, desc: NodeDesc) -> Result<NodeDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_NODE_ID_KEY).await?;
+        self.batch_put(PutBatchBuilder::default().put_node(desc.to_owned()).build())
+            .await?;
         Ok(desc)
+    }
+
+    pub async fn list_node(&self) -> Result<Vec<NodeDesc>> {
+        let vals = self.list(SYSTEM_NODE_COLLECTION_ID).await?;
+        let mut nodes = Vec::new();
+        for val in vals {
+            nodes
+                .push(NodeDesc::decode(&*val).map_err(|_| Error::InvalidData("node desc".into()))?);
+        }
+        Ok(nodes)
     }
 
     pub async fn get_node(&self, id: u64) -> Result<Option<NodeDesc>> {
         self.get_node_internal(id).await
     }
 
+    pub async fn get_group(&self, id: u64) -> Result<Option<GroupDesc>> {
+        self.get_group_internal(id).await
+    }
+
     pub async fn delete_node(&self, id: u64) -> Result<()> {
         self.delete(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
             .await
+    }
+
+    pub async fn get_root_replicas(&self) -> Result<ReplicaNodes> {
+        let root_desc = self
+            .get_group(ROOT_GROUP_ID)
+            .await?
+            .ok_or(Error::GroupNotFound(ROOT_GROUP_ID))?;
+        let mut nodes = HashMap::new();
+        for replica in &root_desc.replicas {
+            let node = replica.node_id;
+            if nodes.contains_key(&node) {
+                continue;
+            }
+            let node = self
+                .get_node(node)
+                .await?
+                .ok_or_else(|| Error::InvalidData(format!("node {} data not found", node)))?;
+            nodes.insert(node.id, node);
+        }
+        Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
+    }
+}
+
+pub struct ReplicaNodes(Vec<NodeDesc>);
+
+impl From<ReplicaNodes> for Vec<NodeDesc> {
+    fn from(r: ReplicaNodes) -> Self {
+        r.0
+    }
+}
+
+impl ReplicaNodes {
+    pub fn move_first(&mut self, id: u64) {
+        if let Some(idx) = self.0.iter().position(|n| n.id == id) {
+            if idx != 0 {
+                self.0.swap(0, idx)
+            }
+        }
     }
 }
 
@@ -317,6 +371,18 @@ impl Schema {
         Ok(Some(desc))
     }
 
+    async fn get_group_internal(&self, id: u64) -> Result<Option<GroupDesc>> {
+        let val = self
+            .get(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let desc = GroupDesc::decode(&*val.unwrap())
+            .map_err(|_| Error::InvalidData(format!("group desc: {}", id)))?;
+        Ok(Some(desc))
+    }
+
     async fn get_meta(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.get(SYSTEM_MATE_COLLECTION_ID, key).await
     }
@@ -331,6 +397,12 @@ impl Schema {
 
     async fn delete(&self, collection_id: u64, key: &[u8]) -> Result<()> {
         self.store.delete(&data_key(collection_id, key)).await
+    }
+
+    async fn list(&self, collection_id: u64) -> Result<Vec<Vec<u8>>> {
+        self.store
+            .list(collection_id.to_le_bytes().as_slice())
+            .await
     }
 
     async fn next_id(&self, id_type: &str) -> Result<u64> {

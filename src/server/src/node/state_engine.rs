@@ -116,7 +116,7 @@ impl StateEngine {
             .raw_db
             .cf_handle(STATE_CF_NAME)
             .expect("state column family");
-        match self.raw_db.get_pinned_cf(&cf_handle, keys::node_ident())? {
+        match self.raw_db.get_pinned_cf(&cf_handle, keys::root_desc())? {
             Some(value) => {
                 let root_desc = RootDesc::decode(value.as_ref()).expect("valid root desc format");
                 Ok(Some(root_desc.root_nodes))

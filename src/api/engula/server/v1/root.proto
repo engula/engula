@@ -67,8 +67,8 @@ message JoinNodeRequest {
 
 message JoinNodeResponse {
   bytes cluster_id = 1;
-
   uint64 node_id = 2;
+  repeated NodeDesc roots = 3;
 }
 
 message ResolveNodeRequest {

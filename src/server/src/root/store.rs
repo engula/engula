@@ -115,4 +115,9 @@ impl RootStore {
             .await?;
         Ok(())
     }
+
+    pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        // TODO(zojw): impl scan prefix.
+        Ok(vec![])
+    }
 }

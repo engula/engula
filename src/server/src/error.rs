@@ -34,7 +34,7 @@ pub enum Error {
     InvalidData(String),
 
     #[error("not root leader")]
-    NotRootLeader,
+    NotRootLeader(Vec<String>),
 
     #[error("cluster not match")]
     ClusterNotMatch,
@@ -78,7 +78,6 @@ impl From<Error> for tonic::Status {
             Error::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
             err @ Error::Canceled => Status::cancelled(err.to_string()),
             err @ Error::DatabaseNotFound(_) => Status::internal(err.to_string()),
-            err @ Error::NotRootLeader => Status::internal(err.to_string()),
             err @ Error::InvalidData(_) => Status::internal(err.to_string()),
             err @ Error::ClusterNotMatch => Status::internal(err.to_string()),
             Error::NotLeader(group_id, leader) => Status::with_details(
@@ -87,6 +86,11 @@ impl From<Error> for tonic::Status {
                 v1::Error::not_leader(group_id, leader)
                     .encode_to_vec()
                     .into(),
+            ),
+            Error::NotRootLeader(roots) => Status::with_details(
+                Code::Unknown,
+                "not root",
+                v1::Error::not_root_leader(roots).encode_to_vec().into(),
             ),
             Error::Transport(inner) => Status::internal(inner.to_string()),
             Error::Io(inner) => inner.into(),
