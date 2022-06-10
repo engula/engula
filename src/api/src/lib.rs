@@ -53,6 +53,33 @@ pub mod server {
             }
         }
 
+        impl ErrorDetailUnion {
+            #[inline]
+            pub fn is_retryable(&self) -> bool {
+                use error_detail_union::Value;
+                match &self.value {
+                    Some(
+                        Value::GroupNotFound(_)
+                        | Value::NotLeader(_)
+                        | Value::NotMatch(_)
+                        | Value::NotRoot(_)
+                        | Value::ServerIsBusy(_),
+                    ) => true,
+                    _ => false,
+                }
+            }
+        }
+
+        impl ErrorDetail {
+            #[inline]
+            pub fn is_retryable(&self) -> bool {
+                self.detail
+                    .as_ref()
+                    .map(ErrorDetailUnion::is_retryable)
+                    .unwrap_or_default()
+            }
+        }
+
         impl ErrorDetail {
             #[inline]
             pub fn new(value: error_detail_union::Value) -> Self {
@@ -81,7 +108,7 @@ pub mod server {
             }
 
             #[inline]
-            pub fn not_match(value: NotMatch) -> Self {
+            pub fn not_match(value: EpochNotMatch) -> Self {
                 Self::new(error_detail_union::Value::NotMatch(value))
             }
 
@@ -116,10 +143,11 @@ pub mod server {
             }
 
             #[inline]
-            pub fn not_match(group_id: u64, shard_id: u64) -> Self {
-                Self::with_detail_value(error_detail_union::Value::NotMatch(NotMatch {
+            pub fn not_match(group_id: u64, shard_id: u64, epoch: u64) -> Self {
+                Self::with_detail_value(error_detail_union::Value::NotMatch(EpochNotMatch {
                     group_id,
                     shard_id,
+                    epoch,
                 }))
             }
 

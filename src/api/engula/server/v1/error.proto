@@ -18,6 +18,15 @@ package engula.server.v1;
 
 import "engula/server/v1/metadata.proto";
 
+/// This file complements some errors that cannot be expressed by grpc status code,
+/// which is usually used with Status::unknown.
+///
+/// These are some errors require retry, and are generally divided into two categories:
+/// 1. Metadata expires, includes `NotLeader`, `EpochNotMatch`, `GroupNotFound`, `NotRoot`.
+///    It needs to retry after updating the metadata.
+/// 2. `ServerIsBusy`: It needs to wait for a period of time and try again.
+
+
 /// A structured error for passing detailed error information over RPC. It
 /// is usually used with 'grpc-status-details-bin'.
 ///
@@ -36,7 +45,7 @@ message ErrorDetail {
 message ErrorDetailUnion {
     oneof value {
         NotLeader not_leader = 1;
-        NotMatch not_match = 2;
+        EpochNotMatch not_match = 2;
         ServerIsBusy server_is_busy = 3;
         GroupNotFound group_not_found = 4;
         NotRoot not_root = 5;
@@ -44,23 +53,34 @@ message ErrorDetailUnion {
     }
 }
 
+/// This request can only be processed by the group leader, and the target replica is not
+/// the leader of the current group.
 message NotLeader {
     uint64 group_id = 1;
-    /// The leader of the requested group.
+    /// The leader of the requested group. `None` means that the target replica does known
+    /// who the current leader is.
     ReplicaDesc leader = 2;
 }
 
+/// This request can only be processed by the root (or root leader), and the target node is
+/// not the replica of root group (or root group leader).
 message NotRoot {
+    /// `root` contains the known root members of the node, the first most likely being the leader.
     repeated string root = 1;
 }
 
-message NotMatch {
+/// The epoch of metadata carried by the request does not match the epoch of target replica.
+message EpochNotMatch {
     uint64 group_id = 1;
     uint64 shard_id = 2;
+    /// The epoch of target replica.
+    uint64 epoch = 3;
 }
 
+/// The current node is busy and needs to retry after a period of time.
 message ServerIsBusy {}
 
+/// The target group was not found, it may have been removed.
 message GroupNotFound {
     uint64 group_id = 1;
 }
