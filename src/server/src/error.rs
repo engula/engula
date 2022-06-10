@@ -15,32 +15,25 @@ use engula_api::server::v1::ReplicaDesc;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    // business errors
     #[error("invalid argument {0}")]
     InvalidArgument(String),
-
-    #[error("request canceled")]
-    Canceled,
 
     #[error("deadline exceeded {0}")]
     DeadlineExceeded(String),
 
-    #[error("group {0} not found")]
-    GroupNotFound(u64),
-
     #[error("database {0} not found")]
     DatabaseNotFound(String),
 
+    // internal errors
     #[error("invalid {0} data")]
     InvalidData(String),
 
-    #[error("not root leader")]
-    NotRootLeader(Vec<String>),
+    #[error("request canceled")]
+    Canceled,
 
     #[error("cluster not match")]
     ClusterNotMatch,
-
-    #[error("not leader of group {0}")]
-    NotLeader(u64, Option<ReplicaDesc>),
 
     #[error("raft {0}")]
     Raft(#[from] raft::Error),
@@ -59,6 +52,16 @@ pub enum Error {
 
     #[error("rpc {0}")]
     Rpc(tonic::Status),
+
+    // retryable errors
+    #[error("group {0} not found")]
+    GroupNotFound(u64),
+
+    #[error("not root leader")]
+    NotRootLeader(Vec<String>),
+
+    #[error("not leader of group {0}")]
+    NotLeader(u64, Option<ReplicaDesc>),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -70,16 +73,14 @@ impl From<Error> for tonic::Status {
 
         match e {
             Error::InvalidArgument(msg) => Status::invalid_argument(msg),
+            Error::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
+            err @ Error::DatabaseNotFound(_) => Status::not_found(err.to_string()),
+
             Error::GroupNotFound(group_id) => Status::with_details(
                 Code::Unknown,
                 e.to_string(),
                 v1::Error::group_not_found(group_id).encode_to_vec().into(),
             ),
-            Error::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
-            err @ Error::Canceled => Status::cancelled(err.to_string()),
-            err @ Error::DatabaseNotFound(_) => Status::internal(err.to_string()),
-            err @ Error::InvalidData(_) => Status::internal(err.to_string()),
-            err @ Error::ClusterNotMatch => Status::internal(err.to_string()),
             Error::NotLeader(group_id, leader) => Status::with_details(
                 Code::Unknown,
                 format!("not leader of group {}", group_id),
@@ -92,12 +93,16 @@ impl From<Error> for tonic::Status {
                 "not root",
                 v1::Error::not_root_leader(roots).encode_to_vec().into(),
             ),
-            Error::Transport(inner) => Status::internal(inner.to_string()),
-            Error::Io(inner) => inner.into(),
-            Error::RocksDb(inner) => Status::internal(inner.to_string()),
-            Error::Raft(inner) => Status::internal(inner.to_string()),
-            Error::RaftEngine(inner) => Status::internal(inner.to_string()),
-            err @ Error::Rpc(_) => Status::internal(err.to_string()),
+
+            err @ (Error::Canceled
+            | Error::ClusterNotMatch
+            | Error::InvalidData(_)
+            | Error::Transport(_)
+            | Error::Io(_)
+            | Error::RocksDb(_)
+            | Error::Raft(_)
+            | Error::RaftEngine(_)
+            | Error::Rpc(_)) => Status::internal(err.to_string()),
         }
     }
 }
@@ -117,6 +122,33 @@ impl From<tonic::Status> for Error {
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
             Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
             _ => Error::Rpc(status),
+        }
+    }
+}
+
+impl From<Error> for engula_api::server::v1::Error {
+    fn from(err: Error) -> Self {
+        use engula_api::server::v1;
+        use tonic::Code;
+
+        match err {
+            Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
+            Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
+            Error::NotRootLeader(roots) => v1::Error::not_root_leader(roots),
+
+            Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
+            Error::DeadlineExceeded(msg) => v1::Error::status(Code::DeadlineExceeded.into(), msg),
+
+            err @ (Error::Transport(_)
+            | Error::Raft(_)
+            | Error::RaftEngine(_)
+            | Error::RocksDb(_)
+            | Error::Io(_)
+            | Error::InvalidData(_)
+            | Error::DatabaseNotFound(_)
+            | Error::ClusterNotMatch
+            | Error::Canceled
+            | Error::Rpc(_)) => v1::Error::status(Code::Internal.into(), err.to_string()),
         }
     }
 }

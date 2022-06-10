@@ -129,34 +129,8 @@ impl Server {
 }
 
 fn error_to_response(err: Error) -> GroupResponse {
-    use engula_api::server::v1;
-    use tonic::Code;
-
-    let net_err = match err {
-        Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
-        Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
-        Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
-        Error::NotRootLeader(roots) => v1::Error::not_root_leader(roots),
-        Error::Transport(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
-        Error::RocksDb(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
-        Error::Raft(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
-        Error::RaftEngine(inner) => v1::Error::status(Code::Internal.into(), inner.to_string()),
-        Error::Io(inner) => {
-            let status: Status = inner.into();
-            v1::Error::status(status.code().into(), status.message())
-        }
-        err @ Error::DatabaseNotFound(_) => {
-            v1::Error::status(Code::Internal.into(), err.to_string())
-        }
-        err @ Error::InvalidData(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
-        err @ Error::ClusterNotMatch => v1::Error::status(Code::Internal.into(), err.to_string()),
-        err @ Error::Canceled => v1::Error::status(Code::Cancelled.into(), err.to_string()),
-        err @ Error::Rpc(_) => v1::Error::status(Code::Internal.into(), err.to_string()),
-        Error::DeadlineExceeded(msg) => v1::Error::status(Code::DeadlineExceeded.into(), msg),
-    };
-
     GroupResponse {
         response: None,
-        error: Some(net_err),
+        error: Some(err.into()),
     }
 }

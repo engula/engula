@@ -65,7 +65,6 @@ message WatchResponse {
 
 message JoinNodeRequest {
   string addr = 1;
-  optional bytes cluster_id = 2;
 }
 
 message JoinNodeResponse {

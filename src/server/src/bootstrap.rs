@@ -196,23 +196,13 @@ async fn try_join_cluster(
         ));
     }
 
-    let prev_cluster_id = if let Some(ident) = node.state_engine().read_ident().await? {
-        Some(ident.cluster_id)
-    } else {
-        None
-    };
-
     let mut backoff: u64 = 1;
     loop {
         for addr in &join_list {
-            match issue_join_request(addr, local_addr, prev_cluster_id.to_owned()).await {
+            match issue_join_request(addr, local_addr).await {
                 Ok(resp) => {
-                    let node_ident = save_node_ident(
-                        node.state_engine(),
-                        resp.cluster_id.to_owned(),
-                        resp.node_id,
-                    )
-                    .await;
+                    let node_ident =
+                        save_node_ident(node.state_engine(), resp.cluster_id, resp.node_id).await;
                     node.update_root(resp.roots).await?;
                     return node_ident;
                 }
@@ -226,16 +216,11 @@ async fn try_join_cluster(
     }
 }
 
-async fn issue_join_request(
-    target_addr: &str,
-    local_addr: &str,
-    cluster_id: Option<Vec<u8>>,
-) -> Result<JoinNodeResponse> {
+async fn issue_join_request(target_addr: &str, local_addr: &str) -> Result<JoinNodeResponse> {
     let client = RootClient::connect(target_addr.to_string()).await?;
     let resp = client
         .join_node(JoinNodeRequest {
             addr: local_addr.to_owned(),
-            cluster_id,
         })
         .await?;
     Ok(resp)
