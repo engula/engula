@@ -292,7 +292,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::runtime::ExecutorOwner;
+    use crate::{bootstrap::INITIAL_EPOCH, runtime::ExecutorOwner};
 
     fn create_node(executor: Executor) -> Node {
         let tmp_dir = TempDir::new("engula").unwrap().into_path();
@@ -327,6 +327,7 @@ mod tests {
         let replica_id = 2;
         let group = GroupDesc {
             id: group_id,
+            epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
         };
@@ -351,6 +352,7 @@ mod tests {
         let replica_id = 2;
         let group = GroupDesc {
             id: group_id,
+            epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![ReplicaDesc {
                 id: replica_id,
@@ -379,6 +381,7 @@ mod tests {
         let replica_id = 2;
         let group = GroupDesc {
             id: group_id,
+            epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
         };

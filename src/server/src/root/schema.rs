@@ -26,8 +26,8 @@ use prost::Message;
 use super::store::RootStore;
 use crate::{
     bootstrap::{
-        FIRST_NODE_ID, FIRST_REPLICA_ID, MAX_KEY, MIN_KEY, NA_SHARD_ID, ROOT_GROUP_ID,
-        ROOT_SHARD_ID,
+        FIRST_NODE_ID, FIRST_REPLICA_ID, INITIAL_EPOCH, MAX_KEY, MIN_KEY, NA_SHARD_ID,
+        ROOT_GROUP_ID, ROOT_SHARD_ID,
     },
     node::group_engine::LOCAL_COLLECTION_ID,
     Error, Result,
@@ -234,6 +234,7 @@ impl Schema {
 
         batch.put_group(GroupDesc {
             id: ROOT_GROUP_ID,
+            epoch: INITIAL_EPOCH,
             replicas: vec![ReplicaDesc {
                 id: FIRST_REPLICA_ID,
                 node_id: FIRST_NODE_ID,

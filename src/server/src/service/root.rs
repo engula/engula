@@ -84,6 +84,13 @@ impl root_server::Root for Server {
             node: self.address_resolver.find(request.node_id),
         }))
     }
+
+    async fn report(
+        &self,
+        _request: Request<ReportRequest>,
+    ) -> std::result::Result<Response<ReportResponse>, Status> {
+        todo!()
+    }
 }
 
 impl Server {
