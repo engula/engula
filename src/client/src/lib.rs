@@ -13,5 +13,7 @@
 // limitations under the License.
 
 mod node_client;
+mod root_client;
 
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
+pub use root_client::Client as RootClient;

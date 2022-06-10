@@ -13,7 +13,8 @@
 // limitations under the License.
 use std::{collections::HashMap, sync::Mutex};
 
-use engula_api::server::v1::{NodeDesc, ResolveNodeRequest, ResolveNodeResponse};
+use engula_api::server::v1::NodeDesc;
+use engula_client::RootClient;
 use tracing::warn;
 
 use crate::{Error, Result};
@@ -41,15 +42,10 @@ impl AddressResolver {
         nodes.get(&node_id).cloned()
     }
 
-    async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<ResolveNodeResponse> {
-        use engula_api::server::v1::root_client::RootClient;
-        use tonic::Request;
-
-        let mut client = RootClient::connect(format!("http://{}", target_addr)).await?;
-        let resp = client
-            .resolve(Request::new(ResolveNodeRequest { node_id }))
-            .await?;
-        Ok(resp.into_inner())
+    async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<Option<NodeDesc>> {
+        let client = RootClient::connect(target_addr.to_string()).await?;
+        let node_desc = client.resolve(node_id).await?;
+        Ok(node_desc)
     }
 }
 
@@ -62,7 +58,7 @@ impl crate::node::replica::raft::AddressResolver for AddressResolver {
 
         for addr in &self.root_list {
             match Self::issue_resolve_request(addr, node_id).await {
-                Ok(resp) => match resp.node {
+                Ok(resp) => match resp {
                     Some(desc) => return Ok(desc),
                     None => continue,
                 },
