@@ -31,6 +31,9 @@ service Root {
   /// A temporary method for querying the NodeDesc corresponding to node_id.
   /// Once Watch is implemented, this method can be replaced by Watch.
   rpc Resolve(ResolveNodeRequest) returns (ResolveNodeResponse) {}
+
+  /// Report the changes of metadata and volatile states of group or replicas.
+  rpc Report(ReportRequest) returns (ReportResponse) {}
 }
 
 message WatchRequest { uint64 sequence = 1; }
@@ -78,3 +81,18 @@ message ResolveNodeRequest {
 message ResolveNodeResponse {
   NodeDesc node = 1;
 }
+
+message ReportRequest {
+  message GroupUpdates {
+    uint64 group_id = 1;
+    /// The leader is responsible for reporting the `GroupDesc` when the `GroupDesc` changes.
+    GroupDesc group_desc = 2;
+
+    /// Each replica is responsible for reporting itself's volatile state.
+    ReplicaState replica_state = 3;
+  }
+
+  repeated GroupUpdates updates = 1;
+}
+
+message ReportResponse {}

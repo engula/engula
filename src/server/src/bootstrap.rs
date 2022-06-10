@@ -43,6 +43,7 @@ pub const NA_SHARD_ID: u64 = 0;
 pub const ROOT_SHARD_ID: u64 = 1;
 pub const FIRST_REPLICA_ID: u64 = 1;
 pub const FIRST_NODE_ID: u64 = 0;
+pub const INITIAL_EPOCH: u64 = 0;
 
 lazy_static::lazy_static! {
     pub static ref MIN_KEY: Vec<u8> = vec![];
@@ -292,6 +293,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
 
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
+        epoch: INITIAL_EPOCH,
         shards: vec![shard],
         replicas: vec![ReplicaDesc {
             id: FIRST_REPLICA_ID,

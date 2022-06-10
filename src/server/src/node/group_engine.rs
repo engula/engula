@@ -22,7 +22,7 @@ use std::{
 use engula_api::server::v1::GroupDesc;
 use prost::Message;
 
-use crate::Result;
+use crate::{bootstrap::INITIAL_EPOCH, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
@@ -66,6 +66,7 @@ impl GroupEngine {
 
         let desc = GroupDesc {
             id: group_id,
+            epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
         };
