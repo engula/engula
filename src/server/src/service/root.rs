@@ -63,11 +63,6 @@ impl root_server::Root for Server {
             })
             .await?;
         let cluster_id = schema.cluster_id().await?.unwrap();
-        if let Some(prev_cluster_id) = request.cluster_id {
-            if prev_cluster_id != cluster_id {
-                return Err(Error::ClusterNotMatch.into());
-            }
-        }
         self.address_resolver.insert(&node);
 
         let mut roots = schema.get_root_replicas().await?;
