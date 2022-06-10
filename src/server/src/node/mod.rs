@@ -292,8 +292,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::runtime::ExecutorOwner;
-    use crate::bootstrap::INITIAL_EPOCH;
+    use crate::{bootstrap::INITIAL_EPOCH, runtime::ExecutorOwner};
 
     fn create_node(executor: Executor) -> Node {
         let tmp_dir = TempDir::new("engula").unwrap().into_path();
