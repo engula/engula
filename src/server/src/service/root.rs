@@ -85,9 +85,19 @@ impl root_server::Root for Server {
 
     async fn report(
         &self,
-        _request: Request<ReportRequest>,
+        request: Request<ReportRequest>,
     ) -> std::result::Result<Response<ReportResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let schema = self.schema().await?;
+        for u in request.updates {
+            if u.group_desc.is_some() {
+                // TODO: check & handle remove replicas from group
+            }
+            schema
+                .update_group_replica(u.group_desc, u.replica_state)
+                .await?;
+        }
+        Ok(Response::new(ReportResponse {}))
     }
 }
 

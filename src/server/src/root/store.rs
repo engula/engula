@@ -117,7 +117,7 @@ impl RootStore {
     }
 
     pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // TODO(zojw): impl scan prefix.
+        // TODO(zojw): impl scan prefix under database_id + prefix.
         Ok(vec![])
     }
 }
