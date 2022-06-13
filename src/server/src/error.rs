@@ -171,7 +171,7 @@ impl From<engula_api::server::v1::Error> for Error {
         // Only convert first error detail.
         let detail = &err.details[0];
         let msg = detail.message.clone();
-        match detail.detail.as_ref().map(|u| u.value.clone()).flatten() {
+        match detail.detail.as_ref().and_then(|u| u.value.clone()) {
             Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
             Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
             Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root),
