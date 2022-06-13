@@ -47,6 +47,8 @@ message WatchResponse {
       GroupDesc group = 2;
       engula.v1.DatabaseDesc database = 3;
       engula.v1.CollectionDesc collection = 4;
+      GroupState group_state = 5;
+      ReplicaState replica = 6;
     }
   }
 

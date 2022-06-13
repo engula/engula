@@ -17,6 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 use engula_api::{
     server::v1::{
         shard_desc::{Partition, RangePartition},
+        watch_response::{update_event, UpdateEvent},
         BatchWriteRequest, GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
     },
     v1::{CollectionDesc, DatabaseDesc, PutRequest},
@@ -154,6 +155,41 @@ impl Schema {
         Ok(nodes)
     }
 
+    pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
+        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let mut databases = Vec::new();
+        for val in vals {
+            databases.push(
+                DatabaseDesc::decode(&*val)
+                    .map_err(|_| Error::InvalidData("database desc".into()))?,
+            );
+        }
+        Ok(databases)
+    }
+
+    pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
+        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let mut collections = Vec::new();
+        for val in vals {
+            collections.push(
+                CollectionDesc::decode(&*val)
+                    .map_err(|_| Error::InvalidData("collection desc".into()))?,
+            );
+        }
+        Ok(collections)
+    }
+
+    pub async fn list_group(&self) -> Result<Vec<GroupDesc>> {
+        let vals = self.list(SYSTEM_GROUP_COLLECTION_ID).await?;
+        let mut groups = Vec::new();
+        for val in vals {
+            groups.push(
+                GroupDesc::decode(&*val).map_err(|_| Error::InvalidData("group desc".into()))?,
+            );
+        }
+        Ok(groups)
+    }
+
     pub async fn get_node(&self, id: u64) -> Result<Option<NodeDesc>> {
         self.get_node_internal(id).await
     }
@@ -185,6 +221,45 @@ impl Schema {
             nodes.insert(node.id, node);
         }
         Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
+    }
+
+    pub async fn list_all_events(&self, _seq: u64) -> Result<Vec<UpdateEvent>> {
+        let mut events = Vec::new();
+
+        // list databases.
+        let dbs = self
+            .list_database()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Database(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&dbs);
+
+        // list collections.
+        let collections = self
+            .list_collection()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Collection(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&collections);
+
+        // list groups.
+        let groups = self
+            .list_group()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Group(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&groups);
+
+        Ok(events)
     }
 }
 
