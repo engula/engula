@@ -115,12 +115,18 @@ impl From<futures::channel::oneshot::Canceled> for Error {
 
 impl From<tonic::Status> for Error {
     fn from(status: tonic::Status) -> Self {
+        use engula_api::server::v1;
+        use prost::Message;
         use tonic::Code;
+
         match status.code() {
             Code::Ok => panic!("invalid argument"),
             Code::Cancelled => Error::Canceled,
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
             Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
+            Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
+                .map(Into::into)
+                .unwrap_or_else(|_| Error::Rpc(status)),
             _ => Error::Rpc(status),
         }
     }
@@ -149,6 +155,28 @@ impl From<Error> for engula_api::server::v1::Error {
             | Error::ClusterNotMatch
             | Error::Canceled
             | Error::Rpc(_)) => v1::Error::status(Code::Internal.into(), err.to_string()),
+        }
+    }
+}
+
+impl From<engula_api::server::v1::Error> for Error {
+    fn from(err: engula_api::server::v1::Error) -> Self {
+        use engula_api::server::v1::error_detail_union::Value;
+        use tonic::Status;
+
+        if err.details.is_empty() {
+            return Error::InvalidData("ErrorDetails is empty".into());
+        }
+
+        // Only convert first error detail.
+        let detail = &err.details[0];
+        let msg = detail.message.clone();
+        match detail.detail.as_ref().map(|u| u.value.clone()).flatten() {
+            Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
+            Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
+            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root),
+            Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
+            _ => Error::InvalidData(msg),
         }
     }
 }

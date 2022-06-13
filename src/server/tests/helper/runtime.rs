@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod client;
-pub mod runtime;
-pub mod socket;
+use std::future::Future;
+
+use tokio::runtime::Builder;
+
+pub fn block_on_current<F: Future>(future: F) -> F::Output {
+    let rt = Builder::new_current_thread().enable_all().build().unwrap();
+    rt.block_on(future)
+}

@@ -35,6 +35,7 @@ impl node_server::Node for Server {
                 TaskPriority::Middle,
                 async move {
                     let response = server
+                        .node
                         .execute_request(request)
                         .await
                         .unwrap_or_else(error_to_response);
@@ -73,11 +74,21 @@ impl node_server::Node for Server {
             .group
             .ok_or_else(|| Status::invalid_argument("the field `group` is empty"))?;
         let replica_id = request.replica_id;
-        self.node
-            .create_replica(replica_id, group_desc, true)
-            .await?;
-        self.node.start_replica(replica_id).await?;
+        self.node.create_replica(replica_id, group_desc).await?;
         Ok(Response::new(CreateReplicaResponse {}))
+    }
+
+    async fn remove_replica(
+        &self,
+        request: Request<RemoveReplicaRequest>,
+    ) -> Result<Response<RemoveReplicaResponse>, Status> {
+        let request = request.into_inner();
+        let group_desc = request
+            .group
+            .ok_or_else(|| Status::invalid_argument("the field `group` is empty"))?;
+        let replica_id = request.replica_id;
+        self.node.remove_replica(replica_id, &group_desc).await?;
+        Ok(Response::new(RemoveReplicaResponse {}))
     }
 
     async fn root_heartbeat(
@@ -109,17 +120,6 @@ impl node_server::Node for Server {
 }
 
 impl Server {
-    async fn execute_request(&self, request: GroupRequest) -> crate::Result<GroupResponse> {
-        let route_table = self.node.replica_table();
-        let replica = match route_table.find(request.group_id) {
-            Some(replica) => replica,
-            None => {
-                return Err(Error::GroupNotFound(request.group_id));
-            }
-        };
-        replica.execute(&request).await
-    }
-
     async fn update_root(&self, req: SyncRootRequest) -> crate::Result<PiggybackResponse> {
         self.node.update_root(req.roots).await?;
         Ok(PiggybackResponse {

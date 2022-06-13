@@ -18,7 +18,7 @@ use engula_api::server::v1::NodeDesc;
 use prost::Message;
 
 use crate::{
-    serverpb::v1::{NodeIdent, ReplicaMeta, ReplicaState, RootDesc},
+    serverpb::v1::{NodeIdent, ReplicaLocalState, ReplicaMeta, RootDesc},
     Result,
 };
 
@@ -130,7 +130,7 @@ impl StateEngine {
         &self,
         group_id: u64,
         replica_id: u64,
-        state: ReplicaState,
+        state: ReplicaLocalState,
     ) -> Result<()> {
         use rocksdb::{WriteBatch, WriteOptions};
 
@@ -174,7 +174,7 @@ impl StateEngine {
 
 impl<'a> Iterator for ReplicaStateIterator<'a> {
     /// (group id, replica id, replica state)
-    type Item = (u64, u64, ReplicaState);
+    type Item = (u64, u64, ReplicaLocalState);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((key, value)) = self.inner.next() {
@@ -185,7 +185,8 @@ impl<'a> Iterator for ReplicaStateIterator<'a> {
                 return Some((
                     replica_meta.group_id,
                     replica_id,
-                    ReplicaState::from_i32(replica_meta.state).expect("valid ReplicaState value"),
+                    ReplicaLocalState::from_i32(replica_meta.state)
+                        .expect("valid ReplicaLocalState value"),
                 ));
             }
         }

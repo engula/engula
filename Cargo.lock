@@ -76,6 +76,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic_enum"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a57588a20357c74ee9036656b7fad5c54328ee8657c6ff29ba31fd5ea503a1c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,6 +435,7 @@ name = "engula-server"
 version = "0.4.0"
 dependencies = [
  "async-stream",
+ "atomic_enum",
  "ctor",
  "engula-api",
  "engula-client",

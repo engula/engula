@@ -12,6 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod client;
-pub mod runtime;
-pub mod socket;
+mod purge_replica;
+
+pub use purge_replica::setup as setup_purge_replica;

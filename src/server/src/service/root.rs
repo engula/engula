@@ -55,17 +55,22 @@ impl root_server::Root for Server {
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
         let request = request.into_inner();
+        tracing::info!("receive join request");
         let schema = self.schema().await?;
+        tracing::info!("after fetch schema");
         let node = schema
             .add_node(NodeDesc {
                 addr: request.addr,
                 ..Default::default()
             })
             .await?;
+        tracing::info!("after add node");
         let cluster_id = schema.cluster_id().await?.unwrap();
+        tracing::info!("after get cluster id");
         self.address_resolver.insert(&node);
 
         let mut roots = schema.get_root_replicas().await?;
+        tracing::info!("after get root replicas");
         roots.move_first(node.id);
 
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {

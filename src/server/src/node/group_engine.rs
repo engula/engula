@@ -112,6 +112,13 @@ impl GroupEngine {
         }))
     }
 
+    /// Destory a group engine.
+    pub async fn destory(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
+        let name = group_id.to_string();
+        raw_db.drop_cf(&name)?;
+        Ok(())
+    }
+
     /// Return the group descriptor
     pub fn descriptor(&self) -> Result<GroupDesc> {
         let cf_handle = self

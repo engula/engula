@@ -12,6 +12,7 @@ engula-api = { path = "../api", version = "0.4.0" }
 engula-client = { path = "../client", version = "0.4.0" }
 
 async-stream = "0.3.3"
+atomic_enum = "0.1.1"
 futures = "0.3.21"
 lazy_static = "1.4.0"
 prost = "0.10.3"

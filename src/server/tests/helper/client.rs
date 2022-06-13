@@ -12,6 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod client;
-pub mod runtime;
-pub mod socket;
+use std::time::Duration;
+
+use engula_client::NodeClient;
+
+pub async fn node_client_with_retry(addr: &str) -> NodeClient {
+    for _ in 0..10000 {
+        match NodeClient::connect(addr.to_string()).await {
+            Ok(client) => return client,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(3000)).await;
+            }
+        };
+    }
+    panic!("connect to {} timeout", addr);
+}

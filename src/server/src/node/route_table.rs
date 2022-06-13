@@ -63,7 +63,8 @@ impl ReplicaRouteTable {
     }
 
     pub fn update(&self, replica: Arc<Replica>) {
-        let group_id = replica.group_id();
+        let info = replica.replica_info();
+        let group_id = info.group_id;
         let mut core = self.core.write().unwrap();
         core.replicas.insert(group_id, replica);
         if group_id == ROOT_GROUP_ID {
@@ -73,9 +74,9 @@ impl ReplicaRouteTable {
         }
     }
 
-    pub fn remove(&self, replica_id: u64) {
+    pub fn remove(&self, group_id: u64) {
         let mut core = self.core.write().unwrap();
-        core.replicas.remove(&replica_id);
+        core.replicas.remove(&group_id);
     }
 }
 
