@@ -30,7 +30,10 @@ use engula_client::RootClient;
 use tracing::{debug, info, warn};
 
 use crate::{
-    node::{resolver::AddressResolver, state_engine::StateEngine, Node},
+    node::{
+        group_engine::LOCAL_COLLECTION_ID, resolver::AddressResolver, state_engine::StateEngine,
+        Node,
+    },
     root::Root,
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaState},
@@ -39,7 +42,7 @@ use crate::{
 
 // TODO(walter) root cluster and first replica id.
 pub const ROOT_GROUP_ID: u64 = 0;
-pub const NA_SHARD_ID: u64 = 0;
+pub const ROOT_SUPER_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
 pub const ROOT_SHARD_ID: u64 = 1;
 pub const FIRST_REPLICA_ID: u64 = 1;
 pub const FIRST_NODE_ID: u64 = 0;
@@ -269,7 +272,10 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     // Create the first raft group of cluster, this node is the only member of the raft group.
     let shard = ShardDesc {
         id: ROOT_SHARD_ID,
-        parent_id: NA_SHARD_ID,
+        parent_id: ROOT_SUPER_COLLECTION_ID, /* TODO: create multiple shard for each internal
+                                              * collection after support atomic WriteBatch in one
+                                              * group, current temp solution is "create logic
+                                              * internal collections over one super collection" */
         partition: Some(Partition::Range(RangePartition {
             start: MIN_KEY.to_owned(),
             end: MAX_KEY.to_owned(),

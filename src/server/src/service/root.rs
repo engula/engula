@@ -215,10 +215,10 @@ impl Server {
     ) -> Result<DeleteCollectionResponse> {
         let schema = self.schema().await?;
         let collection = schema.get_collection(&req.parent, &req.name).await?;
-        if collection.is_none() {
+        if let Some(collection) = collection {
+            schema.delete_collection(collection).await?;
             return Ok(DeleteCollectionResponse {});
         }
-        schema.delete_collection(collection.unwrap().id).await?;
         Ok(DeleteCollectionResponse {})
     }
 

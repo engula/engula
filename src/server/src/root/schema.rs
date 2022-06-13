@@ -28,19 +28,12 @@ use engula_api::{
 use prost::Message;
 
 use super::store::RootStore;
-use crate::{
-    bootstrap::{
-        FIRST_NODE_ID, FIRST_REPLICA_ID, INITIAL_EPOCH, MAX_KEY, MIN_KEY, NA_SHARD_ID,
-        ROOT_GROUP_ID, ROOT_SHARD_ID,
-    },
-    node::group_engine::LOCAL_COLLECTION_ID,
-    Error, Result,
-};
+use crate::{bootstrap::*, Error, Result};
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
 const SYSTEM_DATABASE_ID: u64 = 1;
 const SYSTEM_COLLECTION_COLLECTION: &str = "collection";
-const SYSTEM_COLLECTION_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
+const SYSTEM_COLLECTION_COLLECTION_ID: u64 = ROOT_SUPER_COLLECTION_ID + 1;
 const SYSTEM_DATABASE_COLLECTION: &str = "database";
 const SYSTEM_DATABASE_COLLECTION_ID: u64 = SYSTEM_COLLECTION_COLLECTION_ID + 1;
 const SYSTEM_MATE_COLLECTION: &str = "meta";
@@ -131,13 +124,50 @@ impl Schema {
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
-        self.batch_write(
-            PutBatchBuilder::default()
-                .put_collection(desc.to_owned())
-                .build(),
-        )
-        .await?;
+
+        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
+        // handle hearbeat resp).
+        let shards = self.create_collection_shard(desc.to_owned()).await?;
+        let mut builder = PutBatchBuilder::default();
+
+        builder.put_collection(desc.to_owned());
+        for (group_id, shard) in shards {
+            let mut group = self.get_group(group_id).await?.unwrap();
+            group.shards.extend_from_slice(&shard);
+            builder.put_group(group); // TODO: this info also can be async update via root::report()
+                                      // if caller accept async update, we can remove this update.
+        }
+
+        self.batch_write(builder.build()).await?;
         Ok(desc)
+    }
+
+    pub async fn create_collection_shard(
+        &self,
+        collection: CollectionDesc,
+    ) -> Result<HashMap<u64, Vec<ShardDesc>>> {
+        let mut shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new(); // group_id -> shards
+
+        let shard_id = self.next_id(META_SHARD_ID_KEY).await?;
+        let desc = ShardDesc {
+            id: shard_id,
+            parent_id: collection.id,
+            partition: Some(Partition::Range(RangePartition {
+                start: MIN_KEY.to_owned(),
+                end: MAX_KEY.to_owned(),
+            })),
+        };
+        let group_id = self.store.create_shard(desc.to_owned()).await?;
+        match shards.entry(group_id) {
+            Entry::Occupied(mut ent) => {
+                let shards = ent.get_mut();
+                (*shards).push(desc);
+            }
+            Entry::Vacant(ent) => {
+                ent.insert(vec![desc]);
+            }
+        }
+        Ok(shards)
     }
 
     pub async fn get_collection(
@@ -169,9 +199,12 @@ impl Schema {
         todo!()
     }
 
-    pub async fn delete_collection(&self, id: u64) -> Result<()> {
-        self.delete(SYSTEM_COLLECTION_COLLECTION_ID, &id.to_le_bytes())
-            .await
+    pub async fn delete_collection(&self, collection: CollectionDesc) -> Result<()> {
+        self.delete(
+            SYSTEM_COLLECTION_COLLECTION_ID,
+            &collection.id.to_le_bytes(),
+        )
+        .await
     }
 
     pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
@@ -430,7 +463,7 @@ impl Schema {
             }],
             shards: vec![ShardDesc {
                 id: ROOT_SHARD_ID,
-                parent_id: NA_SHARD_ID,
+                parent_id: ROOT_SUPER_COLLECTION_ID,
                 partition: Some(Partition::Range(RangePartition {
                     start: MIN_KEY.to_owned(),
                     end: MAX_KEY.to_owned(),
