@@ -19,11 +19,11 @@ use std::{
 
 use engula_api::{
     server::v1::{
-        shard_desc::{Partition, RangePartition},
+        shard_desc::Partition,
         watch_response::{update_event, UpdateEvent},
         *,
     },
-    v1::{CollectionDesc, DatabaseDesc, PutRequest},
+    v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
 use prost::Message;
 
@@ -152,9 +152,9 @@ impl Schema {
         let desc = ShardDesc {
             id: shard_id,
             parent_id: collection.id,
-            partition: Some(Partition::Range(RangePartition {
-                start: MIN_KEY.to_owned(),
-                end: MAX_KEY.to_owned(),
+            partition: Some(Partition::Range(shard_desc::RangePartition {
+                start: SHARD_MIN.to_owned(),
+                end: SHARD_MAX.to_owned(),
             })),
         };
         let group_id = self.store.create_shard(desc.to_owned()).await?;
@@ -464,9 +464,9 @@ impl Schema {
             shards: vec![ShardDesc {
                 id: ROOT_SHARD_ID,
                 parent_id: ROOT_SUPER_COLLECTION_ID,
-                partition: Some(Partition::Range(RangePartition {
-                    start: MIN_KEY.to_owned(),
-                    end: MAX_KEY.to_owned(),
+                partition: Some(Partition::Range(shard_desc::RangePartition {
+                    start: SHARD_MIN.to_owned(),
+                    end: SHARD_MAX.to_owned(),
                 })),
             }],
         });
@@ -489,6 +489,9 @@ impl Schema {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(self_collection);
 
@@ -496,6 +499,9 @@ impl Schema {
             id: SYSTEM_DATABASE_COLLECTION_ID,
             name: SYSTEM_DATABASE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(db_collection);
 
@@ -503,6 +509,9 @@ impl Schema {
             id: SYSTEM_MATE_COLLECTION_ID,
             name: SYSTEM_MATE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(meta_collection);
 
@@ -510,6 +519,9 @@ impl Schema {
             id: SYSTEM_NODE_COLLECTION_ID,
             name: SYSTEM_NODE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(node_collection);
 
@@ -517,6 +529,9 @@ impl Schema {
             id: SYSTEM_GROUP_COLLECTION_ID,
             name: SYSTEM_GROUP_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(group_collection);
 
@@ -524,6 +539,9 @@ impl Schema {
             id: SYSTEM_REPLICA_STATE_COLLECTION_ID,
             name: SYSTEM_REPLICA_STATE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(replica_state_collection.to_owned());
 

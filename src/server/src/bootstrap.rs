@@ -48,8 +48,8 @@ pub const FIRST_NODE_ID: u64 = 0;
 pub const INITIAL_EPOCH: u64 = 0;
 
 lazy_static::lazy_static! {
-    pub static ref MIN_KEY: Vec<u8> = vec![];
-    pub static ref MAX_KEY: Vec<u8> = vec![0xff, 0xff];
+    pub static ref SHARD_MIN: Vec<u8> = vec![];
+    pub static ref SHARD_MAX: Vec<u8> = vec![];
 }
 
 /// The main entrance of engula server.
@@ -265,8 +265,8 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
                                               * group, current temp solution is "create logic
                                               * internal collections over one super collection" */
         partition: Some(Partition::Range(RangePartition {
-            start: MIN_KEY.to_owned(),
-            end: MAX_KEY.to_owned(),
+            start: SHARD_MIN.to_owned(),
+            end: SHARD_MAX.to_owned(),
         })),
     };
 
