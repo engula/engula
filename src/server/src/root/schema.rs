@@ -12,31 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 use engula_api::{
     server::v1::{
         shard_desc::{Partition, RangePartition},
-        BatchWriteRequest, GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
+        watch_response::{update_event, UpdateEvent},
+        *,
     },
     v1::{CollectionDesc, DatabaseDesc, PutRequest},
 };
 use prost::Message;
 
 use super::store::RootStore;
-use crate::{
-    bootstrap::{
-        FIRST_NODE_ID, FIRST_REPLICA_ID, INITIAL_EPOCH, MAX_KEY, MIN_KEY, NA_SHARD_ID,
-        ROOT_GROUP_ID, ROOT_SHARD_ID,
-    },
-    node::group_engine::LOCAL_COLLECTION_ID,
-    Error, Result,
-};
+use crate::{bootstrap::*, Error, Result};
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
 const SYSTEM_DATABASE_ID: u64 = 1;
 const SYSTEM_COLLECTION_COLLECTION: &str = "collection";
-const SYSTEM_COLLECTION_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
+const SYSTEM_COLLECTION_COLLECTION_ID: u64 = ROOT_SUPER_COLLECTION_ID + 1;
 const SYSTEM_DATABASE_COLLECTION: &str = "database";
 const SYSTEM_DATABASE_COLLECTION_ID: u64 = SYSTEM_COLLECTION_COLLECTION_ID + 1;
 const SYSTEM_MATE_COLLECTION: &str = "meta";
@@ -45,6 +42,8 @@ const SYSTEM_NODE_COLLECTION: &str = "node";
 const SYSTEM_NODE_COLLECTION_ID: u64 = SYSTEM_MATE_COLLECTION_ID + 1;
 const SYSTEM_GROUP_COLLECTION: &str = "group";
 const SYSTEM_GROUP_COLLECTION_ID: u64 = SYSTEM_NODE_COLLECTION_ID + 1;
+const SYSTEM_REPLICA_STATE_COLLECTION: &str = "replica_state";
+const SYSTEM_REPLICA_STATE_COLLECTION_ID: u64 = SYSTEM_GROUP_COLLECTION_ID + 1;
 
 const META_CLUSTER_ID_KEY: &str = "cluster_id";
 const META_COLLECTION_ID_KEY: &str = "collection_id";
@@ -86,7 +85,15 @@ impl Schema {
     }
 
     pub async fn get_database(&self, name: &str) -> Result<Option<DatabaseDesc>> {
-        self.get_database_internal(name).await
+        let val = self
+            .get(SYSTEM_DATABASE_COLLECTION_ID, name.as_bytes())
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let desc = DatabaseDesc::decode(&*val.unwrap())
+            .map_err(|_| Error::InvalidData(format!("database desc: {}", name)))?;
+        Ok(Some(desc))
     }
 
     pub async fn update_database(&self, _desc: DatabaseDesc) -> Result<()> {
@@ -102,16 +109,65 @@ impl Schema {
             .await
     }
 
+    pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
+        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let mut databases = Vec::new();
+        for val in vals {
+            databases.push(
+                DatabaseDesc::decode(&*val)
+                    .map_err(|_| Error::InvalidData("database desc".into()))?,
+            );
+        }
+        Ok(databases)
+    }
+
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
-        self.batch_write(
-            PutBatchBuilder::default()
-                .put_collection(desc.to_owned())
-                .build(),
-        )
-        .await?;
+
+        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
+        // handle hearbeat resp).
+        let shards = self.create_collection_shard(desc.to_owned()).await?;
+        let mut builder = PutBatchBuilder::default();
+
+        builder.put_collection(desc.to_owned());
+        for (group_id, shard) in shards {
+            let mut group = self.get_group(group_id).await?.unwrap();
+            group.shards.extend_from_slice(&shard);
+            builder.put_group(group); // TODO: this info also can be async update via root::report()
+                                      // if caller accept async update, we can remove this update.
+        }
+
+        self.batch_write(builder.build()).await?;
         Ok(desc)
+    }
+
+    pub async fn create_collection_shard(
+        &self,
+        collection: CollectionDesc,
+    ) -> Result<HashMap<u64, Vec<ShardDesc>>> {
+        let mut shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new(); // group_id -> shards
+
+        let shard_id = self.next_id(META_SHARD_ID_KEY).await?;
+        let desc = ShardDesc {
+            id: shard_id,
+            parent_id: collection.id,
+            partition: Some(Partition::Range(RangePartition {
+                start: MIN_KEY.to_owned(),
+                end: MAX_KEY.to_owned(),
+            })),
+        };
+        let group_id = self.store.create_shard(desc.to_owned()).await?;
+        match shards.entry(group_id) {
+            Entry::Occupied(mut ent) => {
+                let shards = ent.get_mut();
+                (*shards).push(desc);
+            }
+            Entry::Vacant(ent) => {
+                ent.insert(vec![desc]);
+            }
+        }
+        Ok(shards)
     }
 
     pub async fn get_collection(
@@ -124,16 +180,43 @@ impl Schema {
             return Ok(None);
         }
         let database_id = db.unwrap().id;
-        self.get_collection_internal(database_id, collection).await
+        let val = self
+            .get(
+                SYSTEM_COLLECTION_COLLECTION_ID,
+                &collection_key(database_id, collection),
+            )
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let desc = CollectionDesc::decode(&*val.unwrap()).map_err(|_| {
+            Error::InvalidData(format!("collection desc: {}, {}", database_id, collection))
+        })?;
+        Ok(Some(desc))
     }
 
     pub async fn update_collection(&self, _desc: CollectionDesc) -> Result<()> {
         todo!()
     }
 
-    pub async fn delete_collection(&self, id: u64) -> Result<()> {
-        self.delete(SYSTEM_COLLECTION_COLLECTION_ID, &id.to_le_bytes())
-            .await
+    pub async fn delete_collection(&self, collection: CollectionDesc) -> Result<()> {
+        self.delete(
+            SYSTEM_COLLECTION_COLLECTION_ID,
+            &collection.id.to_le_bytes(),
+        )
+        .await
+    }
+
+    pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
+        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let mut collections = Vec::new();
+        for val in vals {
+            collections.push(
+                CollectionDesc::decode(&*val)
+                    .map_err(|_| Error::InvalidData("collection desc".into()))?,
+            );
+        }
+        Ok(collections)
     }
 
     pub async fn add_node(&self, desc: NodeDesc) -> Result<NodeDesc> {
@@ -142,6 +225,23 @@ impl Schema {
         self.batch_write(PutBatchBuilder::default().put_node(desc.to_owned()).build())
             .await?;
         Ok(desc)
+    }
+
+    pub async fn get_node(&self, id: u64) -> Result<Option<NodeDesc>> {
+        let val = self
+            .get(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let desc = NodeDesc::decode(&*val.unwrap())
+            .map_err(|_| Error::InvalidData(format!("node desc: {}", id)))?;
+        Ok(Some(desc))
+    }
+
+    pub async fn delete_node(&self, id: u64) -> Result<()> {
+        self.delete(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
+            .await
     }
 
     pub async fn list_node(&self) -> Result<Vec<NodeDesc>> {
@@ -154,17 +254,88 @@ impl Schema {
         Ok(nodes)
     }
 
-    pub async fn get_node(&self, id: u64) -> Result<Option<NodeDesc>> {
-        self.get_node_internal(id).await
+    pub async fn update_group_replica(
+        &self,
+        group: Option<GroupDesc>,
+        replica: Option<ReplicaState>,
+    ) -> Result<()> {
+        let mut builder = PutBatchBuilder::default();
+        if group.is_some() {
+            builder.put_group(group.unwrap());
+        }
+        if replica.is_some() {
+            builder.put_replica_state(replica.unwrap());
+        }
+        if builder.is_empty() {
+            return Ok(());
+        }
+        self.batch_write(builder.build()).await?;
+        Ok(())
     }
 
     pub async fn get_group(&self, id: u64) -> Result<Option<GroupDesc>> {
-        self.get_group_internal(id).await
+        let val = self
+            .get(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let desc = GroupDesc::decode(&*val.unwrap())
+            .map_err(|_| Error::InvalidData(format!("group desc: {}", id)))?;
+        Ok(Some(desc))
     }
 
-    pub async fn delete_node(&self, id: u64) -> Result<()> {
-        self.delete(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
+    pub async fn delete_group(&self, id: u64) -> Result<()> {
+        // TODO: prefix delete replica_state
+        self.delete(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
             .await
+    }
+
+    pub async fn list_group(&self) -> Result<Vec<GroupDesc>> {
+        let vals = self.list(SYSTEM_GROUP_COLLECTION_ID).await?;
+        let mut groups = Vec::new();
+        for val in vals {
+            groups.push(
+                GroupDesc::decode(&*val).map_err(|_| Error::InvalidData("group desc".into()))?,
+            );
+        }
+        Ok(groups)
+    }
+
+    pub async fn list_group_state(&self) -> Result<Vec<GroupState>> {
+        let vals = self.list(SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
+        let mut states: HashMap<u64, GroupState> = HashMap::new();
+        for val in vals {
+            let state = ReplicaState::decode(&*val)
+                .map_err(|_| Error::InvalidData("replica state desc".into()))?;
+            match states.entry(state.group_id) {
+                Entry::Occupied(mut ent) => {
+                    let group = ent.get_mut();
+                    if state.role == RaftRole::Leader.into() {
+                        (*group).leader_id = Some(state.replica_id);
+                    } else if (*group).leader_id == Some(state.replica_id) {
+                        (*group).leader_id = None;
+                    }
+                    (*group)
+                        .replicas
+                        .retain(|desc| desc.replica_id != state.replica_id);
+                    (*group).replicas.push(state);
+                }
+                Entry::Vacant(ent) => {
+                    let leader_id = if state.role == RaftRole::Leader.into() {
+                        Some(state.replica_id)
+                    } else {
+                        None
+                    };
+                    ent.insert(GroupState {
+                        group_id: state.group_id,
+                        leader_id,
+                        replicas: vec![state],
+                    });
+                }
+            }
+        }
+        Ok(states.into_iter().map(|(_, v)| v).collect())
     }
 
     pub async fn get_root_replicas(&self) -> Result<ReplicaNodes> {
@@ -185,6 +356,56 @@ impl Schema {
             nodes.insert(node.id, node);
         }
         Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
+    }
+
+    pub async fn list_all_events(&self, _seq: u64) -> Result<Vec<UpdateEvent>> {
+        let mut events = Vec::new();
+
+        // list databases.
+        let dbs = self
+            .list_database()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Database(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&dbs);
+
+        // list collections.
+        let collections = self
+            .list_collection()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Collection(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&collections);
+
+        // list groups.
+        let groups = self
+            .list_group()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Group(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&groups);
+
+        // list group_state.
+        let group_states = self
+            .list_group_state()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::GroupState(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        events.extend_from_slice(&group_states);
+
+        Ok(events)
     }
 }
 
@@ -242,12 +463,20 @@ impl Schema {
             }],
             shards: vec![ShardDesc {
                 id: ROOT_SHARD_ID,
-                parent_id: NA_SHARD_ID,
+                parent_id: ROOT_SUPER_COLLECTION_ID,
                 partition: Some(Partition::Range(RangePartition {
                     start: MIN_KEY.to_owned(),
                     end: MAX_KEY.to_owned(),
                 })),
             }],
+        });
+
+        batch.put_replica_state(ReplicaState {
+            replica_id: FIRST_REPLICA_ID,
+            group_id: ROOT_GROUP_ID,
+            term: 0,
+            voted_for: FIRST_REPLICA_ID,
+            role: RaftRole::Leader.into(),
         });
 
         self.batch_write(batch.build()).await?;
@@ -289,8 +518,16 @@ impl Schema {
             name: SYSTEM_GROUP_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
         };
-        batch.put_collection(group_collection.to_owned());
-        group_collection.id + 1
+        batch.put_collection(group_collection);
+
+        let replica_state_collection = CollectionDesc {
+            id: SYSTEM_REPLICA_STATE_COLLECTION_ID,
+            name: SYSTEM_REPLICA_STATE_COLLECTION.to_owned(),
+            parent_id: SYSTEM_DATABASE_ID,
+        };
+        batch.put_collection(replica_state_collection.to_owned());
+
+        replica_state_collection.id + 1 // TODO: reserve more collection id for furture?
     }
 
     fn init_meta_collection(
@@ -328,62 +565,6 @@ impl Schema {
 
 // internal methods.
 impl Schema {
-    async fn get_database_internal(&self, name: &str) -> Result<Option<DatabaseDesc>> {
-        let val = self
-            .get(SYSTEM_DATABASE_COLLECTION_ID, name.as_bytes())
-            .await?;
-        if val.is_none() {
-            return Ok(None);
-        }
-        let desc = DatabaseDesc::decode(&*val.unwrap())
-            .map_err(|_| Error::InvalidData(format!("database desc: {}", name)))?;
-        Ok(Some(desc))
-    }
-
-    async fn get_collection_internal(
-        &self,
-        database_id: u64,
-        name: &str,
-    ) -> Result<Option<CollectionDesc>> {
-        let val = self
-            .get(
-                SYSTEM_COLLECTION_COLLECTION_ID,
-                &collection_key(database_id, name),
-            )
-            .await?;
-        if val.is_none() {
-            return Ok(None);
-        }
-        let desc = CollectionDesc::decode(&*val.unwrap()).map_err(|_| {
-            Error::InvalidData(format!("collection desc: {}, {}", database_id, name))
-        })?;
-        Ok(Some(desc))
-    }
-
-    async fn get_node_internal(&self, id: u64) -> Result<Option<NodeDesc>> {
-        let val = self
-            .get(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
-            .await?;
-        if val.is_none() {
-            return Ok(None);
-        }
-        let desc = NodeDesc::decode(&*val.unwrap())
-            .map_err(|_| Error::InvalidData(format!("node desc: {}", id)))?;
-        Ok(Some(desc))
-    }
-
-    async fn get_group_internal(&self, id: u64) -> Result<Option<GroupDesc>> {
-        let val = self
-            .get(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
-            .await?;
-        if val.is_none() {
-            return Ok(None);
-        }
-        let desc = GroupDesc::decode(&*val.unwrap())
-            .map_err(|_| Error::InvalidData(format!("group desc: {}", id)))?;
-        Ok(Some(desc))
-    }
-
     async fn get_meta(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.get(SYSTEM_MATE_COLLECTION_ID, key).await
     }
@@ -463,6 +644,15 @@ impl PutBatchBuilder {
         self
     }
 
+    fn put_replica_state(&mut self, state: ReplicaState) -> &mut Self {
+        self.put(
+            SYSTEM_REPLICA_STATE_COLLECTION_ID,
+            replica_key(state.group_id, state.replica_id),
+            state.encode_to_vec(),
+        );
+        self
+    }
+
     fn put_node(&mut self, desc: NodeDesc) -> &mut Self {
         self.put(
             SYSTEM_NODE_COLLECTION_ID,
@@ -489,6 +679,10 @@ impl PutBatchBuilder {
         );
         self
     }
+
+    fn is_empty(&self) -> bool {
+        self.batch.is_empty()
+    }
 }
 
 #[inline]
@@ -504,5 +698,13 @@ fn data_key(collection_id: u64, key: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + key.len());
     buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
     buf.extend_from_slice(key);
+    buf
+}
+
+#[inline]
+fn replica_key(group_id: u64, replica_id: u64) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() * 2);
+    buf.extend_from_slice(group_id.to_le_bytes().as_slice());
+    buf.extend_from_slice(replica_id.to_le_bytes().as_slice());
     buf
 }

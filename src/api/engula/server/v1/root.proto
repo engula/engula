@@ -45,8 +45,9 @@ message WatchResponse {
     oneof event {
       NodeDesc node = 1;
       GroupDesc group = 2;
-      engula.v1.DatabaseDesc database = 3;
-      engula.v1.CollectionDesc collection = 4;
+      GroupState group_state = 3;
+      engula.v1.DatabaseDesc database = 4;
+      engula.v1.CollectionDesc collection = 5;
     }
   }
 
@@ -63,9 +64,7 @@ message WatchResponse {
   repeated DeleteEvent deletes = 3;
 }
 
-message JoinNodeRequest {
-  string addr = 1;
-}
+message JoinNodeRequest { string addr = 1; }
 
 message JoinNodeResponse {
   bytes cluster_id = 1;
@@ -73,22 +72,19 @@ message JoinNodeResponse {
   repeated NodeDesc roots = 3;
 }
 
-message ResolveNodeRequest {
-  uint64 node_id = 2;
-}
+message ResolveNodeRequest { uint64 node_id = 2; }
 
-message ResolveNodeResponse {
-  NodeDesc node = 1;
-}
+message ResolveNodeResponse { NodeDesc node = 1; }
 
 message ReportRequest {
   message GroupUpdates {
     uint64 group_id = 1;
-    /// The leader is responsible for reporting the `GroupDesc` when the `GroupDesc` changes.
-    GroupDesc group_desc = 2;
+    /// The leader is responsible for reporting the `GroupDesc` when the
+    /// `GroupDesc` changes.
+    optional GroupDesc group_desc = 2;
 
     /// Each replica is responsible for reporting itself's volatile state.
-    ReplicaState replica_state = 3;
+    optional ReplicaState replica_state = 3;
   }
 
   repeated GroupUpdates updates = 1;

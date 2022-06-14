@@ -18,11 +18,7 @@ use engula_api::{server::v1::*, v1::*};
 use futures::Stream;
 use tonic::{Request, Response, Status};
 
-use crate::{
-    root::Schema,
-    service::root::watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
-    Error, Result, Server,
-};
+use crate::{root::Schema, service::root::watch_response::UpdateEvent, Error, Result, Server};
 
 type WatchStream = std::pin::Pin<
     Box<dyn Stream<Item = std::result::Result<WatchResponse, tonic::Status>> + Send + Sync>,
@@ -46,8 +42,10 @@ impl root_server::Root for Server {
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
         let req = req.into_inner();
-        let cf = ChangeFetcher { seq: req.sequence };
-        Ok(Response::new(cf.into_stream()))
+        let seq = req.sequence;
+        let schema = self.schema().await?;
+        let updates = schema.list_all_events(seq).await?;
+        Ok(Response::new(ListStream { seq, updates }.into_stream()))
     }
 
     async fn join(
@@ -92,9 +90,19 @@ impl root_server::Root for Server {
 
     async fn report(
         &self,
-        _request: Request<ReportRequest>,
+        request: Request<ReportRequest>,
     ) -> std::result::Result<Response<ReportResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let schema = self.schema().await?;
+        for u in request.updates {
+            if u.group_desc.is_some() {
+                // TODO: check & handle remove replicas from group
+            }
+            schema
+                .update_group_replica(u.group_desc, u.replica_state)
+                .await?;
+        }
+        Ok(Response::new(ReportResponse {}))
     }
 }
 
@@ -212,10 +220,10 @@ impl Server {
     ) -> Result<DeleteCollectionResponse> {
         let schema = self.schema().await?;
         let collection = schema.get_collection(&req.parent, &req.name).await?;
-        if collection.is_none() {
+        if let Some(collection) = collection {
+            schema.delete_collection(collection).await?;
             return Ok(DeleteCollectionResponse {});
         }
-        schema.delete_collection(collection.unwrap().id).await?;
         Ok(DeleteCollectionResponse {})
     }
 
@@ -241,17 +249,18 @@ impl Server {
     }
 }
 
-pub(crate) struct ChangeFetcher {
+pub(crate) struct ListStream {
     seq: u64,
+    updates: Vec<UpdateEvent>,
 }
 
-impl ChangeFetcher {
+impl ListStream {
     pub(crate) fn into_stream(self) -> WatchStream {
         Box::pin(async_stream::stream! {
                 yield Ok(WatchResponse {
                         sequence: self.seq,
-                        updates: vec![UpdateEvent{event: Some(update_event::Event::Node(NodeDesc{id: 1, addr: "2".to_string()}))}],
-                        deletes: vec![DeleteEvent{event: Some(delete_event::Event::Node(1))}],
+                        updates: self.updates,
+                        deletes: vec![],
                 })
         })
     }

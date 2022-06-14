@@ -37,17 +37,23 @@ impl RootStore {
         Self { replica }
     }
 
-    pub async fn create_shard(&self, shard: ShardDesc) -> Result<()> {
+    pub async fn create_shard(&self, shard: ShardDesc) -> Result<u64> {
+        let group_id = self.place_shared_group(&shard);
         self.replica
             .execute(&GroupRequest {
-                group_id: ROOT_GROUP_ID,
+                group_id,
                 shard_id: 0,
                 request: Some(GroupRequestUnion {
                     request: Some(CreateShard(CreateShardRequest { shard: Some(shard) })),
                 }),
             })
             .await?;
-        Ok(())
+        Ok(group_id)
+    }
+
+    pub fn place_shared_group(&self, _shard: &ShardDesc) -> u64 {
+        // TODO: pre-alloc group at start and choose freest
+        ROOT_GROUP_ID
     }
 
     pub async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {
@@ -117,7 +123,7 @@ impl RootStore {
     }
 
     pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // TODO(zojw): impl scan prefix.
+        // TODO(zojw): impl scan prefix under database_id + prefix.
         Ok(vec![])
     }
 }

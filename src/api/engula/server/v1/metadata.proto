@@ -43,8 +43,8 @@ message ShardDesc {
 
 message GroupDesc {
   uint64 id = 1;
-  /// The version stamp of `GroupDesc`, increment when `shards` or `replicas` changes.
-  /// Used to quickly detect if `GroupDesc` has changed.
+  /// The version stamp of `GroupDesc`, increment when `shards` or `replicas`
+  /// changes. Used to quickly detect if `GroupDesc` has changed.
   uint64 epoch = 2;
   repeated ShardDesc shards = 3;
   repeated ReplicaDesc replicas = 4;
@@ -70,12 +70,14 @@ message GroupState {
   repeated ReplicaState replicas = 3;
 }
 
-/// The volatile state of a replica. Reports to root when the state of each replica changes.
+/// The volatile state of a replica. Reports to root when the state of each
+/// replica changes.
 message ReplicaState {
   uint64 replica_id = 1;
-  uint64 term = 2;
-  uint64 voted_for = 3;
-  RaftRole role = 4;
+  uint64 group_id = 2;
+  uint64 term = 3;
+  uint64 voted_for = 4;
+  RaftRole role = 5;
 }
 
 enum RaftRole {
