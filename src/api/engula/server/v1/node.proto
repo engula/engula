@@ -25,6 +25,12 @@ service Node {
   rpc Batch(BatchRequest) returns (BatchResponse) {}
   rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
   rpc CreateReplica(CreateReplicaRequest) returns (CreateReplicaResponse) {}
+
+  /// RemoveReplica allows shuts down and deletes an orphan replica from the specified node.
+  ///
+  /// It is only executed when the user specifies a newer `GroupDesc` and the replica no longer
+  /// belongs to the group.
+  rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 }
 
@@ -95,6 +101,13 @@ message CreateReplicaRequest {
 }
 
 message CreateReplicaResponse {}
+
+message RemoveReplicaRequest {
+  uint64 replica_id = 1;
+  GroupDesc group = 2;
+}
+
+message RemoveReplicaResponse {}
 
 message CreateShardRequest { ShardDesc shard = 1; }
 

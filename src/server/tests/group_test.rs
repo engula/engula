@@ -18,10 +18,13 @@ mod helper;
 use std::{thread, time::Duration};
 
 use engula_api::server::v1::GroupDesc;
-use engula_client::{NodeClient, RequestBatchBuilder};
+use engula_client::RequestBatchBuilder;
 use engula_server::runtime::ExecutorOwner;
-use helper::socket::next_avail_port;
 use tempdir::TempDir;
+
+use crate::helper::{
+    client::node_client_with_retry, runtime::block_on_current, socket::next_avail_port,
+};
 
 #[ctor::ctor]
 fn init() {
@@ -47,20 +50,8 @@ fn spawn_server(name: &'static str, addr: &str, init: bool, join_list: Vec<Strin
         let owner = ExecutorOwner::new(1);
         let tmp_dir = TempDir::new(name).unwrap().into_path();
 
-        engula_server::run(owner.executor(), tmp_dir, addr, init, join_list, None).unwrap()
+        engula_server::run(owner.executor(), tmp_dir, addr, init, join_list).unwrap()
     });
-}
-
-async fn node_client_with_retry(addr: &str) -> NodeClient {
-    for _ in 0..100 {
-        match NodeClient::connect(addr.to_string()).await {
-            Ok(client) => return client,
-            Err(_) => {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        };
-    }
-    panic!("connect to {} timeout", addr);
 }
 
 #[test]
@@ -76,11 +67,7 @@ fn add_replica() {
         vec![node_1_addr.clone()],
     );
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    rt.block_on(async {
+    block_on_current(async {
         let client_1 = node_client_with_retry(&node_1_addr).await;
         let client_2 = node_client_with_retry(&node_2_addr).await;
 

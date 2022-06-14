@@ -13,9 +13,8 @@
 // limitations under the License.
 
 use std::{
-    net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{mpsc, Arc},
+    sync::Arc,
     time::Duration,
     vec,
 };
@@ -33,7 +32,7 @@ use crate::{
     node::{resolver::AddressResolver, state_engine::StateEngine, Node},
     root::Root,
     runtime::Executor,
-    serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaState},
+    serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
     Error, Result, Server,
 };
 
@@ -57,7 +56,6 @@ pub fn run(
     addr: String,
     init: bool,
     join_list: Vec<String>,
-    socket_addr_sender: Option<mpsc::Sender<SocketAddr>>,
 ) -> Result<()> {
     let db_path = path.join("db");
     let log_path = path.join("log");
@@ -74,8 +72,7 @@ pub fn run(
 
     let (node_id, root) = executor.block_on(async {
         let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
-        node.set_node_ident(&ident).await;
-        recover_groups(&node).await?;
+        node.bootstrap(&ident).await?;
         let mut root = Root::new(executor.clone(), &ident, addr.to_owned());
         root.bootstrap(&node).await?;
         Ok::<(u64, Root), Error>((ident.node_id, root))
@@ -94,29 +91,19 @@ pub fn run(
         address_resolver,
     };
     let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
-        bootstrap_services(&addr, server, socket_addr_sender).await
+        bootstrap_services(&addr, server).await
     });
 
     executor.block_on(handle)
 }
 
 /// Listen and serve incoming rpc requests.
-async fn bootstrap_services(
-    addr: &str,
-    server: Server,
-    socket_addr_sender: Option<mpsc::Sender<SocketAddr>>,
-) -> Result<()> {
+async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
 
     let listener = TcpListener::bind(addr).await?;
-    if let Some(sender) = socket_addr_sender {
-        sender
-            .send(listener.local_addr().unwrap())
-            .unwrap_or_default();
-    }
-
     let listener = TcpListenerStream::new(listener);
 
     Server::builder()
@@ -201,6 +188,7 @@ async fn try_join_cluster(
         for addr in &join_list {
             match issue_join_request(addr, local_addr).await {
                 Ok(resp) => {
+                    debug!("issue join request to root server success");
                     let node_ident =
                         save_node_ident(node.state_engine(), resp.cluster_id, resp.node_id).await;
                     node.update_root(resp.roots).await?;
@@ -212,7 +200,7 @@ async fn try_join_cluster(
             }
         }
         std::thread::sleep(Duration::from_secs(backoff));
-        backoff = std::cmp::min(backoff, 120);
+        backoff = std::cmp::min(backoff * 2, 120);
     }
 }
 
@@ -237,7 +225,7 @@ async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {
     // normal state.
     let state_engine = node.state_engine();
     state_engine
-        .save_replica_state(ROOT_GROUP_ID, FIRST_REPLICA_ID, ReplicaState::Normal)
+        .save_replica_state(ROOT_GROUP_ID, FIRST_REPLICA_ID, ReplicaLocalState::Normal)
         .await?;
 
     let cluster_id = vec![];
@@ -286,7 +274,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
             role: ReplicaRole::Voter.into(),
         }],
     };
-    node.create_replica(FIRST_REPLICA_ID, group, false).await?;
+    node.create_replica(FIRST_REPLICA_ID, group).await?;
 
     let root_node = NodeDesc {
         id: FIRST_NODE_ID,
@@ -294,10 +282,5 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     };
     node.update_root(vec![root_node]).await?;
 
-    Ok(())
-}
-
-async fn recover_groups(node: &Node) -> Result<()> {
-    node.recover().await?;
     Ok(())
 }

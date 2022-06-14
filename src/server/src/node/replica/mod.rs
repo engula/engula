@@ -15,10 +15,11 @@
 mod acl;
 mod eval;
 pub mod fsm;
+pub mod job;
 pub mod raft;
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicI32, Arc, Mutex},
     task::{Poll, Waker},
 };
 
@@ -37,7 +38,16 @@ use self::{
     raft::{RaftManager, RaftNodeFacade, StateObserver},
 };
 use super::group_engine::GroupEngine;
-use crate::{serverpb::v1::EvalResult, Error, Result};
+use crate::{
+    serverpb::v1::{EvalResult, ReplicaLocalState, SyncOp},
+    Error, Result,
+};
+
+pub struct ReplicaInfo {
+    pub replica_id: u64,
+    pub group_id: u64,
+    local_state: AtomicI32,
+}
 
 #[derive(Default)]
 struct LeaseState {
@@ -54,8 +64,7 @@ pub struct Replica
 where
     Self: Send,
 {
-    replica_id: u64,
-    group_id: u64,
+    info: Arc<ReplicaInfo>,
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
     lease_state: Arc<Mutex<LeaseState>>,
@@ -87,10 +96,11 @@ impl Replica {
     pub async fn recover(
         group_id: u64,
         desc: ReplicaDesc,
+        local_state: ReplicaLocalState,
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
     ) -> Result<Self> {
-        let replica_id = desc.id;
+        let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
         let fsm = GroupStateMachine::new(group_engine.clone());
         let lease_state: Arc<Mutex<LeaseState>> = Arc::default();
         let observer = Box::new(RoleObserver::new(lease_state.clone()));
@@ -98,18 +108,42 @@ impl Replica {
             .start_raft_group(group_id, desc, fsm, observer)
             .await?;
         Ok(Replica {
-            replica_id,
-            group_id,
+            info,
             group_engine,
             raft_node,
             lease_state,
         })
     }
 
+    /// Shutdown this replicas with the newer `GroupDesc`.
+    pub async fn shutdown(&self, _actual_desc: &GroupDesc) -> Result<()> {
+        // TODO(walter) check actual desc.
+        self.info.terminate();
+
+        {
+            let mut lease_state = self.lease_state.lock().unwrap();
+            lease_state.wake_all_waiters();
+        }
+
+        // TODO(walter) blocks until all asynchronously task finished.
+
+        Ok(())
+    }
+}
+
+impl Replica {
     /// Execute group request and fill response.
     pub async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
+        if self.info.is_terminated() {
+            return Err(Error::GroupNotFound(self.info.group_id));
+        }
+
+        // TODO(walter) check request epoch.
+
         let group_id = group_request.group_id;
         let shard_id = group_request.shard_id;
+        debug_assert_eq!(group_id, self.info.group_id);
+
         let request = group_request
             .request
             .as_ref()
@@ -121,12 +155,11 @@ impl Replica {
         Ok(GroupResponse::new(resp))
     }
 
-    /// Change the configuration of raft group.
-    pub async fn change_config(&self) {
-        todo!()
-    }
-
     pub async fn on_leader(&self) -> Result<()> {
+        if self.info.is_terminated() {
+            return Err(Error::NotLeader(self.info.group_id, None));
+        }
+
         use futures::future::poll_fn;
 
         poll_fn(|ctx| {
@@ -145,6 +178,31 @@ impl Replica {
         Ok(())
     }
 
+    /// Propose `SyncOp` to raft log.
+    pub(super) async fn propose_sync_op(&self, op: SyncOp) -> Result<()> {
+        self.check_leader_early()?;
+
+        let eval_result = EvalResult {
+            op: Some(op),
+            ..Default::default()
+        };
+        self.raft_node.clone().propose(eval_result).await??;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn replica_info(&self) -> Arc<ReplicaInfo> {
+        self.info.clone()
+    }
+
+    #[inline]
+    pub fn raft_node(&self) -> RaftNodeFacade {
+        self.raft_node.clone()
+    }
+}
+
+impl Replica {
     /// Delegates the eval method for the given `Request`.
     async fn evaluate_command(&self, shard_id: u64, request: &Request) -> Result<Response> {
         let resp: Response;
@@ -214,19 +272,53 @@ impl Replica {
         }
     }
 
-    #[inline]
-    pub fn replica_id(&self) -> u64 {
-        self.replica_id
+    fn check_leader_early(&self) -> Result<()> {
+        let lease_state = self.lease_state.lock().unwrap();
+        if !lease_state.still_valid() {
+            Err(Error::NotLeader(self.info.group_id, None))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl ReplicaInfo {
+    pub fn new(replica_id: u64, group_id: u64, local_state: ReplicaLocalState) -> Self {
+        ReplicaInfo {
+            replica_id,
+            group_id,
+            local_state: AtomicI32::new(local_state.into()),
+        }
     }
 
     #[inline]
-    pub fn group_id(&self) -> u64 {
-        self.group_id
+    pub fn local_state(&self) -> ReplicaLocalState {
+        use std::sync::atomic::Ordering;
+        ReplicaLocalState::from_i32(self.local_state.load(Ordering::Acquire)).unwrap()
     }
 
     #[inline]
-    pub fn raft_node(&self) -> RaftNodeFacade {
-        self.raft_node.clone()
+    pub fn is_terminated(&self) -> bool {
+        self.local_state() == ReplicaLocalState::Terminated
+    }
+
+    #[inline]
+    pub fn terminate(&self) {
+        use std::sync::atomic::Ordering;
+
+        const TERMINATED: i32 = ReplicaLocalState::Terminated as i32;
+        let mut local_state: i32 = self.local_state().into();
+        while local_state == TERMINATED {
+            local_state = self
+                .local_state
+                .compare_exchange(
+                    local_state,
+                    TERMINATED,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                )
+                .into_ok_or_err();
+        }
     }
 }
 
@@ -234,6 +326,12 @@ impl LeaseState {
     fn still_valid(&self) -> bool {
         use ::raft::StateRole;
         self.role == StateRole::Leader
+    }
+
+    fn wake_all_waiters(&mut self) {
+        for waker in std::mem::take(&mut self.leader_subscribers) {
+            waker.wake();
+        }
     }
 }
 
@@ -249,9 +347,7 @@ impl StateObserver for RoleObserver {
         lease_state.role = role;
         lease_state.term = term;
         if role == ::raft::StateRole::Leader {
-            for waker in std::mem::take(&mut lease_state.leader_subscribers) {
-                waker.wake();
-            }
+            lease_state.wake_all_waiters();
         }
     }
 }
