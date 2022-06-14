@@ -14,12 +14,12 @@
 
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 
-use engula_api::server::v1::{ChangeReplicas, ReplicaDesc};
+use engula_api::server::v1::{ChangeReplicas, RaftRole, ReplicaDesc};
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, SinkExt, StreamExt,
 };
-use raft::{prelude::*, StateRole};
+use raft::prelude::*;
 use raft_engine::{Engine, LogBatch};
 use tracing::{debug, warn};
 
@@ -65,7 +65,7 @@ pub enum Request {
 
 /// An abstraction for observing raft roles and state changes.
 pub trait StateObserver: Send {
-    fn on_state_updated(&mut self, leader_id: u64, term: u64, role: StateRole);
+    fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole);
 }
 
 struct AdvanceImpl<'a> {
@@ -110,8 +110,9 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
         }
     }
 
-    fn on_state_updated(&mut self, leader_id: u64, term: u64, role: raft::StateRole) {
-        self.observer.on_state_updated(leader_id, term, role);
+    fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole) {
+        self.observer
+            .on_state_updated(leader_id, voted_for, term, role);
     }
 
     fn mut_replica_cache(&mut self) -> &mut ReplicaCache {

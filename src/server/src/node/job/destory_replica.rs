@@ -25,7 +25,7 @@ use crate::{
 
 /// Clean a group engine and save the replica state to `ReplicaLocalState::Tombstone`.
 pub fn setup(
-    executor: Executor,
+    executor: &Executor,
     group_id: u64,
     replica_id: u64,
     state_engine: StateEngine,

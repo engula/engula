@@ -27,17 +27,17 @@ use engula_api::{
     server::v1::{
         group_request_union::Request, group_response_union::Response, BatchWriteResponse,
         ChangeReplicasResponse, CreateShardResponse, GroupDesc, GroupRequest, GroupResponse,
-        ReplicaDesc,
+        RaftRole, ReplicaDesc, ReplicaState,
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
 
 pub use self::raft::RaftNodeFacade as RaftSender;
 use self::{
-    fsm::GroupStateMachine,
+    fsm::{DescObserver, GroupStateMachine},
     raft::{RaftManager, RaftNodeFacade, StateObserver},
 };
-use super::group_engine::GroupEngine;
+use super::{group_engine::GroupEngine, job::StateChannel};
 use crate::{
     serverpb::v1::{EvalResult, ReplicaLocalState, SyncOp},
     Error, Result,
@@ -51,13 +51,18 @@ pub struct ReplicaInfo {
 
 #[derive(Default)]
 struct LeaseState {
-    role: ::raft::StateRole,
-    term: u64,
+    replica_state: ReplicaState,
+    descriptor: GroupDesc,
     leader_subscribers: Vec<Waker>,
 }
 
-struct RoleObserver {
+/// A struct that observes changes to `GroupDesc` and `ReplicaState` , and broadcasts those changes
+/// while saving them to `LeaseState`.
+#[derive(Clone)]
+struct LeaseStateObserver {
+    info: Arc<ReplicaInfo>,
     lease_state: Arc<Mutex<LeaseState>>,
+    state_channel: StateChannel,
 }
 
 pub struct Replica
@@ -97,15 +102,23 @@ impl Replica {
         group_id: u64,
         desc: ReplicaDesc,
         local_state: ReplicaLocalState,
+        state_channel: StateChannel,
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
     ) -> Result<Self> {
         let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
-        let fsm = GroupStateMachine::new(group_engine.clone());
-        let lease_state: Arc<Mutex<LeaseState>> = Arc::default();
-        let observer = Box::new(RoleObserver::new(lease_state.clone()));
+        let lease_state = Arc::new(Mutex::new(LeaseState {
+            descriptor: group_engine.descriptor().unwrap(),
+            ..Default::default()
+        }));
+        let state_observer = Box::new(LeaseStateObserver::new(
+            info.clone(),
+            lease_state.clone(),
+            state_channel,
+        ));
+        let fsm = GroupStateMachine::new(group_engine.clone(), state_observer.clone());
         let raft_node = raft_mgr
-            .start_raft_group(group_id, desc, fsm, observer)
+            .start_raft_group(group_id, desc, fsm, state_observer)
             .await?;
         Ok(Replica {
             info,
@@ -323,11 +336,12 @@ impl ReplicaInfo {
 }
 
 impl LeaseState {
+    #[inline]
     fn still_valid(&self) -> bool {
-        use ::raft::StateRole;
-        self.role == StateRole::Leader
+        self.replica_state.role == RaftRole::Leader.into()
     }
 
+    #[inline]
     fn wake_all_waiters(&mut self) {
         for waker in std::mem::take(&mut self.leader_subscribers) {
             waker.wake();
@@ -335,19 +349,67 @@ impl LeaseState {
     }
 }
 
-impl RoleObserver {
-    fn new(lease_state: Arc<Mutex<LeaseState>>) -> Self {
-        RoleObserver { lease_state }
+impl LeaseStateObserver {
+    fn new(
+        info: Arc<ReplicaInfo>,
+        lease_state: Arc<Mutex<LeaseState>>,
+        state_channel: StateChannel,
+    ) -> Self {
+        LeaseStateObserver {
+            info,
+            lease_state,
+            state_channel,
+        }
+    }
+
+    fn update_replica_state(
+        &self,
+        voted_for: u64,
+        term: u64,
+        role: RaftRole,
+    ) -> (ReplicaState, Option<GroupDesc>) {
+        let replica_state = ReplicaState {
+            replica_id: self.info.replica_id,
+            group_id: self.info.group_id,
+            term,
+            voted_for,
+            role: role.into(),
+        };
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.replica_state = replica_state.clone();
+        let desc = if role == RaftRole::Leader {
+            lease_state.wake_all_waiters();
+            Some(lease_state.descriptor.clone())
+        } else {
+            None
+        };
+        (replica_state, desc)
+    }
+
+    fn update_descriptor(&self, descriptor: GroupDesc) -> bool {
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.descriptor = descriptor;
+        lease_state.replica_state.role == RaftRole::Leader.into()
     }
 }
 
-impl StateObserver for RoleObserver {
-    fn on_state_updated(&mut self, _leader_id: u64, term: u64, role: ::raft::StateRole) {
-        let mut lease_state = self.lease_state.lock().unwrap();
-        lease_state.role = role;
-        lease_state.term = term;
-        if role == ::raft::StateRole::Leader {
-            lease_state.wake_all_waiters();
+impl StateObserver for LeaseStateObserver {
+    fn on_state_updated(&mut self, _leader_id: u64, voted_for: u64, term: u64, role: RaftRole) {
+        let (state, desc) = self.update_replica_state(voted_for, term, role);
+        self.state_channel
+            .broadcast_replica_state(self.info.group_id, state);
+        if let Some(desc) = desc {
+            self.state_channel
+                .broadcast_group_descriptor(self.info.group_id, desc);
+        }
+    }
+}
+
+impl DescObserver for LeaseStateObserver {
+    fn on_descriptor_updated(&mut self, descriptor: GroupDesc) {
+        if self.update_descriptor(descriptor.clone()) {
+            self.state_channel
+                .broadcast_group_descriptor(self.info.group_id, descriptor);
         }
     }
 }

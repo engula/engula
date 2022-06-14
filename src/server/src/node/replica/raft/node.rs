@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_api::server::v1::RaftRole;
 use futures::channel::oneshot;
 use raft::{prelude::*, ConfChangeI, StateRole};
 use tracing::debug;
@@ -47,7 +48,7 @@ pub struct PostReady {
 pub(super) trait AdvanceTemplate {
     fn send_messages(&mut self, msgs: Vec<Message>);
 
-    fn on_state_updated(&mut self, leader_id: u64, term: u64, role: StateRole);
+    fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole);
 
     fn mut_replica_cache(&mut self) -> &mut ReplicaCache;
 }
@@ -205,7 +206,18 @@ where
 
         let mut ready = self.raw_node.ready();
         if let Some(ss) = ready.ss() {
-            template.on_state_updated(ss.leader_id, self.raw_node.raft.term, ss.raft_state);
+            let state = match ss.raft_state {
+                StateRole::Candidate => RaftRole::Candidate,
+                StateRole::Follower => RaftRole::Follower,
+                StateRole::PreCandidate => RaftRole::PreCandidate,
+                StateRole::Leader => RaftRole::Leader,
+            };
+            template.on_state_updated(
+                ss.leader_id,
+                self.raw_node.raft.vote,
+                self.raw_node.raft.term,
+                state,
+            );
         }
 
         if !ready.messages().is_empty() {

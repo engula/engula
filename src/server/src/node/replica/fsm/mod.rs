@@ -31,20 +31,32 @@ enum ChangeReplicaKind {
     LeaveJoint,
 }
 
+/// An abstracted structure used to subscribe to descriptor changes.
+pub trait DescObserver: Send {
+    /// This function will be called every time the `GroupDesc` changes.
+    fn on_descriptor_updated(&mut self, descriptor: GroupDesc);
+}
+
 pub struct GroupStateMachine
 where
     Self: Send,
 {
     flushed_index: u64,
     group_engine: GroupEngine,
+    desc_observer: Box<dyn DescObserver>,
+
+    /// Whether `GroupDesc` changes during apply.
+    desc_updated: bool,
 }
 
 impl GroupStateMachine {
-    pub fn new(group_engine: GroupEngine) -> Self {
+    pub fn new(group_engine: GroupEngine, desc_observer: Box<dyn DescObserver>) -> Self {
         let flushed_index = group_engine.flushed_index();
         GroupStateMachine {
             flushed_index,
             group_engine,
+            desc_observer,
+            desc_updated: false,
         }
     }
 }
@@ -63,6 +75,7 @@ impl GroupStateMachine {
                 apply_simple_change(&mut desc, &change_replicas.changes[0])
             }
         }
+        self.desc_updated = true;
         self.group_engine.set_applied_index(&mut wb, index);
         self.group_engine.set_group_desc(&mut wb, &desc);
         self.group_engine.commit(wb, false)?;
@@ -88,6 +101,7 @@ impl GroupStateMachine {
                         todo!("shard {} already existed in group", shard.id);
                     }
                 }
+                self.desc_updated = true;
                 desc.shards.push(shard);
             }
             self.group_engine.set_group_desc(&mut wb, &desc);
@@ -113,6 +127,16 @@ impl StateMachine for GroupStateMachine {
                 self.apply_proposal(index, eval_result)?;
             }
         }
+
+        if self.desc_updated {
+            self.desc_updated = false;
+            self.desc_observer.on_descriptor_updated(
+                self.group_engine
+                    .descriptor()
+                    .expect("GroupEngine::descriptor"),
+            );
+        }
+
         Ok(())
     }
 
