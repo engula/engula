@@ -154,7 +154,6 @@ impl Replica {
         // TODO(walter) check request epoch.
 
         let group_id = group_request.group_id;
-        let shard_id = group_request.shard_id;
         debug_assert_eq!(group_id, self.info.group_id);
 
         let request = group_request
@@ -164,7 +163,7 @@ impl Replica {
             .ok_or_else(|| Error::InvalidArgument("GroupRequest::request".into()))?;
 
         self.check_request_early(group_id, request)?;
-        let resp = self.evaluate_command(shard_id, request).await?;
+        let resp = self.evaluate_command(request).await?;
         Ok(GroupResponse::new(resp))
     }
 
@@ -217,11 +216,11 @@ impl Replica {
 
 impl Replica {
     /// Delegates the eval method for the given `Request`.
-    async fn evaluate_command(&self, shard_id: u64, request: &Request) -> Result<Response> {
+    async fn evaluate_command(&self, request: &Request) -> Result<Response> {
         let resp: Response;
         let eval_result_opt = match &request {
-            Request::Get(get) => {
-                let value = eval::get(&self.group_engine, shard_id, &get.key).await?;
+            Request::Get(req) => {
+                let value = eval::get(&self.group_engine, req).await?;
                 resp = Response::Get(GetResponse {
                     value: value.map(|v| v.to_vec()),
                 });
@@ -229,18 +228,17 @@ impl Replica {
             }
             Request::Put(req) => {
                 resp = Response::Put(PutResponse {});
-                let eval_result =
-                    eval::put(&self.group_engine, shard_id, &req.key, &req.value).await?;
+                let eval_result = eval::put(&self.group_engine, req).await?;
                 Some(eval_result)
             }
             Request::Delete(req) => {
                 resp = Response::Delete(DeleteResponse {});
-                let eval_result = eval::delete(&self.group_engine, shard_id, &req.key).await?;
+                let eval_result = eval::delete(&self.group_engine, req).await?;
                 Some(eval_result)
             }
             Request::BatchWrite(req) => {
                 resp = Response::BatchWrite(BatchWriteResponse {});
-                eval::batch_write(&self.group_engine, shard_id, req).await?
+                eval::batch_write(&self.group_engine, req).await?
             }
             Request::CreateShard(req) => {
                 // TODO(walter) check the existing of shard.

@@ -12,20 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_api::server::v1::ShardPutRequest;
+
 use crate::{
     node::group_engine::{GroupEngine, WriteBatch},
     serverpb::v1::{EvalResult, WriteBatchRep},
-    Result,
+    Error, Result,
 };
 
-pub async fn put(
-    group_engine: &GroupEngine,
-    shard_id: u64,
-    key: &[u8],
-    value: &[u8],
-) -> Result<EvalResult> {
+pub async fn put(group_engine: &GroupEngine, req: &ShardPutRequest) -> Result<EvalResult> {
+    let put = req
+        .put
+        .as_ref()
+        .ok_or_else(|| Error::InvalidArgument("ShardPutRequest::put is None".into()))?;
+
     let mut wb = WriteBatch::default();
-    group_engine.put(&mut wb, shard_id, key, value)?;
+    group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;
     Ok(EvalResult {
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),

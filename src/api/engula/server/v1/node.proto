@@ -43,7 +43,6 @@ message BatchResponse { repeated GroupResponse responses = 1; }
 
 message GroupRequest {
   uint64 group_id = 1;
-  uint64 shard_id = 2;
   GroupRequestUnion request = 3;
 }
 
@@ -56,9 +55,9 @@ message GroupResponse {
 
 message GroupRequestUnion {
   oneof request {
-    engula.v1.GetRequest get = 1;
-    engula.v1.PutRequest put = 2;
-    engula.v1.DeleteRequest delete = 3;
+    ShardGetRequest get = 1;
+    ShardPutRequest put = 2;
+    ShardDeleteRequest delete = 3;
     BatchWriteRequest batch_write = 4;
 
     /// Add a new shard to an existing group.
@@ -85,11 +84,26 @@ message GroupResponseUnion {
 /// Since the interface does not need to be exposed to users, the definition is placed in
 /// this file.
 message BatchWriteRequest {
-  repeated engula.v1.DeleteRequest deletes = 1;
-  repeated engula.v1.PutRequest puts = 2;
+  repeated ShardDeleteRequest deletes = 1;
+  repeated ShardPutRequest puts = 2;
 }
 
 message BatchWriteResponse {}
+
+message ShardPutRequest {
+    uint64 shard_id = 1;
+    engula.v1.PutRequest put = 2;
+}
+
+message ShardDeleteRequest {
+    uint64 shard_id = 1;
+    engula.v1.DeleteRequest delete = 2;
+}
+
+message ShardGetRequest {
+    uint64 shard_id = 1;
+    engula.v1.GetRequest get = 2;
+}
 
 message GetRootRequest {}
 

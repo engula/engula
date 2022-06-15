@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{node::group_engine::GroupEngine, Result};
+use engula_api::server::v1::ShardGetRequest;
+
+use crate::{node::group_engine::GroupEngine, Error, Result};
 
 /// Get the value of the specified key.
-pub async fn get(engine: &GroupEngine, shard_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
-    engine.get(shard_id, key).await
+pub async fn get(engine: &GroupEngine, req: &ShardGetRequest) -> Result<Option<Vec<u8>>> {
+    let get = req
+        .get
+        .as_ref()
+        .ok_or_else(|| Error::InvalidArgument("ShardGetRequest::get is None".into()))?;
+    engine.get(req.shard_id, &get.key).await
 }
