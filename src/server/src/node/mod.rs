@@ -25,7 +25,6 @@ use engula_api::server::v1::{GroupDesc, GroupRequest, GroupResponse, NodeDesc, R
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
-use self::replica::raft::AddressResolver;
 pub use self::{
     group_engine::GroupEngine,
     replica::{
@@ -35,6 +34,7 @@ pub use self::{
     route_table::{RaftRouteTable, ReplicaRouteTable},
     state_engine::StateEngine,
 };
+use self::{job::StateChannel, replica::raft::AddressResolver};
 use crate::{
     node::replica::ReplicaInfo,
     runtime::{Executor, JoinHandle},
@@ -57,6 +57,7 @@ where
     ident: Option<NodeIdent>,
     replicas: HashMap<u64, ReplicaContext>,
     root: Vec<NodeDesc>,
+    channel: Option<StateChannel>,
 }
 
 #[derive(Clone)]
@@ -109,6 +110,10 @@ impl Node {
         );
 
         node_state.ident = Some(node_ident.to_owned());
+        node_state.channel = Some(self::job::setup_report_state(
+            &self.executor,
+            self.state_engine.clone(),
+        ));
 
         let node_id = node_ident.node_id;
         let it = self.state_engine.iterate_replica_states().await;
@@ -117,7 +122,7 @@ impl Node {
                 ReplicaLocalState::Tombstone => continue,
                 ReplicaLocalState::Terminated => {
                     self::job::setup_destory_replica(
-                        self.executor.clone(),
+                        &self.executor,
                         group_id,
                         replica_id,
                         self.state_engine.clone(),
@@ -133,7 +138,14 @@ impl Node {
                 node_id,
                 ..Default::default()
             };
-            let context = self.serve_replica(group_id, desc, state).await?;
+            let context = self
+                .serve_replica(
+                    group_id,
+                    desc,
+                    state,
+                    node_state.channel.as_ref().unwrap().clone(),
+                )
+                .await?;
             node_state.replicas.insert(replica_id, context);
         }
 
@@ -182,7 +194,14 @@ impl Node {
                 node_id,
                 ..Default::default()
             };
-            let context = self.serve_replica(group_id, desc, replica_state).await?;
+            let context = self
+                .serve_replica(
+                    group_id,
+                    desc,
+                    replica_state,
+                    node_state.channel.as_ref().unwrap().clone(),
+                )
+                .await?;
             node_state.replicas.insert(replica_id, context);
         }
 
@@ -228,7 +247,7 @@ impl Node {
 
         // Clean group engine data in asynchronously.
         self::job::setup_destory_replica(
-            self.executor.clone(),
+            &self.executor,
             group_id,
             replica_id,
             self.state_engine.clone(),
@@ -244,6 +263,7 @@ impl Node {
         group_id: u64,
         desc: ReplicaDesc,
         local_state: ReplicaLocalState,
+        channel: StateChannel,
     ) -> Result<ReplicaContext> {
         use self::replica::job;
 
@@ -258,8 +278,15 @@ impl Node {
         };
 
         let replica_id = desc.id;
-        let replica =
-            Replica::recover(group_id, desc, local_state, group_engine, &self.raft_mgr).await?;
+        let replica = Replica::recover(
+            group_id,
+            desc,
+            local_state,
+            channel,
+            group_engine,
+            &self.raft_mgr,
+        )
+        .await?;
         let replica = Arc::new(replica);
         self.replica_route_table.update(replica.clone());
         self.raft_route_table

@@ -63,6 +63,7 @@ pub enum Error {
     #[error("not leader of group {0}")]
     NotLeader(u64, Option<ReplicaDesc>),
 }
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<Error> for tonic::Status {
