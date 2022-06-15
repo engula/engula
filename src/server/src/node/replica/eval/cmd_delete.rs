@@ -1,3 +1,5 @@
+use engula_api::server::v1::ShardDeleteRequest;
+
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,12 +16,17 @@
 use crate::{
     node::group_engine::{GroupEngine, WriteBatch},
     serverpb::v1::{EvalResult, WriteBatchRep},
-    Result,
+    Error, Result,
 };
 
-pub async fn delete(group_engine: &GroupEngine, shard_id: u64, key: &[u8]) -> Result<EvalResult> {
+pub async fn delete(group_engine: &GroupEngine, req: &ShardDeleteRequest) -> Result<EvalResult> {
+    let delete = req
+        .delete
+        .as_ref()
+        .ok_or_else(|| Error::InvalidArgument("ShardDeleteRequest::delete is None".into()))?;
+
     let mut wb = WriteBatch::default();
-    group_engine.delete(&mut wb, shard_id, key)?;
+    group_engine.delete(&mut wb, req.shard_id, &delete.key)?;
     Ok(EvalResult {
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),

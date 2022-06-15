@@ -42,7 +42,6 @@ impl RootStore {
         self.replica
             .execute(&GroupRequest {
                 group_id,
-                shard_id: 0,
                 request: Some(GroupRequestUnion {
                     request: Some(CreateShard(CreateShardRequest { shard: Some(shard) })),
                 }),
@@ -60,7 +59,6 @@ impl RootStore {
         self.replica
             .execute(&GroupRequest {
                 group_id: ROOT_GROUP_ID,
-                shard_id: ROOT_SHARD_ID,
                 request: Some(GroupRequestUnion {
                     request: Some(BatchWrite(batch)),
                 }),
@@ -73,9 +71,11 @@ impl RootStore {
         self.replica
             .execute(&GroupRequest {
                 group_id: ROOT_GROUP_ID,
-                shard_id: ROOT_SHARD_ID,
                 request: Some(GroupRequestUnion {
-                    request: Some(Put(PutRequest { key, value })),
+                    request: Some(Put(ShardPutRequest {
+                        shard_id: ROOT_SHARD_ID,
+                        put: Some(PutRequest { key, value }),
+                    })),
                 }),
             })
             .await?;
@@ -87,10 +87,12 @@ impl RootStore {
             .replica
             .execute(&GroupRequest {
                 group_id: ROOT_GROUP_ID,
-                shard_id: ROOT_SHARD_ID,
                 request: Some(GroupRequestUnion {
-                    request: Some(Get(GetRequest {
-                        key: key.to_owned(),
+                    request: Some(Get(ShardGetRequest {
+                        shard_id: ROOT_SHARD_ID,
+                        get: Some(GetRequest {
+                            key: key.to_owned(),
+                        }),
                     })),
                 }),
             })
@@ -111,10 +113,12 @@ impl RootStore {
         self.replica
             .execute(&GroupRequest {
                 group_id: ROOT_GROUP_ID,
-                shard_id: ROOT_SHARD_ID,
                 request: Some(GroupRequestUnion {
-                    request: Some(Delete(DeleteRequest {
-                        key: key.to_owned(),
+                    request: Some(Delete(ShardDeleteRequest {
+                        shard_id: ROOT_SHARD_ID,
+                        delete: Some(DeleteRequest {
+                            key: key.to_owned(),
+                        }),
                     })),
                 }),
             })

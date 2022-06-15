@@ -87,9 +87,11 @@ impl RequestBatchBuilder {
     pub fn get(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
         self.requests.push(GroupRequest {
             group_id,
-            shard_id,
             request: Some(GroupRequestUnion {
-                request: Some(group_request_union::Request::Get(GetRequest { key })),
+                request: Some(group_request_union::Request::Get(ShardGetRequest {
+                    shard_id,
+                    get: Some(GetRequest { key }),
+                })),
             }),
         });
         self
@@ -98,9 +100,11 @@ impl RequestBatchBuilder {
     pub fn put(mut self, group_id: u64, shard_id: u64, key: Vec<u8>, value: Vec<u8>) -> Self {
         self.requests.push(GroupRequest {
             group_id,
-            shard_id,
             request: Some(GroupRequestUnion {
-                request: Some(group_request_union::Request::Put(PutRequest { key, value })),
+                request: Some(group_request_union::Request::Put(ShardPutRequest {
+                    shard_id,
+                    put: Some(PutRequest { key, value }),
+                })),
             }),
         });
         self
@@ -109,9 +113,11 @@ impl RequestBatchBuilder {
     pub fn delete(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
         self.requests.push(GroupRequest {
             group_id,
-            shard_id,
             request: Some(GroupRequestUnion {
-                request: Some(group_request_union::Request::Delete(DeleteRequest { key })),
+                request: Some(group_request_union::Request::Delete(ShardDeleteRequest {
+                    shard_id,
+                    delete: Some(DeleteRequest { key }),
+                })),
             }),
         });
         self
@@ -120,7 +126,6 @@ impl RequestBatchBuilder {
     pub fn create_shard(mut self, group_id: u64, shard_desc: ShardDesc) -> Self {
         self.requests.push(GroupRequest {
             group_id,
-            shard_id: 0, // create_shard doesn't take this field
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::CreateShard(
                     CreateShardRequest {
@@ -145,7 +150,6 @@ impl RequestBatchBuilder {
 
         self.requests.push(GroupRequest {
             group_id,
-            shard_id: 0, // add_replica doesn't take this field.
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::ChangeReplicas(
                     change_replicas,

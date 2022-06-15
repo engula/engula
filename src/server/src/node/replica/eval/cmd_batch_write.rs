@@ -16,12 +16,11 @@ use engula_api::server::v1::BatchWriteRequest;
 use crate::{
     node::{group_engine::WriteBatch, GroupEngine},
     serverpb::v1::{EvalResult, WriteBatchRep},
-    Result,
+    Error, Result,
 };
 
 pub async fn batch_write(
     group_engine: &GroupEngine,
-    shard_id: u64,
     req: &BatchWriteRequest,
 ) -> Result<Option<EvalResult>> {
     if req.deletes.is_empty() && req.puts.is_empty() {
@@ -29,11 +28,19 @@ pub async fn batch_write(
     }
 
     let mut wb = WriteBatch::default();
-    for del in &req.deletes {
-        group_engine.delete(&mut wb, shard_id, &del.key)?;
+    for req in &req.deletes {
+        let del = req
+            .delete
+            .as_ref()
+            .ok_or_else(|| Error::InvalidArgument("ShardDeleteRequest::delete is None".into()))?;
+        group_engine.delete(&mut wb, req.shard_id, &del.key)?;
     }
-    for put in &req.puts {
-        group_engine.put(&mut wb, shard_id, &put.key, &put.value)?;
+    for req in &req.puts {
+        let put = req
+            .put
+            .as_ref()
+            .ok_or_else(|| Error::InvalidArgument("ShardPutRequest::put is None".into()))?;
+        group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;
     }
     Ok(Some(EvalResult {
         batch: Some(WriteBatchRep {
