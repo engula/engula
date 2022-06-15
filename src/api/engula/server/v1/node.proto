@@ -43,6 +43,7 @@ message BatchResponse { repeated GroupResponse responses = 1; }
 
 message GroupRequest {
   uint64 group_id = 1;
+  uint64 epoch = 2;
   GroupRequestUnion request = 3;
 }
 

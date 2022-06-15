@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request::{BatchWrite, CreateShard, Delete, Get, Put},
+        group_request_union::Request::{self, BatchWrite, CreateShard, Delete, Get, Put},
         CreateShardRequest, GroupRequest, GroupRequestUnion, ShardDesc, *,
     },
     v1::{DeleteRequest, GetRequest, PutRequest},
@@ -38,14 +38,9 @@ impl RootStore {
     }
 
     pub async fn create_shard(&self, shard: ShardDesc) -> Result<u64> {
+        // FIXME replace with `place_shared_group`.
         let group_id = self.place_shared_group(&shard);
-        self.replica
-            .execute(&GroupRequest {
-                group_id,
-                request: Some(GroupRequestUnion {
-                    request: Some(CreateShard(CreateShardRequest { shard: Some(shard) })),
-                }),
-            })
+        self.submit_request(CreateShard(CreateShardRequest { shard: Some(shard) }))
             .await?;
         Ok(group_id)
     }
@@ -56,46 +51,27 @@ impl RootStore {
     }
 
     pub async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {
-        self.replica
-            .execute(&GroupRequest {
-                group_id: ROOT_GROUP_ID,
-                request: Some(GroupRequestUnion {
-                    request: Some(BatchWrite(batch)),
-                }),
-            })
-            .await?;
+        self.submit_request(BatchWrite(batch)).await?;
         Ok(())
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        self.replica
-            .execute(&GroupRequest {
-                group_id: ROOT_GROUP_ID,
-                request: Some(GroupRequestUnion {
-                    request: Some(Put(ShardPutRequest {
-                        shard_id: ROOT_SHARD_ID,
-                        put: Some(PutRequest { key, value }),
-                    })),
-                }),
-            })
-            .await?;
+        self.submit_request(Put(ShardPutRequest {
+            shard_id: ROOT_SHARD_ID,
+            put: Some(PutRequest { key, value }),
+        }))
+        .await?;
         Ok(())
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let resp = self
-            .replica
-            .execute(&GroupRequest {
-                group_id: ROOT_GROUP_ID,
-                request: Some(GroupRequestUnion {
-                    request: Some(Get(ShardGetRequest {
-                        shard_id: ROOT_SHARD_ID,
-                        get: Some(GetRequest {
-                            key: key.to_owned(),
-                        }),
-                    })),
+            .submit_request(Get(ShardGetRequest {
+                shard_id: ROOT_SHARD_ID,
+                get: Some(GetRequest {
+                    key: key.to_owned(),
                 }),
-            })
+            }))
             .await?;
         let resp = resp
             .response
@@ -110,24 +86,31 @@ impl RootStore {
     }
 
     pub async fn delete(&self, key: &[u8]) -> Result<()> {
-        self.replica
-            .execute(&GroupRequest {
-                group_id: ROOT_GROUP_ID,
-                request: Some(GroupRequestUnion {
-                    request: Some(Delete(ShardDeleteRequest {
-                        shard_id: ROOT_SHARD_ID,
-                        delete: Some(DeleteRequest {
-                            key: key.to_owned(),
-                        }),
-                    })),
-                }),
-            })
-            .await?;
+        self.submit_request(Delete(ShardDeleteRequest {
+            shard_id: ROOT_SHARD_ID,
+            delete: Some(DeleteRequest {
+                key: key.to_owned(),
+            }),
+        }))
+        .await?;
         Ok(())
     }
 
     pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
         // TODO(zojw): impl scan prefix under database_id + prefix.
         Ok(vec![])
+    }
+
+    pub async fn submit_request(&self, req: Request) -> Result<GroupResponse> {
+        use crate::node::replica::retry::execute;
+
+        let epoch = self.replica.epoch();
+        let request = GroupRequest {
+            group_id: ROOT_GROUP_ID,
+            epoch,
+            request: Some(GroupRequestUnion { request: Some(req) }),
+        };
+
+        execute(&self.replica, request).await
     }
 }

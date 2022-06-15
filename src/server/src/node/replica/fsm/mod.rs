@@ -35,6 +35,9 @@ enum ChangeReplicaKind {
 pub trait DescObserver: Send {
     /// This function will be called every time the `GroupDesc` changes.
     fn on_descriptor_updated(&mut self, descriptor: GroupDesc);
+
+    /// This function will be called once the encountered term changes.
+    fn on_term_updated(&mut self, term: u64);
 }
 
 pub struct GroupStateMachine
@@ -47,6 +50,7 @@ where
 
     /// Whether `GroupDesc` changes during apply.
     desc_updated: bool,
+    last_applied_term: u64,
 }
 
 impl GroupStateMachine {
@@ -57,6 +61,7 @@ impl GroupStateMachine {
             group_engine,
             desc_observer,
             desc_updated: false,
+            last_applied_term: 0,
         }
     }
 }
@@ -75,6 +80,7 @@ impl GroupStateMachine {
                 apply_simple_change(&mut desc, &change_replicas.changes[0])
             }
         }
+        desc.epoch += 1;
         self.desc_updated = true;
         self.group_engine.set_applied_index(&mut wb, index);
         self.group_engine.set_group_desc(&mut wb, &desc);
@@ -102,6 +108,7 @@ impl GroupStateMachine {
                     }
                 }
                 self.desc_updated = true;
+                desc.epoch += 1;
                 desc.shards.push(shard);
             }
             self.group_engine.set_group_desc(&mut wb, &desc);
@@ -116,8 +123,8 @@ impl GroupStateMachine {
 
 impl StateMachine for GroupStateMachine {
     // FIXME(walter) support async?
-    fn apply(&mut self, index: u64, _term: u64, entry: ApplyEntry) -> Result<()> {
-        trace!("apply entry index {} term {}", index, _term);
+    fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> Result<()> {
+        trace!("apply entry index {} term {}", index, term);
         match entry {
             ApplyEntry::Empty => {}
             ApplyEntry::ConfigChange { change_replicas } => {
@@ -135,6 +142,11 @@ impl StateMachine for GroupStateMachine {
                     .descriptor()
                     .expect("GroupEngine::descriptor"),
             );
+        }
+
+        if term > self.last_applied_term {
+            self.last_applied_term = term;
+            self.desc_observer.on_term_updated(term);
         }
 
         Ok(())

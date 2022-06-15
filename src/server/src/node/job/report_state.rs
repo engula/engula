@@ -59,6 +59,7 @@ async fn wait_state_updates(
 ) -> Option<Vec<GroupUpdates>> {
     use prost::Message;
 
+    // TODO(walter) skip root group?
     if let Some(update) = receiver.next().await {
         let mut size = update.encoded_len();
         let mut updates = vec![update];

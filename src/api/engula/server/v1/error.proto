@@ -71,10 +71,8 @@ message NotRoot {
 
 /// The epoch of metadata carried by the request does not match the epoch of target replica.
 message EpochNotMatch {
-    uint64 group_id = 1;
-    uint64 shard_id = 2;
-    /// The epoch of target replica.
-    uint64 epoch = 3;
+    /// The saved GroupDesc of target replica.
+    GroupDesc descriptor = 1;
 }
 
 /// The current node is busy and needs to retry after a period of time.

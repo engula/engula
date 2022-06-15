@@ -326,13 +326,15 @@ impl Node {
     }
 
     pub async fn execute_request(&self, request: GroupRequest) -> Result<GroupResponse> {
+        use self::replica::retry::execute;
+
         let replica = match self.replica_route_table.find(request.group_id) {
             Some(replica) => replica,
             None => {
                 return Err(Error::GroupNotFound(request.group_id));
             }
         };
-        replica.execute(&request).await
+        execute(&replica, request).await
     }
 
     #[inline]

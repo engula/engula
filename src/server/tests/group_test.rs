@@ -33,7 +33,7 @@ fn init() {
     panic::set_hook(Box::new(move |panic_info| {
         // invoke the default handler and exit the process
         orig_hook(panic_info);
-        println!("{:?}", std::backtrace::Backtrace::force_capture());
+        tracing::error!("{:#?}", std::backtrace::Backtrace::force_capture());
         process::exit(1);
     }));
 
@@ -89,7 +89,7 @@ fn add_replica() {
 
         // 2. add replica to group
         let req = RequestBatchBuilder::new(node_1_id)
-            .add_replica(group_id, new_replica_id, node_2_id)
+            .add_replica(group_id, 2, new_replica_id, node_2_id)
             .build();
         let resps = client_1.batch_group_requests(req).await.unwrap();
         assert_eq!(resps.len(), 1);
