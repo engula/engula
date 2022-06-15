@@ -92,6 +92,7 @@ pub fn run(
         node: Arc::new(node),
         root,
         address_resolver,
+        watcher_hub: Default::default(),
     };
     let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
         bootstrap_services(&addr, server).await

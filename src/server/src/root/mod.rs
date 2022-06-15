@@ -15,6 +15,7 @@
 mod job;
 mod schema;
 mod store;
+mod watch;
 
 use std::{
     sync::{Arc, Mutex},
@@ -22,8 +23,11 @@ use std::{
     time::Duration,
 };
 
-pub use self::schema::Schema;
 use self::store::RootStore;
+pub use self::{
+    schema::Schema,
+    watch::{WatchHub, Watcher, WriteGuard},
+};
 use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},

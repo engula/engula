@@ -14,19 +14,24 @@
 
 use std::sync::Arc;
 
-use engula_api::{server::v1::*, v1::*};
-use futures::Stream;
+use engula_api::{
+    server::v1::{
+        watch_response::{DeleteEvent, UpdateEvent},
+        *,
+    },
+    v1::*,
+};
 use tonic::{Request, Response, Status};
 
-use crate::{root::Schema, service::root::watch_response::UpdateEvent, Error, Result, Server};
-
-type WatchStream = std::pin::Pin<
-    Box<dyn Stream<Item = std::result::Result<WatchResponse, tonic::Status>> + Send + Sync>,
->;
+use crate::{
+    root::{Schema, Watcher},
+    service::root::watch_response::{delete_event, update_event},
+    Error, Result, Server,
+};
 
 #[tonic::async_trait]
 impl root_server::Root for Server {
-    type WatchStream = WatchStream;
+    type WatchStream = Watcher;
 
     async fn admin(
         &self,
@@ -42,10 +47,16 @@ impl root_server::Root for Server {
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
         let req = req.into_inner();
-        let seq = req.sequence;
         let schema = self.schema().await?;
-        let updates = schema.list_all_events(seq).await?;
-        Ok(Response::new(ListStream { seq, updates }.into_stream()))
+
+        let watcher = {
+            let (mut watcher, _write_guard) = self.watcher_hub.create_watcher().await;
+            let (updates, deletes) = schema.list_all_events(req.cur_group_epochs).await?;
+            watcher.set_init_resp(updates, deletes);
+            watcher
+        };
+
+        Ok(Response::new(watcher))
     }
 
     async fn join(
@@ -89,14 +100,35 @@ impl root_server::Root for Server {
     ) -> std::result::Result<Response<ReportResponse>, Status> {
         let request = request.into_inner();
         let schema = self.schema().await?;
+        let mut update_events = Vec::new();
+        let mut changed_group_states = Vec::new();
         for u in request.updates {
             if u.group_desc.is_some() {
                 // TODO: check & handle remove replicas from group
             }
             schema
-                .update_group_replica(u.group_desc, u.replica_state)
+                .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
                 .await?;
+            if let Some(desc) = u.group_desc {
+                update_events.push(UpdateEvent {
+                    event: Some(update_event::Event::Group(desc)),
+                })
+            }
+            if let Some(state) = u.replica_state {
+                changed_group_states.push(state.group_id);
+            }
         }
+
+        let mut states = schema.list_group_state().await?; // TODO: fix poor performance.
+        states.retain(|s| changed_group_states.contains(&s.group_id));
+        for state in states {
+            update_events.push(UpdateEvent {
+                event: Some(update_event::Event::GroupState(state)),
+            })
+        }
+
+        self.watcher_hub.notify(update_events, vec![]).await;
+
         Ok(Response::new(ReportResponse {}))
     }
 }
@@ -170,6 +202,14 @@ impl Server {
                 ..Default::default()
             })
             .await?;
+        self.watcher_hub
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Database(desc.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
         Ok(CreateDatabaseResponse {
             database: Some(desc),
         })
@@ -179,7 +219,15 @@ impl Server {
         &self,
         req: DeleteDatabaseRequest,
     ) -> Result<DeleteDatabaseResponse> {
-        self.schema().await?.delete_database(&req.name).await?;
+        let id = self.schema().await?.delete_database(&req.name).await?;
+        self.watcher_hub
+            .notify(
+                vec![],
+                vec![DeleteEvent {
+                    event: Some(delete_event::Event::Database(id)),
+                }],
+            )
+            .await;
         Ok(DeleteDatabaseResponse {})
     }
 
@@ -204,6 +252,14 @@ impl Server {
                 ..Default::default()
             })
             .await?;
+        self.watcher_hub
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Collection(desc.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
         })
@@ -216,7 +272,16 @@ impl Server {
         let schema = self.schema().await?;
         let collection = schema.get_collection(&req.parent, &req.name).await?;
         if let Some(collection) = collection {
+            let id = collection.id;
             schema.delete_collection(collection).await?;
+            self.watcher_hub
+                .notify(
+                    vec![],
+                    vec![DeleteEvent {
+                        event: Some(delete_event::Event::Collection(id)),
+                    }],
+                )
+                .await;
             return Ok(DeleteCollectionResponse {});
         }
         Ok(DeleteCollectionResponse {})
@@ -241,22 +306,5 @@ impl Server {
             return Err(Error::NotRootLeader(roots));
         }
         Ok(s.unwrap())
-    }
-}
-
-pub(crate) struct ListStream {
-    seq: u64,
-    updates: Vec<UpdateEvent>,
-}
-
-impl ListStream {
-    pub(crate) fn into_stream(self) -> WatchStream {
-        Box::pin(async_stream::stream! {
-                yield Ok(WatchResponse {
-                        sequence: self.seq,
-                        updates: self.updates,
-                        deletes: vec![],
-                })
-        })
     }
 }

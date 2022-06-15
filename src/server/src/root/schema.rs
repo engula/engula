@@ -20,7 +20,7 @@ use std::{
 use engula_api::{
     server::v1::{
         shard_desc::Partition,
-        watch_response::{update_event, UpdateEvent},
+        watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
         *,
     },
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
@@ -100,13 +100,15 @@ impl Schema {
         todo!()
     }
 
-    pub async fn delete_database(&self, name: &str) -> Result<()> {
+    pub async fn delete_database(&self, name: &str) -> Result<u64> {
         let db = self.get_database(name).await?;
         if db.is_none() {
             return Err(Error::DatabaseNotFound(name.to_owned()));
         }
-        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.unwrap().id.to_le_bytes())
-            .await
+        let db = db.unwrap();
+        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
+            .await?;
+        Ok(db.id)
     }
 
     pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
@@ -358,8 +360,12 @@ impl Schema {
         Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
     }
 
-    pub async fn list_all_events(&self, _seq: u64) -> Result<Vec<UpdateEvent>> {
-        let mut events = Vec::new();
+    pub async fn list_all_events(
+        &self,
+        cur_groups: HashMap<u64, u64>,
+    ) -> Result<(Vec<UpdateEvent>, Vec<DeleteEvent>)> {
+        let mut updates = Vec::new();
+        let mut deletes = Vec::new();
 
         // list databases.
         let dbs = self
@@ -370,7 +376,7 @@ impl Schema {
                 event: Some(update_event::Event::Database(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&dbs);
+        updates.extend_from_slice(&dbs);
 
         // list collections.
         let collections = self
@@ -381,31 +387,65 @@ impl Schema {
                 event: Some(update_event::Event::Collection(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&collections);
+        updates.extend_from_slice(&collections);
 
         // list groups.
         let groups = self
             .list_group()
             .await?
             .into_iter()
-            .map(|desc| UpdateEvent {
-                event: Some(update_event::Event::Group(desc)),
+            .map(|desc| (desc.id, desc))
+            .collect::<HashMap<u64, GroupDesc>>();
+
+        let changed_groups = groups
+            .iter()
+            .filter(|(_, desc)| {
+                if let Some(cur_epoch) = cur_groups.get(&desc.id) {
+                    desc.epoch > *cur_epoch
+                } else {
+                    true
+                }
             })
-            .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&groups);
+            .map(|(id, desc)| (id.to_owned(), desc.to_owned()))
+            .collect::<HashMap<u64, GroupDesc>>();
+
+        updates.extend_from_slice(
+            &changed_groups
+                .values()
+                .into_iter()
+                .map(|desc| UpdateEvent {
+                    event: Some(update_event::Event::Group(desc.to_owned())),
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        if !cur_groups.is_empty() {
+            let deleted = cur_groups
+                .keys()
+                .into_iter()
+                .filter(|group_id| !groups.contains_key(group_id))
+                .map(|id| DeleteEvent {
+                    event: Some(delete_event::Event::Group(id.to_owned())),
+                })
+                .collect::<Vec<_>>();
+            deletes.extend_from_slice(&deleted);
+        }
 
         // list group_state.
         let group_states = self
             .list_group_state()
             .await?
             .into_iter()
+            .filter(|desc| changed_groups.contains_key(&desc.group_id))
             .map(|desc| UpdateEvent {
                 event: Some(update_event::Event::GroupState(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&group_states);
+        updates.extend_from_slice(&group_states);
 
-        Ok(events)
+        // TODO: delete group_state.
+
+        Ok((updates, deletes))
     }
 }
 
