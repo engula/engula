@@ -412,7 +412,11 @@ name = "engula-client"
 version = "0.4.0"
 dependencies = [
  "engula-api",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
  "tonic",
+ "tracing",
 ]
 
 [[package]]

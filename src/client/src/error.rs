@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod error;
-mod node_client;
-mod root_client;
-mod router;
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("transport {0}")]
+    Transport(#[from] tonic::transport::Error),
 
-pub use error::Error;
-pub use node_client::{Client as NodeClient, RequestBatchBuilder};
-pub use root_client::Client as RootClient;
+    #[error("rpc {0}")]
+    Rpc(#[from] tonic::Status),
+}
