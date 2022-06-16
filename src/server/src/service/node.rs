@@ -95,21 +95,26 @@ impl node_server::Node for Server {
         &self,
         request: Request<HeartbeatRequest>,
     ) -> Result<Response<HeartbeatResponse>, Status> {
+        use engula_api::server::v1::{piggyback_request, piggyback_response};
+
         let request = request.into_inner();
-        let mut piggybacks_resps = Vec::new();
+        let mut piggybacks_resps = Vec::with_capacity(request.piggybacks.len());
 
         for req in request.piggybacks {
-            match req.info.unwrap() {
+            let info = match req.info.unwrap() {
                 piggyback_request::Info::SyncRoot(req) => {
-                    piggybacks_resps.push(self.update_root(req).await?);
+                    piggyback_response::Info::SyncRoot(self.update_root(req).await?)
                 }
-                piggyback_request::Info::CollectStats(_req) => {
-                    todo!()
+                piggyback_request::Info::CollectStats(req) => {
+                    piggyback_response::Info::CollectStats(self.node.collect_stats(&req).await)
                 }
-                piggyback_request::Info::CollectGroupDetail(_req) => {
-                    todo!()
+                piggyback_request::Info::CollectGroupDetail(req) => {
+                    piggyback_response::Info::CollectGroupDetail(
+                        self.node.collect_group_detail(&req).await,
+                    )
                 }
-            }
+            };
+            piggybacks_resps.push(PiggybackResponse { info: Some(info) });
         }
 
         Ok(Response::new(HeartbeatResponse {
@@ -120,11 +125,9 @@ impl node_server::Node for Server {
 }
 
 impl Server {
-    async fn update_root(&self, req: SyncRootRequest) -> crate::Result<PiggybackResponse> {
+    async fn update_root(&self, req: SyncRootRequest) -> crate::Result<SyncRootResponse> {
         self.node.update_root(req.roots).await?;
-        Ok(PiggybackResponse {
-            info: Some(piggyback_response::Info::SyncRoot(SyncRootResponse {})),
-        })
+        Ok(SyncRootResponse {})
     }
 }
 

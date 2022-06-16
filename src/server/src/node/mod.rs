@@ -21,7 +21,7 @@ pub mod state_engine;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use engula_api::server::v1::{GroupDesc, GroupRequest, GroupResponse, NodeDesc, ReplicaDesc};
+use engula_api::server::v1::*;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
@@ -43,7 +43,6 @@ use crate::{
 };
 
 struct ReplicaContext {
-    #[allow(unused)]
     info: Arc<ReplicaInfo>,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -355,6 +354,93 @@ impl Node {
     #[inline]
     pub fn executor(&self) -> &Executor {
         &self.executor
+    }
+
+    pub async fn collect_stats(&self, _req: &CollectStatsRequest) -> CollectStatsResponse {
+        // TODO(walter) add read/write qps.
+        let mut ns = NodeStats::default();
+        let mut group_stats = vec![];
+        let mut replica_stats = vec![];
+        let group_id_list = self.serving_group_id_list().await;
+        for group_id in group_id_list {
+            if let Some(replica) = self.replica_route_table.find(group_id) {
+                let info = replica.replica_info();
+                if info.is_terminated() {
+                    continue;
+                }
+
+                ns.group_count += 1;
+                let descriptor = replica.descriptor();
+                if descriptor.replicas.is_empty() {
+                    ns.orphan_replica_count += 1;
+                }
+                let replica_state = replica.replica_state();
+                if replica_state.role == RaftRole::Leader.into() {
+                    ns.leader_count += 1;
+                    let gs = GroupStats {
+                        group_id: info.group_id,
+                        shard_count: descriptor.shards.len() as u64,
+                        read_qps: 0.,
+                        write_qps: 0.,
+                    };
+                    group_stats.push(gs);
+                }
+                let rs = ReplicaStats {
+                    replica_id: info.replica_id,
+                    group_id: info.group_id,
+                    read_qps: 0.,
+                    write_qps: 0.,
+                };
+                replica_stats.push(rs);
+            }
+        }
+
+        CollectStatsResponse {
+            node_stats: Some(ns),
+            group_stats,
+            replica_stats,
+        }
+    }
+
+    pub async fn collect_group_detail(
+        &self,
+        req: &CollectGroupDetailRequest,
+    ) -> CollectGroupDetailResponse {
+        let mut group_id_list = req.groups.clone();
+        if group_id_list.is_empty() {
+            group_id_list = self.serving_group_id_list().await;
+        }
+
+        let mut states = vec![];
+        let mut descriptors = vec![];
+        for group_id in group_id_list {
+            if let Some(replica) = self.replica_route_table.find(group_id) {
+                if replica.replica_info().is_terminated() {
+                    continue;
+                }
+
+                let state = replica.replica_state();
+                if state.role == RaftRole::Leader.into() {
+                    descriptors.push(replica.descriptor());
+                }
+                states.push(state);
+            }
+        }
+
+        CollectGroupDetailResponse {
+            replica_states: states,
+            group_descs: descriptors,
+        }
+    }
+
+    #[inline]
+    async fn serving_group_id_list(&self) -> Vec<u64> {
+        let node_state = self.node_state.lock().await;
+        node_state
+            .replicas
+            .iter()
+            .map(|(_, ctx)| ctx.info.group_id)
+            .collect()
     }
 }
 
