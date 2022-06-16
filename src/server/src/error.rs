@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use engula_api::server::v1::ReplicaDesc;
+use engula_api::server::v1::{GroupDesc, ReplicaDesc};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -54,6 +54,12 @@ pub enum Error {
     Rpc(tonic::Status),
 
     // retryable errors
+    #[error("group {0} not ready")]
+    GroupNotReady(u64),
+
+    #[error("group epoch not match")]
+    EpochNotMatch(GroupDesc),
+
     #[error("group {0} not found")]
     GroupNotFound(u64),
 
@@ -94,6 +100,13 @@ impl From<Error> for tonic::Status {
                 "not root",
                 v1::Error::not_root_leader(roots).encode_to_vec().into(),
             ),
+            Error::EpochNotMatch(desc) => Status::with_details(
+                Code::Unknown,
+                "epoch not match",
+                v1::Error::not_match(desc).encode_to_vec().into(),
+            ),
+
+            Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Canceled
             | Error::ClusterNotMatch
@@ -142,9 +155,12 @@ impl From<Error> for engula_api::server::v1::Error {
             Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
             Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
             Error::NotRootLeader(roots) => v1::Error::not_root_leader(roots),
+            Error::EpochNotMatch(desc) => v1::Error::not_match(desc),
 
             Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
             Error::DeadlineExceeded(msg) => v1::Error::status(Code::DeadlineExceeded.into(), msg),
+
+            Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Transport(_)
             | Error::Raft(_)
@@ -176,6 +192,7 @@ impl From<engula_api::server::v1::Error> for Error {
             Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
             Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
             Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root),
+            Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
             Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
             _ => Error::InvalidData(msg),
         }

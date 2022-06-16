@@ -143,11 +143,9 @@ pub mod server {
             }
 
             #[inline]
-            pub fn not_match(group_id: u64, shard_id: u64, epoch: u64) -> Self {
+            pub fn not_match(desc: GroupDesc) -> Self {
                 Self::with_detail_value(error_detail_union::Value::NotMatch(EpochNotMatch {
-                    group_id,
-                    shard_id,
-                    epoch,
+                    descriptor: Some(desc),
                 }))
             }
 

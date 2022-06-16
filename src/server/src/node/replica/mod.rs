@@ -17,6 +17,7 @@ mod eval;
 pub mod fsm;
 pub mod job;
 pub mod raft;
+pub mod retry;
 
 use std::{
     sync::{atomic::AtomicI32, Arc, Mutex},
@@ -31,6 +32,7 @@ use engula_api::{
     },
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
+use tracing::info;
 
 pub use self::raft::RaftNodeFacade as RaftSender;
 use self::{
@@ -51,6 +53,9 @@ pub struct ReplicaInfo {
 
 #[derive(Default)]
 struct LeaseState {
+    leader_id: u64,
+    /// the largest term which state machine already known.
+    applied_term: u64,
     replica_state: ReplicaState,
     descriptor: GroupDesc,
     leader_subscribers: Vec<Waker>,
@@ -65,6 +70,11 @@ struct LeaseStateObserver {
     state_channel: StateChannel,
 }
 
+enum MetaAclGuard<'a> {
+    Read(tokio::sync::RwLockReadGuard<'a, ()>),
+    Write(tokio::sync::RwLockWriteGuard<'a, ()>),
+}
+
 pub struct Replica
 where
     Self: Send,
@@ -73,6 +83,7 @@ where
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
     lease_state: Arc<Mutex<LeaseState>>,
+    meta_acl: Arc<tokio::sync::RwLock<()>>,
 }
 
 impl Replica {
@@ -125,6 +136,7 @@ impl Replica {
             group_engine,
             raft_node,
             lease_state,
+            meta_acl: Arc::default(),
         })
     }
 
@@ -146,23 +158,21 @@ impl Replica {
 
 impl Replica {
     /// Execute group request and fill response.
-    pub async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
-        if self.info.is_terminated() {
-            return Err(Error::GroupNotFound(self.info.group_id));
-        }
-
-        // TODO(walter) check request epoch.
-
-        let group_id = group_request.group_id;
-        debug_assert_eq!(group_id, self.info.group_id);
-
+    pub(self) async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
         let request = group_request
             .request
             .as_ref()
             .and_then(|request| request.request.as_ref())
-            .ok_or_else(|| Error::InvalidArgument("GroupRequest::request".into()))?;
+            .ok_or_else(|| Error::InvalidArgument("GroupRequest::request is None".into()))?;
 
-        self.check_request_early(group_id, request)?;
+        debug_assert_eq!(group_request.group_id, self.info.group_id);
+
+        if self.info.is_terminated() {
+            return Err(Error::GroupNotFound(self.info.group_id));
+        }
+
+        let _acl_guard = self.take_acl_guard(request).await;
+        self.check_request_early(group_request.epoch, request)?;
         let resp = self.evaluate_command(request).await?;
         Ok(GroupResponse::new(resp))
     }
@@ -176,7 +186,7 @@ impl Replica {
 
         poll_fn(|ctx| {
             let mut lease_state = self.lease_state.lock().unwrap();
-            if lease_state.still_valid() {
+            if lease_state.is_ready_for_serving() {
                 Poll::Ready(())
             } else {
                 lease_state.leader_subscribers.push(ctx.waker().clone());
@@ -209,36 +219,44 @@ impl Replica {
     }
 
     #[inline]
+    pub fn epoch(&self) -> u64 {
+        self.lease_state.lock().unwrap().descriptor.epoch
+    }
+
+    #[inline]
     pub fn raft_node(&self) -> RaftNodeFacade {
         self.raft_node.clone()
     }
 }
 
 impl Replica {
+    async fn take_acl_guard<'a>(&'a self, request: &'a Request) -> MetaAclGuard<'a> {
+        if is_change_meta_request(request) {
+            MetaAclGuard::Write(self.meta_acl.write().await)
+        } else {
+            MetaAclGuard::Read(self.meta_acl.read().await)
+        }
+    }
+
     /// Delegates the eval method for the given `Request`.
     async fn evaluate_command(&self, request: &Request) -> Result<Response> {
-        let resp: Response;
-        let eval_result_opt = match &request {
+        let (eval_result_opt, resp) = match &request {
             Request::Get(req) => {
                 let value = eval::get(&self.group_engine, req).await?;
-                resp = Response::Get(GetResponse {
-                    value: value.map(|v| v.to_vec()),
-                });
-                None
+                let resp = GetResponse { value };
+                (None, Response::Get(resp))
             }
             Request::Put(req) => {
-                resp = Response::Put(PutResponse {});
                 let eval_result = eval::put(&self.group_engine, req).await?;
-                Some(eval_result)
+                (Some(eval_result), Response::Put(PutResponse {}))
             }
             Request::Delete(req) => {
-                resp = Response::Delete(DeleteResponse {});
                 let eval_result = eval::delete(&self.group_engine, req).await?;
-                Some(eval_result)
+                (Some(eval_result), Response::Delete(DeleteResponse {}))
             }
             Request::BatchWrite(req) => {
-                resp = Response::BatchWrite(BatchWriteResponse {});
-                eval::batch_write(&self.group_engine, req).await?
+                let eval_result = eval::batch_write(&self.group_engine, req).await?;
+                (eval_result, Response::BatchWrite(BatchWriteResponse {}))
             }
             Request::CreateShard(req) => {
                 // TODO(walter) check the existing of shard.
@@ -247,9 +265,8 @@ impl Replica {
                     .as_ref()
                     .cloned()
                     .ok_or_else(|| Error::InvalidArgument("CreateShard::shard".into()))?;
-                resp = Response::CreateShard(CreateShardResponse {});
-
-                Some(eval::add_shard(shard))
+                let resp = CreateShardResponse {};
+                (Some(eval::add_shard(shard)), Response::CreateShard(resp))
             }
             Request::ChangeReplicas(req) => {
                 if let Some(change) = &req.change_replicas {
@@ -258,7 +275,8 @@ impl Replica {
                         .change_config(change.clone())
                         .await??;
                 }
-                return Ok(Response::ChangeReplicas(ChangeReplicasResponse {}));
+                let resp = ChangeReplicasResponse {};
+                (None, Response::ChangeReplicas(resp))
             }
         };
 
@@ -274,18 +292,28 @@ impl Replica {
         Ok(())
     }
 
-    fn check_request_early(&self, group_id: u64, _request: &Request) -> Result<()> {
+    fn check_request_early(&self, epoch: u64, _request: &Request) -> Result<()> {
+        let group_id = self.info.group_id;
         let lease_state = self.lease_state.lock().unwrap();
-        if !lease_state.still_valid() {
-            Err(Error::NotLeader(group_id, None))
+        if !lease_state.is_raft_leader() {
+            Err(Error::NotLeader(group_id, lease_state.leader_descriptor()))
+        } else if !lease_state.is_log_term_matched() {
+            // Replica has just been elected as the leader, and there are still exists unapplied
+            // WALs, so the freshness of metadata cannot be guaranteed.
+            Err(Error::GroupNotReady(group_id))
+        } else if epoch < lease_state.descriptor.epoch {
+            Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
         } else {
+            // If the current replica is the leader and has applied data in the current term,
+            // it is expected that the input epoch should not be larger than the leaders.
+            debug_assert_eq!(epoch, lease_state.descriptor.epoch);
             Ok(())
         }
     }
 
     fn check_leader_early(&self) -> Result<()> {
         let lease_state = self.lease_state.lock().unwrap();
-        if !lease_state.still_valid() {
+        if !lease_state.is_ready_for_serving() {
             Err(Error::NotLeader(self.info.group_id, None))
         } else {
             Ok(())
@@ -322,12 +350,7 @@ impl ReplicaInfo {
         while local_state == TERMINATED {
             local_state = self
                 .local_state
-                .compare_exchange(
-                    local_state,
-                    TERMINATED,
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                )
+                .compare_exchange(local_state, TERMINATED, Ordering::AcqRel, Ordering::Acquire)
                 .into_ok_or_err();
         }
     }
@@ -335,8 +358,19 @@ impl ReplicaInfo {
 
 impl LeaseState {
     #[inline]
-    fn still_valid(&self) -> bool {
+    fn is_raft_leader(&self) -> bool {
         self.replica_state.role == RaftRole::Leader.into()
+    }
+
+    /// At least one log for the current term has been applied?
+    #[inline]
+    fn is_log_term_matched(&self) -> bool {
+        self.applied_term == self.replica_state.term
+    }
+
+    #[inline]
+    fn is_ready_for_serving(&self) -> bool {
+        self.is_raft_leader() && self.is_log_term_matched()
     }
 
     #[inline]
@@ -344,6 +378,15 @@ impl LeaseState {
         for waker in std::mem::take(&mut self.leader_subscribers) {
             waker.wake();
         }
+    }
+
+    #[inline]
+    fn leader_descriptor(&self) -> Option<ReplicaDesc> {
+        self.descriptor
+            .replicas
+            .iter()
+            .find(|r| r.id == self.leader_id)
+            .cloned()
     }
 }
 
@@ -362,6 +405,7 @@ impl LeaseStateObserver {
 
     fn update_replica_state(
         &self,
+        leader_id: u64,
         voted_for: u64,
         term: u64,
         role: RaftRole,
@@ -374,9 +418,13 @@ impl LeaseStateObserver {
             role: role.into(),
         };
         let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.leader_id = leader_id;
         lease_state.replica_state = replica_state.clone();
         let desc = if role == RaftRole::Leader {
-            lease_state.wake_all_waiters();
+            info!(
+                "replica {} become leader of group {} at term {}",
+                self.info.replica_id, self.info.group_id, term
+            );
             Some(lease_state.descriptor.clone())
         } else {
             None
@@ -392,8 +440,8 @@ impl LeaseStateObserver {
 }
 
 impl StateObserver for LeaseStateObserver {
-    fn on_state_updated(&mut self, _leader_id: u64, voted_for: u64, term: u64, role: RaftRole) {
-        let (state, desc) = self.update_replica_state(voted_for, term, role);
+    fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole) {
+        let (state, desc) = self.update_replica_state(leader_id, voted_for, term, role);
         self.state_channel
             .broadcast_replica_state(self.info.group_id, state);
         if let Some(desc) = desc {
@@ -409,5 +457,24 @@ impl DescObserver for LeaseStateObserver {
             self.state_channel
                 .broadcast_group_descriptor(self.info.group_id, descriptor);
         }
+    }
+
+    fn on_term_updated(&mut self, term: u64) {
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.applied_term = term;
+        if lease_state.is_ready_for_serving() {
+            info!(
+                "replica {} is ready for serving requests of group {} at term {}",
+                self.info.replica_id, self.info.group_id, term
+            );
+            lease_state.wake_all_waiters();
+        }
+    }
+}
+
+pub(self) fn is_change_meta_request(request: &Request) -> bool {
+    match request {
+        Request::ChangeReplicas(_) | Request::CreateShard(_) => true,
+        Request::Get(_) | Request::Put(_) | Request::Delete(_) | Request::BatchWrite(_) => false,
     }
 }

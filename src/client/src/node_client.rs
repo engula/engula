@@ -84,9 +84,10 @@ impl RequestBatchBuilder {
         }
     }
 
-    pub fn get(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
+    pub fn get(mut self, group_id: u64, epoch: u64, shard_id: u64, key: Vec<u8>) -> Self {
         self.requests.push(GroupRequest {
             group_id,
+            epoch,
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::Get(ShardGetRequest {
                     shard_id,
@@ -97,9 +98,17 @@ impl RequestBatchBuilder {
         self
     }
 
-    pub fn put(mut self, group_id: u64, shard_id: u64, key: Vec<u8>, value: Vec<u8>) -> Self {
+    pub fn put(
+        mut self,
+        group_id: u64,
+        epoch: u64,
+        shard_id: u64,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Self {
         self.requests.push(GroupRequest {
             group_id,
+            epoch,
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::Put(ShardPutRequest {
                     shard_id,
@@ -110,9 +119,10 @@ impl RequestBatchBuilder {
         self
     }
 
-    pub fn delete(mut self, group_id: u64, shard_id: u64, key: Vec<u8>) -> Self {
+    pub fn delete(mut self, group_id: u64, epoch: u64, shard_id: u64, key: Vec<u8>) -> Self {
         self.requests.push(GroupRequest {
             group_id,
+            epoch,
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::Delete(ShardDeleteRequest {
                     shard_id,
@@ -123,9 +133,10 @@ impl RequestBatchBuilder {
         self
     }
 
-    pub fn create_shard(mut self, group_id: u64, shard_desc: ShardDesc) -> Self {
+    pub fn create_shard(mut self, group_id: u64, epoch: u64, shard_desc: ShardDesc) -> Self {
         self.requests.push(GroupRequest {
             group_id,
+            epoch,
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::CreateShard(
                     CreateShardRequest {
@@ -137,7 +148,7 @@ impl RequestBatchBuilder {
         self
     }
 
-    pub fn add_replica(mut self, group_id: u64, replica_id: u64, node_id: u64) -> Self {
+    pub fn add_replica(mut self, group_id: u64, epoch: u64, replica_id: u64, node_id: u64) -> Self {
         let change_replicas = ChangeReplicasRequest {
             change_replicas: Some(ChangeReplicas {
                 changes: vec![ChangeReplica {
@@ -150,6 +161,7 @@ impl RequestBatchBuilder {
 
         self.requests.push(GroupRequest {
             group_id,
+            epoch,
             request: Some(GroupRequestUnion {
                 request: Some(group_request_union::Request::ChangeReplicas(
                     change_replicas,
