@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use engula_api::{server::v1::*, v1::*};
-use tonic::transport::Channel;
+use tonic::{transport::Channel, Streaming};
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -45,5 +45,11 @@ impl Client {
         let mut client = self.client.clone();
         let res = client.resolve(ResolveNodeRequest { node_id }).await?;
         Ok(res.into_inner().node)
+    }
+
+    pub async fn watch(&self, sequence: u64) -> Result<Streaming<WatchResponse>, tonic::Status> {
+        let mut client = self.client.clone();
+        let res = client.watch(WatchRequest { sequence }).await?;
+        Ok(res.into_inner())
     }
 }
