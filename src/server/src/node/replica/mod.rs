@@ -227,6 +227,16 @@ impl Replica {
     pub fn raft_node(&self) -> RaftNodeFacade {
         self.raft_node.clone()
     }
+
+    #[inline]
+    pub fn descriptor(&self) -> GroupDesc {
+        self.lease_state.lock().unwrap().descriptor.clone()
+    }
+
+    #[inline]
+    pub fn replica_state(&self) -> ReplicaState {
+        self.lease_state.lock().unwrap().replica_state.clone()
+    }
 }
 
 impl Replica {
