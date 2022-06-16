@@ -22,14 +22,14 @@ use std::{
 use engula_api::server::v1::GroupDesc;
 use prost::Message;
 
-use crate::{bootstrap::INITIAL_EPOCH, Result};
+use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::EntryId, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
 
 #[derive(Default)]
 pub struct WriteBatch {
-    applied_index: Option<u64>,
+    apply_state: Option<(u64, u64)>,
     descriptor: Option<GroupDesc>,
     inner: rocksdb::WriteBatch,
 }
@@ -79,7 +79,7 @@ impl GroupEngine {
 
         // The group descriptor should be persisted into disk.
         let mut wb = WriteBatch::default();
-        engine.set_applied_index(&mut wb, 0);
+        engine.set_apply_state(&mut wb, 0, 0);
         engine.set_group_desc(&mut wb, &desc);
         engine.commit(wb, true)?;
 
@@ -134,8 +134,8 @@ impl GroupEngine {
         Ok(desc)
     }
 
-    /// Return the persisted applied index of raft.
-    pub fn flushed_index(&self) -> u64 {
+    /// Return the persisted apply state of raft.
+    pub fn flushed_apply_state(&self) -> EntryId {
         use rocksdb::{ReadOptions, ReadTier};
         let cf_handle = self
             .raw_db
@@ -143,20 +143,13 @@ impl GroupEngine {
             .expect("column family handle");
         let mut opt = ReadOptions::default();
         opt.set_read_tier(ReadTier::Persisted);
-        let raw_key = keys::applied_index();
+        let raw_key = keys::apply_state();
         let value = self
             .raw_db
             .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
             .unwrap()
             .expect("group descriptor will persisted when creating group");
-        let value = value.as_ref();
-        if value.len() != core::mem::size_of::<u64>() {
-            panic!("invalid applied index format");
-        }
-
-        let mut buf = [0u8; core::mem::size_of::<u64>()];
-        buf.as_mut_slice().copy_from_slice(value);
-        u64::from_le_bytes(buf)
+        EntryId::decode(value.as_ref()).expect("apply state encode EntryId")
     }
 
     /// Get key value from the corresponding shard.
@@ -207,10 +200,10 @@ impl GroupEngine {
         Ok(())
     }
 
-    /// Set the applied index of this group.
+    /// Set the applied state of this group.
     #[inline]
-    pub(super) fn set_applied_index(&self, wb: &mut WriteBatch, applied_index: u64) {
-        wb.applied_index = Some(applied_index);
+    pub(super) fn set_apply_state(&self, wb: &mut WriteBatch, applied_index: u64, term: u64) {
+        wb.apply_state = Some((applied_index, term));
     }
 
     #[inline]
@@ -227,12 +220,9 @@ impl GroupEngine {
             .expect("column family handle");
 
         let mut inner_wb = wb.inner;
-        if let Some(applied_index) = wb.applied_index {
-            inner_wb.put_cf(
-                &cf_handle,
-                keys::applied_index(),
-                applied_index.to_le_bytes().as_slice(),
-            );
+        if let Some((index, term)) = wb.apply_state {
+            let entry_id = EntryId { index, term };
+            inner_wb.put_cf(&cf_handle, keys::apply_state(), entry_id.encode_to_vec());
         }
         if let Some(desc) = &wb.descriptor {
             inner_wb.put_cf(&cf_handle, keys::descriptor(), desc.encode_to_vec());
@@ -297,7 +287,7 @@ impl<'a> Iterator for GroupEngineIterator<'a> {
 }
 
 mod keys {
-    const APPLIED_INDEX: &[u8] = b"APPLIED_INDEX";
+    const APPLY_STATE: &[u8] = b"APPLY_STATE";
     const DESCRIPTOR: &[u8] = b"DESCRIPTOR";
 
     #[inline]
@@ -309,10 +299,10 @@ mod keys {
     }
 
     #[inline]
-    pub fn applied_index() -> Vec<u8> {
-        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + APPLIED_INDEX.len());
+    pub fn apply_state() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + APPLY_STATE.len());
         buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
-        buf.extend_from_slice(APPLIED_INDEX);
+        buf.extend_from_slice(APPLY_STATE);
         buf
     }
 

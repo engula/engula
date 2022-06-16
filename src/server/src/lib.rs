@@ -14,6 +14,7 @@
 
 #![feature(drain_filter)]
 #![feature(result_into_ok_or_err)]
+#![feature(path_try_exists)]
 
 mod bootstrap;
 mod error;

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod checkpoint;
+
 use engula_api::server::v1::{
     ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
 };
 use tracing::trace;
 
-use super::raft::{ApplyEntry, StateMachine};
+use super::raft::{ApplyEntry, Checkpoint, StateMachine};
 use crate::{
     node::group_engine::{GroupEngine, WriteBatch},
     serverpb::v1::*,
@@ -32,7 +34,7 @@ enum ChangeReplicaKind {
 }
 
 /// An abstracted structure used to subscribe to descriptor changes.
-pub trait DescObserver: Send {
+pub trait DescObserver: Send + Sync {
     /// This function will be called every time the `GroupDesc` changes.
     fn on_descriptor_updated(&mut self, descriptor: GroupDesc);
 
@@ -44,30 +46,35 @@ pub struct GroupStateMachine
 where
     Self: Send,
 {
-    flushed_index: u64,
     group_engine: GroupEngine,
     desc_observer: Box<dyn DescObserver>,
 
     /// Whether `GroupDesc` changes during apply.
     desc_updated: bool,
+    flushed_index: u64,
     last_applied_term: u64,
 }
 
 impl GroupStateMachine {
     pub fn new(group_engine: GroupEngine, desc_observer: Box<dyn DescObserver>) -> Self {
-        let flushed_index = group_engine.flushed_index();
+        let apply_state = group_engine.flushed_apply_state();
         GroupStateMachine {
-            flushed_index,
             group_engine,
             desc_observer,
             desc_updated: false,
-            last_applied_term: 0,
+            flushed_index: apply_state.index,
+            last_applied_term: apply_state.term,
         }
     }
 }
 
 impl GroupStateMachine {
-    fn apply_change_replicas(&mut self, index: u64, change_replicas: ChangeReplicas) -> Result<()> {
+    fn apply_change_replicas(
+        &mut self,
+        index: u64,
+        term: u64,
+        change_replicas: ChangeReplicas,
+    ) -> Result<()> {
         let mut wb = WriteBatch::default();
         let mut desc = self
             .group_engine
@@ -82,14 +89,14 @@ impl GroupStateMachine {
         }
         desc.epoch += 1;
         self.desc_updated = true;
-        self.group_engine.set_applied_index(&mut wb, index);
+        self.group_engine.set_apply_state(&mut wb, index, term);
         self.group_engine.set_group_desc(&mut wb, &desc);
         self.group_engine.commit(wb, false)?;
 
         Ok(())
     }
 
-    fn apply_proposal(&mut self, index: u64, eval_result: EvalResult) -> Result<()> {
+    fn apply_proposal(&mut self, index: u64, term: u64, eval_result: EvalResult) -> Result<()> {
         let mut wb = if let Some(wb) = eval_result.batch {
             WriteBatch::new(&wb.data)
         } else {
@@ -114,7 +121,7 @@ impl GroupStateMachine {
             self.group_engine.set_group_desc(&mut wb, &desc);
         }
 
-        self.group_engine.set_applied_index(&mut wb, index);
+        self.group_engine.set_apply_state(&mut wb, index, term);
         self.group_engine.commit(wb, false)?;
 
         Ok(())
@@ -128,10 +135,10 @@ impl StateMachine for GroupStateMachine {
         match entry {
             ApplyEntry::Empty => {}
             ApplyEntry::ConfigChange { change_replicas } => {
-                self.apply_change_replicas(index, change_replicas)?;
+                self.apply_change_replicas(index, term, change_replicas)?;
             }
             ApplyEntry::Proposal { eval_result } => {
-                self.apply_proposal(index, eval_result)?;
+                self.apply_proposal(index, term, eval_result)?;
             }
         }
 
@@ -156,8 +163,8 @@ impl StateMachine for GroupStateMachine {
         todo!()
     }
 
-    fn snapshot(&mut self) -> Result<()> {
-        todo!()
+    fn checkpoint(&self) -> Box<dyn Checkpoint> {
+        Box::new(checkpoint::Checkpoint {})
     }
 
     fn flushed_index(&self) -> u64 {

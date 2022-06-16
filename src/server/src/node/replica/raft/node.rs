@@ -87,7 +87,14 @@ where
         };
 
         let conf_state = super::conf_state_from_group_descriptor(&state_machine.descriptor());
-        let storage = Storage::open(replica_id, applied, conf_state, mgr.engine.clone()).await?;
+        let storage = Storage::open(
+            replica_id,
+            applied,
+            conf_state,
+            mgr.engine.clone(),
+            mgr.snap_mgr.clone(),
+        )
+        .await?;
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),
@@ -252,6 +259,11 @@ where
     #[inline]
     pub fn mut_store(&mut self) -> &mut Storage {
         self.raw_node.raft.mut_store()
+    }
+
+    #[inline]
+    pub fn mut_state_machine(&mut self) -> &mut M {
+        self.applier.mut_state_machine()
     }
 
     fn handle_apply(&mut self, replica_cache: &mut ReplicaCache, ready: &mut Ready) {

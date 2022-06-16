@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::Path;
+
 use engula_api::server::v1::{ChangeReplicas, GroupDesc};
 
-use crate::{serverpb::v1::EvalResult, Result};
+use crate::{
+    serverpb::v1::{EntryId, EvalResult},
+    Result,
+};
 
 /// A helper structure to used to access the internal field of entries.
 pub enum ApplyEntry {
@@ -30,10 +35,20 @@ pub trait StateMachine: Send {
     // TODO(walter) define snapshot
     fn apply_snapshot(&mut self) -> Result<()>;
 
-    fn snapshot(&mut self) -> Result<()>;
+    fn checkpoint(&self) -> Box<dyn Checkpoint>;
 
     fn descriptor(&self) -> GroupDesc;
 
     /// Return the latest index which persisted in disk.
     fn flushed_index(&self) -> u64;
+}
+
+/// An abstraction of snapshot generation.
+pub trait Checkpoint: Send {
+    fn apply_state(&self) -> EntryId;
+
+    fn descriptor(&self) -> GroupDesc;
+
+    /// Stable this checkpoint to `base_dir`, and returns applied index and group descriptor.
+    fn stable(&self, base_dir: &Path) -> Result<()>;
 }

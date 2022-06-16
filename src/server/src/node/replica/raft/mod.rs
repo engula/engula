@@ -29,9 +29,10 @@ use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 
+use self::snap::SnapManager;
 pub use self::{
     facade::RaftNodeFacade,
-    fsm::{ApplyEntry, StateMachine},
+    fsm::{ApplyEntry, StateMachine, Checkpoint},
     storage::write_initial_state,
     transport::{AddressResolver, TransportManager},
     worker::StateObserver,
@@ -60,6 +61,7 @@ pub struct RaftManager {
     executor: Executor,
     engine: Arc<raft_engine::Engine>,
     transport_mgr: TransportManager,
+    snap_mgr: SnapManager,
 }
 
 impl RaftManager {
@@ -69,15 +71,19 @@ impl RaftManager {
         transport_mgr: TransportManager,
     ) -> Result<Self> {
         use raft_engine::{Config, Engine};
+        let engine_dir = path.as_ref().join("engine");
+        let snap_dir = path.as_ref().join("snap");
         let cfg = Config {
-            dir: path.as_ref().to_str().unwrap().to_owned(),
+            dir: engine_dir.to_str().unwrap().to_owned(),
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(cfg)?);
+        let snap_mgr = SnapManager::recovery(snap_dir)?;
         Ok(RaftManager {
             executor,
             engine,
             transport_mgr,
+            snap_mgr,
         })
     }
 
@@ -140,7 +146,7 @@ fn decode_from_conf_change(conf_change: &ConfChangeV2) -> ChangeReplicas {
         .expect("ChangeReplicas is saved in ConfChangeV2::context")
 }
 
-fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
+pub fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
     let mut cs = ConfState::default();
     let mut in_joint = false;
     for replica in desc.replicas.iter() {

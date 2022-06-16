@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cell::RefCell, collections::VecDeque, ops::Range, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    ops::Range,
+    sync::Arc,
+};
 
 use engula_api::server::v1::{ChangeReplica, ChangeReplicaType, ChangeReplicas};
 use prost::Message;
@@ -20,7 +25,7 @@ use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Engine, LogBatch, MessageExt};
 use tracing::debug;
 
-use super::node::WriteTask;
+use super::{node::WriteTask, snap::SnapManager};
 use crate::{
     serverpb::v1::{EntryId, EvalResult, RaftLocalState},
     Result,
@@ -64,6 +69,9 @@ pub struct Storage {
     hard_state: HardState,
     initial_conf_state: RefCell<Option<ConfState>>,
 
+    pub create_snapshot: Cell<bool>,
+    pub is_creating_snapshot: Cell<bool>,
+    snap_mgr: SnapManager,
     tasks: RefCell<Vec<AsyncFetchTask>>,
 }
 
@@ -73,6 +81,7 @@ impl Storage {
         applied_index: u64,
         conf_state: ConfState,
         engine: Arc<Engine>,
+        snap_mgr: SnapManager,
     ) -> Result<Self> {
         let hard_state = engine
             .get_message::<HardState>(replica_id, keys::HARD_STATE_KEY)?
@@ -123,6 +132,9 @@ impl Storage {
             initial_conf_state: RefCell::new(Some(conf_state)),
             local_state,
             tasks: RefCell::new(vec![]),
+            snap_mgr,
+            create_snapshot: Cell::new(false),
+            is_creating_snapshot: Cell::new(false),
         })
     }
 
@@ -259,9 +271,34 @@ impl raft::Storage for Storage {
         Ok(self.last_index)
     }
 
-    #[allow(unused)]
     fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<Snapshot> {
-        todo!()
+        if !self.is_creating_snapshot.get() {
+            if let Some(snap_info) = self.snap_mgr.latest_snap(self.replica_id) {
+                let snap_meta = snap_info.meta;
+                let apply_state = snap_meta.apply_state.clone().unwrap();
+                if apply_state.index >= request_index {
+                    let conf_state = super::conf_state_from_group_descriptor(
+                        snap_meta.group_desc.as_ref().unwrap(),
+                    );
+                    let raft_meta = SnapshotMetadata {
+                        conf_state: Some(conf_state),
+                        index: apply_state.index,
+                        term: apply_state.term,
+                    };
+                    return Ok(Snapshot {
+                        // TODO(walter) fill data as unique ID
+                        data: vec![],
+                        metadata: Some(raft_meta),
+                    });
+                }
+            }
+
+            self.create_snapshot.set(true);
+        }
+
+        return Err(raft::Error::Store(
+            raft::StorageError::SnapshotTemporarilyUnavailable,
+        ));
     }
 }
 

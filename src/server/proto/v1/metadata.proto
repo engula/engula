@@ -18,7 +18,20 @@ syntax = "proto3";
 
 package serverpb.v1;
 
+import "eraft.proto";
 import "engula/server/v1/metadata.proto";
+
+message SnapshotMeta {
+    EntryID apply_state = 1;
+    engula.server.v1.GroupDesc group_desc = 2;
+    repeated SnapshotFile files = 3;
+}
+
+message SnapshotFile {
+    bytes name = 1;
+    uint32 crc32 = 2;
+    uint64 size = 3;
+}
 
 /// A NodeIdent uniquely identifies a node in the cluster.
 message NodeIdent {

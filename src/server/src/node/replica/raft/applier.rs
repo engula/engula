@@ -111,6 +111,10 @@ impl<M: StateMachine> Applier<M> {
         }
     }
 
+    pub fn mut_state_machine(&mut self) -> &mut M {
+        &mut self.state_machine
+    }
+
     /// Apply entries and invoke proposal & read response.
     pub(super) fn apply_entries(
         &mut self,
