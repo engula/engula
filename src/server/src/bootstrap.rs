@@ -217,7 +217,7 @@ async fn issue_join_request(target_addr: &str, local_addr: &str) -> Result<JoinN
     Ok(resp)
 }
 
-async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {
+pub(crate) async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {
     info!("'--init' is specified, try bootstrap cluster");
 
     // TODO(walter) clean staled data in db.

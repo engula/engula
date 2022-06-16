@@ -36,7 +36,7 @@ use engula_api::{
 use self::{schema::ReplicaNodes, store::RootStore};
 pub use self::{
     schema::Schema,
-    watch::{WatchHub, Watcher, WriteGuard},
+    watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use crate::{
     node::{Node, Replica, ReplicaRouteTable},
@@ -190,12 +190,9 @@ impl Root {
             })
             .await?;
         self.watcher_hub()
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Database(desc.to_owned())),
-                }],
-                vec![],
-            )
+            .notify_updates(vec![UpdateEvent {
+                event: Some(update_event::Event::Database(desc.to_owned())),
+            }])
             .await;
         Ok(desc)
     }
@@ -203,12 +200,9 @@ impl Root {
     pub async fn delete_database(&self, name: &str) -> Result<()> {
         let id = self.schema()?.delete_database(name).await?;
         self.watcher_hub()
-            .notify(
-                vec![],
-                vec![DeleteEvent {
-                    event: Some(delete_event::Event::Database(id)),
-                }],
-            )
+            .notify_deletes(vec![DeleteEvent {
+                event: Some(delete_event::Event::Database(id)),
+            }])
             .await;
         Ok(())
     }
@@ -231,12 +225,9 @@ impl Root {
             })
             .await?;
         self.watcher_hub()
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Collection(desc.to_owned())),
-                }],
-                vec![],
-            )
+            .notify_updates(vec![UpdateEvent {
+                event: Some(update_event::Event::Collection(desc.to_owned())),
+            }])
             .await;
         Ok(desc)
     }
@@ -248,12 +239,9 @@ impl Root {
             let id = collection.id;
             schema.delete_collection(collection).await?;
             self.watcher_hub()
-                .notify(
-                    vec![],
-                    vec![DeleteEvent {
-                        event: Some(delete_event::Event::Collection(id)),
-                    }],
-                )
+                .notify_deletes(vec![DeleteEvent {
+                    event: Some(delete_event::Event::Collection(id)),
+                }])
                 .await;
         }
         Ok(())
@@ -276,9 +264,9 @@ impl Root {
 
         let watcher = {
             let hub = self.watcher_hub();
-            let (mut watcher, _write_guard) = hub.create_watcher().await;
+            let (watcher, mut initializer) = hub.create_watcher().await;
             let (updates, deletes) = schema.list_all_events(cur_groups).await?;
-            watcher.set_init_resp(updates, deletes);
+            initializer.set_init_resp(updates, deletes);
             watcher
         };
         Ok(watcher)
@@ -293,12 +281,9 @@ impl Root {
             })
             .await?;
         self.watcher_hub()
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Node(node.to_owned())),
-                }],
-                vec![],
-            )
+            .notify_updates(vec![UpdateEvent {
+                event: Some(update_event::Event::Node(node.to_owned())),
+            }])
             .await;
 
         let cluster_id = schema.cluster_id().await?.unwrap();
@@ -336,8 +321,118 @@ impl Root {
             })
         }
 
-        self.watcher_hub().notify(update_events, vec![]).await;
+        self.watcher_hub().notify_updates(update_events).await;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod root_test {
+
+    use std::sync::Arc;
+
+    use engula_api::{
+        server::v1::watch_response::{update_event, UpdateEvent},
+        v1::DatabaseDesc,
+    };
+    use futures::StreamExt;
+    use tempdir::TempDir;
+
+    use crate::{
+        bootstrap::bootstrap_cluster,
+        node::{Node, StateEngine},
+        root::Root,
+        runtime::{Executor, ExecutorOwner},
+        serverpb::v1::NodeIdent,
+    };
+
+    fn create_root(executor: Executor, node_ident: &NodeIdent) -> Root {
+        Root::new(executor, node_ident, "0.0.0.0:8888".into())
+    }
+
+    fn create_node(executor: Executor) -> Node {
+        let tmp_dir = TempDir::new("engula").unwrap().into_path();
+        let db_dir = tmp_dir.join("db");
+        let log_dir = tmp_dir.join("log");
+
+        use crate::bootstrap::open_engine;
+
+        let db = open_engine(db_dir).unwrap();
+        let db = Arc::new(db);
+        let state_engine = StateEngine::new(db.clone()).unwrap();
+        let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
+        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
+    }
+
+    #[test]
+    fn boostrap_root() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        let ident = NodeIdent {
+            cluster_id: vec![],
+            node_id: 1,
+        };
+        let node = create_node(executor.to_owned());
+        let mut root = create_root(executor.to_owned(), &ident);
+
+        executor.block_on(async {
+            bootstrap_cluster(&node, "0.0.0.0:8888").await.unwrap();
+            node.bootstrap(&ident).await.unwrap();
+            root.bootstrap(&node).await.unwrap();
+            // TODO: test on leader logic later.
+        });
+    }
+
+    #[test]
+    fn watch_hub() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        let ident = NodeIdent {
+            cluster_id: vec![],
+            node_id: 1,
+        };
+
+        let root = create_root(executor.to_owned(), &ident);
+        executor.block_on(async {
+            let hub = root.watcher_hub();
+            let _create_db1_event = Some(update_event::Event::Database(DatabaseDesc {
+                id: 1,
+                name: "db1".into(),
+            }));
+            let mut w = {
+                let (w, mut initializer) = hub.create_watcher().await;
+                initializer.set_init_resp(
+                    vec![UpdateEvent {
+                        event: _create_db1_event,
+                    }],
+                    vec![],
+                );
+                w
+            };
+            let resp1 = w.next().await.unwrap().unwrap();
+            assert!(matches!(&resp1.updates[0].event, _create_db1_event));
+
+            let mut w2 = {
+                let (w, _) = hub.create_watcher().await;
+                w
+            };
+
+            let _create_db2_event = Some(update_event::Event::Database(DatabaseDesc {
+                id: 2,
+                name: "db2".into(),
+            }));
+            hub.notify_updates(vec![UpdateEvent {
+                event: _create_db2_event,
+            }])
+            .await;
+            let resp2 = w.next().await.unwrap().unwrap();
+            assert!(matches!(&resp2.updates[0].event, _create_db2_event));
+            let resp22 = w2.next().await.unwrap().unwrap();
+            assert!(matches!(&resp22.updates[0].event, _create_db2_event));
+            // hub.notify_error(Error::NotRootLeader(vec![])).await;
+        });
     }
 }

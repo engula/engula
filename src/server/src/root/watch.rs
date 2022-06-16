@@ -14,8 +14,9 @@
 
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Poll, Waker},
+    vec,
 };
 
 use engula_api::server::v1::{
@@ -24,6 +25,8 @@ use engula_api::server::v1::{
 };
 use futures::Stream;
 use tokio::sync::{RwLock, RwLockWriteGuard};
+
+use crate::Error;
 
 #[derive(Default)]
 pub struct WatchHub {
@@ -36,18 +39,35 @@ pub struct WatchHubInner {
     watchers: HashMap<u64, Watcher>,
 }
 
-pub type WriteGuard<'a> = RwLockWriteGuard<'a, WatchHubInner>;
+pub struct WatcherInitializer<'a> {
+    _guard: RwLockWriteGuard<'a, WatchHubInner>,
+    watcher_inner: Arc<Mutex<WatcherInner>>,
+}
+
+impl<'a> WatcherInitializer<'a> {
+    pub fn set_init_resp(&mut self, updates: Vec<UpdateEvent>, deletes: Vec<DeleteEvent>) {
+        let mut inner = self.watcher_inner.lock().unwrap();
+        inner.init_resp = Some(WatchResponse { updates, deletes })
+    }
+}
 
 impl WatchHub {
-    pub async fn create_watcher(&self) -> (Watcher, WriteGuard) {
+    pub async fn create_watcher(&self) -> (Watcher, WatcherInitializer) {
         let mut inner = self.inner.write().await;
         inner.next_watcher_id += 1;
+        let watcher_inner = Arc::new(Mutex::new(WatcherInner::default()));
         let watcher = Watcher {
             id: inner.next_watcher_id,
-            init_resp: None,
-            inner: Default::default(),
+            inner: watcher_inner.to_owned(),
         };
-        (watcher, inner)
+        inner.watchers.insert(watcher.id, watcher.to_owned());
+        (
+            watcher,
+            WatcherInitializer {
+                _guard: inner,
+                watcher_inner,
+            },
+        )
     }
 
     pub async fn remove_watcher(&self, id: u64) {
@@ -55,10 +75,27 @@ impl WatchHub {
         inner.watchers.remove(&id);
     }
 
-    pub async fn notify(&self, updates: Vec<UpdateEvent>, deletes: Vec<DeleteEvent>) {
+    pub async fn notify_updates(&self, updates: Vec<UpdateEvent>) {
+        self.notify(updates, vec![], None).await;
+    }
+
+    pub async fn notify_deletes(&self, deletes: Vec<DeleteEvent>) {
+        self.notify(vec![], deletes, None).await;
+    }
+
+    pub async fn notify_error(&self, err: Error) {
+        self.notify(vec![], vec![], Some(err)).await;
+    }
+
+    async fn notify(
+        &self,
+        updates: Vec<UpdateEvent>,
+        deletes: Vec<DeleteEvent>,
+        _err: Option<Error>,
+    ) {
         let inner = self.inner.read().await;
         for w in inner.watchers.values() {
-            w.notify(&updates, &deletes)
+            w.notify(&updates, &deletes, None) // TODO: clonable error
         }
     }
 
@@ -70,10 +107,10 @@ impl WatchHub {
     }
 }
 
+#[derive(Clone)]
 pub struct Watcher {
     #[allow(dead_code)]
     id: u64,
-    init_resp: Option<WatchResponse>,
     inner: Arc<std::sync::Mutex<WatcherInner>>,
 }
 
@@ -82,21 +119,22 @@ struct WatcherInner {
     waker: Option<Waker>,
     updates: Vec<UpdateEvent>,
     deletes: Vec<DeleteEvent>,
+    err: Option<Error>,
     dropped: bool,
+    init_resp: Option<WatchResponse>,
 }
 
 impl Watcher {
-    pub fn set_init_resp(&mut self, updates: Vec<UpdateEvent>, deletes: Vec<DeleteEvent>) {
-        self.init_resp = Some(WatchResponse { updates, deletes })
-    }
-
-    fn notify(&self, updates: &[UpdateEvent], deletes: &[DeleteEvent]) {
+    fn notify(&self, updates: &[UpdateEvent], deletes: &[DeleteEvent], err: Option<Error>) {
         let mut inner = self.inner.lock().unwrap();
         if inner.dropped {
             return;
         }
         inner.updates.extend_from_slice(updates); // TODO: set capcity limit
         inner.deletes.extend_from_slice(deletes);
+        if err.is_some() && inner.err.is_none() {
+            inner.err = err
+        }
         if let Some(w) = inner.waker.take() {
             w.wake();
         }
@@ -107,13 +145,19 @@ impl Stream for Watcher {
     type Item = std::result::Result<WatchResponse, tonic::Status>;
 
     fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        if let Some(init_resp) = self.init_resp.take() {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.dropped {
+            return Poll::Ready(None);
+        }
+        if let Some(err) = inner.err.take() {
+            return Poll::Ready(Some(Err(err.into())));
+        }
+        if let Some(init_resp) = inner.init_resp.take() {
             return Poll::Ready(Some(Ok(init_resp)));
         }
-        let mut inner = self.inner.lock().unwrap();
         if !inner.updates.is_empty() || !inner.deletes.is_empty() {
             let resp = WatchResponse {
                 updates: std::mem::take(&mut inner.updates),
