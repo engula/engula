@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::{
     node::{resolver::AddressResolver, Node},
-    root::{Root, WatchHub},
+    root::Root,
 };
 
 pub mod node;
@@ -27,5 +27,4 @@ pub struct Server {
     pub node: Arc<Node>,
     pub root: Root,
     pub address_resolver: Arc<AddressResolver>,
-    pub watcher_hub: Arc<WatchHub>,
 }

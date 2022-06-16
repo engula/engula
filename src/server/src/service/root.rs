@@ -12,22 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
-use engula_api::{
-    server::v1::{
-        watch_response::{DeleteEvent, UpdateEvent},
-        *,
-    },
-    v1::*,
-};
+use engula_api::{server::v1::*, v1::*};
 use tonic::{Request, Response, Status};
 
-use crate::{
-    root::{Schema, Watcher},
-    service::root::watch_response::{delete_event, update_event},
-    Error, Result, Server,
-};
+use crate::{root::Watcher, Error, Result, Server};
 
 #[tonic::async_trait]
 impl root_server::Root for Server {
@@ -47,15 +35,9 @@ impl root_server::Root for Server {
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
         let req = req.into_inner();
-        let schema = self.schema().await?;
-
-        let watcher = {
-            let (mut watcher, _write_guard) = self.watcher_hub.create_watcher().await;
-            let (updates, deletes) = schema.list_all_events(req.cur_group_epochs).await?;
-            watcher.set_init_resp(updates, deletes);
-            watcher
-        };
-
+        let watcher = self
+            .wrap(self.root.watch(req.cur_group_epochs).await)
+            .await?;
         Ok(Response::new(watcher))
     }
 
@@ -64,27 +46,8 @@ impl root_server::Root for Server {
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
         let request = request.into_inner();
-        let schema = self.schema().await?;
-        let node = schema
-            .add_node(NodeDesc {
-                addr: request.addr,
-                ..Default::default()
-            })
-            .await?;
-        self.watcher_hub
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Node(node.to_owned())),
-                }],
-                vec![],
-            )
-            .await;
-        let cluster_id = schema.cluster_id().await?.unwrap();
+        let (cluster_id, node, roots) = self.wrap(self.root.join(request.addr).await).await?;
         self.address_resolver.insert(&node);
-
-        let mut roots = schema.get_root_replicas().await?;
-        roots.move_first(node.id);
-
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
@@ -107,36 +70,7 @@ impl root_server::Root for Server {
         request: Request<ReportRequest>,
     ) -> std::result::Result<Response<ReportResponse>, Status> {
         let request = request.into_inner();
-        let schema = self.schema().await?;
-        let mut update_events = Vec::new();
-        let mut changed_group_states = Vec::new();
-        for u in request.updates {
-            if u.group_desc.is_some() {
-                // TODO: check & handle remove replicas from group
-            }
-            schema
-                .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
-                .await?;
-            if let Some(desc) = u.group_desc {
-                update_events.push(UpdateEvent {
-                    event: Some(update_event::Event::Group(desc)),
-                })
-            }
-            if let Some(state) = u.replica_state {
-                changed_group_states.push(state.group_id);
-            }
-        }
-
-        let mut states = schema.list_group_state().await?; // TODO: fix poor performance.
-        states.retain(|s| changed_group_states.contains(&s.group_id));
-        for state in states {
-            update_events.push(UpdateEvent {
-                event: Some(update_event::Event::GroupState(state)),
-            })
-        }
-
-        self.watcher_hub.notify(update_events, vec![]).await;
-
+        self.wrap(self.root.report(request.updates).await).await?;
         Ok(Response::new(ReportResponse {}))
     }
 }
@@ -202,22 +136,7 @@ impl Server {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let desc = self
-            .schema()
-            .await?
-            .create_database(DatabaseDesc {
-                name: req.name,
-                ..Default::default()
-            })
-            .await?;
-        self.watcher_hub
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Database(desc.to_owned())),
-                }],
-                vec![],
-            )
-            .await;
+        let desc = self.wrap(self.root.create_database(req.name).await).await?;
         Ok(CreateDatabaseResponse {
             database: Some(desc),
         })
@@ -227,47 +146,23 @@ impl Server {
         &self,
         req: DeleteDatabaseRequest,
     ) -> Result<DeleteDatabaseResponse> {
-        let id = self.schema().await?.delete_database(&req.name).await?;
-        self.watcher_hub
-            .notify(
-                vec![],
-                vec![DeleteEvent {
-                    event: Some(delete_event::Event::Database(id)),
-                }],
-            )
-            .await;
+        self.wrap(self.root.delete_database(&req.name).await)
+            .await?;
         Ok(DeleteDatabaseResponse {})
     }
 
     async fn handle_get_database(&self, req: GetDatabaseRequest) -> Result<GetDatabaseResponse> {
-        let resp = self.schema().await?.get_database(&req.name).await?;
-        Ok(GetDatabaseResponse { database: resp })
+        let database = self.wrap(self.root.get_database(&req.name).await).await?;
+        Ok(GetDatabaseResponse { database })
     }
 
     async fn handle_create_collection(
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let schema = self.schema().await?;
-        let db = schema.get_database(&req.parent).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(req.parent));
-        }
-        let desc = schema
-            .create_collection(CollectionDesc {
-                name: req.name,
-                parent_id: db.unwrap().id,
-                ..Default::default()
-            })
+        let desc = self
+            .wrap(self.root.create_collection(req.name, req.parent).await)
             .await?;
-        self.watcher_hub
-            .notify(
-                vec![UpdateEvent {
-                    event: Some(update_event::Event::Collection(desc.to_owned())),
-                }],
-                vec![],
-            )
-            .await;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
         })
@@ -277,21 +172,8 @@ impl Server {
         &self,
         req: DeleteCollectionRequest,
     ) -> Result<DeleteCollectionResponse> {
-        let schema = self.schema().await?;
-        let collection = schema.get_collection(&req.parent, &req.name).await?;
-        if let Some(collection) = collection {
-            let id = collection.id;
-            schema.delete_collection(collection).await?;
-            self.watcher_hub
-                .notify(
-                    vec![],
-                    vec![DeleteEvent {
-                        event: Some(delete_event::Event::Collection(id)),
-                    }],
-                )
-                .await;
-            return Ok(DeleteCollectionResponse {});
-        }
+        self.wrap(self.root.delete_collection(&req.name, &req.parent).await)
+            .await?;
         Ok(DeleteCollectionResponse {})
     }
 
@@ -299,20 +181,17 @@ impl Server {
         &self,
         req: GetCollectionRequest,
     ) -> Result<GetCollectionResponse> {
-        let resp = self
-            .schema()
-            .await?
-            .get_collection(&req.parent, &req.name)
+        let collection = self
+            .wrap(self.root.get_collection(&req.name, &req.parent).await)
             .await?;
-        Ok(GetCollectionResponse { collection: resp })
+        Ok(GetCollectionResponse { collection })
     }
 
-    async fn schema(&self) -> Result<Arc<Schema>> {
-        let s = self.root.schema();
-        if s.is_none() {
+    async fn wrap<T>(&self, result: Result<T>) -> Result<T> {
+        if let Err(Error::NotRootLeader(_)) = result {
             let roots = self.node.get_root().await;
             return Err(Error::NotRootLeader(roots));
         }
-        Ok(s.unwrap())
+        result
     }
 }

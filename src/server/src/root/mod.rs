@@ -18,12 +18,22 @@ mod store;
 mod watch;
 
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex},
     task::Poll,
     time::Duration,
 };
 
-use self::store::RootStore;
+use engula_api::{
+    server::v1::{
+        report_request::GroupUpdates,
+        watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
+        NodeDesc,
+    },
+    v1::{CollectionDesc, DatabaseDesc},
+};
+
+use self::{schema::ReplicaNodes, store::RootStore};
 pub use self::{
     schema::Schema,
     watch::{WatchHub, Watcher, WriteGuard},
@@ -45,6 +55,7 @@ struct RootShared {
     node_ident: NodeIdent,
     local_addr: String,
     core: Mutex<Option<RootCore>>,
+    watcher_hub: Arc<WatchHub>,
 }
 
 struct RootCore {
@@ -59,6 +70,7 @@ impl Root {
                 local_addr,
                 core: Mutex::new(None),
                 node_ident: node_ident.to_owned(),
+                watcher_hub: Default::default(),
             }),
         }
     }
@@ -82,9 +94,15 @@ impl Root {
         Ok(())
     }
 
-    pub fn schema(&self) -> Option<Arc<Schema>> {
+    pub fn schema(&self) -> Result<Arc<Schema>> {
         let core = self.shared.core.lock().unwrap();
-        core.as_ref().map(|c| c.schema.clone())
+        core.as_ref()
+            .map(|c| c.schema.clone())
+            .ok_or_else(|| Error::NotRootLeader(vec![]))
+    }
+
+    pub fn watcher_hub(&self) -> Arc<WatchHub> {
+        self.shared.watcher_hub.clone()
     }
 
     async fn run(&self, replica_table: ReplicaRouteTable) -> ! {
@@ -162,8 +180,164 @@ impl Root {
     }
 }
 
-#[cfg(test)]
-mod test_root {
-    #[tokio::test]
-    async fn name() {}
+impl Root {
+    pub async fn create_database(&self, name: String) -> Result<DatabaseDesc> {
+        let desc = self
+            .schema()?
+            .create_database(DatabaseDesc {
+                name,
+                ..Default::default()
+            })
+            .await?;
+        self.watcher_hub()
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Database(desc.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
+        Ok(desc)
+    }
+
+    pub async fn delete_database(&self, name: &str) -> Result<()> {
+        let id = self.schema()?.delete_database(name).await?;
+        self.watcher_hub()
+            .notify(
+                vec![],
+                vec![DeleteEvent {
+                    event: Some(delete_event::Event::Database(id)),
+                }],
+            )
+            .await;
+        Ok(())
+    }
+
+    pub async fn create_collection(
+        &self,
+        name: String,
+        database: String,
+    ) -> Result<CollectionDesc> {
+        let schema = self.schema()?;
+        let db = schema.get_database(&database).await?;
+        if db.is_none() {
+            return Err(Error::DatabaseNotFound(database));
+        }
+        let desc = schema
+            .create_collection(CollectionDesc {
+                name,
+                parent_id: db.unwrap().id,
+                ..Default::default()
+            })
+            .await?;
+        self.watcher_hub()
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Collection(desc.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
+        Ok(desc)
+    }
+
+    pub async fn delete_collection(&self, name: &str, database: &str) -> Result<()> {
+        let schema = self.schema()?;
+        let collection = schema.get_collection(database, name).await?;
+        if let Some(collection) = collection {
+            let id = collection.id;
+            schema.delete_collection(collection).await?;
+            self.watcher_hub()
+                .notify(
+                    vec![],
+                    vec![DeleteEvent {
+                        event: Some(delete_event::Event::Collection(id)),
+                    }],
+                )
+                .await;
+        }
+        Ok(())
+    }
+
+    pub async fn get_database(&self, name: &str) -> Result<Option<DatabaseDesc>> {
+        self.schema()?.get_database(name).await
+    }
+
+    pub async fn get_collection(
+        &self,
+        name: &str,
+        database: &str,
+    ) -> Result<Option<CollectionDesc>> {
+        self.schema()?.get_collection(database, name).await
+    }
+
+    pub async fn watch(&self, cur_groups: HashMap<u64, u64>) -> Result<Watcher> {
+        let schema = self.schema()?;
+
+        let watcher = {
+            let hub = self.watcher_hub();
+            let (mut watcher, _write_guard) = hub.create_watcher().await;
+            let (updates, deletes) = schema.list_all_events(cur_groups).await?;
+            watcher.set_init_resp(updates, deletes);
+            watcher
+        };
+        Ok(watcher)
+    }
+
+    pub async fn join(&self, addr: String) -> Result<(Vec<u8>, NodeDesc, ReplicaNodes)> {
+        let schema = self.schema()?;
+        let node = schema
+            .add_node(NodeDesc {
+                addr,
+                ..Default::default()
+            })
+            .await?;
+        self.watcher_hub()
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Node(node.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
+
+        let cluster_id = schema.cluster_id().await?.unwrap();
+        let mut roots = schema.get_root_replicas().await?;
+        roots.move_first(node.id);
+        Ok((cluster_id, node, roots))
+    }
+
+    pub async fn report(&self, updates: Vec<GroupUpdates>) -> Result<()> {
+        let schema = self.schema()?;
+        let mut update_events = Vec::new();
+        let mut changed_group_states = Vec::new();
+        for u in updates {
+            if u.group_desc.is_some() {
+                // TODO: check & handle remove replicas from group
+            }
+            schema
+                .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
+                .await?;
+            if let Some(desc) = u.group_desc {
+                update_events.push(UpdateEvent {
+                    event: Some(update_event::Event::Group(desc)),
+                })
+            }
+            if let Some(state) = u.replica_state {
+                changed_group_states.push(state.group_id);
+            }
+        }
+
+        let mut states = schema.list_group_state().await?; // TODO: fix poor performance.
+        states.retain(|s| changed_group_states.contains(&s.group_id));
+        for state in states {
+            update_events.push(UpdateEvent {
+                event: Some(update_event::Event::GroupState(state)),
+            })
+        }
+
+        self.watcher_hub().notify(update_events, vec![]).await;
+
+        Ok(())
+    }
 }
