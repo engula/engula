@@ -71,6 +71,14 @@ impl root_server::Root for Server {
                 ..Default::default()
             })
             .await?;
+        self.watcher_hub
+            .notify(
+                vec![UpdateEvent {
+                    event: Some(update_event::Event::Node(node.to_owned())),
+                }],
+                vec![],
+            )
+            .await;
         let cluster_id = schema.cluster_id().await?.unwrap();
         self.address_resolver.insert(&node);
 

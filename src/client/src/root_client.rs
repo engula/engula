@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use engula_api::{server::v1::*, v1::*};
 use tonic::{transport::Channel, Streaming};
 
@@ -57,9 +59,12 @@ impl Client {
         Ok(res.into_inner().node)
     }
 
-    pub async fn watch(&self, sequence: u64) -> Result<Streaming<WatchResponse>, tonic::Status> {
+    pub async fn watch(
+        &self,
+        cur_group_epochs: HashMap<u64, u64>,
+    ) -> Result<Streaming<WatchResponse>, tonic::Status> {
         let mut client = self.client.clone();
-        let res = client.watch(WatchRequest { sequence }).await?;
+        let res = client.watch(WatchRequest { cur_group_epochs }).await?;
         Ok(res.into_inner())
     }
 }
