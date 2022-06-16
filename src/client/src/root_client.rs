@@ -15,16 +15,26 @@
 use engula_api::{server::v1::*, v1::*};
 use tonic::{transport::Channel, Streaming};
 
+use crate::NodeClient;
+
 #[derive(Debug, Clone)]
 pub struct Client {
     client: root_client::RootClient<Channel>,
 }
 
 impl Client {
-    pub async fn connect(addr: String) -> Result<Self, tonic::transport::Error> {
-        let addr = format!("http://{}", addr);
-        let client = root_client::RootClient::connect(addr).await?;
-        Ok(Self { client })
+    pub async fn connect(addr: String) -> Result<Self, crate::Error> {
+        let node_client = NodeClient::connect(addr).await?;
+        let root_addrs = node_client.get_root().await?;
+        let mut errs = vec![];
+        for root_addr in root_addrs {
+            let root_addr = format!("http://{}", root_addr);
+            match root_client::RootClient::connect(root_addr).await {
+                Ok(client) => return Ok(Self { client }),
+                Err(err) => errs.push(err),
+            }
+        }
+        Err(crate::Error::MultiTransport(errs))
     }
 
     // TODO improve building admin request

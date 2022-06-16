@@ -17,6 +17,9 @@ pub enum Error {
     #[error("transport {0}")]
     Transport(#[from] tonic::transport::Error),
 
+    #[error("multi transport errors")]
+    MultiTransport(Vec<tonic::transport::Error>),
+
     #[error("rpc {0}")]
     Rpc(#[from] tonic::Status),
 }

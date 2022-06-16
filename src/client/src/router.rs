@@ -39,8 +39,8 @@ pub struct State {
 
 #[allow(unused)]
 impl Router {
-    pub async fn connect(root_addr: String) -> Result<Self, crate::Error> {
-        let root_client = RootClient::connect(root_addr).await?;
+    pub async fn connect(addr: String) -> Result<Self, crate::Error> {
+        let root_client = RootClient::connect(addr).await?;
         let events = root_client.watch(0).await?;
         let state = Arc::new(Mutex::new(State::default()));
         let state_clone = state.clone();
