@@ -68,14 +68,12 @@ impl Client {
     }
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct RequestBatchBuilder {
     node_id: u64,
     requests: Vec<GroupRequest>,
 }
 
-#[allow(unused)]
 impl RequestBatchBuilder {
     pub fn new(node_id: u64) -> Self {
         Self {

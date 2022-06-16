@@ -44,6 +44,9 @@ pub enum Error {
     #[error("transport {0}")]
     Transport(#[from] tonic::transport::Error),
 
+    #[error("multi transport errors")]
+    MultiTransport(Vec<tonic::transport::Error>),
+
     #[error("io {0}")]
     Io(#[from] std::io::Error),
 
@@ -112,6 +115,7 @@ impl From<Error> for tonic::Status {
             | Error::ClusterNotMatch
             | Error::InvalidData(_)
             | Error::Transport(_)
+            | Error::MultiTransport(_)
             | Error::Io(_)
             | Error::RocksDb(_)
             | Error::Raft(_)
@@ -163,6 +167,7 @@ impl From<Error> for engula_api::server::v1::Error {
             Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Transport(_)
+            | Error::MultiTransport(_)
             | Error::Raft(_)
             | Error::RaftEngine(_)
             | Error::RocksDb(_)
@@ -195,6 +200,16 @@ impl From<engula_api::server::v1::Error> for Error {
             Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
             Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
             _ => Error::InvalidData(msg),
+        }
+    }
+}
+
+impl From<engula_client::Error> for Error {
+    fn from(err: engula_client::Error) -> Self {
+        match err {
+            engula_client::Error::Transport(err) => Error::Transport(err),
+            engula_client::Error::MultiTransport(err) => Error::MultiTransport(err),
+            engula_client::Error::Rpc(err) => Error::Rpc(err),
         }
     }
 }
