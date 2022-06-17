@@ -20,7 +20,12 @@ use tracing::{error, info};
 
 use super::{SnapManager, SNAP_DATA};
 use crate::{
-    node::replica::raft::{fsm::SnapshotBuilder, worker::Request, StateMachine, snap::{SNAP_TEMP, SNAP_META}},
+    node::replica::raft::{
+        fsm::SnapshotBuilder,
+        snap::{SNAP_META, SNAP_TEMP},
+        worker::Request,
+        StateMachine,
+    },
     runtime::{Executor, TaskPriority},
     serverpb::v1::{SnapshotFile, SnapshotMeta},
     Result,
