@@ -82,7 +82,7 @@ async fn load_roots(state_engine: &StateEngine) -> Vec<String> {
         if let Some(roots) = state_engine.load_root_nodes().await.unwrap() {
             return roots.into_iter().map(|d| d.addr).collect();
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        crate::runtime::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
@@ -100,7 +100,7 @@ async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        crate::runtime::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

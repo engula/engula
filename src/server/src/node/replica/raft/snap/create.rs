@@ -139,7 +139,7 @@ async fn read_file_meta(filename: &Path) -> Result<SnapshotFile> {
         count += 1;
         hasher.update(&buf[..n]);
         if count % 10 == 0 {
-            tokio::task::yield_now().await;
+            crate::runtime::yield_now().await;
         }
     }
 

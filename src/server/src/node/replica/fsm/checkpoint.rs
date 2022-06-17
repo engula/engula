@@ -64,7 +64,7 @@ async fn write_partial_to_file(
     writer.open(base_dir.join(format!("{}.sst", file_no)))?;
 
     let mut index = 0;
-    while let Some((key, value)) = iter.next() {
+    for (key, value) in iter.by_ref() {
         writer.put(key, value)?;
         if writer.file_size() > 64 * 1024 * 1024 {
             writer.finish()?;
@@ -73,7 +73,7 @@ async fn write_partial_to_file(
 
         index += 1;
         if index % 1024 == 0 {
-            tokio::task::yield_now().await;
+            crate::runtime::yield_now().await;
         }
     }
 

@@ -296,9 +296,9 @@ impl raft::Storage for Storage {
             self.create_snapshot.set(true);
         }
 
-        return Err(raft::Error::Store(
+        Err(raft::Error::Store(
             raft::StorageError::SnapshotTemporarilyUnavailable,
-        ));
+        ))
     }
 }
 

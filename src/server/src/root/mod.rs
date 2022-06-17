@@ -145,7 +145,7 @@ impl Root {
         // TODO(zojw): refresh owner, heartbeat node, rebalance
         for _ in 0..1000 {
             self.send_heartbeat(schema.to_owned()).await?;
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
 
         // After that, RootCore needs to be set to None before returning.

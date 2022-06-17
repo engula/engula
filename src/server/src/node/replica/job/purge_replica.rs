@@ -70,7 +70,7 @@ async fn watch_and_purge_orphan_replicas(replica: Arc<Replica>) {
 async fn find_orphan_replica(replica: &Replica) -> Result<u64> {
     // TODO(walter) find orphan replicas.
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        crate::runtime::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
