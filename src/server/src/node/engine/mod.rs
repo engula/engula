@@ -12,19 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+mod group;
+mod state;
 
-use engula_client::NodeClient;
-use engula_server::runtime;
-
-pub async fn node_client_with_retry(addr: &str) -> NodeClient {
-    for _ in 0..10000 {
-        match NodeClient::connect(addr.to_string()).await {
-            Ok(client) => return client,
-            Err(_) => {
-                runtime::time::sleep(Duration::from_millis(3000)).await;
-            }
-        };
-    }
-    panic!("connect to {} timeout", addr);
-}
+pub use self::{
+    group::{GroupEngine, GroupEngineIterator, WriteBatch, LOCAL_COLLECTION_ID},
+    state::StateEngine,
+};

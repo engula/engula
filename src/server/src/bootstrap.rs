@@ -30,7 +30,8 @@ use tracing::{debug, info, warn};
 
 use crate::{
     node::{
-        group_engine::LOCAL_COLLECTION_ID, resolver::AddressResolver, state_engine::StateEngine,
+        engine::{StateEngine, LOCAL_COLLECTION_ID},
+        resolver::AddressResolver,
         Node,
     },
     root::Root,

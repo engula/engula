@@ -14,7 +14,7 @@
 
 use engula_api::server::v1::ShardGetRequest;
 
-use crate::{node::group_engine::GroupEngine, Error, Result};
+use crate::{node::engine::GroupEngine, Error, Result};
 
 /// Get the value of the specified key.
 pub async fn get(engine: &GroupEngine, req: &ShardGetRequest) -> Result<Option<Vec<u8>>> {

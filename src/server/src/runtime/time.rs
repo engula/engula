@@ -11,20 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 use std::time::Duration;
 
-use engula_client::NodeClient;
-use engula_server::runtime;
-
-pub async fn node_client_with_retry(addr: &str) -> NodeClient {
-    for _ in 0..10000 {
-        match NodeClient::connect(addr.to_string()).await {
-            Ok(client) => return client,
-            Err(_) => {
-                runtime::time::sleep(Duration::from_millis(3000)).await;
-            }
-        };
-    }
-    panic!("connect to {} timeout", addr);
+pub async fn sleep(dur: Duration) {
+    tokio::time::sleep(dur).await;
 }

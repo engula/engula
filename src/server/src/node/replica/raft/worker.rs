@@ -27,10 +27,12 @@ use super::{
     applier::ReplicaCache,
     fsm::StateMachine,
     node::RaftNode,
+    snap::SnapManager,
     transport::{Channel, TransportManager},
     RaftManager, ReadPolicy,
 };
 use crate::{
+    runtime::Executor,
     serverpb::v1::{EvalResult, RaftMessage},
     Result,
 };
@@ -44,10 +46,7 @@ pub enum Request {
         eval_result: EvalResult,
         sender: oneshot::Sender<Result<()>>,
     },
-    /// Try generate new snapshot.
-    Snapshot {
-        sender: oneshot::Sender<Result<u64>>,
-    },
+    CreateSnapshotFinished,
     ChangeConfig {
         change: ChangeReplicas,
         sender: oneshot::Sender<Result<()>>,
@@ -125,6 +124,7 @@ pub struct RaftWorker<M: StateMachine>
 where
     Self: Send,
 {
+    executor: Executor,
     request_sender: mpsc::Sender<Request>,
     request_receiver: mpsc::Receiver<Request>,
 
@@ -134,6 +134,7 @@ where
 
     channels: HashMap<u64, Channel>,
     trans_mgr: TransportManager,
+    snap_mgr: SnapManager,
     engine: Arc<Engine>,
     observer: Box<dyn StateObserver>,
     replica_cache: ReplicaCache,
@@ -165,6 +166,7 @@ where
         request_sender.send(Request::Start).await.unwrap();
 
         Ok(RaftWorker {
+            executor: raft_mgr.executor.clone(),
             request_sender,
             request_receiver,
             group_id,
@@ -172,6 +174,7 @@ where
             raft_node,
             channels: HashMap::new(),
             trans_mgr: raft_mgr.transport_mgr.clone(),
+            snap_mgr: raft_mgr.snap_mgr.clone(),
             engine: raft_mgr.engine.clone(),
             observer,
             replica_cache,
@@ -229,6 +232,17 @@ where
                 let post_ready = write_task.post_ready();
                 self.raft_node.post_advance(post_ready, &mut template);
             }
+
+            if self.raft_node.mut_store().create_snapshot.get() {
+                self.raft_node.mut_store().create_snapshot.set(false);
+                super::snap::dispatch_creating_snap_task(
+                    &self.executor,
+                    self.desc.id,
+                    self.request_sender.clone(),
+                    self.raft_node.mut_state_machine(),
+                    self.snap_mgr.clone(),
+                );
+            }
         }
 
         todo!("handle exit");
@@ -242,8 +256,8 @@ where
             } => self.handle_proposal(eval_result, sender),
             Request::Read { policy, sender } => self.handle_read(policy, sender),
             Request::ChangeConfig { change, sender } => self.handle_conf_change(change, sender),
-            Request::Snapshot { .. } => {
-                todo!()
+            Request::CreateSnapshotFinished => {
+                self.raft_node.mut_store().is_creating_snapshot.set(false);
             }
             Request::Transfer { target_id } => {
                 self.raft_node.transfer_leader(target_id);

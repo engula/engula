@@ -14,6 +14,7 @@
 
 #![feature(drain_filter)]
 #![feature(result_into_ok_or_err)]
+#![feature(path_try_exists)]
 
 mod bootstrap;
 mod error;
@@ -35,6 +36,8 @@ pub mod serverpb {
     pub mod v1 {
         #![allow(clippy::all)]
         tonic::include_proto!("serverpb.v1");
+
+        pub type ApplyState = EntryId;
 
         impl SyncOp {
             pub fn purge_replica(orphan_replica_id: u64) -> Self {

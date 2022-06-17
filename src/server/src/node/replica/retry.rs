@@ -35,7 +35,7 @@ pub async fn execute(replica: &Replica, mut request: GroupRequest) -> Result<Gro
             }
             Err(Error::GroupNotReady(_)) => {
                 // sleep and retry.
-                tokio::time::sleep(Duration::from_micros(200)).await;
+                crate::runtime::time::sleep(Duration::from_micros(200)).await;
             }
             Err(Error::EpochNotMatch(desc)) => {
                 if is_executable(&desc, &request) {

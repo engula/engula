@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod group_engine;
+pub mod engine;
 mod job;
 pub mod replica;
 pub mod resolver;
 pub mod route_table;
-pub mod state_engine;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
@@ -26,13 +25,12 @@ use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
 pub use self::{
-    group_engine::GroupEngine,
+    engine::{GroupEngine, StateEngine},
     replica::{
         raft::{RaftManager, TransportManager},
         Replica,
     },
     route_table::{RaftRouteTable, ReplicaRouteTable},
-    state_engine::StateEngine,
 };
 use self::{job::StateChannel, replica::raft::AddressResolver};
 use crate::{

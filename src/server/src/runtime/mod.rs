@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+pub mod time;
+
 use std::{
     future::Future,
     pin::Pin,
@@ -112,4 +114,8 @@ impl<T> Future for JoinHandle<T> {
             Poll::Ready(Err(e)) => panic!("{:?}", e),
         }
     }
+}
+
+pub async fn yield_now() {
+    tokio::task::yield_now().await;
 }
