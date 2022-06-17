@@ -25,4 +25,16 @@ message CollectionDesc {
   uint64 id = 1;
   string name = 2;
   uint64 parent_id = 3;
+
+  message HashPartition {
+    uint64 slots = 1;
+    uint64 hasher = 2;
+  }
+
+  message RangePartition {}
+
+  oneof partition {
+    HashPartition hash = 4;
+    RangePartition range = 5;
+  }
 }

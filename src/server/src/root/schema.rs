@@ -19,11 +19,11 @@ use std::{
 
 use engula_api::{
     server::v1::{
-        shard_desc::{Partition, RangePartition},
-        watch_response::{update_event, UpdateEvent},
+        shard_desc::Partition,
+        watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
         *,
     },
-    v1::{CollectionDesc, DatabaseDesc, PutRequest},
+    v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
 use prost::Message;
 
@@ -100,13 +100,15 @@ impl Schema {
         todo!()
     }
 
-    pub async fn delete_database(&self, name: &str) -> Result<()> {
+    pub async fn delete_database(&self, name: &str) -> Result<u64> {
         let db = self.get_database(name).await?;
         if db.is_none() {
             return Err(Error::DatabaseNotFound(name.to_owned()));
         }
-        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.unwrap().id.to_le_bytes())
-            .await
+        let db = db.unwrap();
+        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
+            .await?;
+        Ok(db.id)
     }
 
     pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
@@ -152,9 +154,9 @@ impl Schema {
         let desc = ShardDesc {
             id: shard_id,
             parent_id: collection.id,
-            partition: Some(Partition::Range(RangePartition {
-                start: MIN_KEY.to_owned(),
-                end: MAX_KEY.to_owned(),
+            partition: Some(Partition::Range(shard_desc::RangePartition {
+                start: SHARD_MIN.to_owned(),
+                end: SHARD_MAX.to_owned(),
             })),
         };
         let group_id = self.store.create_shard(desc.to_owned()).await?;
@@ -358,8 +360,12 @@ impl Schema {
         Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
     }
 
-    pub async fn list_all_events(&self, _seq: u64) -> Result<Vec<UpdateEvent>> {
-        let mut events = Vec::new();
+    pub async fn list_all_events(
+        &self,
+        cur_groups: HashMap<u64, u64>,
+    ) -> Result<(Vec<UpdateEvent>, Vec<DeleteEvent>)> {
+        let mut updates = Vec::new();
+        let mut deletes = Vec::new();
 
         // list databases.
         let dbs = self
@@ -370,7 +376,7 @@ impl Schema {
                 event: Some(update_event::Event::Database(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&dbs);
+        updates.extend_from_slice(&dbs);
 
         // list collections.
         let collections = self
@@ -381,31 +387,73 @@ impl Schema {
                 event: Some(update_event::Event::Collection(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&collections);
+        updates.extend_from_slice(&collections);
 
         // list groups.
         let groups = self
             .list_group()
             .await?
             .into_iter()
-            .map(|desc| UpdateEvent {
-                event: Some(update_event::Event::Group(desc)),
+            .map(|desc| (desc.id, desc))
+            .collect::<HashMap<u64, GroupDesc>>();
+
+        let changed_groups = groups
+            .iter()
+            .filter(|(_, desc)| {
+                if let Some(cur_epoch) = cur_groups.get(&desc.id) {
+                    desc.epoch > *cur_epoch
+                } else {
+                    true
+                }
             })
-            .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&groups);
+            .map(|(id, desc)| (id.to_owned(), desc.to_owned()))
+            .collect::<HashMap<u64, GroupDesc>>();
+
+        updates.extend_from_slice(
+            &changed_groups
+                .values()
+                .into_iter()
+                .map(|desc| UpdateEvent {
+                    event: Some(update_event::Event::Group(desc.to_owned())),
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        if !cur_groups.is_empty() {
+            let deleted = cur_groups
+                .keys()
+                .into_iter()
+                .filter(|group_id| !groups.contains_key(group_id))
+                .collect::<Vec<_>>();
+            let delete_desc = deleted
+                .iter()
+                .map(|id| DeleteEvent {
+                    event: Some(delete_event::Event::Group(**id)),
+                })
+                .collect::<Vec<_>>();
+            let delete_state = deleted
+                .iter()
+                .map(|id| DeleteEvent {
+                    event: Some(delete_event::Event::GroupState(**id)),
+                })
+                .collect::<Vec<_>>();
+            deletes.extend_from_slice(&delete_desc);
+            deletes.extend_from_slice(&delete_state);
+        }
 
         // list group_state.
         let group_states = self
             .list_group_state()
             .await?
             .into_iter()
+            .filter(|desc| changed_groups.contains_key(&desc.group_id))
             .map(|desc| UpdateEvent {
                 event: Some(update_event::Event::GroupState(desc)),
             })
             .collect::<Vec<UpdateEvent>>();
-        events.extend_from_slice(&group_states);
+        updates.extend_from_slice(&group_states);
 
-        Ok(events)
+        Ok((updates, deletes))
     }
 }
 
@@ -464,9 +512,9 @@ impl Schema {
             shards: vec![ShardDesc {
                 id: ROOT_SHARD_ID,
                 parent_id: ROOT_SUPER_COLLECTION_ID,
-                partition: Some(Partition::Range(RangePartition {
-                    start: MIN_KEY.to_owned(),
-                    end: MAX_KEY.to_owned(),
+                partition: Some(Partition::Range(shard_desc::RangePartition {
+                    start: SHARD_MIN.to_owned(),
+                    end: SHARD_MAX.to_owned(),
                 })),
             }],
         });
@@ -489,6 +537,9 @@ impl Schema {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(self_collection);
 
@@ -496,6 +547,9 @@ impl Schema {
             id: SYSTEM_DATABASE_COLLECTION_ID,
             name: SYSTEM_DATABASE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(db_collection);
 
@@ -503,6 +557,9 @@ impl Schema {
             id: SYSTEM_MATE_COLLECTION_ID,
             name: SYSTEM_MATE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(meta_collection);
 
@@ -510,6 +567,9 @@ impl Schema {
             id: SYSTEM_NODE_COLLECTION_ID,
             name: SYSTEM_NODE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(node_collection);
 
@@ -517,6 +577,9 @@ impl Schema {
             id: SYSTEM_GROUP_COLLECTION_ID,
             name: SYSTEM_GROUP_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(group_collection);
 
@@ -524,6 +587,9 @@ impl Schema {
             id: SYSTEM_REPLICA_STATE_COLLECTION_ID,
             name: SYSTEM_REPLICA_STATE_COLLECTION.to_owned(),
             parent_id: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
         };
         batch.put_collection(replica_state_collection.to_owned());
 

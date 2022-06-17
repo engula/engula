@@ -12,21 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use engula_api::{server::v1::*, v1::*};
-use futures::Stream;
 use tonic::{Request, Response, Status};
 
-use crate::{root::Schema, service::root::watch_response::UpdateEvent, Error, Result, Server};
-
-type WatchStream = std::pin::Pin<
-    Box<dyn Stream<Item = std::result::Result<WatchResponse, tonic::Status>> + Send + Sync>,
->;
+use crate::{root::Watcher, Error, Result, Server};
 
 #[tonic::async_trait]
 impl root_server::Root for Server {
-    type WatchStream = WatchStream;
+    type WatchStream = Watcher;
 
     async fn admin(
         &self,
@@ -42,10 +35,10 @@ impl root_server::Root for Server {
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
         let req = req.into_inner();
-        let seq = req.sequence;
-        let schema = self.schema().await?;
-        let updates = schema.list_all_events(seq).await?;
-        Ok(Response::new(ListStream { seq, updates }.into_stream()))
+        let watcher = self
+            .wrap(self.root.watch(req.cur_group_epochs).await)
+            .await?;
+        Ok(Response::new(watcher))
     }
 
     async fn join(
@@ -53,19 +46,8 @@ impl root_server::Root for Server {
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
         let request = request.into_inner();
-        let schema = self.schema().await?;
-        let node = schema
-            .add_node(NodeDesc {
-                addr: request.addr,
-                ..Default::default()
-            })
-            .await?;
-        let cluster_id = schema.cluster_id().await?.unwrap();
+        let (cluster_id, node, roots) = self.wrap(self.root.join(request.addr).await).await?;
         self.address_resolver.insert(&node);
-
-        let mut roots = schema.get_root_replicas().await?;
-        roots.move_first(node.id);
-
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
@@ -88,15 +70,7 @@ impl root_server::Root for Server {
         request: Request<ReportRequest>,
     ) -> std::result::Result<Response<ReportResponse>, Status> {
         let request = request.into_inner();
-        let schema = self.schema().await?;
-        for u in request.updates {
-            if u.group_desc.is_some() {
-                // TODO: check & handle remove replicas from group
-            }
-            schema
-                .update_group_replica(u.group_desc, u.replica_state)
-                .await?;
-        }
+        self.wrap(self.root.report(request.updates).await).await?;
         Ok(Response::new(ReportResponse {}))
     }
 }
@@ -107,7 +81,7 @@ impl Server {
         let req = req
             .request
             .ok_or_else(|| Error::InvalidArgument("AdminRequest".into()))?;
-        res.response = Some(self.handle_admin_union(req).await?);
+        res.response = Some(self.wrap(self.handle_admin_union(req).await).await?);
         Ok(res)
     }
 
@@ -162,14 +136,7 @@ impl Server {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let desc = self
-            .schema()
-            .await?
-            .create_database(DatabaseDesc {
-                name: req.name,
-                ..Default::default()
-            })
-            .await?;
+        let desc = self.root.create_database(req.name).await?;
         Ok(CreateDatabaseResponse {
             database: Some(desc),
         })
@@ -179,31 +146,20 @@ impl Server {
         &self,
         req: DeleteDatabaseRequest,
     ) -> Result<DeleteDatabaseResponse> {
-        self.schema().await?.delete_database(&req.name).await?;
+        self.root.delete_database(&req.name).await?;
         Ok(DeleteDatabaseResponse {})
     }
 
     async fn handle_get_database(&self, req: GetDatabaseRequest) -> Result<GetDatabaseResponse> {
-        let resp = self.schema().await?.get_database(&req.name).await?;
-        Ok(GetDatabaseResponse { database: resp })
+        let database = self.root.get_database(&req.name).await?;
+        Ok(GetDatabaseResponse { database })
     }
 
     async fn handle_create_collection(
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let schema = self.schema().await?;
-        let db = schema.get_database(&req.parent).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(req.parent));
-        }
-        let desc = schema
-            .create_collection(CollectionDesc {
-                name: req.name,
-                parent_id: db.unwrap().id,
-                ..Default::default()
-            })
-            .await?;
+        let desc = self.root.create_collection(req.name, req.parent).await?;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
         })
@@ -213,12 +169,7 @@ impl Server {
         &self,
         req: DeleteCollectionRequest,
     ) -> Result<DeleteCollectionResponse> {
-        let schema = self.schema().await?;
-        let collection = schema.get_collection(&req.parent, &req.name).await?;
-        if let Some(collection) = collection {
-            schema.delete_collection(collection).await?;
-            return Ok(DeleteCollectionResponse {});
-        }
+        self.root.delete_collection(&req.name, &req.parent).await?;
         Ok(DeleteCollectionResponse {})
     }
 
@@ -226,37 +177,15 @@ impl Server {
         &self,
         req: GetCollectionRequest,
     ) -> Result<GetCollectionResponse> {
-        let resp = self
-            .schema()
-            .await?
-            .get_collection(&req.parent, &req.name)
-            .await?;
-        Ok(GetCollectionResponse { collection: resp })
+        let collection = self.root.get_collection(&req.name, &req.parent).await?;
+        Ok(GetCollectionResponse { collection })
     }
 
-    async fn schema(&self) -> Result<Arc<Schema>> {
-        let s = self.root.schema();
-        if s.is_none() {
+    async fn wrap<T>(&self, result: Result<T>) -> Result<T> {
+        if let Err(Error::NotRootLeader(_)) = result {
             let roots = self.node.get_root().await;
             return Err(Error::NotRootLeader(roots));
         }
-        Ok(s.unwrap())
-    }
-}
-
-pub(crate) struct ListStream {
-    seq: u64,
-    updates: Vec<UpdateEvent>,
-}
-
-impl ListStream {
-    pub(crate) fn into_stream(self) -> WatchStream {
-        Box::pin(async_stream::stream! {
-                yield Ok(WatchResponse {
-                        sequence: self.seq,
-                        updates: self.updates,
-                        deletes: vec![],
-                })
-        })
+        result
     }
 }
