@@ -110,7 +110,6 @@ impl StateEngine {
     }
 
     /// Load root nodes. `None` is returned if there no any root node records exists.
-    #[allow(dead_code)]
     pub async fn load_root_nodes(&self) -> Result<Option<Vec<NodeDesc>>> {
         let cf_handle = self
             .raw_db

@@ -36,11 +36,11 @@ service Root {
   rpc Report(ReportRequest) returns (ReportResponse) {}
 }
 
-message WatchRequest { uint64 sequence = 1; }
+message WatchRequest {
+  map<uint64, uint64> cur_group_epochs = 1; // <group_id, group_epoch>
+}
 
 message WatchResponse {
-  uint64 sequence = 1;
-
   message UpdateEvent {
     oneof event {
       NodeDesc node = 1;
@@ -57,6 +57,7 @@ message WatchResponse {
       uint64 group = 2;
       uint64 database = 3;
       uint64 collection = 4;
+      uint64 group_state = 5;
     }
   }
 

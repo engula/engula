@@ -41,7 +41,7 @@ pub struct State {
 impl Router {
     pub async fn connect(addr: String) -> Result<Self, crate::Error> {
         let root_client = RootClient::connect(addr).await?;
-        let events = root_client.watch(0).await?;
+        let events = root_client.watch(HashMap::new()).await?;
         let state = Arc::new(Mutex::new(State::default()));
         let state_clone = state.clone();
         tokio::spawn(async move {
@@ -94,6 +94,7 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
                     }
                 }
                 DeleteEvent::Collection(_) => todo!(),
+                DeleteEvent::GroupState(_) => todo!(),
             }
         }
     }
