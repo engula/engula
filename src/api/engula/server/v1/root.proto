@@ -57,6 +57,7 @@ message WatchResponse {
       uint64 group = 2;
       uint64 database = 3;
       uint64 collection = 4;
+      uint64 group_state = 5;
     }
   }
 

@@ -424,11 +424,21 @@ impl Schema {
                 .keys()
                 .into_iter()
                 .filter(|group_id| !groups.contains_key(group_id))
+                .collect::<Vec<_>>();
+            let delete_desc = deleted
+                .iter()
                 .map(|id| DeleteEvent {
-                    event: Some(delete_event::Event::Group(id.to_owned())),
+                    event: Some(delete_event::Event::Group(**id)),
                 })
                 .collect::<Vec<_>>();
-            deletes.extend_from_slice(&deleted);
+            let delete_state = deleted
+                .iter()
+                .map(|id| DeleteEvent {
+                    event: Some(delete_event::Event::GroupState(**id)),
+                })
+                .collect::<Vec<_>>();
+            deletes.extend_from_slice(&delete_desc);
+            deletes.extend_from_slice(&delete_state);
         }
 
         // list group_state.
@@ -442,8 +452,6 @@ impl Schema {
             })
             .collect::<Vec<UpdateEvent>>();
         updates.extend_from_slice(&group_states);
-
-        // TODO: delete group_state.
 
         Ok((updates, deletes))
     }

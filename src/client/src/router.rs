@@ -94,6 +94,7 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
                     }
                 }
                 DeleteEvent::Collection(_) => todo!(),
+                DeleteEvent::GroupState(_) => todo!(),
             }
         }
     }

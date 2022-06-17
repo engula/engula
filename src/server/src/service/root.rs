@@ -81,7 +81,7 @@ impl Server {
         let req = req
             .request
             .ok_or_else(|| Error::InvalidArgument("AdminRequest".into()))?;
-        res.response = Some(self.handle_admin_union(req).await?);
+        res.response = Some(self.wrap(self.handle_admin_union(req).await).await?);
         Ok(res)
     }
 
@@ -136,7 +136,7 @@ impl Server {
         &self,
         req: CreateDatabaseRequest,
     ) -> Result<CreateDatabaseResponse> {
-        let desc = self.wrap(self.root.create_database(req.name).await).await?;
+        let desc = self.root.create_database(req.name).await?;
         Ok(CreateDatabaseResponse {
             database: Some(desc),
         })
@@ -146,13 +146,12 @@ impl Server {
         &self,
         req: DeleteDatabaseRequest,
     ) -> Result<DeleteDatabaseResponse> {
-        self.wrap(self.root.delete_database(&req.name).await)
-            .await?;
+        self.root.delete_database(&req.name).await?;
         Ok(DeleteDatabaseResponse {})
     }
 
     async fn handle_get_database(&self, req: GetDatabaseRequest) -> Result<GetDatabaseResponse> {
-        let database = self.wrap(self.root.get_database(&req.name).await).await?;
+        let database = self.root.get_database(&req.name).await?;
         Ok(GetDatabaseResponse { database })
     }
 
@@ -160,9 +159,7 @@ impl Server {
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let desc = self
-            .wrap(self.root.create_collection(req.name, req.parent).await)
-            .await?;
+        let desc = self.root.create_collection(req.name, req.parent).await?;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
         })
@@ -172,8 +169,7 @@ impl Server {
         &self,
         req: DeleteCollectionRequest,
     ) -> Result<DeleteCollectionResponse> {
-        self.wrap(self.root.delete_collection(&req.name, &req.parent).await)
-            .await?;
+        self.root.delete_collection(&req.name, &req.parent).await?;
         Ok(DeleteCollectionResponse {})
     }
 
@@ -181,9 +177,7 @@ impl Server {
         &self,
         req: GetCollectionRequest,
     ) -> Result<GetCollectionResponse> {
-        let collection = self
-            .wrap(self.root.get_collection(&req.name, &req.parent).await)
-            .await?;
+        let collection = self.root.get_collection(&req.name, &req.parent).await?;
         Ok(GetCollectionResponse { collection })
     }
 

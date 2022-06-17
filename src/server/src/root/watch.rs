@@ -47,7 +47,8 @@ pub struct WatcherInitializer<'a> {
 impl<'a> WatcherInitializer<'a> {
     pub fn set_init_resp(&mut self, updates: Vec<UpdateEvent>, deletes: Vec<DeleteEvent>) {
         let mut inner = self.watcher_inner.lock().unwrap();
-        inner.init_resp = Some(WatchResponse { updates, deletes })
+        inner.updates.extend_from_slice(&updates);
+        inner.deletes.extend_from_slice(&deletes);
     }
 }
 
@@ -121,7 +122,6 @@ struct WatcherInner {
     deletes: Vec<DeleteEvent>,
     err: Option<Error>,
     dropped: bool,
-    init_resp: Option<WatchResponse>,
 }
 
 impl Watcher {
@@ -154,9 +154,6 @@ impl Stream for Watcher {
         }
         if let Some(err) = inner.err.take() {
             return Poll::Ready(Some(Err(err.into())));
-        }
-        if let Some(init_resp) = inner.init_resp.take() {
-            return Poll::Ready(Some(Ok(init_resp)));
         }
         if !inner.updates.is_empty() || !inner.deletes.is_empty() {
             let resp = WatchResponse {
