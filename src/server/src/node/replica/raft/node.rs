@@ -51,6 +51,8 @@ pub(super) trait AdvanceTemplate {
     fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole);
 
     fn mut_replica_cache(&mut self) -> &mut ReplicaCache;
+
+    fn apply_snapshot<M: StateMachine>(&mut self, applier: &mut Applier<M>, snapshot: &Snapshot);
 }
 
 pub struct RaftNode<M: StateMachine> {
@@ -231,7 +233,7 @@ where
             template.send_messages(ready.take_messages());
         }
 
-        self.handle_apply(template.mut_replica_cache(), &mut ready);
+        self.handle_apply(template, &mut ready);
 
         let write_task = self.build_write_task(&mut ready);
         if write_task.is_none() {
@@ -266,7 +268,7 @@ where
         self.applier.mut_state_machine()
     }
 
-    fn handle_apply(&mut self, replica_cache: &mut ReplicaCache, ready: &mut Ready) {
+    fn handle_apply(&mut self, template: &mut impl AdvanceTemplate, ready: &mut Ready) {
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());
         }
@@ -276,12 +278,17 @@ where
                 "apply committed entries {}",
                 ready.committed_entries().len()
             );
+            let replica_cache = template.mut_replica_cache();
             let applied = self.applier.apply_entries(
                 &mut self.raw_node,
                 replica_cache,
                 ready.take_committed_entries(),
             );
             self.raw_node.advance_apply_to(applied);
+        }
+
+        if !ready.snapshot().is_empty() {
+            template.apply_snapshot(&mut self.applier, ready.snapshot());
         }
     }
 

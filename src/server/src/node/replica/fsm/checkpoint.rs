@@ -18,7 +18,7 @@ use engula_api::server::v1::GroupDesc;
 use crate::{
     node::{engine::GroupEngineIterator, replica::raft::SnapshotBuilder, GroupEngine},
     serverpb::v1::ApplyState,
-    Result,
+    Error, Result,
 };
 
 pub struct GroupSnapshotBuilder {
@@ -78,4 +78,28 @@ async fn write_partial_to_file(
     }
 
     Ok(None)
+}
+
+pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
+    if !snap_dir.is_dir() {
+        return Err(Error::InvalidArgument(format!(
+            "{} is not a directory",
+            snap_dir.display()
+        )));
+    }
+
+    let mut files = vec![];
+    for entry in snap_dir.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.ends_with(".sst") {
+            files.push(path.file_name().unwrap().to_owned());
+        }
+    }
+
+    files.sort_unstable();
+    let files = files.into_iter().map(|f| snap_dir.join(f)).collect();
+    engine.ingest(files)?;
+
+    Ok(())
 }

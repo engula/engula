@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod apply;
 pub mod create;
 
 use std::{
@@ -23,6 +24,10 @@ use std::{
 pub use create::dispatch_creating_snap_task;
 
 use crate::{serverpb::v1::SnapshotMeta, Result};
+
+const SNAP_DATA: &str = "DATA";
+const SNAP_TEMP: &str = "TEMP";
+const SNAP_META: &str = "META";
 
 pub struct SnapshotInfo {
     pub meta: SnapshotMeta,
@@ -72,7 +77,7 @@ impl SnapManager {
         todo!();
     }
 
-    pub fn lock_snap(&self, replica_id: u64) -> Option<SnapshotGuard> {
+    pub fn lock_snap(&self, replica_id: u64, id: &[u8]) -> Option<SnapshotGuard> {
         todo!()
     }
 }
