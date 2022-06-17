@@ -15,7 +15,7 @@
 use engula_api::server::v1::ShardPutRequest;
 
 use crate::{
-    node::group_engine::{GroupEngine, WriteBatch},
+    node::engine::{GroupEngine, WriteBatch},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };

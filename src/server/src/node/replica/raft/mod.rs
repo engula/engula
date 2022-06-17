@@ -32,7 +32,7 @@ use raft::prelude::{
 use self::snap::SnapManager;
 pub use self::{
     facade::RaftNodeFacade,
-    fsm::{ApplyEntry, StateMachine, Checkpoint},
+    fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
     storage::write_initial_state,
     transport::{AddressResolver, TransportManager},
     worker::StateObserver,
@@ -73,6 +73,8 @@ impl RaftManager {
         use raft_engine::{Config, Engine};
         let engine_dir = path.as_ref().join("engine");
         let snap_dir = path.as_ref().join("snap");
+        create_dir_all_if_not_exists(&engine_dir)?;
+        create_dir_all_if_not_exists(&snap_dir)?;
         let cfg = Config {
             dir: engine_dir.to_str().unwrap().to_owned(),
             ..Default::default()
@@ -173,4 +175,13 @@ pub fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
         cs.voters_outgoing.clear();
     }
     cs
+}
+
+fn create_dir_all_if_not_exists<P: AsRef<Path>>(dir: &P) -> Result<()> {
+    use std::io::ErrorKind;
+    match std::fs::create_dir_all(dir.as_ref()) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
+        Err(err) => Err(err.into()),
+    }
 }

@@ -14,7 +14,6 @@
 
 use std::{
     collections::HashMap,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock},
 };
@@ -22,14 +21,14 @@ use std::{
 use engula_api::server::v1::GroupDesc;
 use prost::Message;
 
-use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::EntryId, Result};
+use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::ApplyState, Error, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
 
 #[derive(Default)]
 pub struct WriteBatch {
-    apply_state: Option<(u64, u64)>,
+    apply_state: Option<ApplyState>,
     descriptor: Option<GroupDesc>,
     inner: rocksdb::WriteBatch,
 }
@@ -49,9 +48,10 @@ where
     collections: Arc<RwLock<HashMap<u64, u64>>>,
 }
 
-#[allow(unused)]
 pub struct GroupEngineIterator<'a> {
-    mark: PhantomData<&'a ()>,
+    apply_state: ApplyState,
+    descriptor: GroupDesc,
+    db_iter: rocksdb::DBIterator<'a>,
 }
 
 impl GroupEngine {
@@ -135,7 +135,7 @@ impl GroupEngine {
     }
 
     /// Return the persisted apply state of raft.
-    pub fn flushed_apply_state(&self) -> EntryId {
+    pub fn flushed_apply_state(&self) -> ApplyState {
         use rocksdb::{ReadOptions, ReadTier};
         let cf_handle = self
             .raw_db
@@ -149,7 +149,7 @@ impl GroupEngine {
             .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
             .unwrap()
             .expect("group descriptor will persisted when creating group");
-        EntryId::decode(value.as_ref()).expect("apply state encode EntryId")
+        ApplyState::decode(value.as_ref()).expect("should encoded ApplyState")
     }
 
     /// Get key value from the corresponding shard.
@@ -202,12 +202,12 @@ impl GroupEngine {
 
     /// Set the applied state of this group.
     #[inline]
-    pub(super) fn set_apply_state(&self, wb: &mut WriteBatch, applied_index: u64, term: u64) {
-        wb.apply_state = Some((applied_index, term));
+    pub fn set_apply_state(&self, wb: &mut WriteBatch, index: u64, term: u64) {
+        wb.apply_state = Some(ApplyState { index, term });
     }
 
     #[inline]
-    pub(super) fn set_group_desc(&self, wb: &mut WriteBatch, desc: &GroupDesc) {
+    pub fn set_group_desc(&self, wb: &mut WriteBatch, desc: &GroupDesc) {
         wb.descriptor = Some(desc.clone());
     }
 
@@ -220,9 +220,8 @@ impl GroupEngine {
             .expect("column family handle");
 
         let mut inner_wb = wb.inner;
-        if let Some((index, term)) = wb.apply_state {
-            let entry_id = EntryId { index, term };
-            inner_wb.put_cf(&cf_handle, keys::apply_state(), entry_id.encode_to_vec());
+        if let Some(apply_state) = wb.apply_state {
+            inner_wb.put_cf(&cf_handle, keys::apply_state(), apply_state.encode_to_vec());
         }
         if let Some(desc) = &wb.descriptor {
             inner_wb.put_cf(&cf_handle, keys::descriptor(), desc.encode_to_vec());
@@ -247,9 +246,18 @@ impl GroupEngine {
         Ok(())
     }
 
-    // TODO(walter) support async iterator, may be a stream?
-    pub async fn iter<'a>(&self) -> GroupEngineIterator<'a> {
-        todo!()
+    pub fn iter(&self) -> Result<GroupEngineIterator> {
+        use rocksdb::{IteratorMode, ReadOptions};
+
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+        let opts = ReadOptions::default();
+        let iter = self
+            .raw_db
+            .iterator_cf_opt(&cf_handle, opts, IteratorMode::Start);
+        GroupEngineIterator::new(iter)
     }
 
     /// Ingest data into group engine.
@@ -266,23 +274,43 @@ impl GroupEngine {
     }
 }
 
-#[allow(unused)]
 impl<'a> GroupEngineIterator<'a> {
-    pub fn applied_index(&self) -> u64 {
-        todo!()
+    fn new(mut db_iter: rocksdb::DBIterator<'a>) -> Result<Self> {
+        use rocksdb::IteratorMode;
+
+        let apply_state = next_message(&mut db_iter, &keys::apply_state())?;
+        let descriptor = next_message(&mut db_iter, &keys::descriptor())?;
+        db_iter.set_mode(IteratorMode::Start);
+
+        Ok(GroupEngineIterator {
+            apply_state,
+            descriptor,
+            db_iter,
+        })
     }
 
-    pub fn descriptor(&self) -> GroupDesc {
-        todo!()
+    #[inline]
+    pub fn apply_state(&self) -> &ApplyState {
+        &self.apply_state
+    }
+
+    #[inline]
+    pub fn descriptor(&self) -> &GroupDesc {
+        &self.descriptor
+    }
+
+    #[inline]
+    pub fn status(&mut self) -> Result<()> {
+        db_iterator_status(&mut self.db_iter, true)
     }
 }
 
 impl<'a> Iterator for GroupEngineIterator<'a> {
     /// Key value pairs.
-    type Item = (&'a [u8], &'a [u8]);
+    type Item = <rocksdb::DBIterator<'a> as Iterator>::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        self.db_iter.next()
     }
 }
 
@@ -335,5 +363,29 @@ impl Deref for WriteBatch {
 impl DerefMut for WriteBatch {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+fn db_iterator_status(db_iter: &mut rocksdb::DBIterator<'_>, allow_not_found: bool) -> Result<()> {
+    debug_assert!(!db_iter.valid());
+    match db_iter.status() {
+        Ok(()) if allow_not_found => Ok(()),
+        Ok(()) => Err(Error::InvalidData("no such key exists".into())),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn next_message<T: prost::Message + Default>(
+    db_iter: &mut rocksdb::DBIterator<'_>,
+    key: &[u8],
+) -> Result<T> {
+    use rocksdb::{Direction, IteratorMode};
+
+    db_iter.set_mode(IteratorMode::From(key, Direction::Forward));
+    if let Some((_, value)) = db_iter.next() {
+        Ok(T::decode(&*value).expect("should encoded with T"))
+    } else {
+        db_iterator_status(db_iter, false)?;
+        unreachable!()
     }
 }

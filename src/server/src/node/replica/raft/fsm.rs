@@ -17,7 +17,7 @@ use std::path::Path;
 use engula_api::server::v1::{ChangeReplicas, GroupDesc};
 
 use crate::{
-    serverpb::v1::{EntryId, EvalResult},
+    serverpb::v1::{EvalResult, ApplyState},
     Result,
 };
 
@@ -35,7 +35,7 @@ pub trait StateMachine: Send {
     // TODO(walter) define snapshot
     fn apply_snapshot(&mut self) -> Result<()>;
 
-    fn checkpoint(&self) -> Box<dyn Checkpoint>;
+    fn snapshot_builder(&self) -> Box<dyn SnapshotBuilder>;
 
     fn descriptor(&self) -> GroupDesc;
 
@@ -44,11 +44,8 @@ pub trait StateMachine: Send {
 }
 
 /// An abstraction of snapshot generation.
-pub trait Checkpoint: Send {
-    fn apply_state(&self) -> EntryId;
-
-    fn descriptor(&self) -> GroupDesc;
-
+#[crate::async_trait]
+pub trait SnapshotBuilder: Send + Sync {
     /// Stable this checkpoint to `base_dir`, and returns applied index and group descriptor.
-    fn stable(&self, base_dir: &Path) -> Result<()>;
+    async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)>;
 }

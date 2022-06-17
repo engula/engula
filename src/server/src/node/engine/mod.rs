@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::ShardGetRequest;
+mod group;
+mod state;
 
-use crate::{node::engine::GroupEngine, Error, Result};
-
-/// Get the value of the specified key.
-pub async fn get(engine: &GroupEngine, req: &ShardGetRequest) -> Result<Option<Vec<u8>>> {
-    let get = req
-        .get
-        .as_ref()
-        .ok_or_else(|| Error::InvalidArgument("ShardGetRequest::get is None".into()))?;
-    engine.get(req.shard_id, &get.key).await
-}
+pub use self::{
+    group::{GroupEngine, GroupEngineIterator, WriteBatch, LOCAL_COLLECTION_ID},
+    state::StateEngine,
+};

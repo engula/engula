@@ -29,16 +29,19 @@ pub struct SnapshotInfo {
     pub base_dir: PathBuf,
 }
 
+#[allow(unused)]
 pub struct SnapshotGuard {
     info: SnapshotInfo,
     manager: SnapManager,
 }
 
+#[allow(unused)]
 pub struct ReplicaSnapManager {
     base_dir: PathBuf,
     snapshots: Vec<SnapshotInfo>,
 }
 
+#[allow(unused)]
 #[derive(Clone)]
 pub struct SnapManager
 where
@@ -47,9 +50,13 @@ where
     replicas: Arc<Mutex<HashMap<u64, ReplicaSnapManager>>>,
 }
 
+#[allow(unused)]
 impl SnapManager {
     pub fn recovery<P: AsRef<Path>>(base_dir: P) -> Result<SnapManager> {
-        todo!()
+        // TODO(walter) recovery snap manager from disk.
+        Ok(SnapManager {
+            replicas: Arc::default(),
+        })
     }
 
     /// Mark group as creating, and return a dir to save snapshot.

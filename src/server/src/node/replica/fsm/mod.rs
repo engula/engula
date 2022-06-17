@@ -19,9 +19,9 @@ use engula_api::server::v1::{
 };
 use tracing::trace;
 
-use super::raft::{ApplyEntry, Checkpoint, StateMachine};
+use super::raft::{ApplyEntry, SnapshotBuilder, StateMachine};
 use crate::{
-    node::group_engine::{GroupEngine, WriteBatch},
+    node::engine::{GroupEngine, WriteBatch},
     serverpb::v1::*,
     Result,
 };
@@ -163,8 +163,10 @@ impl StateMachine for GroupStateMachine {
         todo!()
     }
 
-    fn checkpoint(&self) -> Box<dyn Checkpoint> {
-        Box::new(checkpoint::Checkpoint {})
+    fn snapshot_builder(&self) -> Box<dyn SnapshotBuilder> {
+        Box::new(checkpoint::GroupSnapshotBuilder::new(
+            self.group_engine.clone(),
+        ))
     }
 
     fn flushed_index(&self) -> u64 {

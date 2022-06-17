@@ -271,7 +271,7 @@ impl raft::Storage for Storage {
         Ok(self.last_index)
     }
 
-    fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<Snapshot> {
+    fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<Snapshot> {
         if !self.is_creating_snapshot.get() {
             if let Some(snap_info) = self.snap_mgr.latest_snap(self.replica_id) {
                 let snap_meta = snap_info.meta;

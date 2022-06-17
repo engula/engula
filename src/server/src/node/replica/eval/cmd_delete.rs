@@ -14,7 +14,7 @@ use engula_api::server::v1::ShardDeleteRequest;
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::{
-    node::group_engine::{GroupEngine, WriteBatch},
+    node::engine::{GroupEngine, WriteBatch},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };

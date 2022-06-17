@@ -20,7 +20,7 @@ use tracing::{error, info};
 
 use super::SnapManager;
 use crate::{
-    node::replica::raft::{fsm::Checkpoint, worker::Request, StateMachine},
+    node::replica::raft::{fsm::SnapshotBuilder, worker::Request, StateMachine},
     runtime::{Executor, TaskPriority},
     serverpb::v1::{SnapshotFile, SnapshotMeta},
     Result,
@@ -37,9 +37,9 @@ pub fn dispatch_creating_snap_task(
     state_machine: &impl StateMachine,
     snap_mgr: SnapManager,
 ) {
-    let checkpoint = state_machine.checkpoint();
+    let builder = state_machine.snapshot_builder();
     executor.spawn(None, TaskPriority::IoLow, async move {
-        match create_snapshot(replica_id, &snap_mgr, checkpoint).await {
+        match create_snapshot(replica_id, &snap_mgr, builder).await {
             Ok((snap_dir, snap_meta)) => {
                 info!("create snapshot success, replica id {}", replica_id);
                 snap_mgr.install(replica_id, &snap_dir, &snap_meta);
@@ -59,11 +59,11 @@ pub fn dispatch_creating_snap_task(
 async fn create_snapshot(
     replica_id: u64,
     snap_mgr: &SnapManager,
-    checkpoint: Box<dyn Checkpoint>,
+    builder: Box<dyn SnapshotBuilder>,
 ) -> Result<(PathBuf, SnapshotMeta)> {
     let snap_dir = snap_mgr.create(replica_id);
     let data = snap_dir.join(SNAP_DATA);
-    checkpoint.stable(&data)?;
+    let (apply_state, descriptor) = builder.checkpoint(&data).await?;
     if !std::fs::try_exists(&data)? {
         panic!("Checkpoint did not generate any data.");
     }
@@ -83,8 +83,8 @@ async fn create_snapshot(
     }
 
     let snap_meta = SnapshotMeta {
-        apply_state: Some(checkpoint.apply_state()),
-        group_desc: Some(checkpoint.descriptor()),
+        apply_state: Some(apply_state),
+        group_desc: Some(descriptor),
         files,
     };
 

@@ -37,6 +37,8 @@ pub mod serverpb {
         #![allow(clippy::all)]
         tonic::include_proto!("serverpb.v1");
 
+        pub type ApplyState = EntryId;
+
         impl SyncOp {
             pub fn purge_replica(orphan_replica_id: u64) -> Self {
                 SyncOp {

@@ -14,7 +14,7 @@
 use engula_api::server::v1::BatchWriteRequest;
 
 use crate::{
-    node::{group_engine::WriteBatch, GroupEngine},
+    node::{engine::WriteBatch, GroupEngine},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };

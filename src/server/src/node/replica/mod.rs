@@ -39,7 +39,7 @@ use self::{
     fsm::{DescObserver, GroupStateMachine},
     raft::{RaftManager, RaftNodeFacade, StateObserver},
 };
-use super::{group_engine::GroupEngine, job::StateChannel};
+use super::{engine::GroupEngine, job::StateChannel};
 use crate::{
     serverpb::v1::{EvalResult, ReplicaLocalState, SyncOp},
     Error, Result,
