@@ -129,7 +129,7 @@ impl Schema {
     }
 
     pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
-        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_DATABASE_COLLECTION_ID).await?;
         let mut databases = Vec::new();
         for val in vals {
             databases.push(
@@ -227,7 +227,7 @@ impl Schema {
     }
 
     pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
-        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_DATABASE_COLLECTION_ID).await?;
         let mut collections = Vec::new();
         for val in vals {
             collections.push(
@@ -264,7 +264,7 @@ impl Schema {
     }
 
     pub async fn list_node(&self) -> Result<Vec<NodeDesc>> {
-        let vals = self.list(SYSTEM_NODE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_NODE_COLLECTION_ID).await?;
         let mut nodes = Vec::new();
         for val in vals {
             nodes
@@ -311,7 +311,7 @@ impl Schema {
     }
 
     pub async fn list_group(&self) -> Result<Vec<GroupDesc>> {
-        let vals = self.list(SYSTEM_GROUP_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_GROUP_COLLECTION_ID).await?;
         let mut groups = Vec::new();
         for val in vals {
             groups.push(
@@ -322,7 +322,7 @@ impl Schema {
     }
 
     pub async fn list_group_state(&self) -> Result<Vec<GroupState>> {
-        let vals = self.list(SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
         let mut states: HashMap<u64, GroupState> = HashMap::new();
         for val in vals {
             let state = ReplicaState::decode(&*val)
@@ -685,9 +685,10 @@ impl Schema {
         self.store.delete(shard_id, key).await
     }
 
-    async fn list(&self, collection_id: u64) -> Result<Vec<Vec<u8>>> {
+    async fn list(&self, collection_id: &u64) -> Result<Vec<Vec<u8>>> {
+        let shard_id = Self::system_shard_id(collection_id);
         self.store
-            .list(collection_id.to_le_bytes().as_slice())
+            .list(shard_id, collection_id.to_le_bytes().as_slice())
             .await
     }
 

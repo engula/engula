@@ -247,17 +247,21 @@ impl GroupEngine {
         Ok(())
     }
 
-    pub fn iter(&self) -> Result<GroupEngineIterator> {
-        use rocksdb::{IteratorMode, ReadOptions};
+    pub fn iter(&self, from: Option<Vec<u8>>) -> Result<GroupEngineIterator> {
+        use rocksdb::{Direction, IteratorMode, ReadOptions};
 
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
             .expect("column family handle");
         let opts = ReadOptions::default();
-        let iter = self
-            .raw_db
-            .iterator_cf_opt(&cf_handle, opts, IteratorMode::Start);
+        let iter = if let Some(from) = from {
+            let mode = IteratorMode::From(&from, Direction::Forward);
+            self.raw_db.iterator_cf_opt(&cf_handle, opts, mode)
+        } else {
+            let mode = IteratorMode::Start;
+            self.raw_db.iterator_cf_opt(&cf_handle, opts, mode)
+        };
         GroupEngineIterator::new(iter)
     }
 

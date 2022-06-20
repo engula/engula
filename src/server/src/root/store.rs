@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request::{self, BatchWrite, CreateShard, Delete, Get, Put},
+        group_request_union::Request::{self, *},
         CreateShardRequest, GroupRequest, GroupRequestUnion, ShardDesc, *,
     },
     v1::{DeleteRequest, GetRequest, PutRequest},
@@ -92,9 +92,24 @@ impl RootStore {
         Ok(())
     }
 
-    pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // TODO(zojw): impl scan prefix under database_id + prefix.
-        Ok(vec![])
+    pub async fn list(&self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let resp = self
+            .submit_request(PrefixList(ShardPrefixListRequest {
+                shard_id,
+                prefix: prefix.to_owned(),
+            }))
+            .await?;
+        let resp = resp
+            .response
+            .ok_or_else(|| Error::InvalidArgument("PrefixListResponse".into()))?
+            .response
+            .ok_or_else(|| Error::InvalidArgument("PrefixListUnionResponse".into()))?;
+
+        if let group_response_union::Response::PreifxList(resp) = resp {
+            Ok(resp.values)
+        } else {
+            Err(Error::InvalidArgument("PrefixListResponse".into()))
+        }
     }
 
     async fn submit_request(&self, req: Request) -> Result<GroupResponse> {

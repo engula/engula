@@ -264,6 +264,10 @@ impl Replica {
                 let eval_result = eval::delete(&self.group_engine, req).await?;
                 (Some(eval_result), Response::Delete(DeleteResponse {}))
             }
+            Request::PrefixList(req) => {
+                let eval_result = eval::prefix_list(&self.group_engine, req).await?;
+                (None, Response::PreifxList(eval_result))
+            }
             Request::BatchWrite(req) => {
                 let eval_result = eval::batch_write(&self.group_engine, req).await?;
                 (eval_result, Response::BatchWrite(BatchWriteResponse {}))
@@ -485,6 +489,10 @@ impl DescObserver for LeaseStateObserver {
 pub(self) fn is_change_meta_request(request: &Request) -> bool {
     match request {
         Request::ChangeReplicas(_) | Request::CreateShard(_) => true,
-        Request::Get(_) | Request::Put(_) | Request::Delete(_) | Request::BatchWrite(_) => false,
+        Request::Get(_)
+        | Request::Put(_)
+        | Request::Delete(_)
+        | Request::BatchWrite(_)
+        | Request::PrefixList(_) => false,
     }
 }

@@ -34,7 +34,7 @@ impl GroupSnapshotBuilder {
 #[crate::async_trait]
 impl SnapshotBuilder for GroupSnapshotBuilder {
     async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
-        let mut iter = self.engine.iter()?;
+        let mut iter = self.engine.iter(None)?;
         for i in 0.. {
             if write_partial_to_file(&mut iter, base_dir, i)
                 .await?
