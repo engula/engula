@@ -14,16 +14,17 @@
 
 use engula_api::server::v1::RaftRole;
 use futures::channel::oneshot;
-use raft::{prelude::*, ConfChangeI, StateRole};
+use raft::{prelude::*, ConfChangeI, StateRole, Storage as RaftStorage};
+use raft_engine::LogBatch;
 use tracing::debug;
 
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
     storage::Storage,
-    RaftManager,
+    RaftManager, SnapManager,
 };
-use crate::{Error, Result};
+use crate::{node::replica::raft::snap::apply::apply_snapshot, Error, Result};
 
 /// WriteTask records the metadata and entries to persist to disk.
 #[derive(Default)]
@@ -89,7 +90,7 @@ where
         };
 
         let conf_state = super::conf_state_from_group_descriptor(&state_machine.descriptor());
-        let storage = Storage::open(
+        let mut storage = Storage::open(
             replica_id,
             applied,
             conf_state,
@@ -97,12 +98,21 @@ where
             mgr.snap_mgr.clone(),
         )
         .await?;
+        let mut applier = Applier::new(group_id, state_machine);
+        try_recover_snapshot(
+            replica_id,
+            &mgr.snap_mgr,
+            &mgr.engine,
+            &mut storage,
+            &mut applier,
+        )
+        .await?;
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),
             read_index_requests: Vec::default(),
             raw_node: RawNode::with_default_logger(&config, storage)?,
-            applier: Applier::new(group_id, state_machine),
+            applier,
         })
     }
 
@@ -326,4 +336,35 @@ impl WriteTask {
     pub fn post_ready(self) -> PostReady {
         self.post_ready
     }
+}
+
+async fn try_recover_snapshot<M>(
+    replica_id: u64,
+    snap_mgr: &SnapManager,
+    engine: &raft_engine::Engine,
+    storage: &mut Storage,
+    applier: &mut Applier<M>,
+) -> Result<()>
+where
+    M: StateMachine,
+{
+    if let Some(info) = snap_mgr.latest_snap(replica_id) {
+        let apply_state = info.meta.apply_state.as_ref().unwrap();
+        if applier.applied_index() < apply_state.index {
+            apply_snapshot(replica_id, snap_mgr, applier, &info.to_raft_snapshot());
+        }
+
+        if !storage.range().contains(&apply_state.index)
+            || storage.term(apply_state.index).unwrap() < apply_state.term
+        {
+            let task = WriteTask {
+                snapshot: Some(info.to_raft_snapshot()),
+                ..Default::default()
+            };
+            let mut lb = LogBatch::default();
+            storage.write(&mut lb, &task)?;
+            engine.write(&mut lb, true)?;
+        }
+    }
+    Ok(())
 }
