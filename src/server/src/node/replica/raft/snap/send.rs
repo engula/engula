@@ -15,21 +15,18 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::Read,
-    path::Path,
+    os::unix::ffi::OsStrExt,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::Stream;
-use tonic::Status;
-
 use super::{SnapManager, SnapshotGuard};
 use crate::{
-    serverpb::v1::{snapshot_chunk, SnapshotChunk, SnapshotMeta},
+    serverpb::v1::{snapshot_chunk, SnapshotChunk},
     Error, Result,
 };
 
-type SnapResult = std::result::Result<SnapshotChunk, Status>;
+type SnapResult = std::result::Result<SnapshotChunk, tonic::Status>;
 
 pub struct SnapshotChunkStream {
     info: SnapshotGuard,
@@ -65,6 +62,7 @@ impl SnapshotChunkStream {
         use std::{fs::OpenOptions, io::ErrorKind};
 
         match self.file.as_mut() {
+            // Send snapshot file chunk.
             Some(file) => {
                 let num_bytes = 32 * 1024;
                 let mut num_read = 0;
@@ -80,30 +78,45 @@ impl SnapshotChunkStream {
                     num_read += n;
                     if n == 0 {
                         self.file = None;
+                        self.file_index += 1;
                         break;
                     }
                 }
+                chunk_data.truncate(num_read);
                 let value = snapshot_chunk::Value::ChunkData(chunk_data);
                 Some(Ok(SnapshotChunk { value: Some(value) }))
             }
-            None if self.file_index >= self.info.meta.files.len() => None,
-            None => {
-                use std::os::unix::ffi::OsStrExt;
+            // Open new file and send file meta.
+            None if self.file_index < self.info.meta.files.len() => {
                 let file_meta = &self.info.meta.files[self.file_index];
-                let path = Path::new(OsStr::from_bytes(&file_meta.name));
-                match OpenOptions::new().open(&path) {
+                let path = self.info.base_dir.join(OsStr::from_bytes(&file_meta.name)); // Eg: `DATA/1.sst`.
+                tracing::debug!(
+                    "send file {} to remote, crc32 {}, size {}",
+                    path.display(),
+                    file_meta.crc32,
+                    file_meta.size
+                );
+                match OpenOptions::new().read(true).open(&path) {
                     Ok(file) => self.file = Some(file),
                     Err(err) => return Some(Err(err.into())),
                 }
                 let value = snapshot_chunk::Value::File(file_meta.to_owned());
                 Some(Ok(SnapshotChunk { value: Some(value) }))
             }
+            // Send snapshot meta.
+            None if self.file_index == self.info.meta.files.len() => {
+                self.file_index += 1;
+                let value = snapshot_chunk::Value::Meta(self.info.meta.clone());
+                Some(Ok(SnapshotChunk { value: Some(value) }))
+            }
+            // All files and meta are send.
+            None => None,
         }
     }
 }
 
 impl futures::Stream for SnapshotChunkStream {
-    type Item = std::result::Result<SnapshotChunk, Status>;
+    type Item = SnapResult;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.get_mut().next_chunk())

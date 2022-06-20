@@ -13,14 +13,16 @@
 // limitations under the License.
 
 use std::{
+    ffi::OsString,
     fs::File,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
 };
 
 use engula_api::server::v1::ReplicaDesc;
 use futures::{channel::mpsc, SinkExt, StreamExt};
 use raft::eraftpb::Message;
-use tracing::error;
+use tracing::{debug, error, info};
 
 use super::SnapManager;
 use crate::{
@@ -41,6 +43,7 @@ struct PartialFile {
 }
 
 struct SnapshotBuilder {
+    replica_id: u64,
     base_dir: PathBuf,
     meta: SnapshotMeta,
     file_name: Vec<u8>,
@@ -48,8 +51,9 @@ struct SnapshotBuilder {
 }
 
 impl SnapshotBuilder {
-    fn new(base_dir: &Path) -> Self {
+    fn new(replica_id: u64, base_dir: &Path) -> Self {
         SnapshotBuilder {
+            replica_id,
             base_dir: base_dir.to_owned(),
             meta: SnapshotMeta::default(),
             file_name: vec![],
@@ -64,13 +68,16 @@ impl SnapshotBuilder {
                 Some(file) => file.write_all(&data).await,
                 None => Err(Error::InvalidData("missing file meta".to_string())),
             },
+            Some(snapshot_chunk::Value::Meta(meta)) => {
+                self.meta.apply_state = meta.apply_state;
+                self.meta.group_desc = meta.group_desc;
+                Ok(())
+            }
             None => Ok(()),
         }
     }
 
     async fn switch_file(&mut self, file_meta: SnapshotFile) -> Result<()> {
-        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
-
         self.finish_partial_file().await?;
 
         let name = file_meta.name.clone();
@@ -78,7 +85,7 @@ impl SnapshotBuilder {
         let path = self.base_dir.join(str);
 
         self.file_name = name;
-        self.file = Some(PartialFile::new(&path, file_meta)?);
+        self.file = Some(PartialFile::new(self.replica_id, &path, file_meta)?);
 
         Ok(())
     }
@@ -91,19 +98,25 @@ impl SnapshotBuilder {
     }
 
     async fn finish(mut self) -> Result<SnapshotMeta> {
-        use std::fs::OpenOptions;
-
         self.finish_partial_file().await?;
-        OpenOptions::new().open(&self.base_dir)?.sync_all()?;
+        super::create::stable_snapshot_meta(&self.base_dir, &self.meta).await?;
         Ok(self.meta)
     }
 }
 
 impl PartialFile {
-    fn new(path: &Path, file_meta: SnapshotFile) -> Result<Self> {
+    fn new(replica_id: u64, path: &Path, file_meta: SnapshotFile) -> Result<Self> {
         use std::fs::OpenOptions;
 
-        let file = OpenOptions::new().write(true).open(path)?;
+        debug!(
+            "replica {} receive snapshot file {}, size {}, crc32 {}",
+            replica_id,
+            path.display(),
+            file_meta.size,
+            file_meta.crc32
+        );
+
+        let file = OpenOptions::new().write(true).create(true).open(path)?;
 
         Ok(PartialFile {
             meta: file_meta,
@@ -123,13 +136,24 @@ impl PartialFile {
     }
 
     async fn finish(self) -> Result<SnapshotFile> {
-        let crc32 = self.crc32.finalize();
         self.file.sync_all()?;
-        Ok(SnapshotFile {
-            name: vec![], // FIXME(walter) name prefix
-            crc32,
-            size: self.size as u64,
-        })
+
+        if self.size as u64 != self.meta.size {
+            return Err(Error::InvalidData(format!(
+                "invalid size of file, expect {}, but got {}",
+                self.meta.size, self.size
+            )));
+        }
+
+        let crc32 = self.crc32.finalize();
+        if crc32 != self.meta.crc32 {
+            return Err(Error::InvalidData(format!(
+                "checksum is not equals, expect {}, but got {}",
+                self.meta.size, self.size
+            )));
+        }
+
+        Ok(self.meta)
     }
 }
 
@@ -182,7 +206,14 @@ where
     S: futures::Stream<Item = std::result::Result<SnapshotChunk, tonic::Status>> + Unpin,
 {
     let base_dir = snap_mgr.create(replica_id);
-    let mut snap_builder = SnapshotBuilder::new(&base_dir);
+    info!(
+        "replica {} save incoming snapshot chunk stream into {}",
+        replica_id,
+        base_dir.display()
+    );
+
+    std::fs::create_dir_all(&base_dir)?;
+    let mut snap_builder = SnapshotBuilder::new(replica_id, &base_dir);
     while let Some(resp) = chunk_stream.next().await {
         let chunk = resp?;
         snap_builder.append(chunk).await?;
@@ -191,15 +222,79 @@ where
     let snap_meta = snap_builder.finish().await?;
     snap_mgr.install(replica_id, &base_dir, &snap_meta);
 
-    use std::os::unix::ffi::OsStringExt;
-
     Ok(base_dir.as_os_str().to_owned().into_vec())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{path::Path, thread};
+
+    use engula_api::server::v1::GroupDesc;
+    use snap::SnapManager;
+    use tempdir::TempDir;
+    use tracing::info;
+
+    use crate::{
+        node::replica::raft::{snap, SnapshotBuilder},
+        runtime::ExecutorOwner,
+        serverpb::v1::ApplyState,
+        Result,
+    };
+
+    struct SimpleSnapshotBuilder {
+        content: Vec<u8>,
+    }
+
+    #[crate::async_trait]
+    impl SnapshotBuilder for SimpleSnapshotBuilder {
+        async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
+            info!("create snapshot at: {}", base_dir.display());
+            if let Some(parent) = base_dir.parent() {
+                std::fs::create_dir_all(&parent)?;
+            }
+            std::fs::write(base_dir, &self.content)?;
+            info!("write snapshot content");
+            Ok((ApplyState::default(), GroupDesc::default()))
+        }
+    }
+
+    #[ctor::ctor]
+    fn init() {
+        tracing_subscriber::fmt::init();
+    }
+
     #[test]
-    fn download_snapshot() {
-        // TODO
+    fn send_and_save_snapshot() {
+        thread::spawn(move || {
+            let owner = ExecutorOwner::new(1);
+            owner.executor().block_on(async move {
+                let tmp_dir = TempDir::new("download-snapshot").unwrap().into_path();
+                std::fs::create_dir_all(&tmp_dir).unwrap();
+
+                let replica_id: u64 = 1;
+                let snap_manager = SnapManager::recovery(&tmp_dir).unwrap();
+
+                // Prepare snapshot
+                let builder: Box<dyn SnapshotBuilder> = Box::new(SimpleSnapshotBuilder {
+                    content: vec![1, 2, 3, 4, 5, 6, 7],
+                });
+                let snapshot_id = snap::create::create_snapshot(replica_id, &snap_manager, builder)
+                    .await
+                    .unwrap();
+
+                // Send snapshot on leader side.
+                let snapshot_chunk_stream =
+                    snap::send::send_snapshot(&snap_manager, replica_id, snapshot_id)
+                        .await
+                        .unwrap();
+
+                // Save snapshot on follower side.
+                snap::download::save_snapshot(&snap_manager, replica_id + 1, snapshot_chunk_stream)
+                    .await
+                    .unwrap();
+            });
+        })
+        .join()
+        .unwrap();
     }
 }

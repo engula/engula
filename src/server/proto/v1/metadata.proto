@@ -28,6 +28,7 @@ message SnapshotMeta {
 }
 
 message SnapshotFile {
+    // The relative path of snapshot file. eg `DATA/1.sst`, `META`.
     bytes name = 1;
     uint32 crc32 = 2;
     uint64 size = 3;

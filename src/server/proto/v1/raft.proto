@@ -45,6 +45,7 @@ message SnapshotRequest {
 message SnapshotChunk {
     oneof value {
         SnapshotFile file = 1;
-        bytes chunk_data = 2;
+        SnapshotMeta meta = 2;
+        bytes chunk_data = 3;
     }
 }
