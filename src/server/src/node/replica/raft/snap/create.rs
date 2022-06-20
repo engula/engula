@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use futures::{channel::mpsc, SinkExt};
 use prost::Message;
@@ -41,9 +41,8 @@ pub fn dispatch_creating_snap_task(
     let builder = state_machine.snapshot_builder();
     executor.spawn(None, TaskPriority::IoLow, async move {
         match create_snapshot(replica_id, &snap_mgr, builder).await {
-            Ok((snap_dir, snap_meta)) => {
+            Ok(_) => {
                 info!("create snapshot success, replica id {}", replica_id);
-                snap_mgr.install(replica_id, &snap_dir, &snap_meta);
             }
             Err(err) => {
                 error!("create snapshot: {}, replica id {}", err, replica_id);
@@ -57,12 +56,19 @@ pub fn dispatch_creating_snap_task(
     });
 }
 
-async fn create_snapshot(
+/// Create new snapshot and returns snapshot id.
+pub(super) async fn create_snapshot(
     replica_id: u64,
     snap_mgr: &SnapManager,
     builder: Box<dyn SnapshotBuilder>,
-) -> Result<(PathBuf, SnapshotMeta)> {
+) -> Result<Vec<u8>> {
     let snap_dir = snap_mgr.create(replica_id);
+    info!(
+        "replica {} begin create snapshot at {}",
+        replica_id,
+        snap_dir.display()
+    );
+
     let data = snap_dir.join(SNAP_DATA);
     let (apply_state, descriptor) = builder.checkpoint(&data).await?;
     if !std::fs::try_exists(&data)? {
@@ -91,16 +97,22 @@ async fn create_snapshot(
 
     stable_snapshot_meta(&snap_dir, &snap_meta).await?;
 
-    Ok((snap_dir, snap_meta))
+    info!(
+        "replica {} create snapshot {} success",
+        replica_id,
+        snap_dir.display()
+    );
+
+    Ok(snap_mgr.install(replica_id, &snap_dir, &snap_meta))
 }
 
-async fn stable_snapshot_meta(base_dir: &Path, snap_meta: &SnapshotMeta) -> Result<()> {
+pub(super) async fn stable_snapshot_meta(base_dir: &Path, snap_meta: &SnapshotMeta) -> Result<()> {
     use std::{fs::OpenOptions, io::Write};
 
     let content = snap_meta.encode_to_vec();
 
     let tmp = base_dir.join(SNAP_TEMP);
-    let mut file = OpenOptions::new().write(true).open(&tmp)?;
+    let mut file = OpenOptions::new().write(true).create(true).open(&tmp)?;
     file.write_all(&content)?;
     file.sync_all()?;
     drop(file);
@@ -108,7 +120,7 @@ async fn stable_snapshot_meta(base_dir: &Path, snap_meta: &SnapshotMeta) -> Resu
     let meta = base_dir.join(SNAP_META);
     std::fs::rename(tmp, meta)?;
 
-    OpenOptions::new().write(true).open(base_dir)?.sync_all()?;
+    std::fs::File::open(base_dir)?.sync_all()?;
 
     Ok(())
 }
@@ -117,7 +129,6 @@ async fn read_file_meta(filename: &Path) -> Result<SnapshotFile> {
     use std::{
         fs::OpenOptions,
         io::{ErrorKind, Read},
-        os::unix::ffi::OsStrExt,
     };
 
     let mut buf = vec![0; 4096];
@@ -144,11 +155,15 @@ async fn read_file_meta(filename: &Path) -> Result<SnapshotFile> {
         }
     }
 
-    let name = filename.file_name().unwrap();
+    let name = if filename.file_name().unwrap() == SNAP_DATA {
+        Path::new(SNAP_DATA).to_path_buf()
+    } else {
+        Path::new(SNAP_DATA).join(filename.file_name().unwrap())
+    };
     let crc32 = hasher.finalize();
 
     Ok(SnapshotFile {
-        name: name.as_bytes().to_owned(),
+        name: name.to_str().unwrap().as_bytes().to_owned(),
         crc32,
         size,
     })

@@ -47,6 +47,12 @@ pub enum Request {
         sender: oneshot::Sender<Result<()>>,
     },
     CreateSnapshotFinished,
+    InstallSnapshot {
+        msg: Message,
+    },
+    RejectSnapshot {
+        msg: Message,
+    },
     ChangeConfig {
         change: ChangeReplicas,
         sender: oneshot::Sender<Result<()>>,
@@ -280,17 +286,55 @@ where
             Request::Unreachable { target_id } => {
                 self.raft_node.report_unreachable(target_id);
             }
+            Request::RejectSnapshot { msg: input } => {
+                let mut msg = Message::default();
+                msg.set_msg_type(MessageType::MsgSnapStatus);
+                msg.from = input.to;
+                msg.to = input.from;
+                msg.reject = true;
+
+                if let Some(to_replica) = self.replica_cache.get(input.from) {
+                    self.channels
+                        .entry(input.from)
+                        .or_insert_with(|| Channel::new(self.trans_mgr.clone()))
+                        .send_message(RaftMessage {
+                            group_id: self.group_id,
+                            from_replica: Some(self.desc.clone()),
+                            to_replica: Some(to_replica),
+                            messages: vec![msg],
+                        });
+                }
+            }
+            Request::InstallSnapshot { msg } => {
+                self.raft_node.step(msg)?;
+            }
             Request::Start => {}
         }
         Ok(())
     }
 
-    fn handle_msg(&mut self, msg: RaftMessage) -> Result<()> {
-        if let Some(from) = msg.from_replica {
-            self.replica_cache.insert(from);
-        }
-        for msg in msg.messages {
-            self.raft_node.step(msg)?;
+    fn handle_msg(&mut self, raft_msg: RaftMessage) -> Result<()> {
+        let from_replica = raft_msg.from_replica.unwrap();
+        self.replica_cache.insert(from_replica.clone());
+        for mut msg in raft_msg.messages {
+            if msg.get_msg_type() == MessageType::MsgSnapshot {
+                // TODO(walter) In order to avoid useless downloads, should check whether this
+                // snapshot will be accept.
+                super::snap::dispatch_downloading_snap_task(
+                    &self.executor,
+                    self.desc.id,
+                    self.request_sender.clone(),
+                    self.snap_mgr.clone(),
+                    self.trans_mgr.clone(),
+                    from_replica.clone(),
+                    msg,
+                );
+            } else if msg.get_msg_type() == MessageType::MsgSnapStatus {
+                msg.from = self.desc.id;
+                self.raft_node.step(msg)?;
+            } else {
+                self.raft_node.step(msg)?;
+            }
         }
         Ok(())
     }

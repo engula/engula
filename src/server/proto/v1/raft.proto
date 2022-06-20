@@ -18,10 +18,11 @@ package serverpb.v1;
 
 import "eraft.proto";
 import "engula/server/v1/metadata.proto";
+import "v1/metadata.proto";
 
 service Raft {
   rpc SendMessage(stream RaftMessage) returns (RaftDone) {}
-  rpc RetriveSnapshot(SnapshotRequest) returns (stream SnapshotResponse) {}
+  rpc RetriveSnapshot(SnapshotRequest) returns (stream SnapshotChunk) {}
 }
 
 message RaftMessage {
@@ -36,21 +37,15 @@ message RaftMessage {
 message RaftDone {}
 
 message SnapshotRequest {
-  uint64 group_id = 1;
+  uint64 replica_id = 1;
 
   bytes snapshot_id = 2;
 }
 
-message SnapshotResponse {
-  uint64 group_id = 1;
-
-  SnapshotChunk chunk = 2;
-}
-
 message SnapshotChunk {
-  bytes name = 1;
-  uint32 crc32 = 2;
-  uint64 size = 3;
-  bytes chunk_data = 4;
-  bool finished = 5;
+    oneof value {
+        SnapshotFile file = 1;
+        SnapshotMeta meta = 2;
+        bytes chunk_data = 3;
+    }
 }

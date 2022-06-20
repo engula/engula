@@ -12,22 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
-
 use futures::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::warn;
 
-use crate::{serverpb::v1::*, Server};
-
-pub struct SnapshotStream;
+use crate::{
+    node::replica::raft::snap::send::{send_snapshot, SnapshotChunkStream},
+    serverpb::v1::*,
+    Server,
+};
 
 #[tonic::async_trait]
 impl raft_server::Raft for Server {
-    type RetriveSnapshotStream = SnapshotStream;
+    type RetriveSnapshotStream = SnapshotChunkStream;
 
     async fn send_message(
         &self,
@@ -48,12 +45,15 @@ impl raft_server::Raft for Server {
         Ok(Response::new(RaftDone {}))
     }
 
-    #[allow(unused)]
     async fn retrive_snapshot(
         &self,
         request: Request<SnapshotRequest>,
-    ) -> Result<Response<Self::RetriveSnapshotStream>, Status> {
-        todo!()
+    ) -> Result<Response<SnapshotChunkStream>, Status> {
+        let request = request.into_inner();
+        let snap_mgr = self.node.raft_manager().snapshot_manager();
+
+        let stream = send_snapshot(snap_mgr, request.replica_id, request.snapshot_id).await?;
+        Ok(Response::new(stream))
     }
 }
 
@@ -65,14 +65,5 @@ impl Server {
         } else {
             todo!("target replica not found");
         }
-    }
-}
-
-#[allow(unused)]
-impl futures::Stream for SnapshotStream {
-    type Item = Result<SnapshotResponse, Status>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
     }
 }

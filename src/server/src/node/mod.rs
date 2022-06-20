@@ -354,6 +354,11 @@ impl Node {
         &self.executor
     }
 
+    #[inline]
+    pub fn raft_manager(&self) -> &RaftManager {
+        &self.raft_mgr
+    }
+
     pub async fn collect_stats(&self, _req: &CollectStatsRequest) -> CollectStatsResponse {
         // TODO(walter) add read/write qps.
         let mut ns = NodeStats::default();
