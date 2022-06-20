@@ -14,6 +14,8 @@
 
 mod checkpoint;
 
+use std::path::Path;
+
 use engula_api::server::v1::{
     ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
 };
@@ -159,8 +161,14 @@ impl StateMachine for GroupStateMachine {
         Ok(())
     }
 
-    fn apply_snapshot(&mut self) -> Result<()> {
-        todo!()
+    fn apply_snapshot(&mut self, snap_dir: &Path) -> Result<()> {
+        checkpoint::apply_snapshot(&self.group_engine, snap_dir)?;
+        self.desc_observer
+            .on_descriptor_updated(self.group_engine.descriptor().unwrap());
+        let apply_state = self.group_engine.flushed_apply_state();
+        self.flushed_index = apply_state.index;
+        self.desc_observer.on_term_updated(apply_state.term);
+        Ok(())
     }
 
     fn snapshot_builder(&self) -> Box<dyn SnapshotBuilder> {

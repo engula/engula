@@ -140,6 +140,31 @@ impl Storage {
 
     /// Apply [`WriteTask`] to [`LogBatch`], and save some states to storage.
     pub fn write(&mut self, batch: &mut LogBatch, write_task: &WriteTask) -> Result<()> {
+        use raft_engine::Command;
+
+        if let Some(snapshot) = &write_task.snapshot {
+            assert!(
+                write_task.entries.is_empty(),
+                "Does not stable entries during appling snapshot"
+            );
+            batch.add_command(self.replica_id, Command::Clean);
+            let metadata = snapshot.get_metadata();
+            let raft_local_state = RaftLocalState {
+                replica_id: self.replica_id,
+                last_truncated: Some(EntryId {
+                    index: metadata.index,
+                    term: metadata.term,
+                }),
+            };
+            batch
+                .put_message(
+                    self.replica_id,
+                    keys::LOCAL_STATE_KEY.to_owned(),
+                    &raft_local_state,
+                )
+                .unwrap();
+        }
+
         if !write_task.entries.is_empty() {
             batch
                 .add_entries::<MessageExtTyped>(self.replica_id, &write_task.entries)

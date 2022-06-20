@@ -32,8 +32,7 @@ pub enum ApplyEntry {
 pub trait StateMachine: Send {
     fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> Result<()>;
 
-    // TODO(walter) define snapshot
-    fn apply_snapshot(&mut self) -> Result<()>;
+    fn apply_snapshot(&mut self, snap_dir: &Path) -> Result<()>;
 
     fn snapshot_builder(&self) -> Box<dyn SnapshotBuilder>;
 

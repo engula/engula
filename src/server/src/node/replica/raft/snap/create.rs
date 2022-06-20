@@ -18,17 +18,18 @@ use futures::{channel::mpsc, SinkExt};
 use prost::Message;
 use tracing::{error, info};
 
-use super::SnapManager;
+use super::{SnapManager, SNAP_DATA};
 use crate::{
-    node::replica::raft::{fsm::SnapshotBuilder, worker::Request, StateMachine},
+    node::replica::raft::{
+        fsm::SnapshotBuilder,
+        snap::{SNAP_META, SNAP_TEMP},
+        worker::Request,
+        StateMachine,
+    },
     runtime::{Executor, TaskPriority},
     serverpb::v1::{SnapshotFile, SnapshotMeta},
     Result,
 };
-
-const SNAP_DATA: &str = "DATA";
-const SNAP_TEMP: &str = "TEMP";
-const SNAP_META: &str = "META";
 
 pub fn dispatch_creating_snap_task(
     executor: &Executor,

@@ -24,10 +24,10 @@ use raft_engine::{Engine, LogBatch};
 use tracing::{debug, warn};
 
 use super::{
-    applier::ReplicaCache,
+    applier::{Applier, ReplicaCache},
     fsm::StateMachine,
     node::RaftNode,
-    snap::SnapManager,
+    snap::{apply::apply_snapshot, SnapManager},
     transport::{Channel, TransportManager},
     RaftManager, ReadPolicy,
 };
@@ -69,9 +69,11 @@ pub trait StateObserver: Send {
 
 struct AdvanceImpl<'a> {
     group_id: u64,
+    replica_id: u64,
     desc: ReplicaDesc,
     channels: &'a mut HashMap<u64, Channel>,
     trans_mgr: &'a TransportManager,
+    snap_mgr: &'a SnapManager,
     observer: &'a mut Box<dyn StateObserver>,
     replica_cache: &'a mut ReplicaCache,
 }
@@ -116,6 +118,11 @@ impl<'a> super::node::AdvanceTemplate for AdvanceImpl<'a> {
 
     fn mut_replica_cache(&mut self) -> &mut ReplicaCache {
         self.replica_cache
+    }
+
+    #[inline]
+    fn apply_snapshot<M: StateMachine>(&mut self, applier: &mut Applier<M>, snapshot: &Snapshot) {
+        apply_snapshot(self.replica_id, self.snap_mgr, applier, snapshot);
     }
 }
 
@@ -215,10 +222,12 @@ where
             }
 
             let mut template = AdvanceImpl {
+                replica_id: self.desc.id,
                 group_id: self.group_id,
                 desc: self.desc.clone(),
                 channels: &mut self.channels,
                 trans_mgr: &self.trans_mgr,
+                snap_mgr: &self.snap_mgr,
                 observer: &mut self.observer,
                 replica_cache: &mut self.replica_cache,
             };

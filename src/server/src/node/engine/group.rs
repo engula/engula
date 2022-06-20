@@ -15,6 +15,7 @@
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
+    path::Path,
     sync::{Arc, RwLock},
 };
 
@@ -261,8 +262,20 @@ impl GroupEngine {
     }
 
     /// Ingest data into group engine.
-    pub async fn ingest(&self) -> Result<()> {
-        todo!()
+    pub fn ingest<P: AsRef<Path>>(&self, files: Vec<P>) -> Result<()> {
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+
+        use rocksdb::{IngestExternalFileOptions, Options};
+        self.raw_db.drop_cf(&self.name)?;
+        self.raw_db.create_cf(&self.name, &Options::default())?;
+
+        let opts = IngestExternalFileOptions::default();
+        self.raw_db
+            .ingest_external_file_cf_opts(&cf_handle, &opts, files)?;
+        Ok(())
     }
 
     fn collection_id(&self, shard_id: u64) -> Option<u64> {
