@@ -14,6 +14,8 @@
 
 pub mod apply;
 pub mod create;
+pub mod download;
+pub mod send;
 
 use std::{
     collections::HashMap,
@@ -21,8 +23,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub use create::dispatch_creating_snap_task;
-
+pub use self::{create::dispatch_creating_snap_task, download::dispatch_downloading_snap_task};
 use crate::{serverpb::v1::SnapshotMeta, Result};
 
 const SNAP_DATA: &str = "DATA";

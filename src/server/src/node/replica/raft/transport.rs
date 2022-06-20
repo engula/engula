@@ -21,7 +21,7 @@ use super::RaftNodeFacade;
 use crate::{
     node::route_table::RaftRouteTable,
     runtime::{Executor, TaskPriority},
-    serverpb::v1::{raft_client::RaftClient, RaftMessage, SnapshotRequest},
+    serverpb::v1::{raft_client::RaftClient, RaftMessage, SnapshotChunk, SnapshotRequest},
     Result,
 };
 
@@ -97,11 +97,6 @@ impl Channel {
             self.sender = Some(sender);
         }
     }
-
-    #[allow(unused)]
-    pub async fn retrive_snapshot(request: SnapshotRequest) -> Result<()> {
-        todo!()
-    }
 }
 
 impl TransportManager {
@@ -168,25 +163,40 @@ impl StreamingTask {
     }
 
     async fn serve_streaming_request(self) -> Result<()> {
-        let node_desc = self.resolve_address().await?;
+        let node_desc = resolve_address(&*self.resolver, self.request.to.node_id).await?;
         let address = format!("http://{}", node_desc.addr);
         let mut client = RaftClient::connect(address).await?;
         client.send_message(self.request.receiver).await?;
         Ok(())
     }
+}
 
-    async fn resolve_address(&self) -> Result<NodeDesc> {
-        let node_id = self.request.to.node_id;
-        let mut count = 0;
-        loop {
-            match self.resolver.resolve(node_id).await {
-                Ok(node_desc) => return Ok(node_desc),
-                Err(err) => {
-                    debug!(err = ?err, "resolve address of node {}", node_id);
-                    count += 1;
-                    if count == 3 {
-                        return Err(err);
-                    }
+pub async fn retrive_snapshot(
+    trans_mgr: &TransportManager,
+    target_replica: ReplicaDesc,
+    snapshot_id: Vec<u8>,
+) -> Result<impl futures::Stream<Item = std::result::Result<SnapshotChunk, tonic::Status>>> {
+    let node_desc = resolve_address(&*trans_mgr.resolver, target_replica.node_id).await?;
+    let address = format!("http://{}", node_desc.addr);
+    let mut client = RaftClient::connect(address).await?;
+    let request = SnapshotRequest {
+        replica_id: target_replica.id,
+        snapshot_id,
+    };
+    let resp = client.retrive_snapshot(request).await?;
+    Ok(resp.into_inner())
+}
+
+async fn resolve_address(resolver: &dyn AddressResolver, node_id: u64) -> Result<NodeDesc> {
+    let mut count = 0;
+    loop {
+        match resolver.resolve(node_id).await {
+            Ok(node_desc) => return Ok(node_desc),
+            Err(err) => {
+                debug!(err = ?err, "resolve address of node {}", node_id);
+                count += 1;
+                if count == 3 {
+                    return Err(err);
                 }
             }
         }

@@ -15,7 +15,7 @@ mod applier;
 mod facade;
 mod fsm;
 mod node;
-mod snap;
+pub mod snap;
 mod storage;
 mod transport;
 mod worker;
@@ -29,12 +29,12 @@ use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 
-use self::snap::SnapManager;
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
+    snap::SnapManager,
     storage::write_initial_state,
-    transport::{AddressResolver, TransportManager},
+    transport::{retrive_snapshot, AddressResolver, TransportManager},
     worker::StateObserver,
 };
 use crate::{
@@ -92,6 +92,11 @@ impl RaftManager {
     #[inline]
     pub fn engine(&self) -> &raft_engine::Engine {
         &self.engine
+    }
+
+    #[inline]
+    pub fn snapshot_manager(&self) -> &SnapManager {
+        &self.snap_mgr
     }
 
     #[inline]
