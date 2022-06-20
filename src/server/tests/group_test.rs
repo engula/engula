@@ -89,7 +89,7 @@ fn add_replica() {
 
         // 2. add replica to group
         let req = RequestBatchBuilder::new(node_1_id)
-            .add_replica(group_id, 2, new_replica_id, node_2_id)
+            .add_replica(group_id, 7, new_replica_id, node_2_id)
             .build();
         let resps = client_1.batch_group_requests(req).await.unwrap();
         assert_eq!(resps.len(), 1);
