@@ -16,17 +16,13 @@ use std::sync::Arc;
 
 use engula_api::{
     server::v1::{
-        group_request_union::Request::{self, BatchWrite, CreateShard, Delete, Get, Put},
+        group_request_union::Request::{self, *},
         CreateShardRequest, GroupRequest, GroupRequestUnion, ShardDesc, *,
     },
     v1::{DeleteRequest, GetRequest, PutRequest},
 };
 
-use crate::{
-    bootstrap::{ROOT_GROUP_ID, ROOT_SHARD_ID},
-    node::replica::Replica,
-    Error, Result,
-};
+use crate::{bootstrap::ROOT_GROUP_ID, node::replica::Replica, Error, Result};
 
 pub struct RootStore {
     replica: Arc<Replica>,
@@ -55,19 +51,19 @@ impl RootStore {
         Ok(())
     }
 
-    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    pub async fn put(&self, shard_id: u64, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.submit_request(Put(ShardPutRequest {
-            shard_id: ROOT_SHARD_ID,
+            shard_id,
             put: Some(PutRequest { key, value }),
         }))
         .await?;
         Ok(())
     }
 
-    pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub async fn get(&self, shard_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let resp = self
             .submit_request(Get(ShardGetRequest {
-                shard_id: ROOT_SHARD_ID,
+                shard_id,
                 get: Some(GetRequest {
                     key: key.to_owned(),
                 }),
@@ -85,9 +81,9 @@ impl RootStore {
         }
     }
 
-    pub async fn delete(&self, key: &[u8]) -> Result<()> {
+    pub async fn delete(&self, shard_id: u64, key: &[u8]) -> Result<()> {
         self.submit_request(Delete(ShardDeleteRequest {
-            shard_id: ROOT_SHARD_ID,
+            shard_id,
             delete: Some(DeleteRequest {
                 key: key.to_owned(),
             }),
@@ -96,12 +92,27 @@ impl RootStore {
         Ok(())
     }
 
-    pub async fn list(&self, _prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // TODO(zojw): impl scan prefix under database_id + prefix.
-        Ok(vec![])
+    pub async fn list(&self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let resp = self
+            .submit_request(PrefixList(ShardPrefixListRequest {
+                shard_id,
+                prefix: prefix.to_owned(),
+            }))
+            .await?;
+        let resp = resp
+            .response
+            .ok_or_else(|| Error::InvalidArgument("PrefixListResponse".into()))?
+            .response
+            .ok_or_else(|| Error::InvalidArgument("PrefixListUnionResponse".into()))?;
+
+        if let group_response_union::Response::PreifxList(resp) = resp {
+            Ok(resp.values)
+        } else {
+            Err(Error::InvalidArgument("PrefixListResponse".into()))
+        }
     }
 
-    pub async fn submit_request(&self, req: Request) -> Result<GroupResponse> {
+    async fn submit_request(&self, req: Request) -> Result<GroupResponse> {
         use crate::node::replica::retry::execute;
 
         let epoch = self.replica.epoch();

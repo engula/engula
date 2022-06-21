@@ -26,10 +26,11 @@ service Node {
   rpc GetRoot(GetRootRequest) returns (GetRootResponse) {}
   rpc CreateReplica(CreateReplicaRequest) returns (CreateReplicaResponse) {}
 
-  /// RemoveReplica allows shuts down and deletes an orphan replica from the specified node.
+  /// RemoveReplica allows shuts down and deletes an orphan replica from the
+  /// specified node.
   ///
-  /// It is only executed when the user specifies a newer `GroupDesc` and the replica no longer
-  /// belongs to the group.
+  /// It is only executed when the user specifies a newer `GroupDesc` and the
+  /// replica no longer belongs to the group.
   rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 }
@@ -59,13 +60,14 @@ message GroupRequestUnion {
     ShardGetRequest get = 1;
     ShardPutRequest put = 2;
     ShardDeleteRequest delete = 3;
-    BatchWriteRequest batch_write = 4;
+    ShardPrefixListRequest prefix_list = 4;
+    BatchWriteRequest batch_write = 5;
 
     /// Add a new shard to an existing group.
-    CreateShardRequest create_shard = 5;
+    CreateShardRequest create_shard = 6;
 
     /// Change replicas of an existing group.
-    ChangeReplicasRequest change_replicas = 6;
+    ChangeReplicasRequest change_replicas = 7;
   }
 }
 
@@ -74,16 +76,17 @@ message GroupResponseUnion {
     engula.v1.GetResponse get = 1;
     engula.v1.PutResponse put = 2;
     engula.v1.DeleteResponse delete = 3;
-    BatchWriteResponse batch_write = 4;
-    CreateShardResponse create_shard = 5;
-    ChangeReplicasResponse change_replicas = 6;
+    ShardPrefixListResponse preifx_list = 4;
+    BatchWriteResponse batch_write = 5;
+    CreateShardResponse create_shard = 6;
+    ChangeReplicasResponse change_replicas = 7;
   }
 }
 
 /// Execute batch write to a shard to ensure atomic writes.
 ///
-/// Since the interface does not need to be exposed to users, the definition is placed in
-/// this file.
+/// Since the interface does not need to be exposed to users, the definition is
+/// placed in this file.
 message BatchWriteRequest {
   repeated ShardDeleteRequest deletes = 1;
   repeated ShardPutRequest puts = 2;
@@ -92,19 +95,26 @@ message BatchWriteRequest {
 message BatchWriteResponse {}
 
 message ShardPutRequest {
-    uint64 shard_id = 1;
-    engula.v1.PutRequest put = 2;
+  uint64 shard_id = 1;
+  engula.v1.PutRequest put = 2;
 }
 
 message ShardDeleteRequest {
-    uint64 shard_id = 1;
-    engula.v1.DeleteRequest delete = 2;
+  uint64 shard_id = 1;
+  engula.v1.DeleteRequest delete = 2;
 }
 
 message ShardGetRequest {
-    uint64 shard_id = 1;
-    engula.v1.GetRequest get = 2;
+  uint64 shard_id = 1;
+  engula.v1.GetRequest get = 2;
 }
+
+message ShardPrefixListRequest {
+  uint64 shard_id = 1;
+  bytes prefix = 2;
+}
+
+message ShardPrefixListResponse { repeated bytes values = 1; }
 
 message GetRootRequest {}
 
@@ -210,14 +220,14 @@ message ReplicaStats {
 }
 
 message CollectGroupDetailRequest {
-    /// The ID list of the group that needs to get the status, if it is empty, get all
-    /// the groups on the target machine.
-    repeated uint64 groups = 1;
+  /// The ID list of the group that needs to get the status, if it is empty, get
+  /// all the groups on the target machine.
+  repeated uint64 groups = 1;
 }
 
 message CollectGroupDetailResponse {
-    repeated ReplicaState replica_states = 1;
-    /// If a replica is the leader of group, it also needs to be responsible for filling
-    /// in the `GroupDesc`.
-    repeated GroupDesc group_descs = 2;
+  repeated ReplicaState replica_states = 1;
+  /// If a replica is the leader of group, it also needs to be responsible for
+  /// filling in the `GroupDesc`.
+  repeated GroupDesc group_descs = 2;
 }

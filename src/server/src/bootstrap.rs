@@ -19,22 +19,13 @@ use std::{
     vec,
 };
 
-use engula_api::server::v1::{
-    node_server::NodeServer,
-    root_server::RootServer,
-    shard_desc::{Partition, RangePartition},
-    GroupDesc, JoinNodeRequest, JoinNodeResponse, NodeDesc, ReplicaDesc, ReplicaRole, ShardDesc,
-};
+use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
 use engula_client::RootClient;
 use tracing::{debug, info, warn};
 
 use crate::{
-    node::{
-        engine::{StateEngine, LOCAL_COLLECTION_ID},
-        resolver::AddressResolver,
-        Node,
-    },
-    root::Root,
+    node::{engine::StateEngine, resolver::AddressResolver, Node},
+    root::{Root, Schema},
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
     Error, Result, Server,
@@ -42,8 +33,6 @@ use crate::{
 
 // TODO(walter) root cluster and first replica id.
 pub const ROOT_GROUP_ID: u64 = 0;
-pub const ROOT_SUPER_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
-pub const ROOT_SHARD_ID: u64 = 1;
 pub const FIRST_REPLICA_ID: u64 = 1;
 pub const FIRST_NODE_ID: u64 = 0;
 pub const INITIAL_EPOCH: u64 = 0;
@@ -259,22 +248,12 @@ async fn save_node_ident(
 
 async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     // Create the first raft group of cluster, this node is the only member of the raft group.
-    let shard = ShardDesc {
-        id: ROOT_SHARD_ID,
-        parent_id: ROOT_SUPER_COLLECTION_ID, /* TODO: create multiple shard for each internal
-                                              * collection after support atomic WriteBatch in one
-                                              * group, current temp solution is "create logic
-                                              * internal collections over one super collection" */
-        partition: Some(Partition::Range(RangePartition {
-            start: SHARD_MIN.to_owned(),
-            end: SHARD_MAX.to_owned(),
-        })),
-    };
+    let (shards, _) = Schema::init_shards();
 
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
         epoch: INITIAL_EPOCH,
-        shards: vec![shard],
+        shards,
         replicas: vec![ReplicaDesc {
             id: FIRST_REPLICA_ID,
             node_id: FIRST_NODE_ID,

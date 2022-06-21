@@ -68,6 +68,9 @@ fn is_executable(descriptor: &GroupDesc, request: &GroupRequest) -> bool {
             Request::Delete(req) => {
                 is_target_shard_exists(descriptor, req.shard_id, &req.delete.as_ref().unwrap().key)
             }
+            Request::PrefixList(req) => {
+                is_target_shard_exists(descriptor, req.shard_id, &req.prefix)
+            }
             Request::BatchWrite(req) => {
                 for delete in &req.deletes {
                     if !is_target_shard_exists(

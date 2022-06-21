@@ -25,19 +25,13 @@ use std::{
 };
 
 use engula_api::{
-    server::v1::{
-        report_request::GroupUpdates,
-        watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
-        NodeDesc,
-    },
+    server::v1::{report_request::GroupUpdates, watch_response::*, NodeDesc},
     v1::{CollectionDesc, DatabaseDesc},
 };
 
+pub(crate) use self::schema::*;
+pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
 use self::{schema::ReplicaNodes, store::RootStore};
-pub use self::{
-    schema::Schema,
-    watch::{WatchHub, Watcher, WatcherInitializer},
-};
 use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
