@@ -19,9 +19,12 @@ pub mod send;
 
 use std::{
     collections::HashMap,
+    ffi::OsStr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+
+use raft::prelude::{Snapshot, SnapshotMetadata};
 
 pub use self::{create::dispatch_creating_snap_task, download::dispatch_downloading_snap_task};
 use crate::{serverpb::v1::SnapshotMeta, Result};
@@ -74,11 +77,46 @@ struct SnapManagerShared {
 #[allow(unused)]
 impl SnapManager {
     pub fn recovery<P: AsRef<Path>>(root_dir: P) -> Result<SnapManager> {
-        // TODO(walter) recovery snap manager from disk.
+        use prost::Message;
+
+        let root_dir = root_dir.as_ref();
+        let mut replicas = HashMap::new();
+        for (replica_id, replica_dir) in list_numeric_path(root_dir)? {
+            for (index, snap_dir) in list_numeric_path(&replica_dir)? {
+                let meta_name = snap_dir.join(SNAP_DATA);
+                if !std::fs::try_exists(&meta_name)? {
+                    // TODO(walter) gc broken snapshot?
+                    continue;
+                }
+                let bytes = std::fs::read(&meta_name)?;
+                let snapshot_meta = match SnapshotMeta::decode(&*bytes) {
+                    Ok(meta) => meta,
+                    Err(_) => {
+                        // TODO(walter) gc broken snapshot?.
+                        continue;
+                    }
+                };
+
+                let snapshot_id = format!("{}", index).as_bytes().to_owned();
+                let info = SnapshotInfo {
+                    snapshot_id,
+                    base_dir: snap_dir,
+                    meta: snapshot_meta,
+                    ref_count: 0,
+                };
+                let replica_mgr = replicas
+                    .entry(replica_id)
+                    .or_insert_with(|| ReplicaSnapManager::new(replica_id, replica_dir.clone()));
+                replica_mgr.next_snapshot_index =
+                    std::cmp::max(replica_mgr.next_snapshot_index, index as usize);
+                replica_mgr.snapshots.push(info);
+            }
+        }
+
         Ok(SnapManager {
             shared: Arc::new(SnapManagerShared {
-                root_dir: root_dir.as_ref().to_owned(),
-                replicas: Mutex::default(),
+                root_dir: root_dir.to_owned(),
+                replicas: Mutex::new(replicas),
             }),
         })
     }
@@ -177,6 +215,24 @@ impl ReplicaSnapManager {
     }
 }
 
+impl SnapshotInfo {
+    pub fn to_raft_snapshot(&self) -> Snapshot {
+        let snap_meta = &self.meta;
+        let apply_state = snap_meta.apply_state.clone().unwrap();
+        let conf_state =
+            super::conf_state_from_group_descriptor(snap_meta.group_desc.as_ref().unwrap());
+        let raft_meta = SnapshotMetadata {
+            conf_state: Some(conf_state),
+            index: apply_state.index,
+            term: apply_state.term,
+        };
+        Snapshot {
+            data: self.snapshot_id.clone(),
+            metadata: Some(raft_meta),
+        }
+    }
+}
+
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
         let mut replicas = self.manager.shared.replicas.lock().unwrap();
@@ -192,4 +248,23 @@ impl std::ops::Deref for SnapshotGuard {
     fn deref(&self) -> &Self::Target {
         &self.info
     }
+}
+
+fn list_numeric_path(root: &Path) -> Result<Vec<(u64, PathBuf)>> {
+    let mut values = vec![];
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(OsStr::to_str) {
+            let index: u64 = match name.parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            values.push((index, path));
+        }
+    }
+    Ok(values)
 }

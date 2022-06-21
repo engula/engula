@@ -111,8 +111,14 @@ impl<M: StateMachine> Applier<M> {
         }
     }
 
+    #[inline]
     pub fn mut_state_machine(&mut self) -> &mut M {
         &mut self.state_machine
+    }
+
+    #[inline]
+    pub fn applied_index(&self) -> u64 {
+        self.last_applied_index
     }
 
     /// Apply entries and invoke proposal & read response.

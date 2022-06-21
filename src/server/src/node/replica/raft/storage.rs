@@ -196,6 +196,11 @@ impl Storage {
         self.last_truncated_entry_id().term
     }
 
+    #[inline]
+    pub fn range(&self) -> std::ops::Range<u64> {
+        self.first_index..(self.last_index + 1)
+    }
+
     fn check_range(&self, low: u64, high: u64) -> raft::Result<()> {
         if low > high {
             panic!("low {} is greater than high {}", low, high);
@@ -299,22 +304,10 @@ impl raft::Storage for Storage {
     fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<Snapshot> {
         if !self.is_creating_snapshot.get() {
             if let Some(snap_info) = self.snap_mgr.latest_snap(self.replica_id) {
-                let snap_meta = snap_info.meta;
+                let snap_meta = &snap_info.meta;
                 let apply_state = snap_meta.apply_state.clone().unwrap();
                 if apply_state.index >= request_index {
-                    let conf_state = super::conf_state_from_group_descriptor(
-                        snap_meta.group_desc.as_ref().unwrap(),
-                    );
-                    let raft_meta = SnapshotMetadata {
-                        conf_state: Some(conf_state),
-                        index: apply_state.index,
-                        term: apply_state.term,
-                    };
-                    return Ok(Snapshot {
-                        // TODO(walter) fill data as unique ID
-                        data: vec![],
-                        metadata: Some(raft_meta),
-                    });
+                    return Ok(snap_info.to_raft_snapshot());
                 }
             }
 
