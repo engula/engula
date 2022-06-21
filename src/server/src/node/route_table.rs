@@ -18,8 +18,8 @@ use std::{
     task::Waker,
 };
 
-use super::{replica::RaftSender, Replica};
-use crate::bootstrap::ROOT_GROUP_ID;
+use super::Replica;
+use crate::{bootstrap::ROOT_GROUP_ID, raftgroup::RaftNodeFacade};
 
 /// A structure support replica route queries.
 #[derive(Clone)]
@@ -87,7 +87,7 @@ where
     Self: Send + Sync,
 {
     // FIXME(walter) more efficient implementation.
-    senders: Arc<RwLock<HashMap<u64, RaftSender>>>,
+    senders: Arc<RwLock<HashMap<u64, RaftNodeFacade>>>,
 }
 
 impl RaftRouteTable {
@@ -98,11 +98,11 @@ impl RaftRouteTable {
         }
     }
 
-    pub fn find(&self, replica_id: u64) -> Option<RaftSender> {
+    pub fn find(&self, replica_id: u64) -> Option<RaftNodeFacade> {
         self.senders.read().unwrap().get(&replica_id).cloned()
     }
 
-    pub fn update(&self, replica_id: u64, sender: RaftSender) {
+    pub fn update(&self, replica_id: u64, sender: RaftNodeFacade) {
         self.senders.write().unwrap().insert(replica_id, sender);
     }
 

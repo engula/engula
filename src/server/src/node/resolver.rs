@@ -50,7 +50,7 @@ impl AddressResolver {
 }
 
 #[crate::async_trait]
-impl crate::node::replica::raft::AddressResolver for AddressResolver {
+impl crate::raftgroup::AddressResolver for AddressResolver {
     async fn resolve(&self, node_id: u64) -> Result<NodeDesc> {
         if let Some(desc) = self.find(node_id) {
             return Ok(desc);

@@ -16,7 +16,6 @@ mod acl;
 mod eval;
 pub mod fsm;
 pub mod job;
-pub mod raft;
 pub mod retry;
 
 use std::{
@@ -34,13 +33,11 @@ use engula_api::{
 };
 use tracing::info;
 
-pub use self::raft::RaftNodeFacade as RaftSender;
-use self::{
-    fsm::{DescObserver, GroupStateMachine},
-    raft::{RaftManager, RaftNodeFacade, StateObserver},
-};
+use self::fsm::{DescObserver, GroupStateMachine};
 use super::{engine::GroupEngine, job::StateChannel};
+pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
+    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
     serverpb::v1::{EvalResult, ReplicaLocalState, SyncOp},
     Error, Result,
 };
@@ -104,7 +101,7 @@ impl Replica {
             .cloned()
             .map(eval::add_shard)
             .collect::<Vec<_>>();
-        raft::write_initial_state(raft_mgr.engine(), replica_id, voters, eval_results).await?;
+        write_initial_state(raft_mgr.engine(), replica_id, voters, eval_results).await?;
         Ok(())
     }
 

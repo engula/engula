@@ -19,11 +19,11 @@
 mod bootstrap;
 mod error;
 pub mod node;
+mod raftgroup;
 mod root;
 pub mod runtime;
 mod service;
 
-pub use raft::eraftpb;
 pub use tonic::async_trait;
 
 pub use crate::{

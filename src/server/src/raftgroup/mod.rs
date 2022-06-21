@@ -29,6 +29,7 @@ use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 
+use self::worker::RaftWorker;
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
@@ -38,7 +39,6 @@ pub use self::{
     worker::StateObserver,
 };
 use crate::{
-    node::replica::raft::worker::RaftWorker,
     runtime::{Executor, TaskPriority},
     Result,
 };

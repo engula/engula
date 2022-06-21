@@ -14,7 +14,7 @@
 use raft::prelude::Snapshot;
 
 use super::{SnapManager, SNAP_DATA};
-use crate::node::replica::raft::{applier::Applier, StateMachine};
+use crate::raftgroup::{applier::Applier, StateMachine};
 
 pub fn apply_snapshot<M: StateMachine>(
     replica_id: u64,
