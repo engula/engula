@@ -191,6 +191,7 @@ impl Storage {
     pub fn compact_to(&mut self, to: u64) -> LogBatch {
         use raft::Storage;
 
+        debug_assert!(to > self.first_index);
         self.first_index = to;
 
         let term = self.term(to).unwrap();
@@ -433,7 +434,7 @@ impl EntryCache {
     pub fn drains_to(&mut self, applied_index: u64) {
         if let Some(cache_low) = self.entries.front().map(Entry::get_index) {
             let len = applied_index.checked_sub(cache_low).unwrap() as usize;
-            self.entries.truncate(len / 2);
+            self.entries.drain(0..(len / 2));
         }
     }
 }
@@ -514,7 +515,11 @@ pub async fn write_initial_state(
         .put_message(replica_id, keys::LOCAL_STATE_KEY.to_owned(), &local_state)
         .unwrap();
 
-    debug!("write initial state of {}", replica_id);
+    debug!(
+        "write initial state of {}, total {} initial entries",
+        replica_id,
+        initial_entries.len()
+    );
 
     engine.write(&mut batch, true)?;
     Ok(())

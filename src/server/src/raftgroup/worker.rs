@@ -376,8 +376,12 @@ where
             }
         }
 
-        let mut lb = self.raft_node.mut_store().compact_to(to);
-        self.engine.write(&mut lb, false).unwrap();
+        let store = self.raft_node.mut_store();
+        if store.first_index().unwrap() < to {
+            let mut lb = store.compact_to(to);
+            self.engine.write(&mut lb, false).unwrap();
+        }
+
         self.snap_mgr.recycle_snapshots(self.desc.id, to);
     }
 }
