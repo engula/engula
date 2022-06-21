@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map::OccupiedError, HashMap},
     sync::{Arc, Mutex},
 };
 
@@ -38,6 +38,17 @@ pub struct State {
     db_name_lookup: HashMap<String, u64>,
     co_id_lookup: HashMap<u64, CollectionDesc>,
     co_name_lookup: HashMap<(u64 /* db */, String), u64>,
+    co_shards_lookup: HashMap<u64 /* co */, Vec<ShardDesc>>,
+    shard_group_lookup: HashMap<u64 /* shard */, u64 /* group */>,
+    group_id_lookup: HashMap<u64 /* group */, RouterGroupState>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RouterGroupState {
+    id: u64,
+    epoch: Option<u64>,
+    leader_id: Option<u64>,
+    replicas: HashMap<u64, ReplicaDesc>,
 }
 
 #[allow(unused)]
@@ -75,8 +86,53 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
                 UpdateEvent::Node(node_desc) => {
                     state.node_id_lookup.insert(node_desc.id, node_desc.addr);
                 }
-                UpdateEvent::Group(_) => todo!(),
-                UpdateEvent::GroupState(_) => todo!(),
+                UpdateEvent::Group(group_desc) => {
+                    let (id, epoch) = (group_desc.id, group_desc.epoch);
+                    let (shards, replicas) = (group_desc.shards, group_desc.replicas);
+
+                    let replicas = replicas
+                        .into_iter()
+                        .map(|d| (d.id, d))
+                        .collect::<HashMap<u64, ReplicaDesc>>();
+                    let mut group_state = RouterGroupState {
+                        id,
+                        epoch: Some(epoch),
+                        leader_id: None,
+                        replicas,
+                    };
+                    if let Some(old_state) = state.group_id_lookup.get(&id) {
+                        group_state.leader_id = old_state.leader_id;
+                    }
+                    state.group_id_lookup.insert(id, group_state);
+
+                    for shard in shards {
+                        state.shard_group_lookup.insert(shard.id, id);
+
+                        let shard_list = match state
+                            .co_shards_lookup
+                            .try_insert(shard.collection_id, vec![])
+                        {
+                            Ok(shard_list) => shard_list,
+                            Err(OccupiedError { mut entry, .. }) => entry.get_mut(),
+                        };
+                        shard_list.push(shard);
+                    }
+                }
+                UpdateEvent::GroupState(group_state) => {
+                    let id = group_state.group_id;
+                    let leader_id = group_state.leader_id;
+                    let mut group_state = RouterGroupState {
+                        id,
+                        epoch: None,
+                        leader_id,
+                        replicas: HashMap::new(),
+                    };
+                    if let Some(old_state) = state.group_id_lookup.get(&id) {
+                        group_state.epoch = old_state.epoch;
+                        group_state.replicas = old_state.replicas.clone();
+                    }
+                    state.group_id_lookup.insert(id, group_state);
+                }
                 UpdateEvent::Database(db_desc) => {
                     state.db_id_lookup.insert(db_desc.id, db_desc.clone());
                     state.db_name_lookup.insert(db_desc.name, db_desc.id);
