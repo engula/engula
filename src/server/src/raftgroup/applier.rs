@@ -121,6 +121,11 @@ impl<M: StateMachine> Applier<M> {
         self.last_applied_index
     }
 
+    #[inline]
+    pub fn flushed_index(&self) -> u64 {
+        self.state_machine.flushed_index()
+    }
+
     /// Apply entries and invoke proposal & read response.
     pub(super) fn apply_entries(
         &mut self,
