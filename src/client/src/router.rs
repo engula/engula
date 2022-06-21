@@ -17,7 +17,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use engula_api::server::v1::*;
+use engula_api::{server::v1::*, v1::*};
 use tokio_stream::StreamExt;
 use tonic::Streaming;
 use tracing::warn;
@@ -33,8 +33,11 @@ pub struct Router {
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    db_id_lookup: HashMap<u64, String>,
+    node_id_lookup: HashMap<u64, String /* ip:port */>,
+    db_id_lookup: HashMap<u64, DatabaseDesc>,
     db_name_lookup: HashMap<String, u64>,
+    co_id_lookup: HashMap<u64, CollectionDesc>,
+    co_name_lookup: HashMap<(u64 /* db */, String), u64>,
 }
 
 #[allow(unused)]
@@ -69,14 +72,21 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
             };
             let mut state = state.lock().unwrap();
             match event {
-                UpdateEvent::Node(_) => todo!(),
+                UpdateEvent::Node(node_desc) => {
+                    state.node_id_lookup.insert(node_desc.id, node_desc.addr);
+                }
                 UpdateEvent::Group(_) => todo!(),
                 UpdateEvent::GroupState(_) => todo!(),
                 UpdateEvent::Database(db_desc) => {
-                    state.db_id_lookup.insert(db_desc.id, db_desc.name.clone());
+                    state.db_id_lookup.insert(db_desc.id, db_desc.clone());
                     state.db_name_lookup.insert(db_desc.name, db_desc.id);
                 }
-                UpdateEvent::Collection(_) => todo!(),
+                UpdateEvent::Collection(co_desc) => {
+                    let desc = co_desc.clone();
+                    let (id, name, db) = (co_desc.id, co_desc.name, co_desc.db);
+                    state.co_id_lookup.insert(id, desc);
+                    state.co_name_lookup.insert((db, name), id);
+                }
             }
         }
         for delete in deletes {
@@ -86,15 +96,21 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
             };
             let mut state = state.lock().unwrap();
             match event {
-                DeleteEvent::Node(_) => todo!(),
+                DeleteEvent::Node(node) => {
+                    state.node_id_lookup.remove(&node);
+                }
                 DeleteEvent::Group(_) => todo!(),
-                DeleteEvent::Database(db_desc) => {
-                    if let Some(name) = state.db_id_lookup.remove(&db_desc) {
-                        state.db_name_lookup.remove(name.as_str());
+                DeleteEvent::GroupState(_) => todo!(),
+                DeleteEvent::Database(db) => {
+                    if let Some(desc) = state.db_id_lookup.remove(&db) {
+                        state.db_name_lookup.remove(desc.name.as_str());
                     }
                 }
-                DeleteEvent::Collection(_) => todo!(),
-                DeleteEvent::GroupState(_) => todo!(),
+                DeleteEvent::Collection(co) => {
+                    if let Some(desc) = state.co_id_lookup.remove(&co) {
+                        state.co_name_lookup.remove(&(desc.db, desc.name));
+                    }
+                }
             }
         }
     }
