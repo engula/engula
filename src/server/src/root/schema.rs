@@ -783,7 +783,7 @@ impl PutBatchBuilder {
     fn put_collection(&mut self, desc: CollectionDesc) -> &mut Self {
         self.put(
             &SYSTEM_COLLECTION_COLLECTION_ID,
-            collection_key(desc.parent_id, &desc.name),
+            collection_key(desc.db, &desc.name),
             desc.encode_to_vec(),
         );
         self
