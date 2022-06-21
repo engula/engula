@@ -104,7 +104,7 @@ impl GroupEngine {
         let collections = desc
             .shards
             .iter()
-            .map(|shard| (shard.id, shard.parent_id))
+            .map(|shard| (shard.id, shard.collection_id))
             .collect::<HashMap<_, _>>();
         Ok(Some(GroupEngine {
             name,
@@ -240,7 +240,7 @@ impl GroupEngine {
             let mut collections = self.collections.write().unwrap();
             collections.clear();
             for shard in desc.shards {
-                collections.insert(shard.id, shard.parent_id);
+                collections.insert(shard.id, shard.collection_id);
             }
         }
 
