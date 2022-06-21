@@ -136,13 +136,23 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
                     state.group_id_lookup.insert(id, group_state);
                 }
                 UpdateEvent::Database(db_desc) => {
-                    state.db_id_lookup.insert(db_desc.id, db_desc.clone());
-                    state.db_name_lookup.insert(db_desc.name, db_desc.id);
+                    let desc = db_desc.clone();
+                    let (id, name) = (db_desc.id, db_desc.name);
+                    if let Some(old_desc) = state.db_id_lookup.insert(id, desc) {
+                        if old_desc.name != name {
+                            state.db_name_lookup.remove(&name);
+                        }
+                    }
+                    state.db_name_lookup.insert(name, id);
                 }
                 UpdateEvent::Collection(co_desc) => {
                     let desc = co_desc.clone();
                     let (id, name, db) = (co_desc.id, co_desc.name, co_desc.db);
-                    state.co_id_lookup.insert(id, desc);
+                    if let Some(old_desc) = state.co_id_lookup.insert(id, desc) {
+                        if old_desc.name != name {
+                            state.co_name_lookup.remove(&(db, old_desc.name));
+                        }
+                    }
                     state.co_name_lookup.insert((db, name), id);
                 }
             }
