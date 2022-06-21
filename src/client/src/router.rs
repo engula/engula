@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::{hash_map::OccupiedError, HashMap},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
@@ -43,6 +43,7 @@ pub struct State {
     group_id_lookup: HashMap<u64 /* group */, RouterGroupState>,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, Default)]
 struct RouterGroupState {
     id: u64,
@@ -108,14 +109,15 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
                     for shard in shards {
                         state.shard_group_lookup.insert(shard.id, id);
 
-                        let shard_list = match state
-                            .co_shards_lookup
-                            .try_insert(shard.collection_id, vec![])
-                        {
-                            Ok(shard_list) => shard_list,
-                            Err(OccupiedError { mut entry, .. }) => entry.get_mut(),
-                        };
-                        shard_list.push(shard);
+                        let co_shards_lookup = &mut state.co_shards_lookup;
+                        match co_shards_lookup.get_mut(&shard.collection_id) {
+                            None => {
+                                co_shards_lookup.insert(shard.collection_id, vec![shard]);
+                            }
+                            Some(shards) => {
+                                shards.push(shard);
+                            }
+                        }
                     }
                 }
                 UpdateEvent::GroupState(group_state) => {
