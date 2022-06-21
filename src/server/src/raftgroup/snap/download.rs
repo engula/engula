@@ -26,10 +26,7 @@ use tracing::{debug, error, info};
 
 use super::SnapManager;
 use crate::{
-    node::{
-        replica::raft::{retrive_snapshot, worker::Request},
-        TransportManager,
-    },
+    raftgroup::{retrive_snapshot, worker::Request, TransportManager},
     runtime::{Executor, TaskPriority},
     serverpb::v1::{snapshot_chunk, SnapshotChunk, SnapshotFile, SnapshotMeta},
     Error, Result,
@@ -235,7 +232,7 @@ mod tests {
     use tracing::info;
 
     use crate::{
-        node::replica::raft::{snap, SnapshotBuilder},
+        raftgroup::{snap, SnapshotBuilder},
         runtime::ExecutorOwner,
         serverpb::v1::ApplyState,
         Result,

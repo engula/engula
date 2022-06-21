@@ -21,10 +21,11 @@ use tracing::debug;
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
+    snap::apply::apply_snapshot,
     storage::Storage,
     RaftManager, SnapManager,
 };
-use crate::{node::replica::raft::snap::apply::apply_snapshot, Error, Result};
+use crate::{Error, Result};
 
 /// WriteTask records the metadata and entries to persist to disk.
 #[derive(Default)]

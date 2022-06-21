@@ -21,9 +21,9 @@ use engula_api::server::v1::{
 };
 use tracing::trace;
 
-use super::raft::{ApplyEntry, SnapshotBuilder, StateMachine};
 use crate::{
     node::engine::{GroupEngine, WriteBatch},
+    raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
     serverpb::v1::*,
     Result,
 };

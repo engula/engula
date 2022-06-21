@@ -20,7 +20,7 @@ use tracing::{error, info};
 
 use super::{SnapManager, SNAP_DATA};
 use crate::{
-    node::replica::raft::{
+    raftgroup::{
         fsm::SnapshotBuilder,
         snap::{SNAP_META, SNAP_TEMP},
         worker::Request,

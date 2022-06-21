@@ -16,7 +16,8 @@ use std::path::Path;
 use engula_api::server::v1::GroupDesc;
 
 use crate::{
-    node::{engine::GroupEngineIterator, replica::raft::SnapshotBuilder, GroupEngine},
+    node::{engine::GroupEngineIterator, GroupEngine},
+    raftgroup::SnapshotBuilder,
     serverpb::v1::ApplyState,
     Error, Result,
 };

@@ -17,7 +17,7 @@ use tonic::{Request, Response, Status, Streaming};
 use tracing::warn;
 
 use crate::{
-    node::replica::raft::snap::send::{send_snapshot, SnapshotChunkStream},
+    raftgroup::snap::send::{send_snapshot, SnapshotChunkStream},
     serverpb::v1::*,
     Server,
 };

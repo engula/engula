@@ -24,17 +24,15 @@ use engula_api::server::v1::*;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
+use self::job::StateChannel;
 pub use self::{
     engine::{GroupEngine, StateEngine},
-    replica::{
-        raft::{RaftManager, TransportManager},
-        Replica,
-    },
+    replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
-use self::{job::StateChannel, replica::raft::AddressResolver};
 use crate::{
     node::replica::ReplicaInfo,
+    raftgroup::{AddressResolver, RaftManager, TransportManager},
     runtime::{Executor, JoinHandle},
     serverpb::v1::{NodeIdent, ReplicaLocalState},
     Error, Result,
