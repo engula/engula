@@ -17,7 +17,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use engula_api::server::v1::*;
+use engula_api::{server::v1::*, v1::*};
 use tokio_stream::StreamExt;
 use tonic::Streaming;
 use tracing::warn;
@@ -33,8 +33,23 @@ pub struct Router {
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    db_id_lookup: HashMap<u64, String>,
+    node_id_lookup: HashMap<u64, String /* ip:port */>,
+    db_id_lookup: HashMap<u64, DatabaseDesc>,
     db_name_lookup: HashMap<String, u64>,
+    co_id_lookup: HashMap<u64, CollectionDesc>,
+    co_name_lookup: HashMap<(u64 /* db */, String), u64>,
+    co_shards_lookup: HashMap<u64 /* co */, Vec<ShardDesc>>,
+    shard_group_lookup: HashMap<u64 /* shard */, u64 /* group */>,
+    group_id_lookup: HashMap<u64 /* group */, RouterGroupState>,
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone, Default)]
+struct RouterGroupState {
+    id: u64,
+    epoch: Option<u64>,
+    leader_id: Option<u64>,
+    replicas: HashMap<u64, ReplicaDesc>,
 }
 
 #[allow(unused)]
@@ -69,14 +84,77 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
             };
             let mut state = state.lock().unwrap();
             match event {
-                UpdateEvent::Node(_) => todo!(),
-                UpdateEvent::Group(_) => todo!(),
-                UpdateEvent::GroupState(_) => todo!(),
-                UpdateEvent::Database(db_desc) => {
-                    state.db_id_lookup.insert(db_desc.id, db_desc.name.clone());
-                    state.db_name_lookup.insert(db_desc.name, db_desc.id);
+                UpdateEvent::Node(node_desc) => {
+                    state.node_id_lookup.insert(node_desc.id, node_desc.addr);
                 }
-                UpdateEvent::Collection(_) => todo!(),
+                UpdateEvent::Group(group_desc) => {
+                    let (id, epoch) = (group_desc.id, group_desc.epoch);
+                    let (shards, replicas) = (group_desc.shards, group_desc.replicas);
+
+                    let replicas = replicas
+                        .into_iter()
+                        .map(|d| (d.id, d))
+                        .collect::<HashMap<u64, ReplicaDesc>>();
+                    let mut group_state = RouterGroupState {
+                        id,
+                        epoch: Some(epoch),
+                        leader_id: None,
+                        replicas,
+                    };
+                    if let Some(old_state) = state.group_id_lookup.get(&id) {
+                        group_state.leader_id = old_state.leader_id;
+                    }
+                    state.group_id_lookup.insert(id, group_state);
+
+                    for shard in shards {
+                        state.shard_group_lookup.insert(shard.id, id);
+
+                        let co_shards_lookup = &mut state.co_shards_lookup;
+                        match co_shards_lookup.get_mut(&shard.collection_id) {
+                            None => {
+                                co_shards_lookup.insert(shard.collection_id, vec![shard]);
+                            }
+                            Some(shards) => {
+                                shards.push(shard);
+                            }
+                        }
+                    }
+                }
+                UpdateEvent::GroupState(group_state) => {
+                    let id = group_state.group_id;
+                    let leader_id = group_state.leader_id;
+                    let mut group_state = RouterGroupState {
+                        id,
+                        epoch: None,
+                        leader_id,
+                        replicas: HashMap::new(),
+                    };
+                    if let Some(old_state) = state.group_id_lookup.get(&id) {
+                        group_state.epoch = old_state.epoch;
+                        group_state.replicas = old_state.replicas.clone();
+                    }
+                    state.group_id_lookup.insert(id, group_state);
+                }
+                UpdateEvent::Database(db_desc) => {
+                    let desc = db_desc.clone();
+                    let (id, name) = (db_desc.id, db_desc.name);
+                    if let Some(old_desc) = state.db_id_lookup.insert(id, desc) {
+                        if old_desc.name != name {
+                            state.db_name_lookup.remove(&name);
+                        }
+                    }
+                    state.db_name_lookup.insert(name, id);
+                }
+                UpdateEvent::Collection(co_desc) => {
+                    let desc = co_desc.clone();
+                    let (id, name, db) = (co_desc.id, co_desc.name, co_desc.db);
+                    if let Some(old_desc) = state.co_id_lookup.insert(id, desc) {
+                        if old_desc.name != name {
+                            state.co_name_lookup.remove(&(db, old_desc.name));
+                        }
+                    }
+                    state.co_name_lookup.insert((db, name), id);
+                }
             }
         }
         for delete in deletes {
@@ -86,15 +164,21 @@ async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchRespons
             };
             let mut state = state.lock().unwrap();
             match event {
-                DeleteEvent::Node(_) => todo!(),
+                DeleteEvent::Node(node) => {
+                    state.node_id_lookup.remove(&node);
+                }
                 DeleteEvent::Group(_) => todo!(),
-                DeleteEvent::Database(db_desc) => {
-                    if let Some(name) = state.db_id_lookup.remove(&db_desc) {
-                        state.db_name_lookup.remove(name.as_str());
+                DeleteEvent::GroupState(_) => todo!(),
+                DeleteEvent::Database(db) => {
+                    if let Some(desc) = state.db_id_lookup.remove(&db) {
+                        state.db_name_lookup.remove(desc.name.as_str());
                     }
                 }
-                DeleteEvent::Collection(_) => todo!(),
-                DeleteEvent::GroupState(_) => todo!(),
+                DeleteEvent::Collection(co) => {
+                    if let Some(desc) = state.co_id_lookup.remove(&co) {
+                        state.co_name_lookup.remove(&(desc.db, desc.name));
+                    }
+                }
             }
         }
     }

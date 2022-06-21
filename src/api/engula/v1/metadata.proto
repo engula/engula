@@ -24,7 +24,7 @@ message DatabaseDesc {
 message CollectionDesc {
   uint64 id = 1;
   string name = 2;
-  uint64 parent_id = 3;
+  uint64 db = 3; // database id
 
   message HashPartition {
     uint64 slots = 1;

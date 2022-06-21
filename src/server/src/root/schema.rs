@@ -170,8 +170,8 @@ impl Schema {
         let shard_id = self.next_id(META_SHARD_ID_KEY).await?;
         let desc = ShardDesc {
             id: shard_id,
-            parent_id: collection.id,
-            partition: Some(Partition::Range(shard_desc::RangePartition {
+            collection_id: collection.id,
+            partition: Some(Partition::Range(RangePartition {
                 start: SHARD_MIN.to_owned(),
                 end: SHARD_MAX.to_owned(),
             })),
@@ -549,7 +549,7 @@ impl Schema {
         for (collect_id, shard_id) in SYSTEM_COLLECTION_SHARD.iter() {
             desc.push(ShardDesc {
                 id: shard_id.to_owned(),
-                parent_id: collect_id.to_owned(),
+                collection_id: collect_id.to_owned(),
                 partition: Some(Partition::Range(RangePartition {
                     start: SHARD_MIN.to_owned(),
                     end: SHARD_MAX.to_owned(),
@@ -571,7 +571,7 @@ impl Schema {
         let self_collection = CollectionDesc {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -581,7 +581,7 @@ impl Schema {
         let db_collection = CollectionDesc {
             id: SYSTEM_DATABASE_COLLECTION_ID,
             name: SYSTEM_DATABASE_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -591,7 +591,7 @@ impl Schema {
         let meta_collection = CollectionDesc {
             id: SYSTEM_MATE_COLLECTION_ID,
             name: SYSTEM_MATE_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -601,7 +601,7 @@ impl Schema {
         let node_collection = CollectionDesc {
             id: SYSTEM_NODE_COLLECTION_ID,
             name: SYSTEM_NODE_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -611,7 +611,7 @@ impl Schema {
         let group_collection = CollectionDesc {
             id: SYSTEM_GROUP_COLLECTION_ID,
             name: SYSTEM_GROUP_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -621,7 +621,7 @@ impl Schema {
         let replica_state_collection = CollectionDesc {
             id: SYSTEM_REPLICA_STATE_COLLECTION_ID,
             name: SYSTEM_REPLICA_STATE_COLLECTION.to_owned(),
-            parent_id: SYSTEM_DATABASE_ID,
+            db: SYSTEM_DATABASE_ID,
             partition: Some(collection_desc::Partition::Range(
                 collection_desc::RangePartition {},
             )),
@@ -783,7 +783,7 @@ impl PutBatchBuilder {
     fn put_collection(&mut self, desc: CollectionDesc) -> &mut Self {
         self.put(
             &SYSTEM_COLLECTION_COLLECTION_ID,
-            collection_key(desc.parent_id, &desc.name),
+            collection_key(desc.db, &desc.name),
             desc.encode_to_vec(),
         );
         self

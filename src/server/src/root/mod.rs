@@ -214,7 +214,7 @@ impl Root {
         let desc = schema
             .create_collection(CollectionDesc {
                 name,
-                parent_id: db.unwrap().id,
+                db: db.unwrap().id,
                 ..Default::default()
             })
             .await?;
