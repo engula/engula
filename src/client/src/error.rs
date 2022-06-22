@@ -22,4 +22,7 @@ pub enum Error {
 
     #[error("rpc {0}")]
     Rpc(#[from] tonic::Status),
+
+    #[error("db not found {0}")]
+    DatabaseNotFound(String),
 }

@@ -22,7 +22,7 @@ use tokio_stream::StreamExt;
 use tonic::Streaming;
 use tracing::warn;
 
-use crate::RootClient;
+use crate::{NodeClient, RootClient};
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
@@ -34,6 +34,7 @@ pub struct Router {
 #[derive(Debug, Clone, Default)]
 pub struct State {
     node_id_lookup: HashMap<u64, String /* ip:port */>,
+    node_client_lookup: HashMap<u64, NodeClient>,
     db_id_lookup: HashMap<u64, DatabaseDesc>,
     db_name_lookup: HashMap<String, u64>,
     co_id_lookup: HashMap<u64, CollectionDesc>,
