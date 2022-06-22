@@ -90,6 +90,32 @@ impl AdminRequestBuilder {
             }),
         }
     }
+
+    pub fn create_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::CreateCollection(
+                    CreateCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
+                    },
+                )),
+            }),
+        }
+    }
+
+    pub fn get_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::GetCollection(
+                    GetCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
+                    },
+                )),
+            }),
+        }
+    }
 }
 
 pub struct AdminResponseExtractor;
@@ -112,6 +138,28 @@ impl AdminResponseExtractor {
         }) = resp.response
         {
             response.database
+        } else {
+            None
+        }
+    }
+
+    pub fn create_collection(resp: AdminResponse) -> Option<CollectionDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::CreateCollection(response)),
+        }) = resp.response
+        {
+            response.collection
+        } else {
+            None
+        }
+    }
+
+    pub fn get_collection(resp: AdminResponse) -> Option<CollectionDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::GetCollection(response)),
+        }) = resp.response
+        {
+            response.collection
         } else {
             None
         }

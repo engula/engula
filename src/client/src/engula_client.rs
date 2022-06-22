@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use engula_api::v1::*;
+use tokio::sync::Mutex;
 
 use crate::{AdminRequestBuilder, AdminResponseExtractor, RootClient, Router};
 
@@ -41,20 +42,23 @@ impl Client {
         })
     }
 
-    pub async fn create_database(&self, name: String) -> Result<DatabaseDesc, crate::Error> {
-        let inner = self.inner.lock().unwrap();
+    pub async fn create_database(&self, name: String) -> Result<Database, crate::Error> {
+        let inner = self.inner.lock().await;
         let root_client = inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
             None => Err(crate::Error::DatabaseNotFound(name)),
-            Some(desc) => Ok(desc),
+            Some(desc) => Ok(Database {
+                desc,
+                client: self.clone(),
+            }),
         }
     }
 
     pub async fn open_database(&self, name: String) -> Result<Database, crate::Error> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().await;
         let root_client = inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::get_database(name.clone()))
@@ -72,5 +76,56 @@ impl Client {
 #[derive(Debug, Clone)]
 pub struct Database {
     desc: DatabaseDesc,
+    client: Client,
+}
+
+impl Database {
+    pub async fn create_collection(&self, name: String) -> Result<Collection, crate::Error> {
+        let client = self.client.clone();
+        let db_desc = self.desc.clone();
+        let inner = client.inner.lock().await;
+        let root_client = inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::create_collection(
+                db_desc.name.clone(),
+                name.clone(),
+            ))
+            .await?;
+        match AdminResponseExtractor::create_collection(resp) {
+            None => Err(crate::Error::CollectionNotFound(name)),
+            Some(co_desc) => Ok(Collection {
+                db_desc,
+                co_desc,
+                client: client.clone(),
+            }),
+        }
+    }
+
+    pub async fn open_collection(&self, name: String) -> Result<Collection, crate::Error> {
+        let client = self.client.clone();
+        let db_desc = self.desc.clone();
+        let inner = client.inner.lock().await;
+        let root_client = inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::get_collection(
+                db_desc.name.clone(),
+                name.clone(),
+            ))
+            .await?;
+        match AdminResponseExtractor::get_collection(resp) {
+            None => Err(crate::Error::CollectionNotFound(name)),
+            Some(co_desc) => Ok(Collection {
+                db_desc,
+                co_desc,
+                client: client.clone(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Collection {
+    db_desc: DatabaseDesc,
+    co_desc: CollectionDesc,
     client: Client,
 }
