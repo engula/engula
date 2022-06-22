@@ -22,4 +22,4 @@ mod router;
 pub use error::Error;
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
 pub use root_client::{AdminRequestBuilder, AdminResponseExtractor, Client as RootClient};
-pub use router::Router;
+pub use router::{Router, RouterGroupState};

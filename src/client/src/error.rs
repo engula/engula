@@ -23,9 +23,9 @@ pub enum Error {
     #[error("rpc {0}")]
     Rpc(#[from] tonic::Status),
 
-    #[error("database not found {0}")]
-    DatabaseNotFound(String),
+    #[error("{0} not found {1}")]
+    NotFound(String, String),
 
-    #[error("collection not found {0}")]
-    CollectionNotFound(String),
+    #[error("internal {0}")]
+    Internal(String),
 }
