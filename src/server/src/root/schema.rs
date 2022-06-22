@@ -384,6 +384,17 @@ impl Schema {
         let mut updates = Vec::new();
         let mut deletes = Vec::new();
 
+        // list nodes.
+        let nodes = self
+            .list_node()
+            .await?
+            .into_iter()
+            .map(|desc| UpdateEvent {
+                event: Some(update_event::Event::Node(desc)),
+            })
+            .collect::<Vec<UpdateEvent>>();
+        updates.extend_from_slice(&nodes);
+
         // list databases.
         let dbs = self
             .list_database()

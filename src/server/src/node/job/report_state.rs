@@ -114,6 +114,7 @@ async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
 /// If one day you find that reporting has become a bottleneck, you can consider optimizing this
 /// code.
 async fn issue_report_request(addr: String, request: &ReportRequest) -> Result<()> {
+    let addr = format!("http://{}", addr);
     let mut client = RootClient::connect(addr).await?;
     client.report(request.clone()).await?;
     Ok(())
