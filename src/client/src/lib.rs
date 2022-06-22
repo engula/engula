@@ -19,6 +19,7 @@ mod node_client;
 mod root_client;
 mod router;
 
+pub use engula_client::Client as EngulaClient;
 pub use error::Error;
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
 pub use root_client::{AdminRequestBuilder, AdminResponseExtractor, Client as RootClient};

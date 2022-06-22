@@ -130,6 +130,7 @@ impl Database {
 
 #[derive(Debug, Clone)]
 pub struct Collection {
+    #[allow(unused)]
     db_desc: DatabaseDesc,
     co_desc: CollectionDesc,
     client: Client,

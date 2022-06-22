@@ -20,7 +20,7 @@ use std::{
 use engula_api::{server::v1::*, v1::*};
 use tokio_stream::StreamExt;
 use tonic::Streaming;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::RootClient;
 
@@ -105,6 +105,8 @@ impl Router {
 
 async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchResponse>) {
     use watch_response::{delete_event::Event as DeleteEvent, update_event::Event as UpdateEvent};
+
+    info!("start watching events...");
 
     while let Some(event) = events.next().await {
         let (updates, deletes) = match event {
