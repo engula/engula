@@ -19,7 +19,7 @@ use futures::{
     channel::{mpsc, oneshot},
     FutureExt, SinkExt, StreamExt,
 };
-use raft::prelude::*;
+use raft::{prelude::*, StateRole};
 use raft_engine::{Engine, LogBatch};
 use tracing::{debug, warn};
 
@@ -155,9 +155,6 @@ where
     marker: PhantomData<M>,
 }
 
-// Send is safe because the ReplicaCache field is not accessible outside of RaftWorker.
-unsafe impl<M: StateMachine> Send for RaftWorker<M> {}
-
 impl<M> RaftWorker<M>
 where
     M: StateMachine,
@@ -213,6 +210,7 @@ where
                 futures::select_biased! {
                     _ = interval.tick().fuse() => {
                         self.raft_node.tick();
+                        self.compact_log();
                     },
                     request = self.request_receiver.next() => match request {
                         Some(request) => {
@@ -363,5 +361,27 @@ where
                 self.raft_node.read_index(sender);
             }
         }
+    }
+
+    fn compact_log(&mut self) {
+        let mut to = self.raft_node.mut_state_machine().flushed_index();
+
+        let status = self.raft_node.raft_status();
+        if status.ss.raft_state == StateRole::Leader {
+            if let Some(min_matched_index) = status
+                .progress
+                .and_then(|p| p.iter().map(|(_, p)| p.matched).min())
+            {
+                to = std::cmp::min(min_matched_index, to);
+            }
+        }
+
+        let store = self.raft_node.mut_store();
+        if store.first_index().unwrap() < to {
+            let mut lb = store.compact_to(to);
+            self.engine.write(&mut lb, false).unwrap();
+        }
+
+        self.snap_mgr.recycle_snapshots(self.desc.id, to);
     }
 }

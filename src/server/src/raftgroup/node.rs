@@ -279,6 +279,11 @@ where
         self.applier.mut_state_machine()
     }
 
+    #[inline]
+    pub fn raft_status(&self) -> raft::Status {
+        self.raw_node.status()
+    }
+
     fn handle_apply(&mut self, template: &mut impl AdvanceTemplate, ready: &mut Ready) {
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());
@@ -296,6 +301,9 @@ where
                 ready.take_committed_entries(),
             );
             self.raw_node.advance_apply_to(applied);
+
+            let last_applied_index = self.applier.applied_index();
+            self.raw_node.mut_store().post_apply(last_applied_index);
         }
 
         if !ready.snapshot().is_empty() {
@@ -351,7 +359,7 @@ where
 {
     if let Some(info) = snap_mgr.latest_snap(replica_id) {
         let apply_state = info.meta.apply_state.as_ref().unwrap();
-        if applier.applied_index() < apply_state.index {
+        if applier.flushed_index() < apply_state.index {
             apply_snapshot(replica_id, snap_mgr, applier, &info.to_raft_snapshot());
         }
 

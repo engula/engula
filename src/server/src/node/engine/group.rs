@@ -106,6 +106,8 @@ impl GroupEngine {
             .iter()
             .map(|shard| (shard.id, shard.collection_id))
             .collect::<HashMap<_, _>>();
+        // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
+        raw_db.flush_cf(&cf_handle)?;
         Ok(Some(GroupEngine {
             name,
             raw_db: raw_db.clone(),
@@ -149,7 +151,7 @@ impl GroupEngine {
             .raw_db
             .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
             .unwrap()
-            .expect("group descriptor will persisted when creating group");
+            .expect("apply state will persisted when creating group");
         ApplyState::decode(value.as_ref()).expect("should encoded ApplyState")
     }
 
@@ -179,6 +181,7 @@ impl GroupEngine {
         let collection_id = self
             .collection_id(shard_id)
             .expect("shard id to collection id");
+        debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
 
         let raw_key = keys::raw(collection_id, key);
         wb.put_cf(&cf_handle, raw_key, value);

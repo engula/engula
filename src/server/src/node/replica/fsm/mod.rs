@@ -53,7 +53,6 @@ where
 
     /// Whether `GroupDesc` changes during apply.
     desc_updated: bool,
-    flushed_index: u64,
     last_applied_term: u64,
 }
 
@@ -64,7 +63,6 @@ impl GroupStateMachine {
             group_engine,
             desc_observer,
             desc_updated: false,
-            flushed_index: apply_state.index,
             last_applied_term: apply_state.term,
         }
     }
@@ -166,7 +164,6 @@ impl StateMachine for GroupStateMachine {
         self.desc_observer
             .on_descriptor_updated(self.group_engine.descriptor().unwrap());
         let apply_state = self.group_engine.flushed_apply_state();
-        self.flushed_index = apply_state.index;
         self.desc_observer.on_term_updated(apply_state.term);
         Ok(())
     }
@@ -178,8 +175,8 @@ impl StateMachine for GroupStateMachine {
     }
 
     fn flushed_index(&self) -> u64 {
-        // TODO(walter) update flushed index in periodic.
-        self.flushed_index
+        // FIXME(walter) avoid disk IO.
+        self.group_engine.flushed_apply_state().index
     }
 
     fn descriptor(&self) -> GroupDesc {

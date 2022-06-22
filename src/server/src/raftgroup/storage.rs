@@ -22,7 +22,7 @@ use std::{
 use engula_api::server::v1::{ChangeReplica, ChangeReplicaType, ChangeReplicas};
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
-use raft_engine::{Engine, LogBatch, MessageExt};
+use raft_engine::{Command, Engine, LogBatch, MessageExt};
 use tracing::debug;
 
 use super::{node::WriteTask, snap::SnapManager};
@@ -140,8 +140,6 @@ impl Storage {
 
     /// Apply [`WriteTask`] to [`LogBatch`], and save some states to storage.
     pub fn write(&mut self, batch: &mut LogBatch, write_task: &WriteTask) -> Result<()> {
-        use raft_engine::Command;
-
         if let Some(snapshot) = &write_task.snapshot {
             assert!(
                 write_task.entries.is_empty(),
@@ -163,6 +161,9 @@ impl Storage {
                     &raft_local_state,
                 )
                 .unwrap();
+            self.cache = EntryCache::new();
+            self.first_index = metadata.index;
+            self.last_index = metadata.index;
         }
 
         if !write_task.entries.is_empty() {
@@ -179,6 +180,34 @@ impl Storage {
             self.hard_state = hs.clone();
         }
         Ok(())
+    }
+
+    #[inline]
+    pub fn post_apply(&mut self, applied_index: u64) {
+        self.cache.drains_to(applied_index);
+    }
+
+    #[inline]
+    pub fn compact_to(&mut self, to: u64) -> LogBatch {
+        use raft::Storage;
+
+        debug_assert!(to > self.first_index);
+        self.first_index = to;
+
+        let term = self.term(to).unwrap();
+        let local_state = RaftLocalState {
+            replica_id: self.replica_id,
+            last_truncated: Some(EntryId { index: to, term }),
+        };
+        let mut lb = LogBatch::default();
+        lb.add_command(self.replica_id, Command::Compact { index: to });
+        lb.put_message(
+            self.replica_id,
+            keys::LOCAL_STATE_KEY.to_owned(),
+            &local_state,
+        )
+        .unwrap();
+        lb
     }
 
     #[inline]
@@ -401,6 +430,13 @@ impl EntryCache {
 
         self.entries.extend(entries.iter().cloned());
     }
+
+    pub fn drains_to(&mut self, applied_index: u64) {
+        if let Some(cache_low) = self.entries.front().map(Entry::get_index) {
+            let len = applied_index.checked_sub(cache_low).unwrap() as usize;
+            self.entries.drain(0..(len / 2));
+        }
+    }
 }
 
 /// Write raft initial states into log engine.  All previous data of this raft will be clean first.
@@ -414,8 +450,6 @@ pub async fn write_initial_state(
     mut voters: Vec<(u64, u64)>,
     initial_eval_results: Vec<EvalResult>,
 ) -> Result<()> {
-    use raft_engine::Command;
-
     let mut initial_entries = vec![];
     let mut last_index: u64 = 0;
     if !voters.is_empty() {
@@ -481,7 +515,11 @@ pub async fn write_initial_state(
         .put_message(replica_id, keys::LOCAL_STATE_KEY.to_owned(), &local_state)
         .unwrap();
 
-    debug!("write initial state of {}", replica_id);
+    debug!(
+        "write initial state of {}, total {} initial entries",
+        replica_id,
+        initial_entries.len()
+    );
 
     engine.write(&mut batch, true)?;
     Ok(())

@@ -80,7 +80,7 @@ impl RaftManager {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(cfg)?);
-        let snap_mgr = SnapManager::recovery(snap_dir)?;
+        let snap_mgr = SnapManager::recovery(&executor, snap_dir)?;
         Ok(RaftManager {
             executor,
             engine,

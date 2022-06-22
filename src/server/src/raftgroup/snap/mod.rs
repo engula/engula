@@ -22,12 +22,19 @@ use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
+use futures::{channel::mpsc, StreamExt};
 use raft::prelude::{Snapshot, SnapshotMetadata};
+use tracing::{error, info};
 
 pub use self::{create::dispatch_creating_snap_task, download::dispatch_downloading_snap_task};
-use crate::{serverpb::v1::SnapshotMeta, Result};
+use crate::{
+    runtime::{Executor, TaskPriority},
+    serverpb::v1::SnapshotMeta,
+    Result,
+};
 
 const SNAP_DATA: &str = "DATA";
 const SNAP_TEMP: &str = "TEMP";
@@ -43,6 +50,7 @@ pub struct SnapshotInfo {
 
     /// The ref count of snapshot.
     ref_count: usize,
+    created_at: Instant,
 }
 
 pub struct SnapshotGuard {
@@ -71,13 +79,23 @@ where
 
 struct SnapManagerShared {
     root_dir: PathBuf,
-    replicas: Mutex<HashMap<u64, ReplicaSnapManager>>,
+    inner: Mutex<SnapManagerInner>,
+}
+
+struct SnapManagerInner {
+    sender: mpsc::UnboundedSender<(u64, PathBuf)>,
+    replicas: HashMap<u64, ReplicaSnapManager>,
 }
 
 #[allow(unused)]
 impl SnapManager {
-    pub fn recovery<P: AsRef<Path>>(root_dir: P) -> Result<SnapManager> {
+    pub fn recovery<P: AsRef<Path>>(executor: &Executor, root_dir: P) -> Result<SnapManager> {
         use prost::Message;
+
+        let (mut sender, receiver) = mpsc::unbounded();
+        executor.spawn(None, TaskPriority::IoLow, async move {
+            recycle_snapshot(receiver).await;
+        });
 
         let root_dir = root_dir.as_ref();
         let mut replicas = HashMap::new();
@@ -85,14 +103,18 @@ impl SnapManager {
             for (index, snap_dir) in list_numeric_path(&replica_dir)? {
                 let meta_name = snap_dir.join(SNAP_DATA);
                 if !std::fs::try_exists(&meta_name)? {
-                    // TODO(walter) gc broken snapshot?
+                    sender
+                        .start_send((replica_id, snap_dir))
+                        .unwrap_or_default();
                     continue;
                 }
                 let bytes = std::fs::read(&meta_name)?;
                 let snapshot_meta = match SnapshotMeta::decode(&*bytes) {
                     Ok(meta) => meta,
                     Err(_) => {
-                        // TODO(walter) gc broken snapshot?.
+                        sender
+                            .start_send((replica_id, snap_dir))
+                            .unwrap_or_default();
                         continue;
                     }
                 };
@@ -103,6 +125,7 @@ impl SnapManager {
                     base_dir: snap_dir,
                     meta: snapshot_meta,
                     ref_count: 0,
+                    created_at: Instant::now(),
                 };
                 let replica_mgr = replicas
                     .entry(replica_id)
@@ -116,15 +139,16 @@ impl SnapManager {
         Ok(SnapManager {
             shared: Arc::new(SnapManagerShared {
                 root_dir: root_dir.to_owned(),
-                replicas: Mutex::new(replicas),
+                inner: Mutex::new(SnapManagerInner { sender, replicas }),
             }),
         })
     }
 
     /// Mark group as creating, and return a dir to save snapshot.
     pub fn create(&self, replica_id: u64) -> PathBuf {
-        let mut replicas = self.shared.replicas.lock().unwrap();
-        replicas
+        let mut inner = self.shared.inner.lock().unwrap();
+        inner
+            .replicas
             .entry(replica_id)
             .or_insert_with(|| ReplicaSnapManager::new(replica_id, self.shared.root_dir.clone()))
             .next_snapshot_dir()
@@ -133,8 +157,9 @@ impl SnapManager {
     /// Install a snapshot and returns snapshot id.
     pub fn install(&self, replica_id: u64, dir_name: &Path, meta: &SnapshotMeta) -> Vec<u8> {
         // TODO(walter) check snapshot data integrity.
-        let mut replicas = self.shared.replicas.lock().unwrap();
-        let replica = replicas
+        let mut inner = self.shared.inner.lock().unwrap();
+        let replica = inner
+            .replicas
             .get_mut(&replica_id)
             .expect("replica should exists during download/create snapshot");
         let parent = dir_name.parent();
@@ -150,6 +175,7 @@ impl SnapManager {
                     base_dir: replica.base_dir.join(name.as_ref()),
                     meta: meta.clone(),
                     ref_count: 0,
+                    created_at: Instant::now(),
                 });
                 snapshot_id
             }
@@ -158,16 +184,18 @@ impl SnapManager {
     }
 
     pub fn latest_snap(&self, replica_id: u64) -> Option<SnapshotInfo> {
-        let mut replicas = self.shared.replicas.lock().unwrap();
-        replicas
+        let mut inner = self.shared.inner.lock().unwrap();
+        inner
+            .replicas
             .get(&replica_id)
             .and_then(|rep| rep.snapshots.last())
             .cloned()
     }
 
     pub fn lock_snap(&self, replica_id: u64, snapshot_id: &[u8]) -> Option<SnapshotGuard> {
-        let mut replicas = self.shared.replicas.lock().unwrap();
-        replicas
+        let mut inner = self.shared.inner.lock().unwrap();
+        inner
+            .replicas
             .get_mut(&replica_id)
             .and_then(|rep| rep.snapshot(snapshot_id))
             .map(|info| SnapshotGuard {
@@ -175,6 +203,37 @@ impl SnapManager {
                 replica_id,
                 manager: self.clone(),
             })
+    }
+
+    pub fn recycle_snapshots(&self, replica_id: u64, required_index: u64) {
+        let now = Instant::now();
+        let (mut sender, snapshots) = {
+            let mut inner = self.shared.inner.lock().unwrap();
+            let replica = inner.replicas.get_mut(&replica_id);
+            if replica.is_none() {
+                return;
+            }
+
+            let replica = replica.unwrap();
+            let snapshots = replica
+                .snapshots
+                .drain_filter(|info| {
+                    info.meta.apply_state.as_ref().unwrap().index < required_index
+                        && info.created_at + Duration::from_secs(300) < now
+                })
+                .map(|info| info.base_dir)
+                .collect::<Vec<_>>();
+            if replica.snapshots.is_empty() {
+                inner.replicas.remove(&replica_id);
+            }
+            (inner.sender.clone(), snapshots)
+        };
+
+        for snap_dir in snapshots {
+            sender
+                .start_send((replica_id, snap_dir))
+                .unwrap_or_default();
+        }
     }
 }
 
@@ -235,8 +294,8 @@ impl SnapshotInfo {
 
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
-        let mut replicas = self.manager.shared.replicas.lock().unwrap();
-        if let Some(rep) = replicas.get_mut(&self.replica_id) {
+        let mut inner = self.manager.shared.inner.lock().unwrap();
+        if let Some(rep) = inner.replicas.get_mut(&self.replica_id) {
             rep.release(&self.info.snapshot_id)
         }
     }
@@ -267,4 +326,28 @@ fn list_numeric_path(root: &Path) -> Result<Vec<(u64, PathBuf)>> {
         }
     }
     Ok(values)
+}
+
+async fn recycle_snapshot(mut receiver: mpsc::UnboundedReceiver<(u64, PathBuf)>) {
+    while let Some((replica_id, snapshot_dir)) = receiver.next().await {
+        if let Err(err) = std::fs::remove_dir_all(&snapshot_dir) {
+            error!(
+                "replica {} recycle snapshot {}: {}",
+                replica_id,
+                snapshot_dir.display(),
+                err
+            );
+            continue;
+        }
+
+        info!(
+            "replica {} recycle snapshot {}",
+            replica_id,
+            snapshot_dir.display()
+        );
+        // Remove parent directory if it is empty.
+        if let Some(parent) = snapshot_dir.parent() {
+            std::fs::remove_dir(parent).unwrap_or_default();
+        }
+    }
 }

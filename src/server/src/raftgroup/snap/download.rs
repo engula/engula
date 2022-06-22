@@ -264,12 +264,13 @@ mod tests {
     fn send_and_save_snapshot() {
         thread::spawn(move || {
             let owner = ExecutorOwner::new(1);
+            let executor = owner.executor();
             owner.executor().block_on(async move {
                 let tmp_dir = TempDir::new("download-snapshot").unwrap().into_path();
                 std::fs::create_dir_all(&tmp_dir).unwrap();
 
                 let replica_id: u64 = 1;
-                let snap_manager = SnapManager::recovery(&tmp_dir).unwrap();
+                let snap_manager = SnapManager::recovery(&executor, &tmp_dir).unwrap();
 
                 // Prepare snapshot
                 let builder: Box<dyn SnapshotBuilder> = Box::new(SimpleSnapshotBuilder {
