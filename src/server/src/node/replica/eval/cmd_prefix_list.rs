@@ -23,12 +23,11 @@ pub async fn prefix_list(
 ) -> Result<ShardPrefixListResponse> {
     let prefix = &req.prefix;
     let mut values = Vec::new();
-    let iter = engine.iter_from(prefix.to_owned())?;
+    let iter = engine.iter()?; // TODO: use right iter_from
     for (key, value) in iter {
-        if !key.starts_with(prefix) {
-            break;
+        if key.starts_with(prefix) {
+            values.push(value.to_vec());
         }
-        values.push(value.to_vec());
     }
     Ok(ShardPrefixListResponse { values })
 }

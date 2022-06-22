@@ -160,7 +160,7 @@ impl Root {
 
         // TODO(zojw): refresh owner, heartbeat node, rebalance
         for _ in 0..1000 {
-            self.send_heartbeat(schema.to_owned()).await?;
+            // self.send_heartbeat(schema.to_owned()).await?;
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
 
