@@ -13,13 +13,17 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
-use futures::{channel::mpsc, StreamExt};
+use futures::{channel::mpsc, Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
 use crate::{runtime::TaskPriority, Error, Server};
 
+pub struct PullStream;
+
 #[tonic::async_trait]
 impl node_server::Node for Server {
+    type PullStream = PullStream;
+
     async fn batch(
         &self,
         request: Request<BatchRequest>,
@@ -122,12 +126,56 @@ impl node_server::Node for Server {
             piggybacks: piggybacks_resps,
         }))
     }
+
+    #[allow(unused)]
+    async fn migrate_prepare(
+        &self,
+        request: Request<MigratePrepareRequest>,
+    ) -> Result<Response<MigrateResponse>, Status> {
+        todo!()
+    }
+
+    #[allow(unused)]
+    async fn migrate_commit(
+        &self,
+        request: Request<MigrateCommitRequest>,
+    ) -> Result<Response<MigrateResponse>, Status> {
+        todo!()
+    }
+
+    #[allow(unused)]
+    async fn pull(
+        &self,
+        request: Request<PullRequest>,
+    ) -> Result<Response<Self::PullStream>, Status> {
+        todo!()
+    }
+
+    #[allow(unused)]
+    async fn forward(
+        &self,
+        request: Request<ForwardRequest>,
+    ) -> Result<Response<ForwardResponse>, Status> {
+        todo!()
+    }
 }
 
 impl Server {
     async fn update_root(&self, req: SyncRootRequest) -> crate::Result<SyncRootResponse> {
         self.node.update_root(req.roots).await?;
         Ok(SyncRootResponse {})
+    }
+}
+
+#[allow(unused)]
+impl Stream for PullStream {
+    type Item = Result<ShardChunk, Status>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        todo!()
     }
 }
 

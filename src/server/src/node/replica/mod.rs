@@ -24,11 +24,7 @@ use std::{
 };
 
 use engula_api::{
-    server::v1::{
-        group_request_union::Request, group_response_union::Response, BatchWriteResponse,
-        ChangeReplicasResponse, CreateShardResponse, GroupDesc, GroupRequest, GroupResponse,
-        RaftRole, ReplicaDesc, ReplicaState,
-    },
+    server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
 use tracing::info;
@@ -38,7 +34,7 @@ use super::{engine::GroupEngine, job::StateChannel};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
-    serverpb::v1::{EvalResult, ReplicaLocalState, SyncOp},
+    serverpb::v1::*,
     Error, Result,
 };
 
@@ -289,6 +285,9 @@ impl Replica {
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
             }
+            Request::MigrateShard(_) => {
+                todo!()
+            }
         };
 
         if let Some(eval_result) = eval_result_opt {
@@ -485,7 +484,7 @@ impl DescObserver for LeaseStateObserver {
 
 pub(self) fn is_change_meta_request(request: &Request) -> bool {
     match request {
-        Request::ChangeReplicas(_) | Request::CreateShard(_) => true,
+        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::MigrateShard(_) => true,
         Request::Get(_)
         | Request::Put(_)
         | Request::Delete(_)

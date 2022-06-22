@@ -33,6 +33,11 @@ service Node {
   /// replica no longer belongs to the group.
   rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
+
+  rpc MigratePrepare(MigratePrepareRequest) returns (MigrateResponse) {}
+  rpc MigrateCommit(MigrateCommitRequest) returns (MigrateResponse) {}
+  rpc Pull(PullRequest) returns (stream ShardChunk) {}
+  rpc Forward(ForwardRequest) returns (ForwardResponse) {}
 }
 
 message BatchRequest {
@@ -68,6 +73,8 @@ message GroupRequestUnion {
 
     /// Change replicas of an existing group.
     ChangeReplicasRequest change_replicas = 7;
+
+    MigrateShardRequest migrate_shard = 8;
   }
 }
 
@@ -80,6 +87,7 @@ message GroupResponseUnion {
     BatchWriteResponse batch_write = 5;
     CreateShardResponse create_shard = 6;
     ChangeReplicasResponse change_replicas = 7;
+    MigrateShardResponse migrate_shard = 8;
   }
 }
 
@@ -157,6 +165,14 @@ enum ChangeReplicaType {
   ADD_LEARNER = 2;
 }
 
+message MigrateShardRequest {
+  uint64 shard_id = 1;
+  uint64 src_group_id = 2;
+  uint64 src_group_epoch = 3;
+}
+
+message MigrateShardResponse {}
+
 message HeartbeatRequest {
   uint64 timestamp = 1;
   repeated PiggybackRequest piggybacks = 2;
@@ -231,3 +247,41 @@ message CollectGroupDetailResponse {
   /// filling in the `GroupDesc`.
   repeated GroupDesc group_descs = 2;
 }
+
+message PullRequest {
+  uint64 shard_id = 1;
+  bytes start_key = 2;
+}
+
+message ShardData {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message ShardChunk {
+  repeated ShardData data = 1;
+}
+
+message ForwardRequest {
+  repeated ShardData forward_data = 1;
+  GroupRequestUnion request = 2;
+}
+
+message ForwardResponse {
+  GroupResponseUnion response = 1;
+}
+
+message MigratePrepareRequest {
+  uint64 shard_id = 1;
+  uint64 group_id = 2;
+  uint64 epoch = 3;
+  uint64 dest_group_id = 4;
+}
+
+message MigrateCommitRequest {
+  uint64 shard_id = 1;
+  uint64 group_id = 2;
+  uint64 epoch = 3;
+}
+
+message MigrateResponse {}
