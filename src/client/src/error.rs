@@ -22,4 +22,10 @@ pub enum Error {
 
     #[error("rpc {0}")]
     Rpc(#[from] tonic::Status),
+
+    #[error("{0} not found {1}")]
+    NotFound(String, String),
+
+    #[error("internal {0}")]
+    Internal(String),
 }

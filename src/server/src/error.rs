@@ -210,6 +210,7 @@ impl From<engula_client::Error> for Error {
             engula_client::Error::Transport(err) => Error::Transport(err),
             engula_client::Error::MultiTransport(err) => Error::MultiTransport(err),
             engula_client::Error::Rpc(err) => Error::Rpc(err),
+            _ => unreachable!(),
         }
     }
 }

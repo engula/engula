@@ -20,7 +20,7 @@ use std::{
 use engula_api::{server::v1::*, v1::*};
 use tokio_stream::StreamExt;
 use tonic::Streaming;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::RootClient;
 
@@ -45,11 +45,11 @@ pub struct State {
 
 #[allow(unused)]
 #[derive(Debug, Clone, Default)]
-struct RouterGroupState {
-    id: u64,
-    epoch: Option<u64>,
-    leader_id: Option<u64>,
-    replicas: HashMap<u64, ReplicaDesc>,
+pub struct RouterGroupState {
+    pub id: u64,
+    pub epoch: Option<u64>,
+    pub leader_id: Option<u64>,
+    pub replicas: HashMap<u64, ReplicaDesc>,
 }
 
 #[allow(unused)]
@@ -64,10 +64,49 @@ impl Router {
         });
         Ok(Self { root_client, state })
     }
+
+    pub fn find_shard(&self, desc: CollectionDesc, key: &Vec<u8>) -> Option<ShardDesc> {
+        if let Some(collection_desc::Partition::Hash(_)) = desc.partition {
+            unimplemented!("Hash partition is not implemented yet.")
+        }
+
+        let state = self.state.lock().unwrap();
+        let shards = state.co_shards_lookup.get(&desc.id)?;
+        for shard in shards {
+            if let Some(shard_desc::Partition::Range(shard_desc::RangePartition { start, end })) =
+                shard.partition.clone()
+            {
+                if &start > key {
+                    continue;
+                }
+                if (&end < key) || (end.is_empty())
+                /* end = vec![] means MAX */
+                {
+                    return Some(shard.clone());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn find_group(&self, shard: u64) -> Option<RouterGroupState> {
+        let state = self.state.lock().unwrap();
+        let group_id = state.shard_group_lookup.get(&shard)?;
+        let group = state.group_id_lookup.get(group_id)?;
+        Some(group.clone())
+    }
+
+    pub fn find_node_addr(&self, id: u64) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        let addr = state.node_id_lookup.get(&id)?;
+        Some(addr.clone())
+    }
 }
 
 async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchResponse>) {
     use watch_response::{delete_event::Event as DeleteEvent, update_event::Event as UpdateEvent};
+
+    info!("start watching events...");
 
     while let Some(event) = events.next().await {
         let (updates, deletes) = match event {

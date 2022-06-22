@@ -39,7 +39,6 @@ impl Client {
         Err(crate::Error::MultiTransport(errs))
     }
 
-    // TODO improve building admin request
     pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse, tonic::Status> {
         let mut client = self.client.clone();
         let res = client.admin(req).await?;
@@ -66,5 +65,103 @@ impl Client {
         let mut client = self.client.clone();
         let res = client.watch(WatchRequest { cur_group_epochs }).await?;
         Ok(res.into_inner())
+    }
+}
+
+pub struct AdminRequestBuilder;
+
+impl AdminRequestBuilder {
+    pub fn create_database(name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::CreateDatabase(
+                    CreateDatabaseRequest { name },
+                )),
+            }),
+        }
+    }
+
+    pub fn get_database(name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::GetDatabase(
+                    GetDatabaseRequest { name },
+                )),
+            }),
+        }
+    }
+
+    pub fn create_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::CreateCollection(
+                    CreateCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
+                    },
+                )),
+            }),
+        }
+    }
+
+    pub fn get_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::GetCollection(
+                    GetCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
+                    },
+                )),
+            }),
+        }
+    }
+}
+
+pub struct AdminResponseExtractor;
+
+impl AdminResponseExtractor {
+    pub fn create_database(resp: AdminResponse) -> Option<DatabaseDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::CreateDatabase(response)),
+        }) = resp.response
+        {
+            response.database
+        } else {
+            None
+        }
+    }
+
+    pub fn get_database(resp: AdminResponse) -> Option<DatabaseDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::GetDatabase(response)),
+        }) = resp.response
+        {
+            response.database
+        } else {
+            None
+        }
+    }
+
+    pub fn create_collection(resp: AdminResponse) -> Option<CollectionDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::CreateCollection(response)),
+        }) = resp.response
+        {
+            response.collection
+        } else {
+            None
+        }
+    }
+
+    pub fn get_collection(resp: AdminResponse) -> Option<CollectionDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::GetCollection(response)),
+        }) = resp.response
+        {
+            response.collection
+        } else {
+            None
+        }
     }
 }
