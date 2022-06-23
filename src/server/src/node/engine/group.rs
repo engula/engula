@@ -336,6 +336,14 @@ impl GroupEngine {
         let opts = IngestExternalFileOptions::default();
         self.raw_db
             .ingest_external_file_cf_opts(&cf_handle, &opts, files)?;
+
+        let desc = self.descriptor().unwrap();
+        let mut collections = self.collections.write().unwrap();
+        collections.clear();
+        for shard in desc.shards {
+            collections.insert(shard.id, shard.collection_id);
+        }
+
         Ok(())
     }
 

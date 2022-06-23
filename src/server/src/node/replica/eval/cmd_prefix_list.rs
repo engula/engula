@@ -21,6 +21,7 @@ pub async fn prefix_list(
     engine: &GroupEngine,
     req: &ShardPrefixListRequest,
 ) -> Result<ShardPrefixListResponse> {
+    // TODO(walter) shall I support migrating?
     let prefix = &req.prefix;
     let mut values = Vec::new();
     let iter = engine.raw_iter()?; // TODO: use right iter_from

@@ -12,15 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::ShardGetRequest;
+use engula_api::server::v1::*;
 
-use crate::{node::engine::GroupEngine, Error, Result};
+use crate::{
+    node::{engine::GroupEngine, replica::ExecCtx, migrate::ForwardCtx},
+    Error, Result,
+};
 
 /// Get the value of the specified key.
-pub async fn get(engine: &GroupEngine, req: &ShardGetRequest) -> Result<Option<Vec<u8>>> {
+pub async fn get(
+    exec_ctx: &ExecCtx,
+    engine: &GroupEngine,
+    req: &ShardGetRequest,
+) -> Result<Option<Vec<u8>>> {
     let get = req
         .get
         .as_ref()
         .ok_or_else(|| Error::InvalidArgument("ShardGetRequest::get is None".into()))?;
-    engine.get(req.shard_id, &get.key).await
+
+    let value = engine.get(req.shard_id, &get.key).await?;
+    if let Some(migrating_digest) = exec_ctx.migrating_digest.as_ref() {
+        if migrating_digest.shard_id == req.shard_id {
+            let payloads = if let Some(value) = value {
+                vec![ShardData {
+                    key: get.key.clone(),
+                    value,
+                }]
+            } else {
+                Vec::default()
+            };
+            let forward_ctx = ForwardCtx {
+                dest_group_id: migrating_digest.dest_group_id,
+                payloads,
+            };
+            return Err(Error::Forward(forward_ctx));
+        }
+    }
+    Ok(value)
 }

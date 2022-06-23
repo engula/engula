@@ -151,7 +151,7 @@ impl GroupClient {
 
 pub async fn pull_shard(router: Router, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
     let info = replica.replica_info();
-    let shard_id = migrate_meta.shard_id;
+    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
     let mut group_client = GroupClient::new(migrate_meta.src_group_id, shard_id, router.clone());
     while let Ok(()) = replica.on_leader(true).await {
         match pull_shard_round(&mut group_client, replica.as_ref(), &migrate_meta).await {
@@ -175,7 +175,7 @@ async fn pull_shard_round(
     replica: &Replica,
     migrate_meta: &MigrateMeta,
 ) -> Result<()> {
-    let shard_id = migrate_meta.shard_id;
+    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
     let mut shard_chunk_stream = group_client.pull(&migrate_meta.last_migrated_key).await?;
     while let Some(shard_chunk) = shard_chunk_stream.next().await {
         let shard_chunk = shard_chunk?;

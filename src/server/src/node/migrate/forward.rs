@@ -14,18 +14,7 @@
 
 use engula_api::server::v1::*;
 
-use crate::serverpb::v1::*;
-
-pub async fn migrate(group_id: u64, req: &MigrateShardRequest) -> EvalResult {
-    let prepare = migrate_event::Prepare {
-        shard_desc: req.shard_desc.clone(),
-        src_group_id: req.src_group_id,
-        src_group_epoch: req.src_group_epoch,
-        dest_group_id: group_id,
-    };
-    let sync_op = SyncOp::migrate_event(MigrateEventValue::Prepare(prepare));
-    EvalResult {
-        batch: None,
-        op: Some(sync_op),
-    }
+pub struct ForwardCtx {
+    pub dest_group_id: u64,
+    pub payloads: Vec<ShardData>,
 }

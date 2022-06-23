@@ -29,7 +29,7 @@ use engula_api::{
 use tracing::info;
 
 use self::fsm::{DescObserver, GroupStateMachine};
-use super::{engine::GroupEngine, job::StateChannel};
+use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
@@ -50,6 +50,7 @@ struct LeaseState {
     applied_term: u64,
     replica_state: ReplicaState,
     descriptor: GroupDesc,
+    migrate_meta: Option<MigrateMeta>,
     leader_subscribers: Vec<Waker>,
 }
 
@@ -67,6 +68,17 @@ enum MetaAclGuard<'a> {
     Write(tokio::sync::RwLockWriteGuard<'a, ()>),
 }
 
+struct MigratingDigest {
+    shard_id: u64,
+    dest_group_id: u64,
+}
+
+/// ExecCtx contains the required infos during request execution.
+#[derive(Default)]
+pub struct ExecCtx {
+    migrating_digest: Option<MigratingDigest>,
+}
+
 pub struct Replica
 where
     Self: Send,
@@ -74,6 +86,7 @@ where
     info: Arc<ReplicaInfo>,
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
+    migrate_ctrl: MigrateController,
     lease_state: Arc<Mutex<LeaseState>>,
     meta_acl: Arc<tokio::sync::RwLock<()>>,
 }
@@ -108,6 +121,7 @@ impl Replica {
         state_channel: StateChannel,
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
+        migrate_ctrl: MigrateController,
     ) -> Result<Self> {
         let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
         let lease_state = Arc::new(Mutex::new(LeaseState {
@@ -127,6 +141,7 @@ impl Replica {
             info,
             group_engine,
             raft_node,
+            migrate_ctrl,
             lease_state,
             meta_acl: Arc::default(),
         })
@@ -164,8 +179,8 @@ impl Replica {
         }
 
         let _acl_guard = self.take_acl_guard(request).await;
-        self.check_request_early(group_request.epoch, request)?;
-        let resp = self.evaluate_command(request).await?;
+        let exec_ctx = self.check_request_early(group_request.epoch, request)?;
+        let resp = self.evaluate_command(&exec_ctx, request).await?;
         Ok(GroupResponse::new(resp))
     }
 
@@ -278,6 +293,11 @@ impl Replica {
     pub fn replica_state(&self) -> ReplicaState {
         self.lease_state.lock().unwrap().replica_state.clone()
     }
+
+    #[inline]
+    pub fn migrate_ctrl(&self) -> &MigrateController {
+        &self.migrate_ctrl
+    }
 }
 
 impl Replica {
@@ -290,19 +310,19 @@ impl Replica {
     }
 
     /// Delegates the eval method for the given `Request`.
-    async fn evaluate_command(&self, request: &Request) -> Result<Response> {
+    async fn evaluate_command(&self, exec_ctx: &ExecCtx, request: &Request) -> Result<Response> {
         let (eval_result_opt, resp) = match &request {
             Request::Get(req) => {
-                let value = eval::get(&self.group_engine, req).await?;
+                let value = eval::get(exec_ctx, &self.group_engine, req).await?;
                 let resp = GetResponse { value };
                 (None, Response::Get(resp))
             }
             Request::Put(req) => {
-                let eval_result = eval::put(&self.group_engine, req).await?;
+                let eval_result = eval::put(exec_ctx, &self.group_engine, req).await?;
                 (Some(eval_result), Response::Put(PutResponse {}))
             }
             Request::Delete(req) => {
-                let eval_result = eval::delete(&self.group_engine, req).await?;
+                let eval_result = eval::delete(exec_ctx, &self.group_engine, req).await?;
                 (Some(eval_result), Response::Delete(DeleteResponse {}))
             }
             Request::PrefixList(req) => {
@@ -310,7 +330,7 @@ impl Replica {
                 (None, Response::PrefixList(eval_result))
             }
             Request::BatchWrite(req) => {
-                let eval_result = eval::batch_write(&self.group_engine, req).await?;
+                let eval_result = eval::batch_write(exec_ctx, &self.group_engine, req).await?;
                 (eval_result, Response::BatchWrite(BatchWriteResponse {}))
             }
             Request::CreateShard(req) => {
@@ -334,8 +354,7 @@ impl Replica {
                 (None, Response::ChangeReplicas(resp))
             }
             Request::MigrateShard(req) => {
-                // TODO(walter) check migrate shard state
-                let eval_result = eval::migrate(self.info.group_id, req).await?;
+                let eval_result = eval::migrate(self.info.group_id, req).await;
                 let resp = MigrateShardResponse {};
                 (Some(eval_result), Response::MigrateShard(resp))
             }
@@ -353,7 +372,7 @@ impl Replica {
         Ok(())
     }
 
-    fn check_request_early(&self, epoch: u64, _request: &Request) -> Result<()> {
+    fn check_request_early(&self, epoch: u64, req: &Request) -> Result<ExecCtx> {
         let group_id = self.info.group_id;
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_raft_leader() {
@@ -364,11 +383,22 @@ impl Replica {
             Err(Error::GroupNotReady(group_id))
         } else if epoch < lease_state.descriptor.epoch {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
+        } else if lease_state.is_migrating() && matches!(req, Request::MigrateShard(_)) {
+            // At the same time, there can only be one migration task.
+            Err(Error::ServiceIsBusy("migration"))
         } else {
             // If the current replica is the leader and has applied data in the current term,
             // it is expected that the input epoch should not be larger than the leaders.
             debug_assert_eq!(epoch, lease_state.descriptor.epoch);
-            Ok(())
+            let migrating_digest = lease_state
+                .migrate_meta
+                .as_ref()
+                .filter(|m| m.src_group_id == group_id)
+                .map(|m| MigratingDigest {
+                    shard_id: m.shard_desc.as_ref().unwrap().id,
+                    dest_group_id: m.dest_group_id,
+                });
+            Ok(ExecCtx { migrating_digest })
         }
     }
 
@@ -417,6 +447,16 @@ impl ReplicaInfo {
     }
 }
 
+impl ExecCtx {
+    #[inline]
+    fn is_migrating_shard(&self, shard_id: u64) -> bool {
+        self.migrating_digest
+            .as_ref()
+            .map(|m| m.shard_id == shard_id)
+            .unwrap_or_default()
+    }
+}
+
 impl LeaseState {
     #[inline]
     fn is_raft_leader(&self) -> bool {
@@ -432,6 +472,11 @@ impl LeaseState {
     #[inline]
     fn is_ready_for_serving(&self) -> bool {
         self.is_raft_leader() && self.is_log_term_matched()
+    }
+
+    #[inline]
+    fn is_migrating(&self) -> bool {
+        self.migrate_meta.is_some()
     }
 
     #[inline]

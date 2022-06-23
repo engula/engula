@@ -15,16 +15,33 @@
 use engula_api::server::v1::ShardPutRequest;
 
 use crate::{
-    node::engine::{GroupEngine, WriteBatch},
+    node::{
+        engine::{GroupEngine, WriteBatch},
+        replica::ExecCtx, migrate::ForwardCtx,
+    },
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };
 
-pub async fn put(group_engine: &GroupEngine, req: &ShardPutRequest) -> Result<EvalResult> {
+pub async fn put(
+    exec_ctx: &ExecCtx,
+    group_engine: &GroupEngine,
+    req: &ShardPutRequest,
+) -> Result<EvalResult> {
     let put = req
         .put
         .as_ref()
         .ok_or_else(|| Error::InvalidArgument("ShardPutRequest::put is None".into()))?;
+
+    if let Some(migrating_digest) = exec_ctx.migrating_digest.as_ref() {
+        if migrating_digest.shard_id == req.shard_id {
+            let forward_ctx = ForwardCtx {
+                dest_group_id: migrating_digest.dest_group_id,
+                payloads: vec![],
+            };
+            return Err(Error::Forward(forward_ctx));
+        }
+    }
 
     let mut wb = WriteBatch::default();
     group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;

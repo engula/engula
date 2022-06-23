@@ -14,15 +14,30 @@
 
 use std::sync::Arc;
 
+use engula_api::server::v1::{GroupRequest, GroupResponse};
 use engula_client::Router;
 
-use crate::{node::Replica, runtime::Executor, serverpb::v1::*};
+use super::ForwardCtx;
+use crate::{node::Replica, runtime::Executor, serverpb::v1::*, Result};
+
+#[derive(Clone)]
 pub struct MigrateController {
+    shared: Arc<MigrateControllerShared>,
+}
+
+struct MigrateControllerShared {
     executor: Executor,
     router: Router,
 }
 
 impl MigrateController {
+    pub async fn new(addr: String, executor: Executor) -> Result<Self> {
+        let router = Router::connect(addr).await?;
+        Ok(MigrateController {
+            shared: Arc::new(MigrateControllerShared { router, executor }),
+        })
+    }
+
     pub fn migrate(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
         match MigrateState::from_i32(migrate_meta.state).unwrap() {
             MigrateState::Initial => {
@@ -41,15 +56,26 @@ impl MigrateController {
         }
     }
 
+    pub async fn forward(
+        &self,
+        forward_ctx: ForwardCtx,
+        request: &GroupRequest,
+    ) -> Result<GroupResponse> {
+        // TODO(walter) found group by node id.
+        todo!()
+    }
+
     fn pull(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
         use crate::runtime::TaskPriority;
 
         let replica_info = replica.replica_info();
         let tag_owner = replica_info.group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
-        let router = self.router.clone();
-        self.executor.spawn(tag, TaskPriority::IoHigh, async move {
-            super::pull_shard(router, replica, migrate_meta).await;
-        });
+        let router = self.shared.router.clone();
+        self.shared
+            .executor
+            .spawn(tag, TaskPriority::IoHigh, async move {
+                super::pull_shard(router, replica, migrate_meta).await;
+            });
     }
 }

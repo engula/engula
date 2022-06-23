@@ -30,12 +30,15 @@ pub use self::{
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
-use self::{job::StateChannel, migrate::ShardChunkStream};
+use self::{
+    job::StateChannel,
+    migrate::{MigrateController, ShardChunkStream},
+};
 use crate::{
     node::replica::ReplicaInfo,
     raftgroup::{AddressResolver, RaftManager, TransportManager},
     runtime::{Executor, JoinHandle},
-    serverpb::v1::{NodeIdent, ReplicaLocalState},
+    serverpb::v1::*,
     Error, Result,
 };
 
@@ -68,6 +71,7 @@ where
     replica_route_table: ReplicaRouteTable,
 
     raft_mgr: RaftManager,
+    migrate_ctrl: Option<MigrateController>,
 
     /// `NodeState` of this node, the lock is used to ensure serialization of create/terminate
     /// replica operations.
@@ -93,6 +97,7 @@ impl Node {
             raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
+            migrate_ctrl: None,
             node_state: Arc::new(Mutex::new(NodeState::default())),
         })
     }
@@ -281,6 +286,7 @@ impl Node {
             channel,
             group_engine,
             &self.raft_mgr,
+            self.migrate_ctrl.clone(),
         )
         .await?;
         let replica = Arc::new(replica);

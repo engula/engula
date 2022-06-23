@@ -85,7 +85,7 @@ enum MigrateState {
 }
 
 message MigrateMeta {
-  uint64 shard_id = 1;
+  engula.server.v1.ShardDesc shard_desc = 1;
   uint64 src_group_id = 2;
   uint64 src_group_epoch = 4;
   uint64 dest_group_id = 5;
@@ -134,7 +134,7 @@ message MigrateEvent {
   };
 
   message Prepare {
-    uint64 shard_id = 1;
+    engula.server.v1.ShardDesc shard_desc = 1;
     uint64 src_group_id = 2;
     uint64 src_group_epoch = 3;
     uint64 dest_group_id = 4;
