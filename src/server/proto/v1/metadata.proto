@@ -71,6 +71,28 @@ message RaftLocalState {
   EntryID last_truncated = 3;
 }
 
+enum MigrateState {
+  /// The dest group shold send request to source group to begin migration.  Once the source
+  /// group agrees to start the migration, the migration process must be completed.
+  Initial = 0;
+  Migrating = 1;
+  /// Used in dest group, it should notify the source group that migration has already finished.
+  HalfFinished = 2;
+  /// For source group, the data of shard should be clean.
+  Finished = 3;
+  /// For dest group, the data of shard should be clean.
+  Aborted = 4;
+}
+
+message MigrateMeta {
+  uint64 shard_id = 1;
+  uint64 src_group_id = 2;
+  uint64 src_group_epoch = 4;
+  uint64 dest_group_id = 5;
+  bytes last_migrated_key = 6;
+  MigrateState state = 7;
+}
+
 /// EvalResult is the structured proposal payload.
 message EvalResult {
   WriteBatchRep batch = 1;
@@ -88,6 +110,8 @@ message SyncOp {
   AddShard add_shard = 1;
   /// Purge an orphan replica.
   PurgeOrphanReplica purge_replica = 2;
+  /// An event of shard migration.
+  MigrateEvent migrate_event = 3;
 }
 
 message AddShard {
@@ -99,4 +123,28 @@ message AddShard {
 /// can be shutdown safely.
 message PurgeOrphanReplica {
   uint64 replica_id = 1;
+}
+
+message MigrateEvent {
+  oneof value {
+    Prepare prepare = 1;
+    Ingest ingest = 2;
+    Commit commit = 3;
+    Abort abort = 4;
+  };
+
+  message Prepare {
+    uint64 shard_id = 1;
+    uint64 src_group_id = 2;
+    uint64 src_group_epoch = 3;
+    uint64 dest_group_id = 4;
+  }
+
+  message Ingest {
+    bytes last_key = 1;
+  }
+
+  message Commit {}
+
+  message Abort {}
 }
