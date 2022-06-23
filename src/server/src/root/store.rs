@@ -105,7 +105,7 @@ impl RootStore {
             .response
             .ok_or_else(|| Error::InvalidArgument("PrefixListUnionResponse".into()))?;
 
-        if let group_response_union::Response::PreifxList(resp) = resp {
+        if let group_response_union::Response::PrefixList(resp) = resp {
             Ok(resp.values)
         } else {
             Err(Error::InvalidArgument("PrefixListResponse".into()))

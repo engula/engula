@@ -83,7 +83,7 @@ message GroupResponseUnion {
     engula.v1.GetResponse get = 1;
     engula.v1.PutResponse put = 2;
     engula.v1.DeleteResponse delete = 3;
-    ShardPrefixListResponse preifx_list = 4;
+    ShardPrefixListResponse prefix_list = 4;
     BatchWriteResponse batch_write = 5;
     CreateShardResponse create_shard = 6;
     ChangeReplicasResponse change_replicas = 7;

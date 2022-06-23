@@ -22,6 +22,7 @@ pub mod node;
 mod raftgroup;
 mod root;
 pub mod runtime;
+pub mod serverpb;
 mod service;
 
 pub use tonic::async_trait;
@@ -31,30 +32,3 @@ pub use crate::{
     error::{Error, Result},
     service::Server,
 };
-
-pub mod serverpb {
-    pub mod v1 {
-        #![allow(clippy::all)]
-        tonic::include_proto!("serverpb.v1");
-
-        pub type ApplyState = EntryId;
-
-        impl SyncOp {
-            pub fn purge_replica(orphan_replica_id: u64) -> Self {
-                SyncOp {
-                    purge_replica: Some(PurgeOrphanReplica {
-                        replica_id: orphan_replica_id,
-                    }),
-                    ..Default::default()
-                }
-            }
-
-            pub fn migrate_event(value: migrate_event::Value) -> Self {
-                SyncOp {
-                    migrate_event: Some(MigrateEvent { value: Some(value) }),
-                    ..Default::default()
-                }
-            }
-        }
-    }
-}

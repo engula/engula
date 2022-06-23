@@ -28,14 +28,10 @@ pub use self::{
 use crate::serverpb::v1::EvalResult;
 
 pub fn add_shard(shard: ShardDesc) -> EvalResult {
-    use crate::serverpb::v1::{AddShard, SyncOp};
+    use crate::serverpb::v1::SyncOp;
 
-    #[allow(clippy::needless_update)]
     EvalResult {
-        op: Some(SyncOp {
-            add_shard: Some(AddShard { shard: Some(shard) }),
-            ..Default::default()
-        }),
+        op: Some(SyncOp::add_shard(shard)),
         ..Default::default()
     }
 }

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod acl;
 mod eval;
 pub mod fsm;
 pub mod job;
@@ -308,7 +307,7 @@ impl Replica {
             }
             Request::PrefixList(req) => {
                 let eval_result = eval::prefix_list(&self.group_engine, req).await?;
-                (None, Response::PreifxList(eval_result))
+                (None, Response::PrefixList(eval_result))
             }
             Request::BatchWrite(req) => {
                 let eval_result = eval::batch_write(&self.group_engine, req).await?;
