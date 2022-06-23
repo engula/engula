@@ -66,6 +66,15 @@ impl Client {
         let res = client.root_heartbeat(req).await?;
         Ok(res.into_inner())
     }
+
+    pub async fn pull(
+        &self,
+        req: PullRequest,
+    ) -> Result<tonic::Streaming<ShardChunk>, tonic::Status> {
+        let mut client = self.client.clone();
+        let res = client.pull(req).await?;
+        Ok(res.into_inner())
+    }
 }
 
 #[derive(Debug, Clone)]

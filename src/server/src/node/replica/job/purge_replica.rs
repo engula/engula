@@ -32,7 +32,7 @@ pub fn setup(executor: Executor, replica: Arc<Replica>) -> JoinHandle<()> {
 }
 
 async fn watch_and_purge_orphan_replicas(replica: Arc<Replica>) {
-    while replica.on_leader().await.is_ok() {
+    while replica.on_leader(false).await.is_ok() {
         let orphan_replica_id = match find_orphan_replica(replica.as_ref()).await {
             Ok(id) => id,
             Err(err) => {

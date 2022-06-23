@@ -118,6 +118,20 @@ impl GroupStateMachine {
                 desc.epoch += 1;
                 desc.shards.push(shard);
             }
+            if let Some(MigrateEvent { value: Some(value) }) = op.migrate_event {
+                match value {
+                    migrate_event::Value::Ingest(migrate_event::Ingest { last_key }) => {
+                        let mut migrate_meta = self
+                            .group_engine
+                            .migrate_meta()
+                            .unwrap()
+                            .expect("The MigrateMeta should exists before ingest");
+                        migrate_meta.last_migrated_key = last_key;
+                        self.group_engine.set_migrate_meta(&mut wb, &migrate_meta);
+                    }
+                    _ => todo!(),
+                }
+            }
             self.group_engine.set_group_desc(&mut wb, &desc);
         }
 

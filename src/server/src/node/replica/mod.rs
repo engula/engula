@@ -170,7 +170,7 @@ impl Replica {
         Ok(GroupResponse::new(resp))
     }
 
-    pub async fn on_leader(&self) -> Result<()> {
+    pub async fn on_leader(&self, immediate: bool) -> Result<()> {
         if self.info.is_terminated() {
             return Err(Error::NotLeader(self.info.group_id, None));
         }
@@ -180,17 +180,15 @@ impl Replica {
         poll_fn(|ctx| {
             let mut lease_state = self.lease_state.lock().unwrap();
             if lease_state.is_ready_for_serving() {
-                Poll::Ready(())
+                Poll::Ready(Ok(()))
+            } else if immediate || self.info.is_terminated() {
+                Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
             } else {
                 lease_state.leader_subscribers.push(ctx.waker().clone());
                 Poll::Pending
             }
         })
-        .await;
-
-        // FIXME(walter) support shutdown a replica.
-
-        Ok(())
+        .await
     }
 
     /// Propose `SyncOp` to raft log.
@@ -200,6 +198,57 @@ impl Replica {
         let eval_result = EvalResult {
             op: Some(op),
             ..Default::default()
+        };
+        self.raft_node.clone().propose(eval_result).await??;
+
+        Ok(())
+    }
+
+    pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
+        self.check_leader_early()?;
+
+        let mut kvs = vec![];
+        let mut size = 0;
+        for (key, value) in self.group_engine.iter_from(shard_id, last_key)? {
+            let key: Vec<_> = key.into();
+            let value: Vec<_> = value.into();
+            if key == last_key {
+                continue;
+            }
+            size += key.len() + value.len();
+            kvs.push(ShardData { key, value });
+            if size > 64 * 1024 * 1024 {
+                break;
+            }
+        }
+
+        Ok(ShardChunk { data: kvs })
+    }
+
+    pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk) -> Result<()> {
+        use crate::node::engine::WriteBatch;
+
+        if chunk.data.is_empty() {
+            return Ok(());
+        }
+
+        self.check_leader_early()?;
+
+        let mut wb = WriteBatch::default();
+        for data in &chunk.data {
+            self.group_engine
+                .put(&mut wb, shard_id, &data.key, &data.value)?;
+        }
+
+        let ingest_event = migrate_event::Ingest {
+            last_key: chunk.data.last().as_ref().unwrap().key.clone(),
+        };
+        let sync_op = SyncOp::migrate_event(migrate_event::Value::Ingest(ingest_event));
+        let eval_result = EvalResult {
+            batch: Some(WriteBatchRep {
+                data: wb.data().to_owned(),
+            }),
+            op: Some(sync_op),
         };
         self.raft_node.clone().propose(eval_result).await??;
 
@@ -285,8 +334,11 @@ impl Replica {
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
             }
-            Request::MigrateShard(_) => {
-                todo!()
+            Request::MigrateShard(req) => {
+                // TODO(walter) check migrate shard state
+                let eval_result = eval::migrate(self.info.group_id, req).await?;
+                let resp = MigrateShardResponse {};
+                (Some(eval_result), Response::MigrateShard(resp))
             }
         };
 

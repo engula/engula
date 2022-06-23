@@ -15,14 +15,15 @@
 mod cmd_batch_write;
 mod cmd_delete;
 mod cmd_get;
+mod cmd_migrate;
 mod cmd_prefix_list;
 mod cmd_put;
 
 use engula_api::server::v1::ShardDesc;
 
 pub use self::{
-    cmd_batch_write::batch_write, cmd_delete::delete, cmd_get::get, cmd_prefix_list::prefix_list,
-    cmd_put::put,
+    cmd_batch_write::batch_write, cmd_delete::delete, cmd_get::get, cmd_migrate::migrate,
+    cmd_prefix_list::prefix_list, cmd_put::put,
 };
 use crate::serverpb::v1::EvalResult;
 
