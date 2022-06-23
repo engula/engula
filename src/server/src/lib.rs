@@ -48,6 +48,13 @@ pub mod serverpb {
                     ..Default::default()
                 }
             }
+
+            pub fn migrate_event(value: migrate_event::Value) -> Self {
+                SyncOp {
+                    migrate_event: Some(MigrateEvent { value: Some(value) }),
+                    ..Default::default()
+                }
+            }
         }
     }
 }

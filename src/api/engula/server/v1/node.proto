@@ -249,8 +249,9 @@ message CollectGroupDetailResponse {
 }
 
 message PullRequest {
-  uint64 shard_id = 1;
-  bytes start_key = 2;
+  uint64 group_id = 1;
+  uint64 shard_id = 2;
+  bytes last_key = 3;
 }
 
 message ShardData {

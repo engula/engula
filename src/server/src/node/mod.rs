@@ -14,6 +14,7 @@
 
 pub mod engine;
 mod job;
+pub mod migrate;
 pub mod replica;
 pub mod resolver;
 pub mod route_table;
@@ -24,12 +25,12 @@ use engula_api::server::v1::*;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
-use self::job::StateChannel;
 pub use self::{
     engine::{GroupEngine, StateEngine},
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
+use self::{job::StateChannel, migrate::ShardChunkStream};
 use crate::{
     node::replica::ReplicaInfo,
     raftgroup::{AddressResolver, RaftManager, TransportManager},
@@ -330,6 +331,20 @@ impl Node {
             }
         };
         execute(&replica, request).await
+    }
+
+    pub async fn pull_shard_chunks(&self, request: PullRequest) -> Result<ShardChunkStream> {
+        let replica = match self.replica_route_table.find(request.group_id) {
+            Some(replica) => replica,
+            None => {
+                return Err(Error::GroupNotFound(request.group_id));
+            }
+        };
+        Ok(ShardChunkStream::new(
+            request.shard_id,
+            request.last_key,
+            replica,
+        ))
     }
 
     #[inline]

@@ -12,10 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod group;
-mod state;
+use engula_api::server::v1::*;
 
-pub use self::{
-    group::{GroupEngine, RawIterator, WriteBatch, LOCAL_COLLECTION_ID},
-    state::StateEngine,
-};
+use crate::{serverpb::v1::*, Result};
+
+pub async fn migrate(group_id: u64, req: &MigrateShardRequest) -> Result<EvalResult> {
+    let prepare = migrate_event::Prepare {
+        shard_id: req.shard_id,
+        src_group_id: req.src_group_id,
+        src_group_epoch: req.src_group_epoch,
+        dest_group_id: group_id,
+    };
+    let sync_op = SyncOp::migrate_event(migrate_event::Value::Prepare(prepare));
+    Ok(EvalResult {
+        batch: None,
+        op: Some(sync_op),
+    })
+}

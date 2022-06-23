@@ -16,7 +16,7 @@ use std::path::Path;
 use engula_api::server::v1::GroupDesc;
 
 use crate::{
-    node::{engine::GroupEngineIterator, GroupEngine},
+    node::{engine::RawIterator, GroupEngine},
     raftgroup::SnapshotBuilder,
     serverpb::v1::ApplyState,
     Error, Result,
@@ -35,7 +35,7 @@ impl GroupSnapshotBuilder {
 #[crate::async_trait]
 impl SnapshotBuilder for GroupSnapshotBuilder {
     async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
-        let mut iter = self.engine.iter()?;
+        let mut iter = self.engine.raw_iter()?;
         for i in 0.. {
             if write_partial_to_file(&mut iter, base_dir, i)
                 .await?
@@ -54,7 +54,7 @@ impl SnapshotBuilder for GroupSnapshotBuilder {
 
 /// Write partial of the iterator's data to the file, return `None` if all data is written.
 async fn write_partial_to_file(
-    iter: &mut GroupEngineIterator<'_>,
+    iter: &mut RawIterator<'_>,
     base_dir: &Path,
     file_no: usize,
 ) -> Result<Option<()>> {

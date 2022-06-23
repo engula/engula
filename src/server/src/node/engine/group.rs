@@ -22,7 +22,11 @@ use std::{
 use engula_api::server::v1::GroupDesc;
 use prost::Message;
 
-use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::ApplyState, Error, Result};
+use crate::{
+    bootstrap::INITIAL_EPOCH,
+    serverpb::v1::{ApplyState, MigrateMeta},
+    Error, Result,
+};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
@@ -31,6 +35,7 @@ pub const LOCAL_COLLECTION_ID: u64 = 0;
 pub struct WriteBatch {
     apply_state: Option<ApplyState>,
     descriptor: Option<GroupDesc>,
+    migrate_meta: Option<MigrateMeta>,
     inner: rocksdb::WriteBatch,
 }
 
@@ -49,9 +54,14 @@ where
     collections: Arc<RwLock<HashMap<u64, u64>>>,
 }
 
-pub struct GroupEngineIterator<'a> {
+pub struct RawIterator<'a> {
     apply_state: ApplyState,
     descriptor: GroupDesc,
+    db_iter: rocksdb::DBIterator<'a>,
+}
+
+pub struct UserDataIterator<'a> {
+    collection_id: u64,
     db_iter: rocksdb::DBIterator<'a>,
 }
 
@@ -120,6 +130,18 @@ impl GroupEngine {
         let name = group_id.to_string();
         raw_db.drop_cf(&name)?;
         Ok(())
+    }
+
+    pub fn migrate_meta(&self) -> Result<Option<MigrateMeta>> {
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+        let raw_key = keys::migrate_meta();
+        Ok(self
+            .raw_db
+            .get_pinned_cf(&cf_handle, raw_key)?
+            .map(|val| MigrateMeta::decode(val.as_ref()).expect("MigrateMeta")))
     }
 
     /// Return the group descriptor
@@ -215,6 +237,21 @@ impl GroupEngine {
         wb.descriptor = Some(desc.clone());
     }
 
+    #[inline]
+    pub fn set_migrate_meta(&self, wb: &mut WriteBatch, migrate_meta: &MigrateMeta) {
+        wb.migrate_meta = Some(migrate_meta.clone());
+    }
+
+    pub fn clear_migrate_meta(&self, wb: &mut WriteBatch) {
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+
+        let raw_key = keys::migrate_meta();
+        wb.delete_cf(&cf_handle, raw_key);
+    }
+
     pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
@@ -250,23 +287,28 @@ impl GroupEngine {
         Ok(())
     }
 
-    pub fn iter_from(&self, from: Vec<u8>) -> Result<GroupEngineIterator> {
+    pub fn iter_from(&self, shard_id: u64, from: &[u8]) -> Result<UserDataIterator> {
         use rocksdb::{Direction, IteratorMode, ReadOptions};
 
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
             .expect("column family handle");
+        let collection_id = self
+            .collection_id(shard_id)
+            .expect("shard id to collection id");
+        debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         let opts = ReadOptions::default();
+        let key = keys::raw(collection_id, from);
         let iter = self.raw_db.iterator_cf_opt(
             &cf_handle,
             opts,
-            IteratorMode::From(&from, Direction::Forward),
+            IteratorMode::From(&key, Direction::Forward),
         );
-        GroupEngineIterator::new(iter)
+        UserDataIterator::new(collection_id, iter)
     }
 
-    pub fn iter(&self) -> Result<GroupEngineIterator> {
+    pub fn raw_iter(&self) -> Result<RawIterator> {
         use rocksdb::{IteratorMode, ReadOptions};
 
         let cf_handle = self
@@ -277,7 +319,7 @@ impl GroupEngine {
         let iter = self
             .raw_db
             .iterator_cf_opt(&cf_handle, opts, IteratorMode::Start);
-        GroupEngineIterator::new(iter)
+        RawIterator::new(iter)
     }
 
     /// Ingest data into group engine.
@@ -306,7 +348,7 @@ impl GroupEngine {
     }
 }
 
-impl<'a> GroupEngineIterator<'a> {
+impl<'a> RawIterator<'a> {
     fn new(mut db_iter: rocksdb::DBIterator<'a>) -> Result<Self> {
         use rocksdb::IteratorMode;
 
@@ -314,7 +356,7 @@ impl<'a> GroupEngineIterator<'a> {
         let descriptor = next_message(&mut db_iter, &keys::descriptor())?;
         db_iter.set_mode(IteratorMode::Start);
 
-        Ok(GroupEngineIterator {
+        Ok(RawIterator {
             apply_state,
             descriptor,
             db_iter,
@@ -337,7 +379,7 @@ impl<'a> GroupEngineIterator<'a> {
     }
 }
 
-impl<'a> Iterator for GroupEngineIterator<'a> {
+impl<'a> Iterator for RawIterator<'a> {
     /// Key value pairs.
     type Item = <rocksdb::DBIterator<'a> as Iterator>::Item;
 
@@ -346,9 +388,39 @@ impl<'a> Iterator for GroupEngineIterator<'a> {
     }
 }
 
+impl<'a> UserDataIterator<'a> {
+    fn new(collection_id: u64, db_iter: rocksdb::DBIterator<'a>) -> Result<Self> {
+        Ok(UserDataIterator {
+            collection_id,
+            db_iter,
+        })
+    }
+}
+
+impl<'a> Iterator for UserDataIterator<'a> {
+    /// User key value pairs.
+    type Item = <rocksdb::DBIterator<'a> as Iterator>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (key, value) = match self.db_iter.next() {
+            Some(v) => v,
+            None => return None,
+        };
+
+        let prefix = &key[..core::mem::size_of::<u64>()];
+        if prefix != self.collection_id.to_le_bytes().as_slice() {
+            return None;
+        }
+
+        let key = Box::from(key[core::mem::size_of::<u64>()..].to_owned());
+        Some((key, value))
+    }
+}
+
 mod keys {
     const APPLY_STATE: &[u8] = b"APPLY_STATE";
     const DESCRIPTOR: &[u8] = b"DESCRIPTOR";
+    const MIGRATE_META: &[u8] = b"MIGRATE_META";
 
     #[inline]
     pub fn raw(collection_id: u64, key: &[u8]) -> Vec<u8> {
@@ -371,6 +443,14 @@ mod keys {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + DESCRIPTOR.len());
         buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
         buf.extend_from_slice(DESCRIPTOR);
+        buf
+    }
+
+    #[inline]
+    pub fn migrate_meta() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + MIGRATE_META.len());
+        buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
+        buf.extend_from_slice(MIGRATE_META);
         buf
     }
 }

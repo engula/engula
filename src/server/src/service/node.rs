@@ -13,16 +13,14 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
-use futures::{channel::mpsc, Stream, StreamExt};
+use futures::{channel::mpsc, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::{runtime::TaskPriority, Error, Server};
-
-pub struct PullStream;
+use crate::{node::migrate::ShardChunkStream, runtime::TaskPriority, Error, Server};
 
 #[tonic::async_trait]
 impl node_server::Node for Server {
-    type PullStream = PullStream;
+    type PullStream = ShardChunkStream;
 
     async fn batch(
         &self,
@@ -148,7 +146,9 @@ impl node_server::Node for Server {
         &self,
         request: Request<PullRequest>,
     ) -> Result<Response<Self::PullStream>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let stream = self.node.pull_shard_chunks(request).await?;
+        Ok(Response::new(stream))
     }
 
     #[allow(unused)]
@@ -164,18 +164,6 @@ impl Server {
     async fn update_root(&self, req: SyncRootRequest) -> crate::Result<SyncRootResponse> {
         self.node.update_root(req.roots).await?;
         Ok(SyncRootResponse {})
-    }
-}
-
-#[allow(unused)]
-impl Stream for PullStream {
-    type Item = Result<ShardChunk, Status>;
-
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        todo!()
     }
 }
 
