@@ -14,12 +14,13 @@
 use engula_api::server::v1::BatchWriteRequest;
 
 use crate::{
-    node::{engine::WriteBatch, GroupEngine},
+    node::{engine::WriteBatch, replica::ExecCtx, GroupEngine},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };
 
 pub async fn batch_write(
+    exec_ctx: &ExecCtx,
     group_engine: &GroupEngine,
     req: &BatchWriteRequest,
 ) -> Result<Option<EvalResult>> {
@@ -33,6 +34,9 @@ pub async fn batch_write(
             .delete
             .as_ref()
             .ok_or_else(|| Error::InvalidArgument("ShardDeleteRequest::delete is None".into()))?;
+        if exec_ctx.is_migrating_shard(req.shard_id) {
+            panic!("BatchWrite does not support migrating shard");
+        }
         group_engine.delete(&mut wb, req.shard_id, &del.key)?;
     }
     for req in &req.puts {
@@ -40,6 +44,9 @@ pub async fn batch_write(
             .put
             .as_ref()
             .ok_or_else(|| Error::InvalidArgument("ShardPutRequest::put is None".into()))?;
+        if exec_ctx.is_migrating_shard(req.shard_id) {
+            panic!("BatchWrite does not support migrating shard");
+        }
         group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;
     }
     Ok(Some(EvalResult {

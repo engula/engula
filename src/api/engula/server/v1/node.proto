@@ -83,7 +83,7 @@ message GroupResponseUnion {
     engula.v1.GetResponse get = 1;
     engula.v1.PutResponse put = 2;
     engula.v1.DeleteResponse delete = 3;
-    ShardPrefixListResponse preifx_list = 4;
+    ShardPrefixListResponse prefix_list = 4;
     BatchWriteResponse batch_write = 5;
     CreateShardResponse create_shard = 6;
     ChangeReplicasResponse change_replicas = 7;
@@ -166,9 +166,9 @@ enum ChangeReplicaType {
 }
 
 message MigrateShardRequest {
-  uint64 shard_id = 1;
-  uint64 src_group_id = 2;
-  uint64 src_group_epoch = 3;
+  uint64 src_group_id = 1;
+  uint64 src_group_epoch = 2;
+  ShardDesc shard_desc = 3;
 }
 
 message MigrateShardResponse {}
@@ -255,6 +255,7 @@ message PullRequest {
 }
 
 message ShardData {
+  /// The user key.
   bytes key = 1;
   bytes value = 2;
 }
@@ -264,8 +265,10 @@ message ShardChunk {
 }
 
 message ForwardRequest {
-  repeated ShardData forward_data = 1;
-  GroupRequestUnion request = 2;
+  uint64 group_id = 1;
+  uint64 shard_id = 2;
+  repeated ShardData forward_data = 3;
+  GroupRequestUnion request = 4;
 }
 
 message ForwardResponse {

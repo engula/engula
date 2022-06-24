@@ -14,32 +14,49 @@
 
 use std::time::Duration;
 
-use engula_api::server::v1::{
-    group_request_union::Request, GroupDesc, GroupRequest, GroupResponse, ShardDesc,
-};
+use engula_api::server::v1::{group_request_union::Request, *};
 
-use super::Replica;
+use super::{ExecCtx, Replica};
 use crate::{Error, Result};
 
 /// A wrapper function that detects and completes retries as quickly as possible.
-pub async fn execute(replica: &Replica, mut request: GroupRequest) -> Result<GroupResponse> {
+pub async fn execute(
+    replica: &Replica,
+    mut exec_ctx: ExecCtx,
+    request: GroupRequest,
+) -> Result<GroupResponse> {
+    exec_ctx.epoch = request.epoch;
+
+    let request = request
+        .request
+        .as_ref()
+        .and_then(|request| request.request.as_ref())
+        .ok_or_else(|| Error::InvalidArgument("GroupRequest::request is None".into()))?;
+
     // TODO(walter) detect group request timeout.
     let mut freshed_descriptor = None;
     loop {
-        match replica.execute(&request).await {
-            Ok(mut resp) => {
-                if let Some(descriptor) = freshed_descriptor {
-                    resp.error = Some(Error::EpochNotMatch(descriptor).into());
-                }
+        match replica.execute(exec_ctx.clone(), request).await {
+            Ok(resp) => {
+                let resp = if let Some(descriptor) = freshed_descriptor {
+                    GroupResponse::with_error(resp, Error::EpochNotMatch(descriptor).into())
+                } else {
+                    GroupResponse::new(resp)
+                };
                 return Ok(resp);
             }
-            Err(Error::GroupNotReady(_)) => {
+            Err(Error::Forward(forward_ctx)) => {
+                let ctrl = replica.migrate_ctrl();
+                let resp = ctrl.forward(forward_ctx, request).await?;
+                return Ok(GroupResponse::new(resp));
+            }
+            Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
                 // sleep and retry.
                 crate::runtime::time::sleep(Duration::from_micros(200)).await;
             }
             Err(Error::EpochNotMatch(desc)) => {
-                if is_executable(&desc, &request) {
-                    request.epoch = desc.epoch;
+                if is_executable(&desc, request) {
+                    exec_ctx.epoch = desc.epoch;
                     freshed_descriptor = Some(desc);
                     continue;
                 }
@@ -51,12 +68,7 @@ pub async fn execute(replica: &Replica, mut request: GroupRequest) -> Result<Gro
     }
 }
 
-fn is_executable(descriptor: &GroupDesc, request: &GroupRequest) -> bool {
-    let request = request
-        .request
-        .as_ref()
-        .and_then(|request| request.request.as_ref())
-        .unwrap();
+fn is_executable(descriptor: &GroupDesc, request: &Request) -> bool {
     if !super::is_change_meta_request(request) {
         return match request {
             Request::Get(req) => {
@@ -100,6 +112,7 @@ fn is_executable(descriptor: &GroupDesc, request: &GroupRequest) -> bool {
 }
 
 fn is_target_shard_exists(desc: &GroupDesc, shard_id: u64, key: &[u8]) -> bool {
+    // TODO(walter) support migrate meta.
     desc.shards
         .iter()
         .find(|s| s.id == shard_id)

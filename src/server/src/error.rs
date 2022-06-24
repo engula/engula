@@ -60,6 +60,12 @@ pub enum Error {
     #[error("group {0} not ready")]
     GroupNotReady(u64),
 
+    #[error("service {0} is busy")]
+    ServiceIsBusy(&'static str),
+
+    #[error("forward request to dest group")]
+    Forward(crate::node::migrate::ForwardCtx),
+
     #[error("group epoch not match")]
     EpochNotMatch(GroupDesc),
 
@@ -109,6 +115,8 @@ impl From<Error> for tonic::Status {
                 v1::Error::not_match(desc).encode_to_vec().into(),
             ),
 
+            Error::Forward(_) => panic!("Forward only used inside node"),
+            Error::ServiceIsBusy(_) => panic!("ServiceIsBusy only used inside node"),
             Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Canceled
@@ -164,6 +172,8 @@ impl From<Error> for engula_api::server::v1::Error {
             Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
             Error::DeadlineExceeded(msg) => v1::Error::status(Code::DeadlineExceeded.into(), msg),
 
+            Error::Forward(_) => panic!("Forward only used inside node"),
+            Error::ServiceIsBusy(_) => panic!("ServiceIsBusy only used inside node"),
             Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Transport(_)

@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod client;
 mod ctrl;
+mod forward;
 mod pull;
 
+use self::client::GroupClient;
 pub use self::{
     ctrl::MigrateController,
+    forward::{forward_request, ForwardCtx},
     pull::{pull_shard, ShardChunkStream},
 };

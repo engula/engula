@@ -105,7 +105,7 @@ impl RootStore {
             .response
             .ok_or_else(|| Error::InvalidArgument("PrefixListUnionResponse".into()))?;
 
-        if let group_response_union::Response::PreifxList(resp) = resp {
+        if let group_response_union::Response::PrefixList(resp) = resp {
             Ok(resp.values)
         } else {
             Err(Error::InvalidArgument("PrefixListResponse".into()))
@@ -113,7 +113,7 @@ impl RootStore {
     }
 
     async fn submit_request(&self, req: Request) -> Result<GroupResponse> {
-        use crate::node::replica::retry::execute;
+        use crate::node::replica::{retry::execute, ExecCtx};
 
         let epoch = self.replica.epoch();
         let request = GroupRequest {
@@ -122,6 +122,6 @@ impl RootStore {
             request: Some(GroupRequestUnion { request: Some(req) }),
         };
 
-        execute(&self.replica, request).await
+        execute(&self.replica, ExecCtx::default(), request).await
     }
 }

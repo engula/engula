@@ -30,12 +30,15 @@ pub use self::{
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
-use self::{job::StateChannel, migrate::ShardChunkStream};
+use self::{
+    job::StateChannel,
+    migrate::{MigrateController, ShardChunkStream},
+};
 use crate::{
-    node::replica::ReplicaInfo,
+    node::replica::{ExecCtx, ReplicaInfo},
     raftgroup::{AddressResolver, RaftManager, TransportManager},
     runtime::{Executor, JoinHandle},
-    serverpb::v1::{NodeIdent, ReplicaLocalState},
+    serverpb::v1::*,
     Error, Result,
 };
 
@@ -68,6 +71,7 @@ where
     replica_route_table: ReplicaRouteTable,
 
     raft_mgr: RaftManager,
+    migrate_ctrl: MigrateController,
 
     /// `NodeState` of this node, the lock is used to ensure serialization of create/terminate
     /// replica operations.
@@ -83,9 +87,13 @@ impl Node {
         address_resolver: Arc<dyn AddressResolver>,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
-        let trans_mgr =
-            TransportManager::build(executor.clone(), address_resolver, raft_route_table.clone());
+        let trans_mgr = TransportManager::build(
+            executor.clone(),
+            address_resolver.clone(),
+            raft_route_table.clone(),
+        );
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
+        let migrate_ctrl = MigrateController::new(address_resolver, executor.clone());
         Ok(Node {
             raw_db,
             executor,
@@ -93,6 +101,7 @@ impl Node {
             raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
+            migrate_ctrl,
             node_state: Arc::new(Mutex::new(NodeState::default())),
         })
     }
@@ -281,6 +290,7 @@ impl Node {
             channel,
             group_engine,
             &self.raft_mgr,
+            self.migrate_ctrl.clone(),
         )
         .await?;
         let replica = Arc::new(replica);
@@ -330,7 +340,8 @@ impl Node {
                 return Err(Error::GroupNotFound(request.group_id));
             }
         };
-        execute(&replica, request).await
+
+        execute(&replica, ExecCtx::default(), request).await
     }
 
     pub async fn pull_shard_chunks(&self, request: PullRequest) -> Result<ShardChunkStream> {
@@ -345,6 +356,36 @@ impl Node {
             request.last_key,
             replica,
         ))
+    }
+
+    pub async fn forward(&self, request: ForwardRequest) -> Result<ForwardResponse> {
+        use self::replica::retry::execute;
+
+        let replica = match self.replica_route_table.find(request.group_id) {
+            Some(replica) => replica,
+            None => {
+                return Err(Error::GroupNotFound(request.group_id));
+            }
+        };
+
+        let ingest_chunk = ShardChunk {
+            data: request.forward_data,
+        };
+        replica.ingest(request.shard_id, ingest_chunk, true).await?;
+
+        debug_assert!(request.request.is_some());
+        let group_request = GroupRequest {
+            group_id: request.group_id,
+            epoch: 0,
+            request: request.request,
+        };
+
+        let exec_ctx = ExecCtx::forward(request.shard_id);
+        let resp = execute(&replica, exec_ctx, group_request).await?;
+        debug_assert!(resp.response.is_some());
+        Ok(ForwardResponse {
+            response: resp.response,
+        })
     }
 
     #[inline]

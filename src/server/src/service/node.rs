@@ -156,7 +156,9 @@ impl node_server::Node for Server {
         &self,
         request: Request<ForwardRequest>,
     ) -> Result<Response<ForwardResponse>, Status> {
-        todo!()
+        let req = request.into_inner();
+        let resp = self.node.forward(req).await?;
+        Ok(Response::new(resp))
     }
 }
 

@@ -14,15 +14,33 @@
 
 use std::sync::Arc;
 
-use engula_client::Router;
+use engula_api::server::v1::{group_request_union::Request, group_response_union::Response};
 
-use crate::{node::Replica, runtime::Executor, serverpb::v1::*};
+use super::ForwardCtx;
+use crate::{
+    node::Replica, raftgroup::AddressResolver, runtime::Executor, serverpb::v1::*, Result,
+};
+
+#[derive(Clone)]
 pub struct MigrateController {
+    shared: Arc<MigrateControllerShared>,
+}
+
+struct MigrateControllerShared {
     executor: Executor,
-    router: Router,
+    address_resolver: Arc<dyn AddressResolver>,
 }
 
 impl MigrateController {
+    pub fn new(address_resolver: Arc<dyn AddressResolver>, executor: Executor) -> Self {
+        MigrateController {
+            shared: Arc::new(MigrateControllerShared {
+                address_resolver,
+                executor,
+            }),
+        }
+    }
+
     pub fn migrate(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
         match MigrateState::from_i32(migrate_meta.state).unwrap() {
             MigrateState::Initial => {
@@ -41,15 +59,21 @@ impl MigrateController {
         }
     }
 
+    pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
+        super::forward_request(self.shared.address_resolver.clone(), &forward_ctx, request).await
+    }
+
     fn pull(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
         use crate::runtime::TaskPriority;
 
         let replica_info = replica.replica_info();
         let tag_owner = replica_info.group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
-        let router = self.router.clone();
-        self.executor.spawn(tag, TaskPriority::IoHigh, async move {
-            super::pull_shard(router, replica, migrate_meta).await;
-        });
+        let address_resolver = self.shared.address_resolver.clone();
+        self.shared
+            .executor
+            .spawn(tag, TaskPriority::IoHigh, async move {
+                super::pull_shard(address_resolver, replica, migrate_meta).await;
+            });
     }
 }
