@@ -31,6 +31,8 @@ use crate::{
     Error, Result, Server,
 };
 
+pub const REPLICA_PER_GROUP: usize = 3;
+
 // TODO(walter) root cluster and first replica id.
 pub const ROOT_GROUP_ID: u64 = 0;
 pub const FIRST_REPLICA_ID: u64 = 1;
@@ -75,6 +77,7 @@ pub fn run(
     let node_desc = NodeDesc {
         id: node_id,
         addr: addr.to_owned(),
+        ..Default::default()
     };
     address_resolver.insert(&node_desc);
 
@@ -176,10 +179,14 @@ async fn try_join_cluster(
         ));
     }
 
+    let capacity = NodeCapacity {
+        cpu_nums: num_cpus::get() as f64,
+        ..Default::default()
+    };
     let mut backoff: u64 = 1;
     loop {
         for addr in &join_list {
-            match issue_join_request(addr, local_addr).await {
+            match issue_join_request(addr, local_addr, capacity.to_owned()).await {
                 Ok(resp) => {
                     debug!("issue join request to root server success");
                     let node_ident =
@@ -197,11 +204,16 @@ async fn try_join_cluster(
     }
 }
 
-async fn issue_join_request(target_addr: &str, local_addr: &str) -> Result<JoinNodeResponse> {
+async fn issue_join_request(
+    target_addr: &str,
+    local_addr: &str,
+    node_capacity: NodeCapacity,
+) -> Result<JoinNodeResponse> {
     let client = RootClient::connect(target_addr.to_string()).await?;
     let resp = client
         .join_node(JoinNodeRequest {
             addr: local_addr.to_owned(),
+            capacity: Some(node_capacity),
         })
         .await?;
     Ok(resp)
@@ -250,6 +262,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     // Create the first raft group of cluster, this node is the only member of the raft group.
     let (shards, _) = Schema::init_shards();
 
+    let shard_count = shards.len() as u64;
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
         epoch: INITIAL_EPOCH,
@@ -259,12 +272,14 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
             node_id: FIRST_NODE_ID,
             role: ReplicaRole::Voter.into(),
         }],
+        capacity: Some(GroupCapacity { shard_count }),
     };
     node.create_replica(FIRST_REPLICA_ID, group).await?;
 
     let root_node = NodeDesc {
         id: FIRST_NODE_ID,
         addr: addr.to_owned(),
+        ..Default::default()
     };
     node.update_root(vec![root_node]).await?;
 

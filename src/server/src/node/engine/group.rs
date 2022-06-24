@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use engula_api::server::v1::GroupDesc;
+use engula_api::server::v1::{GroupCapacity, GroupDesc};
 use prost::Message;
 
 use crate::{
@@ -80,6 +80,7 @@ impl GroupEngine {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
+            capacity: Some(GroupCapacity { shard_count: 0 }),
         };
 
         let engine = GroupEngine {

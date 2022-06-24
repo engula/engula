@@ -33,17 +33,10 @@ impl RootStore {
         Self { replica }
     }
 
-    pub async fn create_shard(&self, shard: ShardDesc) -> Result<u64> {
-        // FIXME replace with `place_shared_group`.
-        let group_id = self.place_shared_group(&shard);
+    pub async fn create_shard(&self, shard: ShardDesc) -> Result<()> {
         self.submit_request(CreateShard(CreateShardRequest { shard: Some(shard) }))
             .await?;
-        Ok(group_id)
-    }
-
-    pub fn place_shared_group(&self, _shard: &ShardDesc) -> u64 {
-        // TODO: pre-alloc group at start and choose freest
-        ROOT_GROUP_ID
+        Ok(())
     }
 
     pub async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {
