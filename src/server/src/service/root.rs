@@ -46,7 +46,12 @@ impl root_server::Root for Server {
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
         let request = request.into_inner();
-        let (cluster_id, node, roots) = self.wrap(self.root.join(request.addr).await).await?;
+        let capacity = request
+            .capacity
+            .ok_or_else(|| Error::InvalidArgument("capacity is required".into()))?;
+        let (cluster_id, node, roots) = self
+            .wrap(self.root.join(request.addr, capacity).await)
+            .await?;
         self.address_resolver.insert(&node);
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,

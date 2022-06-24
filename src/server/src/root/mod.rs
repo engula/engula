@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod allocator;
 mod job;
 mod schema;
 mod store;
@@ -25,14 +26,23 @@ use std::{
 };
 
 use engula_api::{
-    server::v1::{report_request::GroupUpdates, watch_response::*, NodeDesc},
+    server::v1::{
+        report_request::GroupUpdates, watch_response::*, GroupCapacity, GroupDesc, NodeCapacity,
+        NodeDesc, ReplicaDesc, ReplicaRole,
+    },
     v1::{CollectionDesc, DatabaseDesc},
 };
+use engula_client::NodeClient;
 
 pub(crate) use self::schema::*;
 pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
-use self::{schema::ReplicaNodes, store::RootStore};
+use self::{
+    allocator::{GroupAction, ReplicaAction, SysAllocSource},
+    schema::ReplicaNodes,
+    store::RootStore,
+};
 use crate::{
+    bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
     serverpb::v1::NodeIdent,
@@ -42,14 +52,24 @@ use crate::{
 #[derive(Clone)]
 pub struct Root {
     shared: Arc<RootShared>,
+    alloc: allocator::Allocator<SysAllocSource>,
 }
 
-struct RootShared {
+pub struct RootShared {
     executor: Executor,
     node_ident: NodeIdent,
     local_addr: String,
     core: Mutex<Option<RootCore>>,
     watcher_hub: Arc<WatchHub>,
+}
+
+impl RootShared {
+    pub fn schema(&self) -> Result<Arc<Schema>> {
+        let core = self.core.lock().unwrap();
+        core.as_ref()
+            .map(|c| c.schema.clone())
+            .ok_or_else(|| Error::NotRootLeader(vec![]))
+    }
 }
 
 struct RootCore {
@@ -58,15 +78,16 @@ struct RootCore {
 
 impl Root {
     pub fn new(executor: Executor, node_ident: &NodeIdent, local_addr: String) -> Self {
-        Self {
-            shared: Arc::new(RootShared {
-                executor,
-                local_addr,
-                core: Mutex::new(None),
-                node_ident: node_ident.to_owned(),
-                watcher_hub: Default::default(),
-            }),
-        }
+        let shared = Arc::new(RootShared {
+            executor,
+            local_addr,
+            core: Mutex::new(None),
+            node_ident: node_ident.to_owned(),
+            watcher_hub: Default::default(),
+        });
+        let info = Arc::new(SysAllocSource::new(shared.clone()));
+        let alloc = allocator::Allocator::new(info, REPLICA_PER_GROUP);
+        Self { alloc, shared }
     }
 
     pub fn is_root(&self) -> bool {
@@ -89,10 +110,7 @@ impl Root {
     }
 
     pub fn schema(&self) -> Result<Arc<Schema>> {
-        let core = self.shared.core.lock().unwrap();
-        core.as_ref()
-            .map(|c| c.schema.clone())
-            .ok_or_else(|| Error::NotRootLeader(vec![]))
+        self.shared.schema()
     }
 
     pub fn watcher_hub(&self) -> Arc<WatchHub> {
@@ -161,6 +179,25 @@ impl Root {
         // TODO(zojw): refresh owner, heartbeat node, rebalance
         for _ in 0..1000 {
             // self.send_heartbeat(schema.to_owned()).await?;
+
+            {
+                let group_action = self.alloc.compute_group_action().await?;
+                match group_action {
+                    GroupAction::Noop => {}
+                    GroupAction::Add(cnt) => self.create_groups(cnt).await?,
+                    GroupAction::Remove(_) => todo!(),
+                }
+
+                let replica_actions = self.alloc.compute_replica_action().await?;
+                for replica_action in replica_actions {
+                    match replica_action {
+                        ReplicaAction::Noop => {}
+                        ReplicaAction::Migrate(_action) => { // TODO:
+                        }
+                    }
+                }
+            }
+
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
 
@@ -211,12 +248,16 @@ impl Root {
         if db.is_none() {
             return Err(Error::DatabaseNotFound(database));
         }
+        let group_id = self.alloc.place_group_for_shard().unwrap().id;
         let desc = schema
-            .create_collection(CollectionDesc {
-                name,
-                db: db.unwrap().id,
-                ..Default::default()
-            })
+            .create_collection(
+                CollectionDesc {
+                    name,
+                    db: db.unwrap().id,
+                    ..Default::default()
+                },
+                group_id,
+            )
             .await?;
         self.watcher_hub()
             .notify_updates(vec![UpdateEvent {
@@ -266,11 +307,16 @@ impl Root {
         Ok(watcher)
     }
 
-    pub async fn join(&self, addr: String) -> Result<(Vec<u8>, NodeDesc, ReplicaNodes)> {
+    pub async fn join(
+        &self,
+        addr: String,
+        capacity: NodeCapacity,
+    ) -> Result<(Vec<u8>, NodeDesc, ReplicaNodes)> {
         let schema = self.schema()?;
         let node = schema
             .add_node(NodeDesc {
                 addr,
+                capacity: Some(capacity),
                 ..Default::default()
             })
             .await?;
@@ -317,6 +363,49 @@ impl Root {
 
         self.watcher_hub().notify_updates(update_events).await;
 
+        Ok(())
+    }
+
+    async fn create_groups(&self, cnt: usize) -> Result<()> {
+        for _ in 0..cnt {
+            let nodes = self
+                .alloc
+                .allocate_group_replica(vec![], REPLICA_PER_GROUP as usize)
+                .await?;
+            self.create_group(nodes).await?;
+        }
+        Ok(())
+    }
+
+    async fn create_group(&self, nodes: Vec<NodeDesc>) -> Result<()> {
+        let schema = self.schema()?;
+        let group_id = schema.next_group_id().await?;
+        let mut replicas = Vec::new();
+        let mut node_to_replica = HashMap::new();
+        for n in &nodes {
+            let replica_id = schema.next_replica_id().await?;
+            replicas.push(ReplicaDesc {
+                id: replica_id,
+                node_id: n.id,
+                role: ReplicaRole::Voter.into(),
+            });
+            node_to_replica.insert(n.id, replica_id);
+        }
+        let group_tmpl = GroupDesc {
+            id: group_id,
+            epoch: INITIAL_EPOCH,
+            shards: vec![],
+            replicas,
+            capacity: Some(GroupCapacity { shard_count: 0 }),
+        };
+        for n in &nodes {
+            let node_client = NodeClient::connect(n.addr.to_owned()).await?;
+            let replica_id = node_to_replica.get(&n.id).unwrap();
+            node_client
+                .create_replica(replica_id.to_owned(), group_tmpl.clone())
+                .await?
+        }
+        // TODO(zojw): rety and cancel all logic.
         Ok(())
     }
 }

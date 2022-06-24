@@ -19,6 +19,13 @@ package engula.server.v1;
 message NodeDesc {
   uint64 id = 1;
   string addr = 2;
+  NodeCapacity capacity = 3;
+}
+
+message NodeCapacity {
+  double cpu_nums = 1;
+  uint64 replica_count = 2;
+  uint64 leader_count = 3;
 }
 
 message ShardDesc {
@@ -48,7 +55,10 @@ message GroupDesc {
   uint64 epoch = 2;
   repeated ShardDesc shards = 3;
   repeated ReplicaDesc replicas = 4;
+  GroupCapacity capacity = 5;
 }
+
+message GroupCapacity { uint64 shard_count = 1; }
 
 enum ReplicaRole {
   VOTER = 0;

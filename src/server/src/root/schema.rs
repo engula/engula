@@ -140,13 +140,19 @@ impl Schema {
         Ok(databases)
     }
 
-    pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
+    pub async fn create_collection(
+        &self,
+        desc: CollectionDesc,
+        group_id: u64,
+    ) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
 
         // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
         // handle hearbeat resp).
-        let shards = self.create_collection_shard(desc.to_owned()).await?;
+        let shards = self
+            .create_collection_shard(desc.to_owned(), group_id)
+            .await?;
         let mut builder = PutBatchBuilder::default();
 
         builder.put_collection(desc.to_owned());
@@ -164,6 +170,7 @@ impl Schema {
     pub async fn create_collection_shard(
         &self,
         collection: CollectionDesc,
+        group_id: u64,
     ) -> Result<HashMap<u64, Vec<ShardDesc>>> {
         let mut shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new(); // group_id -> shards
 
@@ -176,7 +183,7 @@ impl Schema {
                 end: SHARD_MAX.to_owned(),
             })),
         };
-        let group_id = self.store.create_shard(desc.to_owned()).await?;
+        self.store.create_shard(desc.to_owned()).await?;
         match shards.entry(group_id) {
             Entry::Occupied(mut ent) => {
                 let shards = ent.get_mut();
@@ -529,8 +536,14 @@ impl Schema {
         batch.put_node(NodeDesc {
             id: FIRST_NODE_ID,
             addr: addr.into(),
+            capacity: Some(NodeCapacity {
+                cpu_nums: num_cpus::get() as f64,
+                replica_count: 1,
+                leader_count: 0,
+            }),
         });
 
+        let shard_count = shards.len() as u64;
         batch.put_group(GroupDesc {
             id: ROOT_GROUP_ID,
             epoch: INITIAL_EPOCH,
@@ -540,6 +553,7 @@ impl Schema {
                 role: ReplicaRole::Voter.into(),
             }],
             shards,
+            capacity: Some(GroupCapacity { shard_count }),
         });
 
         batch.put_replica_state(ReplicaState {
@@ -576,6 +590,14 @@ impl Schema {
             panic!("shard id {}", shard_id);
         }
         shard.unwrap().to_owned()
+    }
+
+    pub async fn next_group_id(&self) -> Result<u64> {
+        self.next_id(META_GROUP_ID_KEY).await
+    }
+
+    pub async fn next_replica_id(&self) -> Result<u64> {
+        self.next_id(META_REPLICA_ID_KEY).await
     }
 
     fn init_system_collections(batch: &mut PutBatchBuilder) -> u64 {
