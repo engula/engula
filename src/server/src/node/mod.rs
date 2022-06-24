@@ -286,7 +286,7 @@ impl Node {
             channel,
             group_engine,
             &self.raft_mgr,
-            self.migrate_ctrl.clone(),
+            self.migrate_ctrl.clone().unwrap(),
         )
         .await?;
         let replica = Arc::new(replica);

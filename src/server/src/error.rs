@@ -63,7 +63,7 @@ pub enum Error {
     #[error("service {0} is busy")]
     ServiceIsBusy(&'static str),
 
-    #[error("forward request to group {}")]
+    #[error("forward request to dest group")]
     Forward(crate::node::migrate::ForwardCtx),
 
     #[error("group epoch not match")]

@@ -35,8 +35,7 @@ pub async fn execute(replica: &Replica, mut request: GroupRequest) -> Result<Gro
             }
             Err(Error::Forward(forward_ctx)) => {
                 let ctrl = replica.migrate_ctrl();
-                ctrl.forward(forward_ctx, &request).await;
-                // TODO(walter)
+                return ctrl.forward(forward_ctx, &request).await;
             }
             Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
                 // sleep and retry.

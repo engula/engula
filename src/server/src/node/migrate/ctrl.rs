@@ -61,8 +61,7 @@ impl MigrateController {
         forward_ctx: ForwardCtx,
         request: &GroupRequest,
     ) -> Result<GroupResponse> {
-        // TODO(walter) found group by node id.
-        todo!()
+        super::forward_request(self.shared.router.clone(), &forward_ctx, request).await
     }
 
     fn pull(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {

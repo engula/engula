@@ -15,7 +15,7 @@
 use engula_api::server::v1::*;
 
 use crate::{
-    node::{engine::GroupEngine, replica::ExecCtx, migrate::ForwardCtx},
+    node::{engine::GroupEngine, migrate::ForwardCtx, replica::ExecCtx},
     Error, Result,
 };
 

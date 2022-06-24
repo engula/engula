@@ -13,8 +13,36 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
+use engula_client::Router;
 
+use super::GroupClient;
+use crate::Result;
+
+#[derive(Debug)]
 pub struct ForwardCtx {
     pub dest_group_id: u64,
     pub payloads: Vec<ShardData>,
+}
+
+pub async fn forward_request(
+    router: Router,
+    forward_ctx: &ForwardCtx,
+    request: &GroupRequest,
+) -> Result<GroupResponse> {
+    debug_assert!(request.request.is_some());
+
+    let group_id = forward_ctx.dest_group_id;
+    let mut group_client = GroupClient::new(group_id, router);
+    let req = ForwardRequest {
+        group_id,
+        forward_data: forward_ctx.payloads.clone(),
+        request: request.request.clone(),
+    };
+    let resp = group_client.forward(req).await?;
+    debug_assert!(resp.response.is_some());
+
+    Ok(GroupResponse {
+        response: resp.response,
+        error: None,
+    })
 }
