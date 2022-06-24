@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::*;
+use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
 use engula_client::Router;
 
 use super::GroupClient;
@@ -20,6 +20,7 @@ use crate::Result;
 
 #[derive(Debug)]
 pub struct ForwardCtx {
+    pub shard_id: u64,
     pub dest_group_id: u64,
     pub payloads: Vec<ShardData>,
 }
@@ -27,22 +28,19 @@ pub struct ForwardCtx {
 pub async fn forward_request(
     router: Router,
     forward_ctx: &ForwardCtx,
-    request: &GroupRequest,
-) -> Result<GroupResponse> {
-    debug_assert!(request.request.is_some());
-
+    request: &Request,
+) -> Result<Response> {
     let group_id = forward_ctx.dest_group_id;
     let mut group_client = GroupClient::new(group_id, router);
     let req = ForwardRequest {
+        shard_id: forward_ctx.shard_id,
         group_id,
         forward_data: forward_ctx.payloads.clone(),
-        request: request.request.clone(),
+        request: Some(GroupRequestUnion {
+            request: Some(request.clone()),
+        }),
     };
     let resp = group_client.forward(req).await?;
-    debug_assert!(resp.response.is_some());
-
-    Ok(GroupResponse {
-        response: resp.response,
-        error: None,
-    })
+    let resp = resp.response.and_then(|resp| resp.response);
+    Ok(resp.unwrap())
 }

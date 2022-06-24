@@ -266,8 +266,9 @@ message ShardChunk {
 
 message ForwardRequest {
   uint64 group_id = 1;
-  repeated ShardData forward_data = 2;
-  GroupRequestUnion request = 3;
+  uint64 shard_id = 2;
+  repeated ShardData forward_data = 3;
+  GroupRequestUnion request = 4;
 }
 
 message ForwardResponse {

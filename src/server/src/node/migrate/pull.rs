@@ -58,7 +58,7 @@ async fn pull_shard_round(
         .await?;
     while let Some(shard_chunk) = shard_chunk_stream.next().await {
         let shard_chunk = shard_chunk?;
-        replica.ingest(shard_id, shard_chunk).await?;
+        replica.ingest(shard_id, shard_chunk, false).await?;
     }
     Ok(())
 }

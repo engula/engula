@@ -68,14 +68,21 @@ enum MetaAclGuard<'a> {
     Write(tokio::sync::RwLockWriteGuard<'a, ()>),
 }
 
+#[derive(Clone)]
 struct MigratingDigest {
     shard_id: u64,
     dest_group_id: u64,
 }
 
 /// ExecCtx contains the required infos during request execution.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ExecCtx {
+    /// This is a forward request and here is the migrating shard.
+    pub forward_shard_id: Option<u64>,
+    /// The epoch of `GroupDesc` carried in this request.
+    pub epoch: u64,
+
+    /// The digest of migrating meta, filled by `check_request_early`.
     migrating_digest: Option<MigratingDigest>,
 }
 
@@ -165,23 +172,18 @@ impl Replica {
 
 impl Replica {
     /// Execute group request and fill response.
-    pub(self) async fn execute(&self, group_request: &GroupRequest) -> Result<GroupResponse> {
-        let request = group_request
-            .request
-            .as_ref()
-            .and_then(|request| request.request.as_ref())
-            .ok_or_else(|| Error::InvalidArgument("GroupRequest::request is None".into()))?;
-
-        debug_assert_eq!(group_request.group_id, self.info.group_id);
-
+    pub(self) async fn execute(
+        &self,
+        mut exec_ctx: ExecCtx,
+        request: &Request,
+    ) -> Result<Response> {
         if self.info.is_terminated() {
             return Err(Error::GroupNotFound(self.info.group_id));
         }
 
         let _acl_guard = self.take_acl_guard(request).await;
-        let exec_ctx = self.check_request_early(group_request.epoch, request)?;
-        let resp = self.evaluate_command(&exec_ctx, request).await?;
-        Ok(GroupResponse::new(resp))
+        self.check_request_early(&mut exec_ctx, request)?;
+        self.evaluate_command(&exec_ctx, request).await
     }
 
     pub async fn on_leader(&self, immediate: bool) -> Result<()> {
@@ -239,13 +241,14 @@ impl Replica {
         Ok(ShardChunk { data: kvs })
     }
 
-    pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk) -> Result<()> {
+    pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk, forwarded: bool) -> Result<()> {
         use crate::node::engine::WriteBatch;
 
         if chunk.data.is_empty() {
             return Ok(());
         }
 
+        // TODO(walter) check request epoch and shard id.
         self.check_leader_early()?;
 
         let mut wb = WriteBatch::default();
@@ -254,15 +257,21 @@ impl Replica {
                 .put(&mut wb, shard_id, &data.key, &data.value)?;
         }
 
-        let ingest_event = migrate_event::Ingest {
-            last_key: chunk.data.last().as_ref().unwrap().key.clone(),
+        let sync_op = if !forwarded {
+            Some(SyncOp::migrate_event(MigrateEventValue::Ingest(
+                migrate_event::Ingest {
+                    last_key: chunk.data.last().as_ref().unwrap().key.clone(),
+                },
+            )))
+        } else {
+            None
         };
-        let sync_op = SyncOp::migrate_event(migrate_event::Value::Ingest(ingest_event));
+
         let eval_result = EvalResult {
             batch: Some(WriteBatchRep {
                 data: wb.data().to_owned(),
             }),
-            op: Some(sync_op),
+            op: sync_op,
         };
         self.raft_node.clone().propose(eval_result).await??;
 
@@ -372,7 +381,7 @@ impl Replica {
         Ok(())
     }
 
-    fn check_request_early(&self, epoch: u64, req: &Request) -> Result<ExecCtx> {
+    fn check_request_early(&self, exec_ctx: &mut ExecCtx, req: &Request) -> Result<()> {
         let group_id = self.info.group_id;
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_raft_leader() {
@@ -381,15 +390,24 @@ impl Replica {
             // Replica has just been elected as the leader, and there are still exists unapplied
             // WALs, so the freshness of metadata cannot be guaranteed.
             Err(Error::GroupNotReady(group_id))
-        } else if epoch < lease_state.descriptor.epoch {
+        } else if exec_ctx.forward_shard_id.is_none()
+            && exec_ctx.epoch < lease_state.descriptor.epoch
+        {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
+        } else if let Some(shard_id) = exec_ctx.forward_shard_id {
+            if lease_state.is_forwarding_shard(shard_id) {
+                Ok(())
+            } else {
+                // Maybe this request has expired?
+                Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
+            }
         } else if lease_state.is_migrating() && matches!(req, Request::MigrateShard(_)) {
             // At the same time, there can only be one migration task.
             Err(Error::ServiceIsBusy("migration"))
         } else {
             // If the current replica is the leader and has applied data in the current term,
             // it is expected that the input epoch should not be larger than the leaders.
-            debug_assert_eq!(epoch, lease_state.descriptor.epoch);
+            debug_assert_eq!(exec_ctx.epoch, lease_state.descriptor.epoch);
             let migrating_digest = lease_state
                 .migrate_meta
                 .as_ref()
@@ -398,7 +416,8 @@ impl Replica {
                     shard_id: m.shard_desc.as_ref().unwrap().id,
                     dest_group_id: m.dest_group_id,
                 });
-            Ok(ExecCtx { migrating_digest })
+            exec_ctx.migrating_digest = migrating_digest;
+            Ok(())
         }
     }
 
@@ -448,6 +467,13 @@ impl ReplicaInfo {
 }
 
 impl ExecCtx {
+    pub fn forward(shard_id: u64) -> Self {
+        ExecCtx {
+            forward_shard_id: Some(shard_id),
+            ..Default::default()
+        }
+    }
+
     #[inline]
     fn is_migrating_shard(&self, shard_id: u64) -> bool {
         self.migrating_digest
@@ -477,6 +503,15 @@ impl LeaseState {
     #[inline]
     fn is_migrating(&self) -> bool {
         self.migrate_meta.is_some()
+    }
+
+    #[inline]
+    fn is_forwarding_shard(&self, shard_id: u64) -> bool {
+        self.migrate_meta
+            .as_ref()
+            .and_then(|m| m.shard_desc.as_ref())
+            .map(|s| s.id == shard_id)
+            .unwrap_or_default()
     }
 
     #[inline]

@@ -42,6 +42,7 @@ pub async fn get(
                 Vec::default()
             };
             let forward_ctx = ForwardCtx {
+                shard_id: migrating_digest.shard_id,
                 dest_group_id: migrating_digest.dest_group_id,
                 payloads,
             };

@@ -37,6 +37,7 @@ pub async fn put(
     if let Some(migrating_digest) = exec_ctx.migrating_digest.as_ref() {
         if migrating_digest.shard_id == req.shard_id {
             let forward_ctx = ForwardCtx {
+                shard_id: migrating_digest.shard_id,
                 dest_group_id: migrating_digest.dest_group_id,
                 payloads: vec![],
             };

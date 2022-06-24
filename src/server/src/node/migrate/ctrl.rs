@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use engula_api::server::v1::{GroupRequest, GroupResponse};
+use engula_api::server::v1::{group_request_union::Request, group_response_union::Response};
 use engula_client::Router;
 
 use super::ForwardCtx;
@@ -56,11 +56,7 @@ impl MigrateController {
         }
     }
 
-    pub async fn forward(
-        &self,
-        forward_ctx: ForwardCtx,
-        request: &GroupRequest,
-    ) -> Result<GroupResponse> {
+    pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
         super::forward_request(self.shared.router.clone(), &forward_ctx, request).await
     }
 
