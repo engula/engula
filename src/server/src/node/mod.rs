@@ -71,7 +71,7 @@ where
     replica_route_table: ReplicaRouteTable,
 
     raft_mgr: RaftManager,
-    migrate_ctrl: Option<MigrateController>,
+    migrate_ctrl: MigrateController,
 
     /// `NodeState` of this node, the lock is used to ensure serialization of create/terminate
     /// replica operations.
@@ -87,9 +87,13 @@ impl Node {
         address_resolver: Arc<dyn AddressResolver>,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
-        let trans_mgr =
-            TransportManager::build(executor.clone(), address_resolver, raft_route_table.clone());
+        let trans_mgr = TransportManager::build(
+            executor.clone(),
+            address_resolver.clone(),
+            raft_route_table.clone(),
+        );
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
+        let migrate_ctrl = MigrateController::new(address_resolver, executor.clone());
         Ok(Node {
             raw_db,
             executor,
@@ -97,7 +101,7 @@ impl Node {
             raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
-            migrate_ctrl: None,
+            migrate_ctrl,
             node_state: Arc::new(Mutex::new(NodeState::default())),
         })
     }
@@ -286,7 +290,7 @@ impl Node {
             channel,
             group_engine,
             &self.raft_mgr,
-            self.migrate_ctrl.clone().unwrap(),
+            self.migrate_ctrl.clone(),
         )
         .await?;
         let replica = Arc::new(replica);

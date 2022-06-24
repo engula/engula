@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, time::Duration};
+use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use engula_api::server::v1::*;
-use engula_client::{NodeClient, Router};
+use engula_client::NodeClient;
 use tracing::warn;
 
-use crate::{Error, Result};
+use crate::{raftgroup::AddressResolver, Error, Result};
 
 pub(super) struct GroupClient {
     group_id: u64,
@@ -32,20 +32,21 @@ pub(super) struct GroupClient {
     replicas: Vec<ReplicaDesc>,
     next_access_index: usize,
 
-    router: Router,
+    address_resolver: Arc<dyn AddressResolver>,
 }
 
 impl GroupClient {
-    pub fn new(group_id: u64, router: Router) -> Self {
+    pub fn new(group_id: u64, address_resolver: Arc<dyn AddressResolver>) -> Self {
         GroupClient {
             group_id,
-            router,
 
             node_clients: HashMap::default(),
             epoch: 0,
             leader_node_id: None,
             replicas: Vec::default(),
             next_access_index: 0,
+
+            address_resolver,
         }
     }
 
@@ -127,14 +128,17 @@ impl GroupClient {
             return Some(client.clone());
         }
 
-        if let Some(address) = self.router.find_node_addr(node_id) {
-            match NodeClient::connect(address.clone()).await {
+        if let Ok(node_desc) = self.address_resolver.resolve(node_id).await {
+            match NodeClient::connect(node_desc.addr.clone()).await {
                 Ok(client) => {
                     self.node_clients.insert(node_id, client.clone());
                     return Some(client);
                 }
                 Err(err) => {
-                    warn!("connect to node {} address {}: {}", node_id, address, err);
+                    warn!(
+                        "connect to node {} address {}: {}",
+                        node_id, node_desc.addr, err
+                    );
                 }
             }
         } else {

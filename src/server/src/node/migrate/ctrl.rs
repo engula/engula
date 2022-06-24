@@ -15,10 +15,11 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response};
-use engula_client::Router;
 
 use super::ForwardCtx;
-use crate::{node::Replica, runtime::Executor, serverpb::v1::*, Result};
+use crate::{
+    node::Replica, raftgroup::AddressResolver, runtime::Executor, serverpb::v1::*, Result,
+};
 
 #[derive(Clone)]
 pub struct MigrateController {
@@ -27,15 +28,17 @@ pub struct MigrateController {
 
 struct MigrateControllerShared {
     executor: Executor,
-    router: Router,
+    address_resolver: Arc<dyn AddressResolver>,
 }
 
 impl MigrateController {
-    pub async fn new(addr: String, executor: Executor) -> Result<Self> {
-        let router = Router::connect(addr).await?;
-        Ok(MigrateController {
-            shared: Arc::new(MigrateControllerShared { router, executor }),
-        })
+    pub fn new(address_resolver: Arc<dyn AddressResolver>, executor: Executor) -> Self {
+        MigrateController {
+            shared: Arc::new(MigrateControllerShared {
+                address_resolver,
+                executor,
+            }),
+        }
     }
 
     pub fn migrate(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
@@ -57,7 +60,7 @@ impl MigrateController {
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
-        super::forward_request(self.shared.router.clone(), &forward_ctx, request).await
+        super::forward_request(self.shared.address_resolver.clone(), &forward_ctx, request).await
     }
 
     fn pull(&self, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
@@ -66,11 +69,11 @@ impl MigrateController {
         let replica_info = replica.replica_info();
         let tag_owner = replica_info.group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
-        let router = self.shared.router.clone();
+        let address_resolver = self.shared.address_resolver.clone();
         self.shared
             .executor
             .spawn(tag, TaskPriority::IoHigh, async move {
-                super::pull_shard(router, replica, migrate_meta).await;
+                super::pull_shard(address_resolver, replica, migrate_meta).await;
             });
     }
 }

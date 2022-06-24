@@ -47,7 +47,7 @@ pub async fn execute(
             }
             Err(Error::Forward(forward_ctx)) => {
                 let ctrl = replica.migrate_ctrl();
-                let resp = ctrl.forward(forward_ctx, &request).await?;
+                let resp = ctrl.forward(forward_ctx, request).await?;
                 return Ok(GroupResponse::new(resp));
             }
             Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
@@ -55,7 +55,7 @@ pub async fn execute(
                 crate::runtime::time::sleep(Duration::from_micros(200)).await;
             }
             Err(Error::EpochNotMatch(desc)) => {
-                if is_executable(&desc, &request) {
+                if is_executable(&desc, request) {
                     exec_ctx.epoch = desc.epoch;
                     freshed_descriptor = Some(desc);
                     continue;

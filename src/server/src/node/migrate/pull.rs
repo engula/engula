@@ -19,17 +19,20 @@ use std::{
 };
 
 use engula_api::server::v1::*;
-use engula_client::Router;
 use futures::StreamExt;
 use tracing::warn;
 
 use super::GroupClient;
-use crate::{node::Replica, serverpb::v1::*, Result};
+use crate::{node::Replica, raftgroup::AddressResolver, serverpb::v1::*, Result};
 
-pub async fn pull_shard(router: Router, replica: Arc<Replica>, migrate_meta: MigrateMeta) {
+pub async fn pull_shard(
+    address_resolver: Arc<dyn AddressResolver>,
+    replica: Arc<Replica>,
+    migrate_meta: MigrateMeta,
+) {
     let info = replica.replica_info();
     let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
-    let mut group_client = GroupClient::new(migrate_meta.src_group_id, router.clone());
+    let mut group_client = GroupClient::new(migrate_meta.src_group_id, address_resolver);
     while let Ok(()) = replica.on_leader(true).await {
         match pull_shard_round(&mut group_client, replica.as_ref(), &migrate_meta).await {
             Ok(()) => {
