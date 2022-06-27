@@ -33,6 +33,7 @@ use engula_api::{
     v1::{CollectionDesc, DatabaseDesc},
 };
 use engula_client::NodeClient;
+use tracing::{info, warn};
 
 pub(crate) use self::schema::*;
 pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
@@ -176,28 +177,14 @@ impl Root {
             });
         }
 
+        info!("step root service leader");
+
         // TODO(zojw): refresh owner, heartbeat node, rebalance
-        for _ in 0..1000 {
-            // self.send_heartbeat(schema.to_owned()).await?;
-
-            {
-                let group_action = self.alloc.compute_group_action().await?;
-                match group_action {
-                    GroupAction::Noop => {}
-                    GroupAction::Add(cnt) => self.create_groups(cnt).await?,
-                    GroupAction::Remove(_) => todo!(),
-                }
-
-                let replica_actions = self.alloc.compute_replica_action().await?;
-                for replica_action in replica_actions {
-                    match replica_action {
-                        ReplicaAction::Noop => {}
-                        ReplicaAction::Migrate(_action) => { // TODO:
-                        }
-                    }
-                }
+        loop {
+            if let Err(err) = self.loop_once().await {
+                warn!("root loop: {}", err);
+                break;
             }
-
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
 
@@ -207,6 +194,25 @@ impl Root {
             *core = None;
         }
 
+        Ok(())
+    }
+
+    async fn loop_once(&self) -> Result<()> {
+        let group_action = self.alloc.compute_group_action().await?;
+        match group_action {
+            GroupAction::Noop => {}
+            GroupAction::Add(cnt) => self.create_groups(cnt).await?,
+            GroupAction::Remove(_) => todo!(),
+        }
+
+        let replica_actions = self.alloc.compute_replica_action().await?;
+        for replica_action in replica_actions {
+            match replica_action {
+                ReplicaAction::Noop => {}
+                ReplicaAction::Migrate(_action) => { // TODO:
+                }
+            }
+        }
         Ok(())
     }
 }

@@ -26,6 +26,7 @@ use engula_api::{
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
 use prost::Message;
+use tracing::info;
 
 use super::store::RootStore;
 use crate::{bootstrap::*, node::engine::LOCAL_COLLECTION_ID, Error, Result};
@@ -519,6 +520,11 @@ impl Schema {
             }
             return Ok(());
         }
+
+        info!(
+            "init system collections, cluster id {}",
+            String::from_utf8_lossy(&cluster_id)
+        );
 
         let mut batch = PutBatchBuilder::default();
 
