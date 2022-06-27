@@ -173,27 +173,19 @@ impl GroupEngine {
     }
 
     pub fn migrate_meta(&self) -> Result<Option<MigrateMeta>> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let raw_key = keys::migrate_meta();
         Ok(self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)?
+            .get_pinned_cf(&self.cf_handle(), raw_key)?
             .map(|val| MigrateMeta::decode(val.as_ref()).expect("MigrateMeta")))
     }
 
     /// Return the group descriptor
     pub fn descriptor(&self) -> Result<GroupDesc> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let raw_key = keys::descriptor();
         let value = self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)?
+            .get_pinned_cf(&self.cf_handle(), raw_key)?
             .expect("group descriptor will persisted when creating group");
         let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
         Ok(desc)
@@ -202,16 +194,12 @@ impl GroupEngine {
     /// Return the persisted apply state of raft.
     pub fn flushed_apply_state(&self) -> ApplyState {
         use rocksdb::{ReadOptions, ReadTier};
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let mut opt = ReadOptions::default();
         opt.set_read_tier(ReadTier::Persisted);
         let raw_key = keys::apply_state();
         let value = self
             .raw_db
-            .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
+            .get_pinned_cf_opt(&self.cf_handle(), raw_key, &opt)
             .unwrap()
             .expect("apply state will persisted when creating group");
         ApplyState::decode(value.as_ref()).expect("should encoded ApplyState")
@@ -239,18 +227,13 @@ impl GroupEngine {
         value: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
         let collection_id = self
             .collection_id(shard_id)
             .expect("shard id to collection id");
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
 
         wb.put_cf(
-            &cf_handle,
+            &self.cf_handle(),
             keys::mvcc_key(collection_id, key, version),
             values::data(value),
         );
@@ -265,17 +248,12 @@ impl GroupEngine {
         key: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
         let collection_id = self
             .collection_id(shard_id)
             .expect("shard id to collection id");
 
         wb.put_cf(
-            &cf_handle,
+            &self.cf_handle(),
             keys::mvcc_key(collection_id, key, version),
             values::tombstone(),
         );
@@ -289,16 +267,14 @@ impl GroupEngine {
         key: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
         let collection_id = self
             .collection_id(shard_id)
             .expect("shard id to collection id");
 
-        wb.delete_cf(&cf_handle, keys::mvcc_key(collection_id, key, version));
+        wb.delete_cf(
+            &self.cf_handle(),
+            keys::mvcc_key(collection_id, key, version),
+        );
         Ok(())
     }
 
@@ -318,24 +294,15 @@ impl GroupEngine {
         wb.migrate_meta = Some(migrate_meta.clone());
     }
 
+    #[inline]
     pub fn clear_migrate_meta(&self, wb: &mut WriteBatch) {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
-        let raw_key = keys::migrate_meta();
-        wb.delete_cf(&cf_handle, raw_key);
+        wb.delete_cf(&self.cf_handle(), keys::migrate_meta());
     }
 
     pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
+        let cf_handle = self.cf_handle();
         let mut inner_wb = wb.inner;
         if let Some(apply_state) = wb.apply_state {
             inner_wb.put_cf(&cf_handle, keys::apply_state(), apply_state.encode_to_vec());
@@ -366,10 +333,6 @@ impl GroupEngine {
     pub fn snapshot(&self, shard_id: u64, mode: SnapshotMode) -> Result<Snapshot> {
         use rocksdb::{Direction, IteratorMode, ReadOptions};
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let collection_id = self
             .collection_id(shard_id)
             .expect("shard id to collection id");
@@ -384,7 +347,9 @@ impl GroupEngine {
             SnapshotMode::Prefix { key } => keys::raw(collection_id, key),
         };
         let inner_mode = IteratorMode::From(&key, Direction::Forward);
-        let iter = self.raw_db.iterator_cf_opt(&cf_handle, opts, inner_mode);
+        let iter = self
+            .raw_db
+            .iterator_cf_opt(&self.cf_handle(), opts, inner_mode);
         // FIXME(walter) snapshot might across shard?
         Ok(Snapshot::new(collection_id, iter, mode))
     }
@@ -392,31 +357,23 @@ impl GroupEngine {
     pub fn raw_iter(&self) -> Result<RawIterator> {
         use rocksdb::{IteratorMode, ReadOptions};
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let opts = ReadOptions::default();
         let iter = self
             .raw_db
-            .iterator_cf_opt(&cf_handle, opts, IteratorMode::Start);
+            .iterator_cf_opt(&self.cf_handle(), opts, IteratorMode::Start);
         RawIterator::new(iter)
     }
 
     /// Ingest data into group engine.
     pub fn ingest<P: AsRef<Path>>(&self, files: Vec<P>) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
         use rocksdb::{IngestExternalFileOptions, Options};
+
         self.raw_db.drop_cf(&self.name)?;
         self.raw_db.create_cf(&self.name, &Options::default())?;
 
         let opts = IngestExternalFileOptions::default();
         self.raw_db
-            .ingest_external_file_cf_opts(&cf_handle, &opts, files)?;
+            .ingest_external_file_cf_opts(&self.cf_handle(), &opts, files)?;
 
         let desc = self.descriptor().unwrap();
         let mut collections = self.collections.write().unwrap();
@@ -434,6 +391,13 @@ impl GroupEngine {
             .expect("read lock")
             .get(&shard_id)
             .cloned()
+    }
+
+    #[inline]
+    fn cf_handle(&self) -> Arc<rocksdb::BoundColumnFamily> {
+        self.raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle")
     }
 }
 
