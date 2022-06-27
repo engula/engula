@@ -37,7 +37,7 @@ pub async fn batch_write(
         if exec_ctx.is_migrating_shard(req.shard_id) {
             panic!("BatchWrite does not support migrating shard");
         }
-        group_engine.delete(&mut wb, req.shard_id, &del.key)?;
+        group_engine.delete(&mut wb, req.shard_id, &del.key, super::FLAT_KEY_VERSION)?;
     }
     for req in &req.puts {
         let put = req
@@ -47,7 +47,13 @@ pub async fn batch_write(
         if exec_ctx.is_migrating_shard(req.shard_id) {
             panic!("BatchWrite does not support migrating shard");
         }
-        group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;
+        group_engine.put(
+            &mut wb,
+            req.shard_id,
+            &put.key,
+            &put.value,
+            super::FLAT_KEY_VERSION,
+        )?;
     }
     Ok(Some(EvalResult {
         batch: Some(WriteBatchRep {

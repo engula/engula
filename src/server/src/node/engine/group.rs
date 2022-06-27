@@ -195,7 +195,14 @@ impl GroupEngine {
     }
 
     /// Put key value into the corresponding shard.
-    pub fn put(&self, wb: &mut WriteBatch, shard_id: u64, key: &[u8], value: &[u8]) -> Result<()> {
+    pub fn put(
+        &self,
+        wb: &mut WriteBatch,
+        shard_id: u64,
+        key: &[u8],
+        value: &[u8],
+        version: u64,
+    ) -> Result<()> {
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
@@ -212,7 +219,34 @@ impl GroupEngine {
     }
 
     /// Delete key from the corresponding shard.
-    pub fn delete(&self, wb: &mut WriteBatch, shard_id: u64, key: &[u8]) -> Result<()> {
+    pub fn delete(
+        &self,
+        wb: &mut WriteBatch,
+        shard_id: u64,
+        key: &[u8],
+        version: u64,
+    ) -> Result<()> {
+        let cf_handle = self
+            .raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle");
+
+        let collection_id = self
+            .collection_id(shard_id)
+            .expect("shard id to collection id");
+
+        let raw_key = keys::raw(collection_id, key);
+        wb.delete_cf(&cf_handle, raw_key);
+        Ok(())
+    }
+
+    pub fn physical_delete(
+        &self,
+        wb: &mut WriteBatch,
+        shard_id: u64,
+        key: &[u8],
+        version: u64,
+    ) -> Result<()> {
         let cf_handle = self
             .raw_db
             .cf_handle(&self.name)
@@ -439,6 +473,29 @@ mod keys {
         buf
     }
 
+    /// Generate mvcc key with the memcomparable format.
+    pub fn mvcc_key(collection_id: u64, key: &[u8], version: u64) -> Vec<u8> {
+        use std::io::{Cursor, Read};
+
+        debug_assert!(!key.is_empty());
+        let actual_len = (((key.len() - 1) / 8) + 1) * 9;
+        let mut buf = Vec::with_capacity(2 * core::mem::size_of::<u64>() + actual_len);
+        buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
+        let mut cursor = Cursor::new(key);
+        while !cursor.is_empty() {
+            let mut group = [0u8; 8];
+            let mut size = cursor.read(&mut group[..]).unwrap() as u8;
+            debug_assert_ne!(size, 0);
+            if size == 8 && !cursor.is_empty() {
+                size += 1;
+            }
+            buf.extend_from_slice(group.as_slice());
+            buf.push(b'0' + size);
+        }
+        buf.extend_from_slice((!version).to_be_bytes().as_slice());
+        buf
+    }
+
     #[inline]
     pub fn apply_state() -> Vec<u8> {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + APPLY_STATE.len());
@@ -508,5 +565,84 @@ fn next_message<T: prost::Message + Default>(
     } else {
         db_iterator_status(db_iter, false)?;
         unreachable!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keys;
+
+    #[test]
+    fn mvcc_key_test() {
+        struct Less {
+            left: &'static [u8],
+            left_version: u64,
+            right: &'static [u8],
+            right_version: u64,
+        }
+
+        let tests = vec![
+            // 1. compare version
+            Less {
+                left: b"1",
+                left_version: 1,
+                right: b"1",
+                right_version: 0,
+            },
+            Less {
+                left: b"1",
+                left_version: 256,
+                right: b"1",
+                right_version: 255,
+            },
+            Less {
+                left: b"12345678",
+                left_version: 256,
+                right: b"12345678",
+                right_version: 255,
+            },
+            Less {
+                left: b"123456789",
+                left_version: 256,
+                right: b"123456789",
+                right_version: 255,
+            },
+            // 2. different length
+            Less {
+                left: b"12345678",
+                left_version: u64::MAX,
+                right: b"123456789",
+                right_version: 0,
+            },
+            Less {
+                left: b"12345678",
+                left_version: u64::MAX,
+                right: b"12345678\x00",
+                right_version: 0,
+            },
+            Less {
+                left: b"12345678",
+                left_version: u64::MAX,
+                right: b"12345678\x00\x00\x00\x00\x00\x00\x00\x00",
+                right_version: 0,
+            },
+            Less {
+                left: b"12345678\x00\x00\x00",
+                left_version: 0,
+                right: b"12345678\x00\x00\x00\x00",
+                right_version: 0,
+            },
+        ];
+        for (idx, t) in tests.iter().enumerate() {
+            let left = keys::mvcc_key(0, &t.left, t.left_version);
+            let right = keys::mvcc_key(0, &t.right, t.right_version);
+            assert!(
+                left < right,
+                "index {}, left {:?}, right {:?}",
+                idx,
+                left,
+                right
+            );
+        }
     }
 }

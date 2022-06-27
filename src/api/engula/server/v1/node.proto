@@ -258,6 +258,7 @@ message ShardData {
   /// The user key.
   bytes key = 1;
   bytes value = 2;
+  uint64 version = 3;
 }
 
 message ShardChunk {

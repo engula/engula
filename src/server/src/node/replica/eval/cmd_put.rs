@@ -46,7 +46,13 @@ pub async fn put(
     }
 
     let mut wb = WriteBatch::default();
-    group_engine.put(&mut wb, req.shard_id, &put.key, &put.value)?;
+    group_engine.put(
+        &mut wb,
+        req.shard_id,
+        &put.key,
+        &put.value,
+        super::FLAT_KEY_VERSION,
+    )?;
     Ok(EvalResult {
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),

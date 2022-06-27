@@ -45,7 +45,7 @@ pub async fn delete(
     }
 
     let mut wb = WriteBatch::default();
-    group_engine.delete(&mut wb, req.shard_id, &delete.key)?;
+    group_engine.delete(&mut wb, req.shard_id, &delete.key, super::FLAT_KEY_VERSION)?;
     Ok(EvalResult {
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),

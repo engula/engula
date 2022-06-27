@@ -27,6 +27,8 @@ pub use self::{
 };
 use crate::serverpb::v1::EvalResult;
 
+const FLAT_KEY_VERSION: u64 = u64::MAX - 1;
+
 pub fn add_shard(shard: ShardDesc) -> EvalResult {
     use crate::serverpb::v1::SyncOp;
 

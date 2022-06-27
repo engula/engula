@@ -232,7 +232,11 @@ impl Replica {
                 continue;
             }
             size += key.len() + value.len();
-            kvs.push(ShardData { key, value });
+            kvs.push(ShardData {
+                key,
+                value,
+                version: 0,
+            });
             if size > 64 * 1024 * 1024 {
                 break;
             }
@@ -254,7 +258,7 @@ impl Replica {
         let mut wb = WriteBatch::default();
         for data in &chunk.data {
             self.group_engine
-                .put(&mut wb, shard_id, &data.key, &data.value)?;
+                .put(&mut wb, shard_id, &data.key, &data.value, data.version)?;
         }
 
         let sync_op = if !forwarded {
