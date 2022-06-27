@@ -385,6 +385,7 @@ impl GroupEngine {
         };
         let inner_mode = IteratorMode::From(&key, Direction::Forward);
         let iter = self.raw_db.iterator_cf_opt(&cf_handle, opts, inner_mode);
+        // FIXME(walter) snapshot might across shard?
         Ok(Snapshot::new(collection_id, iter, mode))
     }
 

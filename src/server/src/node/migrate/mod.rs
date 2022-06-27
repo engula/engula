@@ -15,6 +15,7 @@
 mod client;
 mod ctrl;
 mod forward;
+mod gc;
 mod pull;
 
 use self::client::GroupClient;

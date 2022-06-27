@@ -238,17 +238,18 @@ impl Replica {
             },
         };
         let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
-        'OUTER: for key_iter in snapshot.iter() {
-            for entry in key_iter {
+        for mut key_iter in snapshot.iter() {
+            // NOTICE:  Only migrate first version.
+            if let Some(entry) = key_iter.next() {
                 if entry.user_key() == last_key {
-                    continue 'OUTER;
+                    continue;
                 }
                 let key: Vec<_> = entry.user_key().to_owned();
                 let value: Vec<_> = match entry.value() {
                     Some(v) => v.to_owned(),
                     None => {
                         // Skip tombstone.
-                        break;
+                        continue;
                     }
                 };
                 size += key.len() + value.len();
@@ -259,6 +260,7 @@ impl Replica {
                 });
             }
 
+            // TODO(walter) magic value
             if size > 64 * 1024 * 1024 {
                 break;
             }
@@ -298,6 +300,32 @@ impl Replica {
                 data: wb.data().to_owned(),
             }),
             op: sync_op,
+        };
+        self.raft_node.clone().propose(eval_result).await??;
+
+        Ok(())
+    }
+
+    pub async fn delete_chunks(&self, shard_id: u64, keys: &[(Vec<u8>, u64)]) -> Result<()> {
+        use crate::node::engine::WriteBatch;
+
+        if keys.is_empty() {
+            return Ok(());
+        }
+
+        // TODO(walter) check request epoch and shard id.
+        self.check_leader_early()?;
+
+        let mut wb = WriteBatch::default();
+        for (key, version) in keys {
+            self.group_engine.delete(&mut wb, shard_id, key, *version)?;
+        }
+
+        let eval_result = EvalResult {
+            batch: Some(WriteBatchRep {
+                data: wb.data().to_owned(),
+            }),
+            op: None,
         };
         self.raft_node.clone().propose(eval_result).await??;
 
