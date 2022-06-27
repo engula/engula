@@ -17,7 +17,7 @@ use std::time::Duration;
 use engula_api::server::v1::{group_request_union::Request, *};
 
 use super::{ExecCtx, Replica};
-use crate::{Error, Result};
+use crate::{node::shard, Error, Result};
 
 /// A wrapper function that detects and completes retries as quickly as possible.
 pub async fn execute(
@@ -116,19 +116,6 @@ fn is_target_shard_exists(desc: &GroupDesc, shard_id: u64, key: &[u8]) -> bool {
     desc.shards
         .iter()
         .find(|s| s.id == shard_id)
-        .map(|s| is_key_located_in_shard(s, key))
+        .map(|s| shard::belong_to(s, key))
         .unwrap_or_default()
-}
-
-fn is_key_located_in_shard(shard: &ShardDesc, key: &[u8]) -> bool {
-    use engula_api::server::v1::shard_desc::Partition;
-    match shard.partition.as_ref().unwrap() {
-        Partition::Hash(_hash) => {
-            // TODO(walter) compute hash slot.
-            false
-        }
-        Partition::Range(range) => {
-            range.start.as_slice() <= key && (key < range.end.as_slice() || range.end.is_empty())
-        }
-    }
 }
