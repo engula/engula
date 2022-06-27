@@ -29,7 +29,11 @@ use engula_api::{
 use tracing::info;
 
 use self::fsm::{DescObserver, GroupStateMachine};
-use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
+use super::{
+    engine::{GroupEngine, SnapshotMode},
+    job::StateChannel,
+    migrate::MigrateController,
+};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
@@ -226,7 +230,14 @@ impl Replica {
         let mut kvs = vec![];
         let mut size = 0;
 
-        let mut snapshot = self.group_engine.snapshot_from(shard_id, last_key)?;
+        let snapshot_mode = SnapshotMode::Start {
+            start_key: if last_key.is_empty() {
+                None
+            } else {
+                Some(last_key)
+            },
+        };
+        let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
         'OUTER: for key_iter in snapshot.iter() {
             for entry in key_iter {
                 if entry.user_key() == last_key {
@@ -244,7 +255,7 @@ impl Replica {
                 kvs.push(ShardData {
                     key,
                     value,
-                    version: 0,
+                    version: self::eval::MIGRATING_KEY_VERSION,
                 });
             }
 

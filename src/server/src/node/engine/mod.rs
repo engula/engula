@@ -16,6 +16,6 @@ mod group;
 mod state;
 
 pub use self::{
-    group::{GroupEngine, RawIterator, WriteBatch, LOCAL_COLLECTION_ID},
+    group::{GroupEngine, RawIterator, Snapshot, SnapshotMode, WriteBatch, LOCAL_COLLECTION_ID},
     state::StateEngine,
 };

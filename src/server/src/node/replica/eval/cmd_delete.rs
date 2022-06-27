@@ -15,7 +15,7 @@ use engula_api::server::v1::ShardDeleteRequest;
 // limitations under the License.
 use crate::{
     node::{
-        engine::{GroupEngine, WriteBatch},
+        engine::{GroupEngine, SnapshotMode, WriteBatch},
         migrate::ForwardCtx,
         replica::ExecCtx,
     },
@@ -45,11 +45,35 @@ pub async fn delete(
     }
 
     let mut wb = WriteBatch::default();
-    group_engine.delete(&mut wb, req.shard_id, &delete.key, super::FLAT_KEY_VERSION)?;
+    if exec_ctx.forward_shard_id.is_some() {
+        // Write tombstone for migrating shard, so that the a deleted key will be overwrite the key
+        // ingested by background pulling. not visible.
+        group_engine.tombstone(&mut wb, req.shard_id, &delete.key, super::FLAT_KEY_VERSION)?;
+    } else {
+        purge_versions(&mut wb, group_engine, req.shard_id, &delete.key).await?;
+        group_engine.delete(&mut wb, req.shard_id, &delete.key, super::FLAT_KEY_VERSION)?;
+    }
     Ok(EvalResult {
         batch: Some(WriteBatchRep {
             data: wb.data().to_owned(),
         }),
         ..Default::default()
     })
+}
+
+async fn purge_versions(
+    wb: &mut WriteBatch,
+    engine: &GroupEngine,
+    shard_id: u64,
+    key: &[u8],
+) -> Result<()> {
+    let snapshot_mode = SnapshotMode::Key { key };
+    let mut snapshot = engine.snapshot(shard_id, snapshot_mode)?;
+    if let Some(iter) = snapshot.mvcc_iter() {
+        for entry in iter {
+            engine.delete(wb, shard_id, key, entry.version())?;
+        }
+    }
+    snapshot.status()?;
+    Ok(())
 }
