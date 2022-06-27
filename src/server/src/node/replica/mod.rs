@@ -225,18 +225,29 @@ impl Replica {
 
         let mut kvs = vec![];
         let mut size = 0;
-        for (key, value) in self.group_engine.iter_from(shard_id, last_key)? {
-            let key: Vec<_> = key.into();
-            let value: Vec<_> = value.into();
-            if key == last_key {
-                continue;
+
+        let mut snapshot = self.group_engine.snapshot_from(shard_id, last_key)?;
+        'OUTER: for key_iter in snapshot.iter() {
+            for entry in key_iter {
+                if entry.user_key() == last_key {
+                    continue 'OUTER;
+                }
+                let key: Vec<_> = entry.user_key().to_owned();
+                let value: Vec<_> = match entry.value() {
+                    Some(v) => v.to_owned(),
+                    None => {
+                        // Skip tombstone.
+                        break;
+                    }
+                };
+                size += key.len() + value.len();
+                kvs.push(ShardData {
+                    key,
+                    value,
+                    version: 0,
+                });
             }
-            size += key.len() + value.len();
-            kvs.push(ShardData {
-                key,
-                value,
-                version: 0,
-            });
+
             if size > 64 * 1024 * 1024 {
                 break;
             }

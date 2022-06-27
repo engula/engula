@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     ops::{Deref, DerefMut},
     path::Path,
@@ -54,15 +55,40 @@ where
     collections: Arc<RwLock<HashMap<u64, u64>>>,
 }
 
+/// Traverse the data of the group engine, but don't care about the data format.
 pub struct RawIterator<'a> {
     apply_state: ApplyState,
     descriptor: GroupDesc,
     db_iter: rocksdb::DBIterator<'a>,
 }
 
-pub struct UserDataIterator<'a> {
+pub struct Snapshot<'a> {
     collection_id: u64,
+
+    core: RefCell<SnapshotCore<'a>>,
+}
+
+pub struct SnapshotCore<'a> {
     db_iter: rocksdb::DBIterator<'a>,
+    current_key: Option<Vec<u8>>,
+    cached_entry: Option<MvccEntry>,
+}
+
+/// Traverse the data of a shard in the group engine, analyze and return the data (including
+/// tombstone).
+pub struct UserDataIterator<'a, 'b> {
+    snapshot: &'b Snapshot<'a>,
+}
+
+/// Traverse multi-version of a single key.
+pub struct MvccIterator<'a, 'b> {
+    snapshot: &'b Snapshot<'a>,
+}
+
+pub struct MvccEntry {
+    key: Box<[u8]>,
+    user_key: Vec<u8>,
+    value: Box<[u8]>,
 }
 
 impl GroupEngine {
@@ -213,8 +239,11 @@ impl GroupEngine {
             .expect("shard id to collection id");
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
 
-        let raw_key = keys::raw(collection_id, key);
-        wb.put_cf(&cf_handle, raw_key, value);
+        wb.put_cf(
+            &cf_handle,
+            keys::mvcc_key(collection_id, key, version),
+            values::data(value),
+        );
         Ok(())
     }
 
@@ -235,8 +264,11 @@ impl GroupEngine {
             .collection_id(shard_id)
             .expect("shard id to collection id");
 
-        let raw_key = keys::raw(collection_id, key);
-        wb.delete_cf(&cf_handle, raw_key);
+        wb.put_cf(
+            &cf_handle,
+            keys::mvcc_key(collection_id, key, version),
+            values::tombstone(),
+        );
         Ok(())
     }
 
@@ -256,8 +288,7 @@ impl GroupEngine {
             .collection_id(shard_id)
             .expect("shard id to collection id");
 
-        let raw_key = keys::raw(collection_id, key);
-        wb.delete_cf(&cf_handle, raw_key);
+        wb.delete_cf(&cf_handle, keys::mvcc_key(collection_id, key, version));
         Ok(())
     }
 
@@ -322,7 +353,7 @@ impl GroupEngine {
         Ok(())
     }
 
-    pub fn iter_from(&self, shard_id: u64, from: &[u8]) -> Result<UserDataIterator> {
+    pub fn snapshot_from(&self, shard_id: u64, from: &[u8]) -> Result<Snapshot> {
         use rocksdb::{Direction, IteratorMode, ReadOptions};
 
         let cf_handle = self
@@ -340,7 +371,8 @@ impl GroupEngine {
             opts,
             IteratorMode::From(&key, Direction::Forward),
         );
-        UserDataIterator::new(collection_id, iter)
+        Ok(Snapshot::new(collection_id, iter))
+        // UserDataIterator::new(collection_id, iter)
     }
 
     pub fn raw_iter(&self) -> Result<RawIterator> {
@@ -431,32 +463,136 @@ impl<'a> Iterator for RawIterator<'a> {
     }
 }
 
-impl<'a> UserDataIterator<'a> {
-    fn new(collection_id: u64, db_iter: rocksdb::DBIterator<'a>) -> Result<Self> {
-        Ok(UserDataIterator {
+impl<'a> Snapshot<'a> {
+    fn new(collection_id: u64, db_iter: rocksdb::DBIterator<'a>) -> Self {
+        Snapshot {
             collection_id,
-            db_iter,
-        })
+            core: RefCell::new(SnapshotCore {
+                db_iter,
+                current_key: None,
+                cached_entry: None,
+            }),
+        }
+    }
+
+    pub fn iter<'b>(&'b mut self) -> UserDataIterator<'a, 'b> {
+        UserDataIterator { snapshot: self }
+    }
+
+    fn next_mvcc_iterator<'b>(&'b self) -> Option<MvccIterator<'a, 'b>> {
+        let mut core = self.core.borrow_mut();
+        loop {
+            if let Some(entry) = core.cached_entry.as_ref() {
+                // Skip iterated keys.
+                // TODO(walter) support seek to next user key to skip old versions.
+                if !core.is_current_key(entry.user_key()) {
+                    core.current_key = Some(entry.user_key().to_owned());
+                    return Some(MvccIterator { snapshot: self });
+                }
+            }
+
+            core.next_entry(self.collection_id)?;
+        }
+    }
+
+    fn next_mvcc_entry(&self) -> Option<MvccEntry> {
+        let mut core = self.core.borrow_mut();
+        loop {
+            if let Some(entry) = core.cached_entry.take() {
+                if core.is_current_key(entry.user_key()) {
+                    return Some(entry);
+                } else {
+                    core.cached_entry = Some(entry);
+                    return None;
+                }
+            }
+
+            core.next_entry(self.collection_id)?;
+        }
     }
 }
 
-impl<'a> Iterator for UserDataIterator<'a> {
-    /// User key value pairs.
-    type Item = <rocksdb::DBIterator<'a> as Iterator>::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl<'a> SnapshotCore<'a> {
+    fn next_entry(&mut self, collection_id: u64) -> Option<()> {
         let (key, value) = match self.db_iter.next() {
             Some(v) => v,
             None => return None,
         };
 
         let prefix = &key[..core::mem::size_of::<u64>()];
-        if prefix != self.collection_id.to_le_bytes().as_slice() {
+        if prefix != collection_id.to_le_bytes().as_slice() {
             return None;
         }
 
-        let key = Box::from(key[core::mem::size_of::<u64>()..].to_owned());
-        Some((key, value))
+        self.cached_entry = Some(MvccEntry::new(key, value));
+        Some(())
+    }
+
+    #[inline]
+    fn is_current_key(&self, target_key: &[u8]) -> bool {
+        self.current_key
+            .as_ref()
+            .map(|k| k == target_key)
+            .unwrap_or_default()
+    }
+}
+
+impl<'a, 'b> Iterator for UserDataIterator<'a, 'b> {
+    /// User key value pairs.
+    type Item = MvccIterator<'a, 'b>;
+
+    fn next(&mut self) -> Option<MvccIterator<'a, 'b>> {
+        self.snapshot.next_mvcc_iterator()
+    }
+}
+
+impl<'a, 'b> Iterator for MvccIterator<'a, 'b> {
+    type Item = MvccEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.snapshot.next_mvcc_entry()
+    }
+}
+
+impl MvccEntry {
+    fn new(key: Box<[u8]>, value: Box<[u8]>) -> Self {
+        let user_key = keys::revert_mvcc_key(&key);
+        MvccEntry {
+            key,
+            user_key,
+            value,
+        }
+    }
+
+    pub fn user_key(&self) -> &[u8] {
+        &self.user_key
+    }
+
+    pub fn version(&self) -> u64 {
+        const L: usize = core::mem::size_of::<u64>();
+        let len = self.key.len();
+        let bytes = &self.key[(len - L)..];
+        let mut buf = [0u8; L];
+        buf[..].copy_from_slice(bytes);
+        !u64::from_be_bytes(buf)
+    }
+
+    /// Return value of this `MvccEntry`. `None` is returned if this entry is a tombstone.
+    pub fn value(&self) -> Option<&[u8]> {
+        if self.value[0] == values::TOMBSTONE {
+            None
+        } else {
+            debug_assert_eq!(self.value[0], values::DATA);
+            Some(&self.value[1..])
+        }
+    }
+
+    pub fn is_tombstone(&self) -> bool {
+        self.value[0] == values::TOMBSTONE
+    }
+
+    pub fn is_data(&self) -> bool {
+        self.value[0] == values::DATA
     }
 }
 
@@ -496,6 +632,26 @@ mod keys {
         buf
     }
 
+    pub fn revert_mvcc_key(key: &[u8]) -> Vec<u8> {
+        use std::io::{Cursor, Read};
+
+        const L: usize = core::mem::size_of::<u64>();
+        let len = key.len();
+        debug_assert!(len > 2 * L);
+        let encoded_user_key = &key[L..(len - L)];
+        debug_assert_eq!(encoded_user_key.len() % 9, 0);
+        let num_groups = encoded_user_key.len() / 9;
+        let mut buf = Vec::with_capacity(num_groups * 8);
+        let mut cursor = Cursor::new(encoded_user_key);
+        while !cursor.is_empty() {
+            let mut group = [0u8; 9];
+            let _ = cursor.read(&mut group[..]).unwrap();
+            let num_element = std::cmp::min((group[8] - b'0') as usize, 8);
+            buf.extend_from_slice(&group[..num_element]);
+        }
+        buf
+    }
+
     #[inline]
     pub fn apply_state() -> Vec<u8> {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + APPLY_STATE.len());
@@ -517,6 +673,23 @@ mod keys {
         let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + MIGRATE_META.len());
         buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
         buf.extend_from_slice(MIGRATE_META);
+        buf
+    }
+}
+
+mod values {
+    pub(super) const DATA: u8 = 0;
+    pub(super) const TOMBSTONE: u8 = 1;
+
+    #[inline]
+    pub fn tombstone() -> &'static [u8] {
+        &[TOMBSTONE]
+    }
+
+    pub fn data(v: &[u8]) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(v.len() + 1);
+        buf.push(DATA);
+        buf.extend_from_slice(v);
         buf
     }
 }
@@ -570,10 +743,14 @@ fn next_message<T: prost::Message + Default>(
 
 #[cfg(test)]
 mod tests {
-    use super::keys;
+    use engula_api::server::v1::ShardDesc;
+    use tempdir::TempDir;
+
+    use super::*;
+    use crate::runtime::{Executor, ExecutorOwner};
 
     #[test]
-    fn mvcc_key_test() {
+    fn memory_comparable_format() {
         struct Less {
             left: &'static [u8],
             left_version: u64,
@@ -634,8 +811,8 @@ mod tests {
             },
         ];
         for (idx, t) in tests.iter().enumerate() {
-            let left = keys::mvcc_key(0, &t.left, t.left_version);
-            let right = keys::mvcc_key(0, &t.right, t.right_version);
+            let left = keys::mvcc_key(0, t.left, t.left_version);
+            let right = keys::mvcc_key(0, t.right, t.right_version);
             assert!(
                 left < right,
                 "index {}, left {:?}, right {:?}",
@@ -643,6 +820,167 @@ mod tests {
                 left,
                 right
             );
+        }
+    }
+
+    fn create_engine(executor: Executor, group_id: u64, shard_id: u64) -> GroupEngine {
+        let tmp_dir = TempDir::new("engula").unwrap().into_path();
+        let db_dir = tmp_dir.join("db");
+
+        use crate::bootstrap::open_engine;
+
+        let db = open_engine(db_dir).unwrap();
+        let db = Arc::new(db);
+        let group_engine = executor.block_on(async move {
+            let desc = GroupDesc {
+                id: group_id,
+                ..Default::default()
+            };
+            GroupEngine::create(db.clone(), &desc).await.unwrap();
+            GroupEngine::open(group_id, db).await.unwrap().unwrap()
+        });
+
+        let mut wb = WriteBatch::default();
+        group_engine.set_group_desc(
+            &mut wb,
+            &GroupDesc {
+                id: group_id,
+                shards: vec![ShardDesc {
+                    id: shard_id,
+                    collection_id: 1,
+                    partition: None,
+                }],
+                ..Default::default()
+            },
+        );
+        group_engine.commit(wb, false).unwrap();
+
+        group_engine
+    }
+
+    #[test]
+    fn mvcc_iterator() {
+        struct Payload {
+            key: &'static [u8],
+            version: u64,
+        }
+
+        let payloads = vec![
+            Payload {
+                key: b"123456",
+                version: 1,
+            },
+            Payload {
+                key: b"123456",
+                version: 5,
+            },
+            Payload {
+                key: b"123456",
+                version: 256,
+            },
+            Payload {
+                key: b"123456789",
+                version: 0,
+            },
+        ];
+
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let group_engine = create_engine(executor, 1, 1);
+        let mut wb = WriteBatch::default();
+        for payload in &payloads {
+            group_engine
+                .put(&mut wb, 1, payload.key, b"", payload.version)
+                .unwrap();
+        }
+        group_engine.commit(wb, false).unwrap();
+
+        let mut snapshot = group_engine.snapshot_from(1, &[]).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        {
+            // key 123456
+            let mut mvcc_iter = user_data_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456");
+            assert_eq!(entry.version(), 256);
+
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456");
+            assert_eq!(entry.version(), 5);
+
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456");
+            assert_eq!(entry.version(), 1);
+
+            assert!(mvcc_iter.next().is_none());
+        }
+
+        {
+            // key 123456789
+            let mut mvcc_iter = user_data_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456789");
+            assert_eq!(entry.version(), 0);
+
+            assert!(mvcc_iter.next().is_none());
+        }
+    }
+
+    #[test]
+    fn user_key_iterator() {
+        struct Payload {
+            key: &'static [u8],
+            version: u64,
+        }
+
+        let payloads = vec![
+            Payload {
+                key: b"123456",
+                version: 1,
+            },
+            Payload {
+                key: b"123456",
+                version: 5,
+            },
+            Payload {
+                key: b"123456",
+                version: 256,
+            },
+            Payload {
+                key: b"123456789",
+                version: 0,
+            },
+        ];
+
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let group_engine = create_engine(executor, 1, 1);
+        let mut wb = WriteBatch::default();
+        for payload in &payloads {
+            group_engine
+                .put(&mut wb, 1, payload.key, b"", payload.version)
+                .unwrap();
+        }
+        group_engine.commit(wb, false).unwrap();
+
+        let mut snapshot = group_engine.snapshot_from(1, &[]).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        {
+            // key 123456
+            let mut mvcc_iter = user_data_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456");
+            assert_eq!(entry.version(), 256);
+        }
+
+        {
+            // key 123456789, user_data_iter should skip the iterated keys.
+            let mut mvcc_iter = user_data_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap();
+            assert_eq!(entry.user_key(), b"123456789");
+            assert_eq!(entry.version(), 0);
+
+            assert!(mvcc_iter.next().is_none());
         }
     }
 }
