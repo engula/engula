@@ -37,11 +37,7 @@ use tracing::{info, warn};
 
 pub(crate) use self::schema::*;
 pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
-use self::{
-    allocator::{GroupAction, ReplicaAction, SysAllocSource},
-    schema::ReplicaNodes,
-    store::RootStore,
-};
+use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
 use crate::{
     bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP},
     node::{Node, Replica, ReplicaRouteTable},
@@ -158,7 +154,7 @@ impl Root {
         root_replica: Arc<Replica>,
         bootstrapped: &mut bool,
     ) -> Result<()> {
-        let store = Arc::new(RootStore::new(root_replica));
+        let store = Arc::new(RootStore::new(root_replica.to_owned()));
         let mut schema = Schema::new(store.clone());
 
         // Only when the program is initialized is it checked for bootstrap, after which the
@@ -179,12 +175,22 @@ impl Root {
 
         info!("step root service leader");
 
-        // TODO(zojw): refresh owner, heartbeat node, rebalance
         loop {
-            if let Err(err) = self.loop_once().await {
-                warn!("root loop: {}", err);
+            if root_replica.to_owned().on_leader(true).await.is_err() {
+                info!("current root node drop leader");
                 break;
             }
+
+            if let Err(err) = self.send_heartbeat(schema.to_owned()).await {
+                warn!("send heartbeat fatal: {}", err);
+                break;
+            }
+
+            if let Err(err) = self.reconcile_group().await {
+                warn!("reconcile group fatal: {}", err);
+                break;
+            }
+
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
 
@@ -194,25 +200,6 @@ impl Root {
             *core = None;
         }
 
-        Ok(())
-    }
-
-    async fn loop_once(&self) -> Result<()> {
-        let group_action = self.alloc.compute_group_action().await?;
-        match group_action {
-            GroupAction::Noop => {}
-            GroupAction::Add(cnt) => self.create_groups(cnt).await?,
-            GroupAction::Remove(_) => todo!(),
-        }
-
-        let replica_actions = self.alloc.compute_replica_action().await?;
-        for replica_action in replica_actions {
-            match replica_action {
-                ReplicaAction::Noop => {}
-                ReplicaAction::Migrate(_action) => { // TODO:
-                }
-            }
-        }
         Ok(())
     }
 }
@@ -254,7 +241,7 @@ impl Root {
         if db.is_none() {
             return Err(Error::DatabaseNotFound(database));
         }
-        let group_id = self.alloc.place_group_for_shard().unwrap().id;
+        let group_id = self.alloc.place_group_for_shard().await?.unwrap().id;
         let desc = schema
             .create_collection(
                 CollectionDesc {
@@ -339,6 +326,9 @@ impl Root {
     }
 
     pub async fn report(&self, updates: Vec<GroupUpdates>) -> Result<()> {
+        // mock report doesn't work.
+        // return Ok(());
+
         let schema = self.schema()?;
         let mut update_events = Vec::new();
         let mut changed_group_states = Vec::new();
@@ -405,13 +395,18 @@ impl Root {
             capacity: Some(GroupCapacity { shard_count: 0 }),
         };
         for n in &nodes {
-            let node_client = NodeClient::connect(n.addr.to_owned()).await?;
             let replica_id = node_to_replica.get(&n.id).unwrap();
-            node_client
-                .create_replica(replica_id.to_owned(), group_tmpl.clone())
-                .await?
+            Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await?
         }
         // TODO(zojw): rety and cancel all logic.
+        Ok(())
+    }
+
+    async fn try_create_replica(addr: &str, replica_id: &u64, group: GroupDesc) -> Result<()> {
+        let node_client = NodeClient::connect(addr.to_owned()).await?;
+        node_client
+            .create_replica(replica_id.to_owned(), group)
+            .await?;
         Ok(())
     }
 }

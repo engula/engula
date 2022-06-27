@@ -12,9 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_api::server::v1::{node_client::NodeClient, *};
+use std::collections::HashSet;
 
-use super::{Root, Schema};
+use engula_api::server::v1::{
+    watch_response::{update_event, UpdateEvent},
+    *,
+};
+use engula_client::NodeClient;
+use tracing::warn;
+
+use super::{
+    allocator::{GroupAction, ReplicaAction},
+    Root, Schema,
+};
 use crate::Result;
 
 impl Root {
@@ -33,28 +43,159 @@ impl Root {
                     roots: roots.into(),
                 })),
             });
+            piggybacks.push(PiggybackRequest {
+                info: Some(piggyback_request::Info::CollectGroupDetail(
+                    CollectGroupDetailRequest { groups: vec![] },
+                )),
+            });
+            piggybacks.push(PiggybackRequest {
+                info: Some(piggyback_request::Info::CollectStats(CollectStatsRequest {
+                    field_mask: None,
+                })),
+            });
         }
 
         // TODO: collect stats and group detail.
 
         for n in nodes {
-            let mut client = NodeClient::connect(n.addr).await?;
-            let res = client
-                .root_heartbeat(HeartbeatRequest {
-                    piggybacks: piggybacks.to_owned(),
-                    timestamp: 0, // TODO: use hlc
-                })
-                .await?;
+            match Self::try_send_heartbeat(&n.addr, &piggybacks).await {
+                Ok(res) => {
+                    for resp in res.piggybacks {
+                        match resp.info.unwrap() {
+                            piggyback_response::Info::SyncRoot(_) => {}
+                            piggyback_response::Info::CollectStats(resp) => {
+                                self.handle_collect_stats(&schema, resp, n.id).await?
+                            }
+                            piggyback_response::Info::CollectGroupDetail(resp) => {
+                                self.handle_group_detail(&schema, resp).await?
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!("heartbeat to node {} address {}: {}", n.id, n.addr, err);
+                }
+            }
+        }
+        Ok(())
+    }
 
-            for resp in res.into_inner().piggybacks {
-                match resp.info.unwrap() {
-                    piggyback_response::Info::SyncRoot(_) => {}
-                    piggyback_response::Info::CollectStats(_) => {
-                        todo!()
+    async fn try_send_heartbeat(
+        addr: &str,
+        piggybacks: &[PiggybackRequest],
+    ) -> Result<HeartbeatResponse> {
+        let client = NodeClient::connect(addr.to_owned()).await?;
+        let resp = client
+            .root_heartbeat(HeartbeatRequest {
+                piggybacks: piggybacks.to_owned(),
+                timestamp: 0, // TODO: use hlc
+            })
+            .await?;
+        Ok(resp)
+    }
+
+    async fn handle_collect_stats(
+        &self,
+        schema: &Schema,
+        resp: CollectStatsResponse,
+        node_id: u64,
+    ) -> Result<()> {
+        if let Some(ns) = resp.node_stats {
+            if let Some(mut node) = schema.get_node(node_id).await? {
+                let mut cap = node.capacity.take().unwrap();
+                cap.replica_count = ns.group_count as u64;
+                cap.leader_count = ns.leader_count as u64;
+                node.capacity = Some(cap);
+                schema.update_node(node).await?;
+            }
+        }
+
+        for group_state in &resp.group_stats {
+            if let Some(mut group) = schema.get_group(group_state.group_id).await? {
+                let cap = if let Some(mut cap) = group.capacity.take() {
+                    cap.shard_count = group_state.shard_count;
+                    cap
+                } else {
+                    GroupCapacity {
+                        shard_count: group_state.shard_count,
                     }
-                    piggyback_response::Info::CollectGroupDetail(_) => {
-                        todo!()
-                    }
+                };
+                group.capacity = Some(cap);
+                schema.update_group_replica(Some(group), None).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_group_detail(
+        &self,
+        schema: &Schema,
+        resp: CollectGroupDetailResponse,
+    ) -> Result<()> {
+        let mut update_events = Vec::new();
+
+        for desc in &resp.group_descs {
+            if let Some(ex) = schema.get_group(desc.id).await? {
+                if desc.epoch <= ex.epoch {
+                    continue;
+                }
+            }
+            schema
+                .update_group_replica(Some(desc.to_owned()), None)
+                .await?;
+            update_events.push(UpdateEvent {
+                event: Some(update_event::Event::Group(desc.to_owned())),
+            })
+        }
+
+        let mut changed_group_states = HashSet::new();
+        for state in &resp.replica_states {
+            if let Some(ex) = schema
+                .get_replica_state(state.group_id, state.replica_id)
+                .await?
+            {
+                if state.term <= ex.term {
+                    continue;
+                }
+            }
+            schema
+                .update_group_replica(None, Some(state.to_owned()))
+                .await?;
+            changed_group_states.insert(state.group_id);
+        }
+
+        let mut states = schema.list_group_state().await?; // TODO: fix poor performance.
+        states.retain(|s| changed_group_states.contains(&s.group_id));
+        for state in states {
+            update_events.push(UpdateEvent {
+                event: Some(update_event::Event::GroupState(state)),
+            })
+        }
+
+        if !update_events.is_empty() {
+            self.watcher_hub().notify_updates(update_events).await;
+        }
+
+        Ok(())
+    }
+}
+
+impl Root {
+    #[allow(dead_code)]
+    pub async fn reconcile_group(&self) -> Result<()> {
+        let group_action = self.alloc.compute_group_action().await?;
+        match group_action {
+            GroupAction::Noop => {}
+            GroupAction::Add(cnt) => self.create_groups(cnt).await?,
+            GroupAction::Remove(_) => todo!(),
+        }
+
+        let replica_actions = self.alloc.compute_replica_action().await?;
+        for replica_action in replica_actions {
+            match replica_action {
+                ReplicaAction::Noop => {}
+                ReplicaAction::Migrate(_action) => { // TODO:
                 }
             }
         }

@@ -151,18 +151,19 @@ impl Schema {
 
         // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
         // handle hearbeat resp).
-        let shards = self
+        let _shards = self
             .create_collection_shard(desc.to_owned(), group_id)
             .await?;
         let mut builder = PutBatchBuilder::default();
 
         builder.put_collection(desc.to_owned());
-        for (group_id, shard) in shards {
-            let mut group = self.get_group(group_id).await?.unwrap();
-            group.shards.extend_from_slice(&shard);
-            builder.put_group(group); // TODO: this info also can be async update via root::report()
-                                      // if caller accept async update, we can remove this update.
-        }
+
+        // for (group_id, shard) in shards {
+        //     let mut group = self.get_group(group_id).await?.unwrap();
+        //     group.shards.extend_from_slice(&shard);
+        //     builder.put_group(group); // TODO: this info also can be async update via
+        // root::report()                               // if caller accept async update, we
+        // can remove this update. }
 
         self.batch_write(builder.build()).await?;
         Ok(desc)
@@ -271,6 +272,12 @@ impl Schema {
             .await
     }
 
+    pub async fn update_node(&self, desc: NodeDesc) -> Result<()> {
+        self.batch_write(PutBatchBuilder::default().put_node(desc.to_owned()).build())
+            .await?;
+        Ok(())
+    }
+
     pub async fn list_node(&self) -> Result<Vec<NodeDesc>> {
         let vals = self.list(&SYSTEM_NODE_COLLECTION_ID).await?;
         let mut nodes = Vec::new();
@@ -327,6 +334,25 @@ impl Schema {
             );
         }
         Ok(groups)
+    }
+
+    pub async fn get_replica_state(
+        &self,
+        group_id: u64,
+        replica_id: u64,
+    ) -> Result<Option<ReplicaState>> {
+        let key = replica_key(group_id, replica_id);
+        let val = self.get(&SYSTEM_REPLICA_STATE_COLLECTION_ID, &key).await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let state = ReplicaState::decode(&*val.unwrap()).map_err(|_| {
+            Error::InvalidData(format!(
+                "replica_state: group: {}, replica: {}",
+                group_id, replica_id
+            ))
+        })?;
+        Ok(Some(state))
     }
 
     pub async fn list_group_state(&self) -> Result<Vec<GroupState>> {

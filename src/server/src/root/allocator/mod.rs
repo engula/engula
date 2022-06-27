@@ -120,12 +120,15 @@ impl<T: AllocSource> Allocator<T> {
     }
 
     /// Find a group to place shard.
-    pub fn place_group_for_shard(&self /* , _shard_usage: &ShardDesc */) -> Option<GroupDesc> {
+    pub async fn place_group_for_shard(
+        &self, /* , _shard_usage: &ShardDesc */
+    ) -> Result<Option<GroupDesc>> {
+        self.alloc_source.refresh_all().await?;
         let mut groups = self.alloc_source.groups();
         if groups.is_empty() {
-            return None;
+            return Ok(None);
         }
-        if groups.iter().any(|g| g.capacity.is_none()) {
+        Ok(if groups.iter().any(|g| g.capacity.is_none()) {
             groups
                 .choose(&mut rand::thread_rng())
                 .map(ToOwned::to_owned)
@@ -138,7 +141,7 @@ impl<T: AllocSource> Allocator<T> {
                     .cmp(&g2.capacity.as_ref().unwrap().shard_count)
             });
             groups.get(0).map(ToOwned::to_owned)
-        }
+        })
     }
 }
 
