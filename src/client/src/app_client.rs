@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use engula_api::{server::v1::*, v1::*};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time};
 
 use crate::{
     AdminRequestBuilder, AdminResponseExtractor, NodeClient, RequestBatchBuilder, RootClient,
@@ -138,9 +138,28 @@ pub struct Collection {
 
 impl Collection {
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
+        let mut retry_cnt = 5;
+        let retry_interval = Duration::from_millis(1);
+
+        loop {
+            match self.put_inner(&key, &value).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if retry_cnt > 0 {
+                        retry_cnt -= 1;
+                        time::sleep(retry_interval).await;
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn put_inner(&self, key: &Vec<u8>, value: &[u8]) -> Result<(), crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = router.find_shard(self.co_desc.clone(), &key)?;
+        let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group(shard.id)?;
         let epoch = group.epoch.ok_or_else(|| {
             crate::Error::NotFound("epoch".to_string(), format!("{:?}", key.clone()))
@@ -164,7 +183,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .put(group.id, epoch, shard.id, key, value)
+                            .put(group.id, epoch, shard.id, key.clone(), value.to_vec())
                             .build(),
                     )
                     .await?
@@ -173,7 +192,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .put(group.id, epoch, shard.id, key, value)
+                            .put(group.id, epoch, shard.id, key.clone(), value.to_vec())
                             .build(),
                     )
                     .await?
@@ -190,9 +209,28 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
+        let mut retry_cnt = 5;
+        let retry_interval = Duration::from_millis(1);
+
+        loop {
+            match self.get_inner(&key).await {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    if retry_cnt > 0 {
+                        retry_cnt -= 1;
+                        time::sleep(retry_interval).await;
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn get_inner(&self, key: &Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = router.find_shard(self.co_desc.clone(), &key)?;
+        let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group(shard.id)?;
         let epoch = group.epoch.ok_or_else(|| {
             crate::Error::NotFound("epoch".to_string(), format!("{:?}", key.clone()))
@@ -214,7 +252,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .get(group.id, epoch, shard.id, key)
+                            .get(group.id, epoch, shard.id, key.clone())
                             .build(),
                     )
                     .await?
@@ -223,7 +261,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .get(group.id, epoch, shard.id, key)
+                            .get(group.id, epoch, shard.id, key.clone())
                             .build(),
                     )
                     .await?
