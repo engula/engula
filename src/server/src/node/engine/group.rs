@@ -637,7 +637,7 @@ impl SnapshotRange {
         match self {
             SnapshotRange::Target { target_key } if target_key == key => true,
             SnapshotRange::Prefix { prefix } if key.starts_with(prefix) => true,
-            SnapshotRange::Range { start, end } if shard::in_range(&start, &end, key) => true,
+            SnapshotRange::Range { start, end } if shard::in_range(start, end, key) => true,
             _ => false,
         }
     }
@@ -1153,7 +1153,7 @@ mod tests {
     fn iterate_in_range() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
-        let group_engine = create_engine(executor.clone(), 1, 1);
+        let group_engine = create_engine(executor, 1, 1);
         let mut wb = WriteBatch::default();
         group_engine.put(&mut wb, 1, b"a", b"", 123).unwrap();
         group_engine.tombstone(&mut wb, 1, b"a", 124).unwrap();

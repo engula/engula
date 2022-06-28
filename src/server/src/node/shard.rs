@@ -24,7 +24,7 @@ pub fn belong_to(shard: &ShardDesc, key: &[u8]) -> bool {
             // TODO(walter) compute hash slot.
             false
         }
-        Partition::Range(RangePartition { start, end }) => in_range(&start, &end, key),
+        Partition::Range(RangePartition { start, end }) => in_range(start, end, key),
     }
 }
 
