@@ -751,10 +751,8 @@ impl Schema {
     }
 
     async fn list(&self, collection_id: &u64) -> Result<Vec<Vec<u8>>> {
-        let shard_id = Self::system_shard_id(collection_id);
-        self.store
-            .list(shard_id, collection_id.to_le_bytes().as_slice())
-            .await
+        let shard_id = Self::system_shard_id(collection_id); // System collection only have one shard.
+        self.store.list(shard_id, &[]).await
     }
 
     async fn next_id(&self, id_type: &str) -> Result<u64> {
