@@ -26,10 +26,7 @@ use std::{
 };
 
 use engula_api::{
-    server::v1::{
-        report_request::GroupUpdates, watch_response::*, GroupCapacity, GroupDesc, NodeCapacity,
-        NodeDesc, ReplicaDesc, ReplicaRole,
-    },
+    server::v1::{report_request::GroupUpdates, watch_response::*, *},
     v1::{CollectionDesc, DatabaseDesc},
 };
 use engula_client::NodeClient;
@@ -392,7 +389,6 @@ impl Root {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas,
-            capacity: Some(GroupCapacity { shard_count: 0 }),
         };
         for n in &nodes {
             let replica_id = node_to_replica.get(&n.id).unwrap();

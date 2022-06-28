@@ -109,22 +109,6 @@ impl Root {
                 schema.update_node(node).await?;
             }
         }
-
-        for group_state in &resp.group_stats {
-            if let Some(mut group) = schema.get_group(group_state.group_id).await? {
-                let cap = if let Some(mut cap) = group.capacity.take() {
-                    cap.shard_count = group_state.shard_count;
-                    cap
-                } else {
-                    GroupCapacity {
-                        shard_count: group_state.shard_count,
-                    }
-                };
-                group.capacity = Some(cap);
-                schema.update_group_replica(Some(group), None).await?;
-            }
-        }
-
         Ok(())
     }
 

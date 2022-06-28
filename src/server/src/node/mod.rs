@@ -478,7 +478,9 @@ impl Node {
                 }
 
                 let state = replica.replica_state();
-                descriptors.push(replica.descriptor());
+                if state.role == RaftRole::Leader.into() {
+                    descriptors.push(replica.descriptor());
+                }
                 states.push(state);
             }
         }
@@ -551,7 +553,6 @@ mod tests {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: None,
         };
 
         executor.block_on(async {
@@ -581,7 +582,6 @@ mod tests {
                 node_id: 1,
                 role: ReplicaRole::Voter.into(),
             }],
-            capacity: None,
         };
 
         executor.block_on(async {
@@ -607,7 +607,6 @@ mod tests {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: None,
         };
 
         executor.block_on(async {

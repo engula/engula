@@ -575,7 +575,6 @@ impl Schema {
             }),
         });
 
-        let shard_count = shards.len() as u64;
         batch.put_group(GroupDesc {
             id: ROOT_GROUP_ID,
             epoch: INITIAL_EPOCH,
@@ -585,7 +584,6 @@ impl Schema {
                 role: ReplicaRole::Voter.into(),
             }],
             shards,
-            capacity: Some(GroupCapacity { shard_count }),
         });
 
         batch.put_replica_state(ReplicaState {

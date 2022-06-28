@@ -17,7 +17,7 @@ use std::{
     sync::Mutex,
 };
 
-use engula_api::server::v1::{GroupCapacity, GroupDesc, NodeCapacity, ReplicaRole};
+use engula_api::server::v1::{GroupDesc, NodeCapacity, ReplicaRole, ShardDesc};
 
 use super::*;
 use crate::{bootstrap::REPLICA_PER_GROUP, runtime::ExecutorOwner};
@@ -40,7 +40,6 @@ fn sim_boostrap_join_node_balance() {
                 node_id: 1,
                 role: ReplicaRole::Voter.into(),
             }],
-            capacity: Some(GroupCapacity::default()),
         }]);
         p.set_nodes(vec![NodeDesc {
             id: 1,
@@ -103,7 +102,6 @@ fn sim_boostrap_join_node_balance() {
                     role: ReplicaRole::Voter.into(),
                 },
             ],
-            capacity: Some(GroupCapacity::default()),
         }]);
         p.display();
 
@@ -139,7 +137,6 @@ fn sim_boostrap_join_node_balance() {
                         epoch: 0,
                         shards: vec![],
                         replicas,
-                        capacity: Some(GroupCapacity::default()),
                     });
                     p.set_groups(groups);
                     group_id_gen += 1;
@@ -198,7 +195,6 @@ fn sim_boostrap_join_node_balance() {
                         epoch: 0,
                         shards: vec![],
                         replicas,
-                        capacity: Some(GroupCapacity::default()),
                     });
                     p.set_groups(groups);
                     group_id_gen += 1;
@@ -252,7 +248,7 @@ fn sim_boostrap_join_node_balance() {
             println!(
                 "assign shard to group {}, prev_shard_cnt: {}",
                 group.id,
-                group.capacity.as_ref().unwrap().shard_count
+                group.shards.len()
             );
         }
 
@@ -363,9 +359,7 @@ impl MockInfoProvider {
         let mut groups = self.groups();
         for group in groups.iter_mut() {
             if group.id == group_id {
-                let mut cap = group.capacity.take().unwrap();
-                cap.shard_count += 1;
-                group.capacity = Some(cap);
+                group.shards.push(ShardDesc::default());
             }
         }
         self.set_groups(groups);
