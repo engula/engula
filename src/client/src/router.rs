@@ -65,13 +65,19 @@ impl Router {
         Ok(Self { root_client, state })
     }
 
-    pub fn find_shard(&self, desc: CollectionDesc, key: &Vec<u8>) -> Option<ShardDesc> {
+    pub fn find_shard(
+        &self,
+        desc: CollectionDesc,
+        key: &Vec<u8>,
+    ) -> Result<ShardDesc, crate::Error> {
         if let Some(collection_desc::Partition::Hash(_)) = desc.partition {
             unimplemented!("Hash partition is not implemented yet.")
         }
 
         let state = self.state.lock().unwrap();
-        let shards = state.co_shards_lookup.get(&desc.id)?;
+        let shards = state.co_shards_lookup.get(&desc.id).ok_or_else(|| {
+            crate::Error::NotFound("shard".to_string(), format!("{:?}", key.clone()))
+        })?;
         for shard in shards {
             if let Some(shard_desc::Partition::Range(shard_desc::RangePartition { start, end })) =
                 shard.partition.clone()
@@ -82,24 +88,30 @@ impl Router {
                 if (&end < key) || (end.is_empty())
                 /* end = vec![] means MAX */
                 {
-                    return Some(shard.clone());
+                    return Ok(shard.clone());
                 }
             }
         }
-        None
+        Err(crate::Error::NotFound(
+            "shard".to_string(),
+            format!("{:?}", key.clone()),
+        ))
     }
 
-    pub fn find_group(&self, shard: u64) -> Option<RouterGroupState> {
+    pub fn find_group(&self, shard: u64) -> Result<RouterGroupState, crate::Error> {
         let state = self.state.lock().unwrap();
-        let group_id = state.shard_group_lookup.get(&shard)?;
-        let group = state.group_id_lookup.get(group_id)?;
-        Some(group.clone())
+        let group = state
+            .shard_group_lookup
+            .get(&shard)
+            .and_then(|id| state.group_id_lookup.get(id))
+            .cloned();
+        group.ok_or_else(|| crate::Error::NotFound("group".to_string(), format!("{:?}", shard)))
     }
 
-    pub fn find_node_addr(&self, id: u64) -> Option<String> {
+    pub fn find_node_addr(&self, id: u64) -> Result<String, crate::Error> {
         let state = self.state.lock().unwrap();
-        let addr = state.node_id_lookup.get(&id)?;
-        Some(addr.clone())
+        let addr = state.node_id_lookup.get(&id).cloned();
+        addr.ok_or_else(|| crate::Error::NotFound("node_addr".to_string(), format!("{:?}", id)))
     }
 }
 

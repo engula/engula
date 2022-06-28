@@ -27,7 +27,7 @@ async fn main() -> Result<(), Error> {
     let co = db.create_collection("test_co".to_string()).await?;
 
     // wait for watch events populated
-    time::sleep(Duration::from_secs(5)).await;
+    time::sleep(Duration::from_secs(1)).await;
 
     let k = "book_name".as_bytes().to_vec();
     let v = "rust_in_actions".as_bytes().to_vec();

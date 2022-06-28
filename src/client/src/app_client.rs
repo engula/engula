@@ -140,63 +140,25 @@ impl Collection {
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = match router.find_shard(self.co_desc.clone(), &key) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "shard".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(shard) => shard,
-        };
-        let group = match router.find_group(shard.id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "group".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(group) => group,
-        };
-        let epoch = match group.epoch {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "epoch".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(epoch) => epoch,
-        };
-        let leader_id = match group.leader_id {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "leader_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(leader_id) => leader_id,
-        };
-        let node_id = match group.replicas.get(&leader_id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "leader_node_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(desc) => desc.node_id,
-        };
+        let shard = router.find_shard(self.co_desc.clone(), &key)?;
+        let group = router.find_group(shard.id)?;
+        let epoch = group.epoch.ok_or_else(|| {
+            crate::Error::NotFound("epoch".to_string(), format!("{:?}", key.clone()))
+        })?;
+        let leader_id = group.leader_id.ok_or_else(|| {
+            crate::Error::NotFound("leader_id".to_string(), format!("{:?}", key.clone()))
+        })?;
+        let node_id = group
+            .replicas
+            .get(&leader_id)
+            .map(|desc| desc.node_id)
+            .ok_or_else(|| {
+                crate::Error::NotFound("leader_node_id".to_string(), format!("{:?}", key.clone()))
+            })?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
-                let addr = match router.find_node_addr(node_id) {
-                    None => {
-                        return Err(crate::Error::NotFound(
-                            "node_addr".to_string(),
-                            format!("{:?}", key.clone()),
-                        ));
-                    }
-                    Some(addr) => addr,
-                };
+                let addr = router.find_node_addr(node_id)?;
                 let client = NodeClient::connect(addr).await?;
                 inner.node_clients.insert(node_id, client.clone());
                 client
@@ -230,54 +192,23 @@ impl Collection {
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = match router.find_shard(self.co_desc.clone(), &key) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "shard".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(shard) => shard,
-        };
-        let group = match router.find_group(shard.id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "group".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(group) => group,
-        };
-        let epoch = match group.epoch {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "epoch".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(epoch) => epoch,
-        };
-        let node_id = match group.replicas.values().next() {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "node_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(desc) => desc.node_id,
-        };
+        let shard = router.find_shard(self.co_desc.clone(), &key)?;
+        let group = router.find_group(shard.id)?;
+        let epoch = group.epoch.ok_or_else(|| {
+            crate::Error::NotFound("epoch".to_string(), format!("{:?}", key.clone()))
+        })?;
+        let node_id = group
+            .replicas
+            .values()
+            .next()
+            .map(|desc| desc.node_id)
+            .ok_or_else(|| {
+                crate::Error::NotFound("node_id".to_string(), format!("{:?}", key.clone()))
+            })?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
-                let addr = match router.find_node_addr(node_id) {
-                    None => {
-                        return Err(crate::Error::NotFound(
-                            "node_addr".to_string(),
-                            format!("{:?}", key.clone()),
-                        ));
-                    }
-                    Some(addr) => addr,
-                };
+                let addr = router.find_node_addr(node_id)?;
                 let client = NodeClient::connect(addr).await?;
                 inner.node_clients.insert(node_id, client.clone());
                 client
