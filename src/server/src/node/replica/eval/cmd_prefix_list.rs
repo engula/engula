@@ -14,7 +14,10 @@
 
 use engula_api::server::v1::{ShardPrefixListRequest, ShardPrefixListResponse};
 
-use crate::{node::engine::GroupEngine, Result};
+use crate::{
+    node::engine::{GroupEngine, SnapshotMode},
+    Result,
+};
 
 /// List the key-value pairs of the specified key prefix.
 pub async fn prefix_list(
@@ -23,11 +26,15 @@ pub async fn prefix_list(
 ) -> Result<ShardPrefixListResponse> {
     // TODO(walter) shall I support migrating?
     let prefix = &req.prefix;
+    let snapshot_mode = SnapshotMode::Prefix { key: prefix };
+    let mut snapshot = engine.snapshot(req.shard_id, snapshot_mode)?;
     let mut values = Vec::new();
-    let iter = engine.raw_iter()?; // TODO: use right iter_from
-    for (key, value) in iter {
-        if key.starts_with(prefix) {
-            values.push(value.to_vec());
+    for mut mvcc_iter in snapshot.iter() {
+        if let Some(value) = mvcc_iter
+            .next()
+            .and_then(|e| e.value().map(ToOwned::to_owned))
+        {
+            values.push(value);
         }
     }
     Ok(ShardPrefixListResponse { values })

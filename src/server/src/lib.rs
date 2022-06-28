@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![feature(cursor_remaining)]
 #![feature(drain_filter)]
 #![feature(result_into_ok_or_err)]
 #![feature(path_try_exists)]

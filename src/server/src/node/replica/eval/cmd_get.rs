@@ -37,6 +37,7 @@ pub async fn get(
                 vec![ShardData {
                     key: get.key.clone(),
                     value,
+                    version: super::MIGRATING_KEY_VERSION,
                 }]
             } else {
                 Vec::default()

@@ -29,7 +29,11 @@ use engula_api::{
 use tracing::info;
 
 use self::fsm::{DescObserver, GroupStateMachine};
-use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
+use super::{
+    engine::{GroupEngine, SnapshotMode},
+    job::StateChannel,
+    migrate::MigrateController,
+};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
@@ -225,14 +229,38 @@ impl Replica {
 
         let mut kvs = vec![];
         let mut size = 0;
-        for (key, value) in self.group_engine.iter_from(shard_id, last_key)? {
-            let key: Vec<_> = key.into();
-            let value: Vec<_> = value.into();
-            if key == last_key {
-                continue;
+
+        let snapshot_mode = SnapshotMode::Start {
+            start_key: if last_key.is_empty() {
+                None
+            } else {
+                Some(last_key)
+            },
+        };
+        let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
+        for mut key_iter in snapshot.iter() {
+            // NOTICE:  Only migrate first version.
+            if let Some(entry) = key_iter.next() {
+                if entry.user_key() == last_key {
+                    continue;
+                }
+                let key: Vec<_> = entry.user_key().to_owned();
+                let value: Vec<_> = match entry.value() {
+                    Some(v) => v.to_owned(),
+                    None => {
+                        // Skip tombstone.
+                        continue;
+                    }
+                };
+                size += key.len() + value.len();
+                kvs.push(ShardData {
+                    key,
+                    value,
+                    version: self::eval::MIGRATING_KEY_VERSION,
+                });
             }
-            size += key.len() + value.len();
-            kvs.push(ShardData { key, value });
+
+            // TODO(walter) magic value
             if size > 64 * 1024 * 1024 {
                 break;
             }
@@ -254,7 +282,7 @@ impl Replica {
         let mut wb = WriteBatch::default();
         for data in &chunk.data {
             self.group_engine
-                .put(&mut wb, shard_id, &data.key, &data.value)?;
+                .put(&mut wb, shard_id, &data.key, &data.value, data.version)?;
         }
 
         let sync_op = if !forwarded {
@@ -272,6 +300,32 @@ impl Replica {
                 data: wb.data().to_owned(),
             }),
             op: sync_op,
+        };
+        self.raft_node.clone().propose(eval_result).await??;
+
+        Ok(())
+    }
+
+    pub async fn delete_chunks(&self, shard_id: u64, keys: &[(Vec<u8>, u64)]) -> Result<()> {
+        use crate::node::engine::WriteBatch;
+
+        if keys.is_empty() {
+            return Ok(());
+        }
+
+        // TODO(walter) check request epoch and shard id.
+        self.check_leader_early()?;
+
+        let mut wb = WriteBatch::default();
+        for (key, version) in keys {
+            self.group_engine.delete(&mut wb, shard_id, key, *version)?;
+        }
+
+        let eval_result = EvalResult {
+            batch: Some(WriteBatchRep {
+                data: wb.data().to_owned(),
+            }),
+            op: None,
         };
         self.raft_node.clone().propose(eval_result).await??;
 
