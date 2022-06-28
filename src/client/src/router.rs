@@ -65,27 +65,24 @@ impl Router {
         Ok(Self { root_client, state })
     }
 
-    pub fn find_shard(
-        &self,
-        desc: CollectionDesc,
-        key: &Vec<u8>,
-    ) -> Result<ShardDesc, crate::Error> {
+    pub fn find_shard(&self, desc: CollectionDesc, key: &[u8]) -> Result<ShardDesc, crate::Error> {
         if let Some(collection_desc::Partition::Hash(_)) = desc.partition {
             unimplemented!("Hash partition is not implemented yet.")
         }
 
         let state = self.state.lock().unwrap();
-        let shards = state.co_shards_lookup.get(&desc.id).ok_or_else(|| {
-            crate::Error::NotFound("shard".to_string(), format!("{:?}", key.clone()))
-        })?;
+        let shards = state
+            .co_shards_lookup
+            .get(&desc.id)
+            .ok_or_else(|| crate::Error::NotFound("shard".to_string(), format!("{:?}", key)))?;
         for shard in shards {
             if let Some(shard_desc::Partition::Range(shard_desc::RangePartition { start, end })) =
                 shard.partition.clone()
             {
-                if &start > key {
+                if start.as_slice() > key {
                     continue;
                 }
-                if (&end < key) || (end.is_empty())
+                if (end.as_slice() < key) || (end.is_empty())
                 /* end = vec![] means MAX */
                 {
                     return Ok(shard.clone());
@@ -94,7 +91,7 @@ impl Router {
         }
         Err(crate::Error::NotFound(
             "shard".to_string(),
-            format!("{:?}", key.clone()),
+            format!("{:?}", key),
         ))
     }
 
