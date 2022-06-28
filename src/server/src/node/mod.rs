@@ -18,6 +18,7 @@ pub mod migrate;
 pub mod replica;
 pub mod resolver;
 pub mod route_table;
+pub mod shard;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
