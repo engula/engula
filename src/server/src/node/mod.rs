@@ -478,9 +478,7 @@ impl Node {
                 }
 
                 let state = replica.replica_state();
-                if state.role == RaftRole::Leader.into() {
-                    descriptors.push(replica.descriptor());
-                }
+                descriptors.push(replica.descriptor());
                 states.push(state);
             }
         }

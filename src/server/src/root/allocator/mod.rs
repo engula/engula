@@ -65,7 +65,7 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_group_action(&self) -> Result<GroupAction> {
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() <= self.replicas_per_group {
+        if self.alloc_source.nodes().len() < self.replicas_per_group {
             // group alloctor start work after node_count > replicas_per_group.
             return Ok(GroupAction::Noop);
         }
