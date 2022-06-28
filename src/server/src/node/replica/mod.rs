@@ -26,9 +26,10 @@ use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
+use futures::channel::mpsc;
 use tracing::info;
 
-use self::fsm::{DescObserver, GroupStateMachine};
+use self::fsm::{GroupStateMachine, StateMachineObserver};
 use super::{
     engine::{GroupEngine, SnapshotMode},
     job::StateChannel,
@@ -47,14 +48,14 @@ pub struct ReplicaInfo {
     local_state: AtomicI32,
 }
 
-#[derive(Default)]
 struct LeaseState {
     leader_id: u64,
     /// the largest term which state machine already known.
     applied_term: u64,
     replica_state: ReplicaState,
     descriptor: GroupDesc,
-    migrate_meta: Option<MigrateMeta>,
+    migration_state: Option<MigrationState>,
+    migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
     leader_subscribers: Vec<Waker>,
 }
 
@@ -72,10 +73,13 @@ enum MetaAclGuard<'a> {
     Write(tokio::sync::RwLockWriteGuard<'a, ()>),
 }
 
-#[derive(Clone)]
-struct MigratingDigest {
-    shard_id: u64,
-    dest_group_id: u64,
+#[derive(Debug)]
+pub enum MigrateAction {
+    Prepare,
+    Migrating,
+    Abort,
+    Commit,
+    Clean,
 }
 
 /// ExecCtx contains the required infos during request execution.
@@ -86,8 +90,8 @@ pub struct ExecCtx {
     /// The epoch of `GroupDesc` carried in this request.
     pub epoch: u64,
 
-    /// The digest of migrating meta, filled by `check_request_early`.
-    migrating_digest: Option<MigratingDigest>,
+    /// The migration desc, filled by `check_request_early`.
+    migration_desc: Option<MigrationDesc>,
 }
 
 pub struct Replica
@@ -97,7 +101,6 @@ where
     info: Arc<ReplicaInfo>,
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
-    migrate_ctrl: MigrateController,
     lease_state: Arc<Mutex<LeaseState>>,
     meta_acl: Arc<tokio::sync::RwLock<()>>,
 }
@@ -133,12 +136,10 @@ impl Replica {
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
         migrate_ctrl: MigrateController,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
+        let (sender, receiver) = mpsc::unbounded();
         let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
-        let lease_state = Arc::new(Mutex::new(LeaseState {
-            descriptor: group_engine.descriptor().unwrap(),
-            ..Default::default()
-        }));
+        let lease_state = Arc::new(Mutex::new(LeaseState::new(&group_engine, sender)));
         let state_observer = Box::new(LeaseStateObserver::new(
             info.clone(),
             lease_state.clone(),
@@ -148,14 +149,17 @@ impl Replica {
         let raft_node = raft_mgr
             .start_raft_group(group_id, desc, fsm, state_observer)
             .await?;
-        Ok(Replica {
+
+        let replica = Arc::new(Replica {
             info,
             group_engine,
             raft_node,
-            migrate_ctrl,
             lease_state,
             meta_acl: Arc::default(),
-        })
+        });
+        migrate_ctrl.watch_state_changes(replica.clone(), receiver);
+
+        Ok(replica)
     }
 
     /// Shutdown this replicas with the newer `GroupDesc`.
@@ -276,6 +280,7 @@ impl Replica {
             return Ok(());
         }
 
+        // TODO(walter) return if migration already finished.
         // TODO(walter) check request epoch and shard id.
         self.check_leader_early()?;
 
@@ -286,11 +291,14 @@ impl Replica {
         }
 
         let sync_op = if !forwarded {
-            Some(SyncOp::migrate_event(MigrateEventValue::Ingest(
-                migrate_event::Ingest {
-                    last_key: chunk.data.last().as_ref().unwrap().key.clone(),
-                },
-            )))
+            Some(SyncOp {
+                migration: Some(Migration {
+                    event: migration::Event::Ingest as i32,
+                    last_ingested_key: chunk.data.last().as_ref().unwrap().key.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
         } else {
             None
         };
@@ -332,6 +340,69 @@ impl Replica {
         Ok(())
     }
 
+    pub async fn migrate(&self, desc: &MigrationDesc, action: MigrateAction) -> Result<()> {
+        let _guard = self.take_write_acl_guard().await;
+
+        {
+            let epoch = desc.src_group_epoch;
+            let group_id = self.info.group_id;
+            let lease_state = self.lease_state.lock().unwrap();
+            if !lease_state.is_ready_for_serving() {
+                return Err(Error::NotLeader(group_id, lease_state.leader_descriptor()));
+            } else if matches!(action, MigrateAction::Prepare) {
+                if epoch < lease_state.descriptor.epoch {
+                    // This migration needs to be rollback.
+                    return Err(Error::EpochNotMatch(lease_state.descriptor.clone()));
+                } else if !lease_state
+                    .migration_state
+                    .as_ref()
+                    .and_then(|s| s.migration_desc.as_ref())
+                    .map(|d| d == desc)
+                    .unwrap_or_default()
+                {
+                    return Err(Error::ServiceIsBusy("already exists a migration request"));
+                } else {
+                    // The migration has been prepared.
+                    return Ok(());
+                }
+            } else {
+                // Check epochs equals
+                if !lease_state
+                    .migration_state
+                    .as_ref()
+                    .and_then(|s| s.migration_desc.as_ref())
+                    .map(|d| d == desc)
+                    .unwrap_or_default()
+                {
+                    panic!("migrate {:?} but migrate desc isn't matches", action);
+                }
+            }
+        }
+
+        let mut op = Migration::default();
+        let event = match action {
+            MigrateAction::Prepare => migration::Event::Prepare,
+            MigrateAction::Migrating => migration::Event::Ingest,
+            MigrateAction::Abort => migration::Event::Abort,
+            MigrateAction::Commit => migration::Event::Commit,
+            MigrateAction::Clean => migration::Event::Finished,
+        };
+        op.event = event as i32;
+
+        let sync_op = SyncOp {
+            migration: Some(op),
+            ..Default::default()
+        };
+
+        let eval_result = EvalResult {
+            batch: None,
+            op: Some(sync_op),
+        };
+        self.raft_node.clone().propose(eval_result).await??;
+
+        Ok(())
+    }
+
     #[inline]
     pub fn replica_info(&self) -> Arc<ReplicaInfo> {
         self.info.clone()
@@ -358,8 +429,8 @@ impl Replica {
     }
 
     #[inline]
-    pub fn migrate_ctrl(&self) -> &MigrateController {
-        &self.migrate_ctrl
+    pub fn group_engine(&self) -> GroupEngine {
+        self.group_engine.clone()
     }
 }
 
@@ -370,6 +441,11 @@ impl Replica {
         } else {
             MetaAclGuard::Read(self.meta_acl.read().await)
         }
+    }
+
+    #[inline]
+    async fn take_write_acl_guard<'a>(&'a self) -> MetaAclGuard<'a> {
+        MetaAclGuard::Write(self.meta_acl.write().await)
     }
 
     /// Delegates the eval method for the given `Request`.
@@ -416,10 +492,10 @@ impl Replica {
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
             }
-            Request::MigrateShard(req) => {
-                let eval_result = eval::migrate(self.info.group_id, req).await;
-                let resp = MigrateShardResponse {};
-                (Some(eval_result), Response::MigrateShard(resp))
+            Request::AcceptShard(req) => {
+                let eval_result = eval::accept_shard(self.info.group_id, exec_ctx.epoch, req).await;
+                let resp = AcceptShardResponse {};
+                (Some(eval_result), Response::AcceptShard(resp))
             }
         };
 
@@ -452,10 +528,11 @@ impl Replica {
             if lease_state.is_forwarding_shard(shard_id) {
                 Ok(())
             } else {
+                // FIXME(walter) maybe migration is finished!!!!
                 // Maybe this request has expired?
                 Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
             }
-        } else if lease_state.is_migrating() && matches!(req, Request::MigrateShard(_)) {
+        } else if lease_state.is_migrating() && matches!(req, Request::AcceptShard(_)) {
             // At the same time, there can only be one migration task.
             Err(Error::ServiceIsBusy("migration"))
         } else {
@@ -463,14 +540,10 @@ impl Replica {
             // it is expected that the input epoch should not be larger than the leaders.
             debug_assert_eq!(exec_ctx.epoch, lease_state.descriptor.epoch);
             let migrating_digest = lease_state
-                .migrate_meta
+                .migration_state
                 .as_ref()
-                .filter(|m| m.src_group_id == group_id)
-                .map(|m| MigratingDigest {
-                    shard_id: m.shard_desc.as_ref().unwrap().id,
-                    dest_group_id: m.dest_group_id,
-                });
-            exec_ctx.migrating_digest = migrating_digest;
+                .and_then(|m| m.migration_desc.clone());
+            exec_ctx.migration_desc = migrating_digest;
             Ok(())
         }
     }
@@ -530,14 +603,30 @@ impl ExecCtx {
 
     #[inline]
     fn is_migrating_shard(&self, shard_id: u64) -> bool {
-        self.migrating_digest
+        self.migration_desc
             .as_ref()
-            .map(|m| m.shard_id == shard_id)
+            .and_then(|m| m.shard_desc.as_ref())
+            .map(|d| d.id == shard_id)
             .unwrap_or_default()
     }
 }
 
 impl LeaseState {
+    fn new(
+        group_engine: &GroupEngine,
+        migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
+    ) -> Self {
+        LeaseState {
+            descriptor: group_engine.descriptor(),
+            migration_state: group_engine.migration_state(),
+            migration_state_subscriber,
+            leader_id: 0,
+            applied_term: 0,
+            replica_state: ReplicaState::default(),
+            leader_subscribers: vec![],
+        }
+    }
+
     #[inline]
     fn is_raft_leader(&self) -> bool {
         self.replica_state.role == RaftRole::Leader.into()
@@ -556,13 +645,14 @@ impl LeaseState {
 
     #[inline]
     fn is_migrating(&self) -> bool {
-        self.migrate_meta.is_some()
+        self.migration_state.is_some()
     }
 
     #[inline]
     fn is_forwarding_shard(&self, shard_id: u64) -> bool {
-        self.migrate_meta
+        self.migration_state
             .as_ref()
+            .and_then(|m| m.migration_desc.as_ref())
             .and_then(|m| m.shard_desc.as_ref())
             .map(|s| s.id == shard_id)
             .unwrap_or_default()
@@ -646,7 +736,7 @@ impl StateObserver for LeaseStateObserver {
     }
 }
 
-impl DescObserver for LeaseStateObserver {
+impl StateMachineObserver for LeaseStateObserver {
     fn on_descriptor_updated(&mut self, descriptor: GroupDesc) {
         if self.update_descriptor(descriptor.clone()) {
             self.state_channel
@@ -663,13 +753,30 @@ impl DescObserver for LeaseStateObserver {
                 self.info.replica_id, self.info.group_id, term
             );
             lease_state.wake_all_waiters();
+            if let Some(migration_state) = lease_state.migration_state.as_ref() {
+                lease_state
+                    .migration_state_subscriber
+                    .unbounded_send(migration_state.to_owned());
+            }
+        }
+    }
+
+    fn on_migrate_state_updated(&mut self, migration_state: Option<MigrationState>) {
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.migration_state = migration_state;
+        if let Some(migration_state) = lease_state.migration_state.as_ref() {
+            if lease_state.is_ready_for_serving() {
+                lease_state
+                    .migration_state_subscriber
+                    .unbounded_send(migration_state.to_owned());
+            }
         }
     }
 }
 
 pub(self) fn is_change_meta_request(request: &Request) -> bool {
     match request {
-        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::MigrateShard(_) => true,
+        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::AcceptShard(_) => true,
         Request::Get(_)
         | Request::Put(_)
         | Request::Delete(_)

@@ -20,7 +20,6 @@ pub mod v1 {
     tonic::include_proto!("serverpb.v1");
 
     pub type ApplyState = EntryId;
-    pub type MigrateEventValue = migrate_event::Value;
 
     impl SyncOp {
         pub fn add_shard(shard: ShardDesc) -> Self {
@@ -35,13 +34,6 @@ pub mod v1 {
                 purge_replica: Some(PurgeOrphanReplica {
                     replica_id: orphan_replica_id,
                 }),
-                ..Default::default()
-            }
-        }
-
-        pub fn migrate_event(value: migrate_event::Value) -> Self {
-            SyncOp {
-                migrate_event: Some(MigrateEvent { value: Some(value) }),
                 ..Default::default()
             }
         }

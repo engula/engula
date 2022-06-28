@@ -25,40 +25,38 @@ use tracing::warn;
 use super::GroupClient;
 use crate::{node::Replica, raftgroup::AddressResolver, serverpb::v1::*, Result};
 
-pub async fn pull_shard(
-    address_resolver: Arc<dyn AddressResolver>,
-    replica: Arc<Replica>,
-    migrate_meta: MigrateMeta,
-) {
-    let info = replica.replica_info();
-    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
-    let mut group_client = GroupClient::new(migrate_meta.src_group_id, address_resolver);
-    while let Ok(()) = replica.on_leader(true).await {
-        match pull_shard_round(&mut group_client, replica.as_ref(), &migrate_meta).await {
-            Ok(()) => {
-                // TODO(walter)
-                // update migrate state to half finished.
-                return;
-            }
-            Err(err) => {
-                warn!(
-                    "replica {} pull shard {}: {}",
-                    info.replica_id, shard_id, err
-                );
-            }
-        }
-    }
-}
+// pub async fn pull_shard(
+//     address_resolver: Arc<dyn AddressResolver>,
+//     replica: &Replica,
+//     state: MigrationState,
+// ) -> Result<()> {
+//     let info = replica.replica_info();
+//     let desc = state.migration_desc.as_ref().unwrap();
+//     let shard_id = desc.shard_desc.as_ref().unwrap().id;
+//     let mut group_client = GroupClient::new(desc.src_group_id, None, address_resolver);
+//     while let Ok(()) = replica.on_leader(true).await {
+//         match pull_shard_round(&mut group_client, replica.as_ref(), &state).await {
+//             Ok(()) => {
+//                 return Ok(());
+//             }
+//             Err(err) => {
+//                 warn!(
+//                     "replica {} pull shard {}: {}",
+//                     info.replica_id, shard_id, err
+//                 );
+//             }
+//         }
+//     }
+// }
 
-async fn pull_shard_round(
+pub async fn pull_shard(
     group_client: &mut GroupClient,
     replica: &Replica,
-    migrate_meta: &MigrateMeta,
+    desc: &MigrationDesc,
+    last_migrated_key: Vec<u8>,
 ) -> Result<()> {
-    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
-    let mut shard_chunk_stream = group_client
-        .pull(shard_id, &migrate_meta.last_migrated_key)
-        .await?;
+    let shard_id = desc.shard_desc.as_ref().unwrap().id;
+    let mut shard_chunk_stream = group_client.pull(shard_id, &last_migrated_key).await?;
     while let Some(shard_chunk) = shard_chunk_stream.next().await {
         let shard_chunk = shard_chunk?;
         replica.ingest(shard_id, shard_chunk, false).await?;

@@ -139,6 +139,12 @@ impl From<futures::channel::oneshot::Canceled> for Error {
     }
 }
 
+impl From<prost::DecodeError> for Error {
+    fn from(err: prost::DecodeError) -> Self {
+        Error::InvalidData(err.to_string())
+    }
+}
+
 impl From<tonic::Status> for Error {
     fn from(status: tonic::Status) -> Self {
         use engula_api::server::v1;

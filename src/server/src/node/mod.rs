@@ -36,7 +36,7 @@ use self::{
     migrate::{MigrateController, ShardChunkStream},
 };
 use crate::{
-    node::replica::{ExecCtx, ReplicaInfo},
+    node::replica::{ExecCtx, MigrateAction, ReplicaInfo},
     raftgroup::{AddressResolver, RaftManager, TransportManager},
     runtime::{Executor, JoinHandle},
     serverpb::v1::*,
@@ -294,7 +294,6 @@ impl Node {
             self.migrate_ctrl.clone(),
         )
         .await?;
-        let replica = Arc::new(replica);
         self.replica_route_table.update(replica.clone());
         self.raft_route_table
             .update(replica_id, replica.raft_node());
@@ -333,7 +332,7 @@ impl Node {
     }
 
     pub async fn execute_request(&self, request: GroupRequest) -> Result<GroupResponse> {
-        use self::replica::retry::execute;
+        use self::replica::retry::forwardable_execute;
 
         let replica = match self.replica_route_table.find(request.group_id) {
             Some(replica) => replica,
@@ -342,7 +341,7 @@ impl Node {
             }
         };
 
-        execute(&replica, ExecCtx::default(), request).await
+        forwardable_execute(&self.migrate_ctrl, &replica, ExecCtx::default(), request).await
     }
 
     pub async fn pull_shard_chunks(&self, request: PullRequest) -> Result<ShardChunkStream> {
@@ -387,6 +386,41 @@ impl Node {
         Ok(ForwardResponse {
             response: resp.response,
         })
+    }
+
+    // This request is issued by dest group.
+    pub async fn migrate(&self, request: MigrateRequest) -> Result<MigrateResponse> {
+        use migrate_request::Action;
+
+        let desc = request
+            .desc
+            .ok_or_else(|| Error::InvalidArgument("MigrateRequest::desc".to_owned()))?;
+
+        if desc.shard_desc.is_none() {
+            return Err(Error::InvalidArgument(
+                "MigrationDesc::shard_desc".to_owned(),
+            ));
+        }
+
+        let group_id = desc.src_group_id;
+        let replica = match self.replica_route_table.find(group_id) {
+            Some(replica) => replica,
+            None => {
+                return Err(Error::GroupNotFound(group_id));
+            }
+        };
+
+        match Action::from_i32(request.action) {
+            Some(Action::Prepare) => {
+                replica.migrate(&desc, MigrateAction::Prepare).await?;
+            }
+            Some(Action::Commit) => {
+                replica.migrate(&desc, MigrateAction::Commit).await?;
+            }
+            _ => return Err(Error::InvalidArgument("unknown action".to_owned())),
+        }
+
+        Ok(MigrateResponse {})
     }
 
     #[inline]

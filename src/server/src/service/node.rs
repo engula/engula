@@ -125,20 +125,13 @@ impl node_server::Node for Server {
         }))
     }
 
-    #[allow(unused)]
-    async fn migrate_prepare(
+    async fn migrate(
         &self,
-        request: Request<MigratePrepareRequest>,
+        request: Request<MigrateRequest>,
     ) -> Result<Response<MigrateResponse>, Status> {
-        todo!()
-    }
-
-    #[allow(unused)]
-    async fn migrate_commit(
-        &self,
-        request: Request<MigrateCommitRequest>,
-    ) -> Result<Response<MigrateResponse>, Status> {
-        todo!()
+        let req = request.into_inner();
+        let resp = self.node.migrate(req).await?;
+        Ok(Response::new(resp))
     }
 
     #[allow(unused)]

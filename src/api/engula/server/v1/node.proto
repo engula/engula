@@ -34,8 +34,7 @@ service Node {
   rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 
-  rpc MigratePrepare(MigratePrepareRequest) returns (MigrateResponse) {}
-  rpc MigrateCommit(MigrateCommitRequest) returns (MigrateResponse) {}
+  rpc Migrate(MigrateRequest) returns (MigrateResponse) {}
   rpc Pull(PullRequest) returns (stream ShardChunk) {}
   rpc Forward(ForwardRequest) returns (ForwardResponse) {}
 }
@@ -74,7 +73,8 @@ message GroupRequestUnion {
     /// Change replicas of an existing group.
     ChangeReplicasRequest change_replicas = 7;
 
-    MigrateShardRequest migrate_shard = 8;
+    /// Issue a migration request. This request need to send to the dest group.
+    AcceptShardRequest accept_shard = 8;
   }
 }
 
@@ -87,7 +87,7 @@ message GroupResponseUnion {
     BatchWriteResponse batch_write = 5;
     CreateShardResponse create_shard = 6;
     ChangeReplicasResponse change_replicas = 7;
-    MigrateShardResponse migrate_shard = 8;
+    AcceptShardResponse accept_shard = 8;
   }
 }
 
@@ -165,13 +165,16 @@ enum ChangeReplicaType {
   ADD_LEARNER = 2;
 }
 
-message MigrateShardRequest {
+message AcceptShardRequest {
+  /// The source group of this migration.
   uint64 src_group_id = 1;
+  /// The epoch of source group when issuing this migration request.
   uint64 src_group_epoch = 2;
+  /// The descriptor of migrating shard.
   ShardDesc shard_desc = 3;
 }
 
-message MigrateShardResponse {}
+message AcceptShardResponse {}
 
 message HeartbeatRequest {
   uint64 timestamp = 1;
@@ -276,17 +279,15 @@ message ForwardResponse {
   GroupResponseUnion response = 1;
 }
 
-message MigratePrepareRequest {
-  uint64 shard_id = 1;
-  uint64 group_id = 2;
-  uint64 epoch = 3;
-  uint64 dest_group_id = 4;
-}
+message MigrateRequest {
+  MigrationDesc desc = 1;
 
-message MigrateCommitRequest {
-  uint64 shard_id = 1;
-  uint64 group_id = 2;
-  uint64 epoch = 3;
+  enum Action {
+    PREPARE = 0;
+    COMMIT = 1;
+  }
+
+  Action action = 2;
 }
 
 message MigrateResponse {}

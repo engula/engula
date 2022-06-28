@@ -96,3 +96,16 @@ enum RaftRole {
   LEADER = 2;
   PRE_CANDIDATE = 3;
 }
+
+message MigrationDesc {
+  /// The descriptor of migrating shard.
+  ShardDesc shard_desc = 1;
+  /// The source group of migration.
+  uint64 src_group_id = 2;
+  /// The epoch of source group when this migration is initialized.
+  uint64 src_group_epoch = 3;
+  /// The dest group id of migration.
+  uint64 dest_group_id = 4;
+  /// The epoch of dest group.
+  uint64 dest_group_epoch = 5;
+}

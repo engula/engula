@@ -21,37 +21,37 @@ use crate::{
     Result,
 };
 
-#[allow(unused)]
-pub async fn setup_remove_shard(
-    executor: &Executor,
-    replica: Arc<Replica>,
-    group_engine: GroupEngine,
-    shard_id: u64,
-) {
-    let info = replica.replica_info();
-    let id = info.group_id.to_le_bytes();
-    let tag = Some(id.as_slice());
-    executor.spawn(tag, TaskPriority::IoLow, async move {
-        match remove_shard(replica, group_engine, shard_id).await {
-            Ok(()) => {
-                info!(
-                    "replica {} remove shard {} success",
-                    info.replica_id, shard_id
-                );
-                // TODO(walter) change migration state.
-            }
-            Err(err) => {
-                error!(
-                    "replica {} remove shard {}: {}",
-                    info.replica_id, shard_id, err
-                );
-            }
-        }
-    });
-}
+// #[allow(unused)]
+// pub async fn setup_remove_shard(
+//     executor: &Executor,
+//     replica: Arc<Replica>,
+//     group_engine: GroupEngine,
+//     shard_id: u64,
+// ) {
+//     let info = replica.replica_info();
+//     let id = info.group_id.to_le_bytes();
+//     let tag = Some(id.as_slice());
+//     executor.spawn(tag, TaskPriority::IoLow, async move {
+//         match remove_shard(replica, group_engine, shard_id).await {
+//             Ok(()) => {
+//                 info!(
+//                     "replica {} remove shard {} success",
+//                     info.replica_id, shard_id
+//                 );
+//                 // TODO(walter) change migration state.
+//             }
+//             Err(err) => {
+//                 error!(
+//                     "replica {} remove shard {}: {}",
+//                     info.replica_id, shard_id, err
+//                 );
+//             }
+//         }
+//     });
+// }
 
-async fn remove_shard(
-    replica: Arc<Replica>,
+pub async fn remove_shard(
+    replica: &Replica,
     group_engine: GroupEngine,
     shard_id: u64,
 ) -> Result<()> {

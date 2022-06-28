@@ -20,14 +20,15 @@ use tracing::warn;
 
 use crate::{raftgroup::AddressResolver, Error, Result};
 
-pub(super) struct GroupClient {
+pub struct GroupClient {
     group_id: u64,
 
     /// Node id to node client.
     node_clients: HashMap<u64, NodeClient>,
 
-    #[allow(unused)]
-    epoch: u64,
+    /// Specific the expected epoch of request. Don't retry if epoch isn't matched.
+    expect_epoch: Option<u64>,
+
     leader_node_id: Option<u64>,
     replicas: Vec<ReplicaDesc>,
     next_access_index: usize,
@@ -36,18 +37,30 @@ pub(super) struct GroupClient {
 }
 
 impl GroupClient {
-    pub fn new(group_id: u64, address_resolver: Arc<dyn AddressResolver>) -> Self {
+    pub fn new(
+        group_id: u64,
+        expect_epoch: Option<u64>,
+        address_resolver: Arc<dyn AddressResolver>,
+    ) -> Self {
         GroupClient {
             group_id,
 
             node_clients: HashMap::default(),
-            epoch: 0,
+            expect_epoch,
             leader_node_id: None,
             replicas: Vec::default(),
             next_access_index: 0,
 
             address_resolver,
         }
+    }
+
+    pub async fn migrate(&mut self, req: MigrateRequest) -> Result<MigrateResponse> {
+        let op = |client: NodeClient| {
+            let cloned_req = req.clone();
+            async move { client.migrate(cloned_req).await }
+        };
+        self.invoke(op).await
     }
 
     pub async fn forward(&mut self, req: ForwardRequest) -> Result<ForwardResponse> {
@@ -158,7 +171,7 @@ impl GroupClient {
                 self.leader_node_id = replica_desc.map(|r| r.node_id);
                 Ok(())
             }
-            Error::EpochNotMatch(_) => {
+            Error::EpochNotMatch(_) if self.expect_epoch.is_none() => {
                 self.leader_node_id = None;
                 Ok(())
             }
