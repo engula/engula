@@ -15,11 +15,11 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use engula_api::{server::v1::*, v1::*};
-use tokio::{sync::Mutex, time};
+use tokio::sync::Mutex;
 
 use crate::{
-    AdminRequestBuilder, AdminResponseExtractor, NodeClient, RequestBatchBuilder, RootClient,
-    Router,
+    AdminRequestBuilder, AdminResponseExtractor, NodeClient, RequestBatchBuilder, RetryState,
+    RootClient, Router,
 };
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl Client {
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
-            None => Err(crate::Error::NotFound("database".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -69,7 +69,7 @@ impl Client {
             .admin(AdminRequestBuilder::get_database(name.clone()))
             .await?;
         match AdminResponseExtractor::get_database(resp) {
-            None => Err(crate::Error::NotFound("database".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -97,7 +97,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
-            None => Err(crate::Error::NotFound("collection".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -118,7 +118,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::get_collection(resp) {
-            None => Err(crate::Error::NotFound("collection".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -138,17 +138,13 @@ pub struct Collection {
 
 impl Collection {
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
-        let mut retry_cnt = 5;
-        let retry_interval = Duration::from_millis(1);
+        let mut retry_state = RetryState::new(5, Duration::from_secs(1));
 
         loop {
             match self.put_inner(&key, &value).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
-                    if retry_cnt > 0 {
-                        retry_cnt -= 1;
-                        time::sleep(retry_interval).await;
-                    } else {
+                    if !retry_state.retry(&err).await {
                         return Err(err);
                     }
                 }
@@ -163,17 +159,15 @@ impl Collection {
         let group = router.find_group(shard.id)?;
         let epoch = group
             .epoch
-            .ok_or_else(|| crate::Error::NotFound("epoch".to_string(), format!("{:?}", key)))?;
+            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
         let leader_id = group
             .leader_id
-            .ok_or_else(|| crate::Error::NotFound("leader_id".to_string(), format!("{:?}", key)))?;
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_id (key={:?})", key)))?;
         let node_id = group
             .replicas
             .get(&leader_id)
             .map(|desc| desc.node_id)
-            .ok_or_else(|| {
-                crate::Error::NotFound("leader_node_id".to_string(), format!("{:?}", key))
-            })?;
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
@@ -200,8 +194,8 @@ impl Collection {
         };
 
         for r in resp {
-            if let Some(err) = r.error {
-                return Err(crate::Error::Internal(format!("{:?}", err)));
+            if let Some(err) = crate::Error::from_group_response(&r) {
+                return Err(err);
             }
         }
 
@@ -209,17 +203,13 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
-        let mut retry_cnt = 5;
-        let retry_interval = Duration::from_millis(1);
+        let mut retry_state = RetryState::new(5, Duration::from_secs(1));
 
         loop {
             match self.get_inner(&key).await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
-                    if retry_cnt > 0 {
-                        retry_cnt -= 1;
-                        time::sleep(retry_interval).await;
-                    } else {
+                    if !retry_state.retry(&err).await {
                         return Err(err);
                     }
                 }
@@ -234,13 +224,13 @@ impl Collection {
         let group = router.find_group(shard.id)?;
         let epoch = group
             .epoch
-            .ok_or_else(|| crate::Error::NotFound("epoch".to_string(), format!("{:?}", key)))?;
+            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
         let node_id = group
             .replicas
             .values()
             .next()
             .map(|desc| desc.node_id)
-            .ok_or_else(|| crate::Error::NotFound("node_id".to_string(), format!("{:?}", key)))?;
+            .ok_or_else(|| crate::Error::NotFound(format!("node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
@@ -267,8 +257,8 @@ impl Collection {
         };
 
         for r in resp {
-            if let Some(err) = r.error {
-                return Err(crate::Error::Internal(format!("{:?}", err)));
+            if let Some(err) = crate::Error::from_group_response(&r) {
+                return Err(err);
             }
             if let Some(GroupResponseUnion {
                 response: Some(group_response_union::Response::Get(GetResponse { value })),

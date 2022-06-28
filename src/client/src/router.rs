@@ -74,7 +74,7 @@ impl Router {
         let shards = state
             .co_shards_lookup
             .get(&desc.id)
-            .ok_or_else(|| crate::Error::NotFound("shard".to_string(), format!("{:?}", key)))?;
+            .ok_or_else(|| crate::Error::NotFound(format!("shard (key={:?})", key)))?;
         for shard in shards {
             if let Some(shard_desc::Partition::Range(shard_desc::RangePartition { start, end })) =
                 shard.partition.clone()
@@ -89,10 +89,7 @@ impl Router {
                 }
             }
         }
-        Err(crate::Error::NotFound(
-            "shard".to_string(),
-            format!("{:?}", key),
-        ))
+        Err(crate::Error::NotFound(format!("shard (key={:?})", key)))
     }
 
     pub fn find_group(&self, shard: u64) -> Result<RouterGroupState, crate::Error> {
@@ -102,13 +99,13 @@ impl Router {
             .get(&shard)
             .and_then(|id| state.group_id_lookup.get(id))
             .cloned();
-        group.ok_or_else(|| crate::Error::NotFound("group".to_string(), format!("{:?}", shard)))
+        group.ok_or_else(|| crate::Error::NotFound(format!("group (shard={:?})", shard)))
     }
 
     pub fn find_node_addr(&self, id: u64) -> Result<String, crate::Error> {
         let state = self.state.lock().unwrap();
         let addr = state.node_id_lookup.get(&id).cloned();
-        addr.ok_or_else(|| crate::Error::NotFound("node_addr".to_string(), format!("{:?}", id)))
+        addr.ok_or_else(|| crate::Error::NotFound(format!("node_addr (node_id={:?})", id)))
     }
 }
 
