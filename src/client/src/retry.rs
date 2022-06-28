@@ -23,6 +23,12 @@ pub struct RetryState {
     interval: Duration,
 }
 
+impl Default for RetryState {
+    fn default() -> Self {
+        RetryState::new(5, Duration::from_millis(1))
+    }
+}
+
 impl RetryState {
     pub fn new(cnt: u64, interval: Duration) -> Self {
         Self { cnt, interval }

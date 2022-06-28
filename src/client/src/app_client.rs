@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 use engula_api::{server::v1::*, v1::*};
 use tokio::sync::Mutex;
@@ -138,7 +138,7 @@ pub struct Collection {
 
 impl Collection {
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
-        let mut retry_state = RetryState::new(5, Duration::from_secs(1));
+        let mut retry_state = RetryState::default();
 
         loop {
             match self.put_inner(&key, &value).await {
@@ -203,7 +203,7 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
-        let mut retry_state = RetryState::new(5, Duration::from_secs(1));
+        let mut retry_state = RetryState::default();
 
         loop {
             match self.get_inner(&key).await {
