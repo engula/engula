@@ -55,10 +55,7 @@ message GroupDesc {
   uint64 epoch = 2;
   repeated ShardDesc shards = 3;
   repeated ReplicaDesc replicas = 4;
-  GroupCapacity capacity = 5;
 }
-
-message GroupCapacity { uint64 shard_count = 1; }
 
 enum ReplicaRole {
   VOTER = 0;

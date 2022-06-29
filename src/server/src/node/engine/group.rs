@@ -123,7 +123,6 @@ impl GroupEngine {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: Some(GroupCapacity { shard_count: 0 }),
         };
 
         let engine = GroupEngine {

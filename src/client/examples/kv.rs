@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
-
 use engula_client::{EngulaClient, Error};
-use tokio::time;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -25,9 +22,6 @@ async fn main() -> Result<(), Error> {
     let client = EngulaClient::connect(addr.to_string()).await?;
     let db = client.create_database("test_db".to_string()).await?;
     let co = db.create_collection("test_co".to_string()).await?;
-
-    // wait for watch events populated
-    time::sleep(Duration::from_secs(5)).await;
 
     let k = "book_name".as_bytes().to_vec();
     let v = "rust_in_actions".as_bytes().to_vec();

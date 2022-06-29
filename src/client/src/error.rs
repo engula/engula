@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use engula_api::server::v1::{error_detail_union, error_detail_union::Value, GroupResponse};
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("transport {0}")]
@@ -23,9 +25,41 @@ pub enum Error {
     #[error("rpc {0}")]
     Rpc(#[from] tonic::Status),
 
-    #[error("{0} not found {1}")]
-    NotFound(String, String),
+    #[error("{0} not found")]
+    NotFound(String),
 
-    #[error("internal {0}")]
-    Internal(String),
+    #[error("group response error")]
+    GroupResponseError(Option<error_detail_union::Value>),
+}
+
+impl Error {
+    pub fn from_group_response(r: &GroupResponse) -> Option<Self> {
+        r.error.as_ref().map(|err| {
+            Error::GroupResponseError(
+                err.details
+                    .get(0)
+                    .cloned()
+                    .and_then(|d| d.detail)
+                    .and_then(|u| u.value),
+            )
+        })
+    }
+
+    pub fn should_retry(&self) -> bool {
+        match self {
+            Error::Transport(_) => false,
+            Error::MultiTransport(_) => false,
+            Error::Rpc(_) => false,
+            Error::NotFound(_) => true,
+            Error::GroupResponseError(None) => true,
+            Error::GroupResponseError(Some(err)) => match err {
+                Value::NotLeader(_) => true,
+                Value::NotMatch(_) => true,
+                Value::ServerIsBusy(_) => false,
+                Value::GroupNotFound(_) => true,
+                Value::NotRoot(_) => true,
+                Value::StatusCode(_) => true,
+            },
+        }
+    }
 }
