@@ -26,10 +26,7 @@ message CollectionDesc {
   string name = 2;
   uint64 db = 3; // database id
 
-  message HashPartition {
-    uint64 slots = 1;
-    uint64 hasher = 2;
-  }
+  message HashPartition { uint32 slots = 1; }
 
   message RangePartition {}
 

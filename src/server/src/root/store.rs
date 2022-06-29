@@ -17,7 +17,7 @@ use std::sync::Arc;
 use engula_api::{
     server::v1::{
         group_request_union::Request::{self, *},
-        CreateShardRequest, GroupRequest, GroupRequestUnion, ShardDesc, *,
+        GroupRequest, GroupRequestUnion, *,
     },
     v1::{DeleteRequest, GetRequest, PutRequest},
 };
@@ -31,12 +31,6 @@ pub struct RootStore {
 impl RootStore {
     pub fn new(replica: Arc<Replica>) -> Self {
         Self { replica }
-    }
-
-    pub async fn create_shard(&self, shard: ShardDesc) -> Result<()> {
-        self.submit_request(CreateShard(CreateShardRequest { shard: Some(shard) }))
-            .await?;
-        Ok(())
     }
 
     pub async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {

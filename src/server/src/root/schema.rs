@@ -25,6 +25,7 @@ use engula_api::{
     },
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
+use engula_client::{NodeClient, RequestBatchBuilder};
 use prost::Message;
 use tracing::info;
 
@@ -141,61 +142,57 @@ impl Schema {
         Ok(databases)
     }
 
-    pub async fn create_collection(
-        &self,
-        desc: CollectionDesc,
-        group_id: u64,
-    ) -> Result<CollectionDesc> {
+    pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
-
-        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
-        // handle hearbeat resp).
-        let _shards = self
-            .create_collection_shard(desc.to_owned(), group_id)
-            .await?;
-        let mut builder = PutBatchBuilder::default();
-
-        builder.put_collection(desc.to_owned());
-
-        // for (group_id, shard) in shards {
-        //     let mut group = self.get_group(group_id).await?.unwrap();
-        //     group.shards.extend_from_slice(&shard);
-        //     builder.put_group(group); // TODO: this info also can be async update via
-        // root::report()                               // if caller accept async update, we
-        // can remove this update. }
-
-        self.batch_write(builder.build()).await?;
+        self.batch_write(
+            PutBatchBuilder::default()
+                .put_collection(desc.to_owned())
+                .build(),
+        )
+        .await?;
         Ok(desc)
     }
 
-    pub async fn create_collection_shard(
-        &self,
-        collection: CollectionDesc,
-        group_id: u64,
-    ) -> Result<HashMap<u64, Vec<ShardDesc>>> {
-        let mut shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new(); // group_id -> shards
+    pub async fn create_shards(&self, group_id: u64, descs: Vec<ShardDesc>) -> Result<()> {
+        let group = self
+            .get_group(group_id)
+            .await?
+            .ok_or(Error::GroupNotFound(group_id))?;
+        let epoch = group.epoch;
 
-        let shard_id = self.next_id(META_SHARD_ID_KEY).await?;
-        let desc = ShardDesc {
-            id: shard_id,
-            collection_id: collection.id,
-            partition: Some(Partition::Range(RangePartition {
-                start: SHARD_MIN.to_owned(),
-                end: SHARD_MAX.to_owned(),
-            })),
-        };
-        self.store.create_shard(desc.to_owned()).await?;
-        match shards.entry(group_id) {
-            Entry::Occupied(mut ent) => {
-                let shards = ent.get_mut();
-                (*shards).push(desc);
+        let mut group_leader = None;
+        for replica in &group.replicas {
+            if replica.role != ReplicaRole::Voter.into() {
+                continue;
             }
-            Entry::Vacant(ent) => {
-                ent.insert(vec![desc]);
+            if let Some(rs) = self.get_replica_state(group_id, replica.id).await? {
+                if rs.role == RaftRole::Leader.into() {
+                    group_leader = Some(replica);
+                    break;
+                }
             }
         }
-        Ok(shards)
+
+        if group_leader.is_none() {
+            // TODO: retry
+        }
+
+        let group_leader = group_leader.take().unwrap();
+        let node_id = group_leader.node_id;
+
+        let node = self.get_node(node_id).await?.unwrap();
+
+        let mut batch = RequestBatchBuilder::new(node_id);
+        for desc in descs {
+            batch = batch.create_shard(group_id, epoch, desc);
+        }
+        let client = NodeClient::connect(node.addr).await?;
+        client.batch_group_requests(batch.build()).await?;
+
+        // TODO: retry..
+
+        Ok(())
     }
 
     pub async fn get_collection(
@@ -628,6 +625,10 @@ impl Schema {
 
     pub async fn next_replica_id(&self) -> Result<u64> {
         self.next_id(META_REPLICA_ID_KEY).await
+    }
+
+    pub async fn next_shard_id(&self) -> Result<u64> {
+        self.next_id(META_SHARD_ID_KEY).await
     }
 
     fn init_system_collections(batch: &mut PutBatchBuilder) -> u64 {

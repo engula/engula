@@ -119,16 +119,14 @@ impl<T: AllocSource> Allocator<T> {
     }
 
     /// Find a group to place shard.
-    pub async fn place_group_for_shard(
-        &self, /* , _shard_usage: &ShardDesc */
-    ) -> Result<Option<GroupDesc>> {
+    pub async fn place_group_for_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
         self.alloc_source.refresh_all().await?;
         let mut groups = self.alloc_source.groups();
         if groups.is_empty() {
-            return Ok(None);
+            return Ok(vec![]);
         }
         groups.sort_by(|g1, g2| g1.shards.len().cmp(&g2.shards.len()));
-        Ok(groups.get(0).map(ToOwned::to_owned))
+        Ok(groups.into_iter().take(n).collect())
     }
 }
 

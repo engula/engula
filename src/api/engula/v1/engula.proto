@@ -107,6 +107,15 @@ message CreateCollectionRequest {
   string name = 1;
   // Required. The name of the parent database.
   string parent = 2;
+
+  message HashPartition { uint32 slots = 1; }
+
+  message RangePartition {}
+
+  oneof partition {
+    HashPartition hash = 3;
+    RangePartition range = 4;
+  }
 }
 
 message CreateCollectionResponse { CollectionDesc collection = 1; }

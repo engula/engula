@@ -164,7 +164,10 @@ impl Server {
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
-        let desc = self.root.create_collection(req.name, req.parent).await?;
+        let desc = self
+            .root
+            .create_collection(req.name, req.parent, req.partition)
+            .await?;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
         })
