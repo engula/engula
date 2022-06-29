@@ -416,6 +416,7 @@ mod root_test {
         server::v1::watch_response::{update_event, UpdateEvent},
         v1::DatabaseDesc,
     };
+    use engula_client::Router;
     use futures::StreamExt;
     use tempdir::TempDir;
 
@@ -442,7 +443,16 @@ mod root_test {
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
         let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
-        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
+        let router = executor.block_on(async { Router::new("".to_owned()).await });
+        Node::new(
+            log_dir,
+            db,
+            state_engine,
+            executor,
+            address_resolver,
+            router,
+        )
+        .unwrap()
     }
 
     #[test]

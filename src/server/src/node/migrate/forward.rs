@@ -14,6 +14,7 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
+use engula_client::Router;
 
 use super::GroupClient;
 use crate::{raftgroup::AddressResolver, Result};
@@ -26,12 +27,12 @@ pub struct ForwardCtx {
 }
 
 pub async fn forward_request(
-    address_resolver: Arc<dyn AddressResolver>,
+    router: Router,
     forward_ctx: &ForwardCtx,
     request: &Request,
 ) -> Result<Response> {
     let group_id = forward_ctx.dest_group_id;
-    let mut group_client = GroupClient::new(group_id, None, address_resolver);
+    let mut group_client = GroupClient::new(group_id, None, router);
     let req = ForwardRequest {
         shard_id: forward_ctx.shard_id,
         group_id,

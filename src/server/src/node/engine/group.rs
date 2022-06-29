@@ -166,7 +166,7 @@ impl GroupEngine {
         }) {
             shard_descs
                 .entry(shard_desc.id)
-                .or_insert(shard_desc.clone());
+                .or_insert_with(|| shard_desc.clone());
         }
         let core = GroupEngineCore {
             migration_state,
@@ -302,11 +302,6 @@ impl GroupEngine {
         wb.migration_state = Some(migration_state.clone());
     }
 
-    #[inline]
-    pub fn clear_migration_state(&self, wb: &mut WriteBatch) {
-        wb.delete_cf(&self.cf_handle(), keys::migrate_state());
-    }
-
     pub fn commit(&self, mut wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
@@ -397,7 +392,13 @@ impl GroupEngine {
 
         // TODO(walter) remove shard desc if migration task is aborted.
         if let Some(migration_state) = migration_state {
-            core.migration_state = Some(migration_state);
+            if migration_state.step == MigrationStep::Finished as i32
+                || migration_state.step == MigrationStep::Aborted as i32
+            {
+                core.migration_state = None;
+            } else {
+                core.migration_state = Some(migration_state);
+            }
         }
 
         core.shard_descs = internal::shard_descs(&core.group_desc);
@@ -781,11 +782,18 @@ impl WriteBatch {
             inner_wb.put_cf(cf_handle, keys::descriptor(), desc.encode_to_vec());
         }
         if let Some(migration_state) = &self.migration_state {
-            inner_wb.put_cf(
-                cf_handle,
-                keys::migrate_state(),
-                migration_state.encode_to_vec(),
-            );
+            // Migrations in abort or finish steps are not persisted.
+            if migration_state.step != MigrationStep::Finished as i32
+                && migration_state.step != MigrationStep::Aborted as i32
+            {
+                inner_wb.put_cf(
+                    cf_handle,
+                    keys::migrate_state(),
+                    migration_state.encode_to_vec(),
+                );
+            } else {
+                inner_wb.delete_cf(cf_handle, keys::migrate_state());
+            }
         }
     }
 }

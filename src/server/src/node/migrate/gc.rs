@@ -76,11 +76,13 @@ async fn collect_chunks(
     let mut snapshot = group_engine.snapshot(shard_id, snapshot_mode)?;
     let mut buf = Vec::with_capacity(256);
     for mvcc_iter in snapshot.iter() {
+        info!("collect next user key");
         buf.extend(mvcc_iter.map(|e| (e.user_key().to_owned(), e.version())));
         if buf.len() >= 256 {
             break;
         }
     }
     snapshot.status()?;
+    info!("collect {} keys to delete", buf.len());
     Ok(buf)
 }

@@ -23,6 +23,7 @@ pub mod shard;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use engula_api::server::v1::*;
+use engula_client::Router;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
@@ -86,6 +87,7 @@ impl Node {
         state_engine: StateEngine,
         executor: Executor,
         address_resolver: Arc<dyn AddressResolver>,
+        router: Router,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
         let trans_mgr = TransportManager::build(
@@ -94,7 +96,7 @@ impl Node {
             raft_route_table.clone(),
         );
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
-        let migrate_ctrl = MigrateController::new(address_resolver, executor.clone());
+        let migrate_ctrl = MigrateController::new(address_resolver, executor.clone(), router);
         Ok(Node {
             raw_db,
             executor,
@@ -412,7 +414,16 @@ impl Node {
 
         match Action::from_i32(request.action) {
             Some(Action::Prepare) => {
-                replica.migrate(&desc, MigrateAction::Prepare).await?;
+                match replica.migrate(&desc, MigrateAction::Prepare).await {
+                    Ok(()) => {}
+                    Err(Error::ServiceIsBusy(_)) => {
+                        // already exists a migration task
+                        todo!("handle already existed migration task");
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                };
             }
             Some(Action::Commit) => {
                 replica.migrate(&desc, MigrateAction::Commit).await?;
@@ -551,7 +562,7 @@ mod tests {
     use super::*;
     use crate::{bootstrap::INITIAL_EPOCH, runtime::ExecutorOwner};
 
-    fn create_node(executor: Executor) -> Node {
+    async fn create_node(executor: Executor) -> Node {
         let tmp_dir = TempDir::new("engula").unwrap().into_path();
         let db_dir = tmp_dir.join("db");
         let log_dir = tmp_dir.join("log");
@@ -562,7 +573,15 @@ mod tests {
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
         let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
-        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
+        Node::new(
+            log_dir,
+            db,
+            state_engine,
+            executor,
+            address_resolver,
+            Router::new("".to_owned()).await,
+        )
+        .unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {
@@ -578,18 +597,18 @@ mod tests {
     fn create_pending_replica() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
-        let node = create_node(executor.clone());
 
-        let group_id = 2;
-        let replica_id = 2;
-        let group = GroupDesc {
-            id: group_id,
-            epoch: INITIAL_EPOCH,
-            shards: vec![],
-            replicas: vec![],
-        };
+        executor_owner.executor().block_on(async {
+            let node = create_node(executor).await;
 
-        executor.block_on(async {
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
             node.create_replica(replica_id, group).await.unwrap();
 
             assert!(matches!(
@@ -603,22 +622,22 @@ mod tests {
     fn create_replica() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
-        let node = create_node(executor.clone());
 
-        let group_id = 2;
-        let replica_id = 2;
-        let group = GroupDesc {
-            id: group_id,
-            epoch: INITIAL_EPOCH,
-            shards: vec![],
-            replicas: vec![ReplicaDesc {
-                id: replica_id,
-                node_id: 1,
-                role: ReplicaRole::Voter.into(),
-            }],
-        };
+        executor_owner.executor().block_on(async {
+            let node = create_node(executor).await;
 
-        executor.block_on(async {
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![ReplicaDesc {
+                    id: replica_id,
+                    node_id: 1,
+                    role: ReplicaRole::Voter.into(),
+                }],
+            };
             node.create_replica(replica_id, group).await.unwrap();
 
             assert!(matches!(
@@ -632,24 +651,21 @@ mod tests {
     fn recover() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
-        let node = create_node(executor.clone());
 
-        let group_id = 2;
-        let replica_id = 2;
-        let group = GroupDesc {
-            id: group_id,
-            epoch: INITIAL_EPOCH,
-            shards: vec![],
-            replicas: vec![],
-        };
+        executor_owner.executor().block_on(async {
+            let node = create_node(executor.clone()).await;
 
-        executor.block_on(async {
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
             node.create_replica(replica_id, group).await.unwrap();
-        });
-
-        drop(node);
-        let node = create_node(executor.clone());
-        executor.block_on(async {
+            drop(node);
+            let node = create_node(executor.clone()).await;
             let ident = NodeIdent {
                 cluster_id: vec![],
                 node_id: 1,

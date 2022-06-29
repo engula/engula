@@ -15,6 +15,7 @@
 use std::{future::Future, sync::Arc};
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
+use engula_client::Router;
 use futures::{channel::mpsc, StreamExt};
 use tracing::{debug, error, info, warn};
 
@@ -35,15 +36,20 @@ pub struct MigrateController {
 struct MigrateControllerShared {
     executor: Executor,
     address_resolver: Arc<dyn AddressResolver>,
+    router: Router,
 }
 
-#[allow(unused)]
 impl MigrateController {
-    pub fn new(address_resolver: Arc<dyn AddressResolver>, executor: Executor) -> Self {
+    pub fn new(
+        address_resolver: Arc<dyn AddressResolver>,
+        executor: Executor,
+        router: Router,
+    ) -> Self {
         MigrateController {
             shared: Arc::new(MigrateControllerShared {
                 address_resolver,
                 executor,
+                router,
             }),
         }
     }
@@ -74,7 +80,6 @@ impl MigrateController {
     }
 
     async fn on_migration_step(&self, group_id: u64, replica: &Replica, state: MigrationState) {
-        let info = replica.replica_info();
         if is_migration_dest_group(&state, group_id) {
             self.on_dest_group_step(replica, state).await;
         } else {
@@ -87,12 +92,13 @@ impl MigrateController {
         let desc = state
             .migration_desc
             .expect("MigrationState::migration_desc is not None");
+        debug!(desc = ?desc, "on src group step");
         match MigrationStep::from_i32(state.step).unwrap() {
-            MigrationStep::Prepare => {}
-            MigrationStep::Migrating => {}
             MigrationStep::Migrated => {
-                self.clean_orphan_shard(replica, desc);
+                self.clean_orphan_shard(replica, desc).await;
             }
+            MigrationStep::Prepare | MigrationStep::Migrating => {}
+            MigrationStep::Finished | MigrationStep::Aborted => unreachable!(),
         }
     }
 
@@ -113,6 +119,7 @@ impl MigrateController {
                 // Send finish migration request to source group.
                 self.commit_source_group(replica, desc).await;
             }
+            MigrationStep::Finished | MigrationStep::Aborted => unreachable!(),
         }
     }
 
@@ -124,19 +131,19 @@ impl MigrateController {
 
         let shard_id = shard_desc.id;
         let expect_epoch = Some(desc.src_group_epoch);
-        let mut group_client = GroupClient::new(
-            desc.src_group_id,
-            expect_epoch,
-            self.shared.address_resolver.clone(),
-        );
+        let mut group_client =
+            GroupClient::new(desc.src_group_id, expect_epoch, self.shared.router.clone());
 
         let req = MigrateRequest {
             desc: Some(desc.clone()),
             action: migrate_request::Action::Prepare as i32,
         };
         match group_client.migrate(req).await {
-            Ok(_) => {
-                info!("initial source group success, to migrating step");
+            Ok(resp) => {
+                info!(
+                    "initial source group success, to migrating step: {:?}",
+                    resp
+                );
                 self.enter_pulling_step(replica, desc).await;
             }
             Err(Error::EpochNotMatch(_)) => {
@@ -156,13 +163,12 @@ impl MigrateController {
     async fn commit_source_group(&self, replica: &Replica, desc: MigrationDesc) {
         use super::GroupClient;
 
+        info!("commit source group");
+
         let shard_desc = desc.shard_desc.clone().unwrap();
         let shard_id = shard_desc.id;
-        let mut group_client = GroupClient::new(
-            desc.src_group_id,
-            None,
-            self.shared.address_resolver.clone(),
-        );
+        let mut group_client =
+            GroupClient::new(desc.src_group_id, None, self.shared.router.clone());
 
         let req = MigrateRequest {
             desc: Some(desc.clone()),
@@ -184,10 +190,10 @@ impl MigrateController {
         let shard_id = shard_desc.id;
         match replica.migrate(&desc, MigrateAction::Commit).await {
             Ok(()) => {
-                info!("commit migration success");
+                info!("commit dest migration success");
             }
             Err(err) => {
-                error!("commit migration of shard {}: {}", shard_id, err);
+                error!("commit dest migration of shard {}: {}", shard_id, err);
             }
         }
     }
@@ -198,6 +204,7 @@ impl MigrateController {
         match replica.migrate(&desc, MigrateAction::Clean).await {
             Ok(()) => {
                 // migration is finished
+                info!("migration state is cleaned");
             }
             Err(err) => {
                 error!("clean migration state of shard {}: {}", shard_id, err);
@@ -232,6 +239,7 @@ impl MigrateController {
     async fn clean_orphan_shard(&self, replica: &Replica, desc: MigrationDesc) {
         use super::gc::remove_shard;
 
+        info!("clean data of orphan shard");
         let shard_desc = desc.shard_desc.clone().unwrap();
         let shard_id = shard_desc.id;
         match remove_shard(replica, replica.group_engine(), shard_id).await {
@@ -246,17 +254,14 @@ impl MigrateController {
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
-        super::forward_request(self.shared.address_resolver.clone(), &forward_ctx, request).await
+        super::forward_request(self.shared.router.clone(), &forward_ctx, request).await
     }
 
     async fn pull(&self, replica: &Replica, desc: MigrationDesc, last_migrated_key: Vec<u8>) {
         let info = replica.replica_info();
         let shard_id = desc.shard_desc.as_ref().unwrap().id;
-        let mut group_client = GroupClient::new(
-            desc.src_group_id,
-            None,
-            self.shared.address_resolver.clone(),
-        );
+        let mut group_client =
+            GroupClient::new(desc.src_group_id, None, self.shared.router.clone());
 
         match super::pull_shard(&mut group_client, replica, &desc, last_migrated_key).await {
             Ok(()) => {

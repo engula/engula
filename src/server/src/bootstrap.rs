@@ -20,7 +20,7 @@ use std::{
 };
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
-use engula_client::RootClient;
+use engula_client::{RootClient, Router};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -57,12 +57,22 @@ pub fn run(
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
     let address_resolver = Arc::new(AddressResolver::new(join_list.clone()));
+
+    let router = executor.block_on(async {
+        Router::new(if init {
+            addr.clone()
+        } else {
+            join_list[0].clone()
+        })
+        .await
+    });
     let node = Node::new(
         log_path,
         raw_db,
         state_engine,
         executor.clone(),
         address_resolver.clone(),
+        router,
     )?;
 
     let (node_id, root) = executor.block_on(async {

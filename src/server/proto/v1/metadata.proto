@@ -85,6 +85,9 @@ enum MigrationStep {
   MIGRATING = 1;
   /// Used in dest group, it should notify the source group that migration has already finished.
   MIGRATED = 2;
+
+  FINISHED = 3;
+  ABORTED = 4;
 }
 
 message MigrationState {

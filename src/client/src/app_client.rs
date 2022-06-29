@@ -156,7 +156,7 @@ impl Collection {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group(shard.id)?;
+        let group = router.find_group_by_shard(shard.id)?;
         let epoch = group
             .epoch
             .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
@@ -221,7 +221,7 @@ impl Collection {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group(shard.id)?;
+        let group = router.find_group_by_shard(shard.id)?;
         let epoch = group
             .epoch
             .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;

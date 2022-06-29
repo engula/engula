@@ -325,6 +325,7 @@ impl Replica {
         self.check_leader_early()?;
 
         let mut wb = WriteBatch::default();
+        info!("delete chunks with {} keys", keys.len());
         for (key, version) in keys {
             self.group_engine.delete(&mut wb, shard_id, key, *version)?;
         }
@@ -353,28 +354,29 @@ impl Replica {
                 if epoch < lease_state.descriptor.epoch {
                     // This migration needs to be rollback.
                     return Err(Error::EpochNotMatch(lease_state.descriptor.clone()));
-                } else if !lease_state
+                } else if let Some(existed_desc) = lease_state
                     .migration_state
                     .as_ref()
                     .and_then(|s| s.migration_desc.as_ref())
-                    .map(|d| d == desc)
-                    .unwrap_or_default()
                 {
-                    return Err(Error::ServiceIsBusy("already exists a migration request"));
-                } else {
-                    // The migration has been prepared.
-                    return Ok(());
+                    if existed_desc == desc {
+                        return Err(Error::ServiceIsBusy("already exists a migration request"));
+                    } else {
+                        // The migration has been prepared.
+                        info!("migration already exists");
+                        return Ok(());
+                    }
                 }
             } else {
                 // Check epochs equals
-                if !lease_state
+                if lease_state
                     .migration_state
                     .as_ref()
                     .and_then(|s| s.migration_desc.as_ref())
-                    .map(|d| d == desc)
+                    .map(|d| d != desc)
                     .unwrap_or_default()
                 {
-                    panic!("migrate {:?} but migrate desc isn't matches", action);
+                    todo!("migrate {:?} but migrate desc isn't matches", action);
                 }
             }
         }
@@ -388,6 +390,7 @@ impl Replica {
             MigrateAction::Clean => migration::Event::Finished,
         };
         op.event = event as i32;
+        op.migration_desc = Some(desc.clone());
 
         let sync_op = SyncOp {
             migration: Some(op),
@@ -444,7 +447,7 @@ impl Replica {
     }
 
     #[inline]
-    async fn take_write_acl_guard<'a>(&'a self) -> MetaAclGuard<'a> {
+    async fn take_write_acl_guard(&self) -> MetaAclGuard {
         MetaAclGuard::Write(self.meta_acl.write().await)
     }
 

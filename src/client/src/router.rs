@@ -90,7 +90,7 @@ impl Router {
         Err(crate::Error::NotFound(format!("shard (key={:?})", key)))
     }
 
-    pub fn find_group(&self, shard: u64) -> Result<RouterGroupState, crate::Error> {
+    pub fn find_group_by_shard(&self, shard: u64) -> Result<RouterGroupState, crate::Error> {
         let state = self.state.lock().unwrap();
         let group = state
             .shard_group_lookup
@@ -98,6 +98,12 @@ impl Router {
             .and_then(|id| state.group_id_lookup.get(id))
             .cloned();
         group.ok_or_else(|| crate::Error::NotFound(format!("group (shard={:?})", shard)))
+    }
+
+    pub fn find_group(&self, id: u64) -> Result<RouterGroupState, crate::Error> {
+        let state = self.state.lock().unwrap();
+        let group = state.group_id_lookup.get(&id).cloned();
+        group.ok_or_else(|| crate::Error::NotFound(format!("group (id={:?})", id)))
     }
 
     pub fn find_node_addr(&self, id: u64) -> Result<String, crate::Error> {

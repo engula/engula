@@ -161,7 +161,6 @@ impl GroupStateMachine {
                     .group_engine
                     .migration_state()
                     .expect("The MigrationState should exists before ingest");
-                debug_assert!(!migration.last_ingested_key.is_empty());
                 debug_assert!(
                     state.step == MigrationStep::Migrating as i32
                         || state.step == MigrationStep::Prepare as i32
@@ -196,7 +195,7 @@ impl GroupStateMachine {
                 self.migration_state_updated = true;
             }
             migration::Event::Finished => {
-                let state = self
+                let mut state = self
                     .group_engine
                     .migration_state()
                     .expect("The MigrationState should exists before finish");
@@ -214,24 +213,27 @@ impl GroupStateMachine {
                 );
                 let desc = state
                     .migration_desc
+                    .as_ref()
                     .expect("MigrationState::migration_desc is not None");
                 let shard_desc = desc
                     .shard_desc
+                    .as_ref()
                     .expect("MigrationDesc::shard_desc is not None");
                 if desc.src_group_id == group_desc.id {
                     // The source group, need to remove it..
                     group_desc.shards.drain_filter(|r| r.id == shard_desc.id);
                 } else {
                     debug_assert_eq!(desc.dest_group_id, group_desc.id);
-                    group_desc.shards.push(shard_desc);
+                    group_desc.shards.push(shard_desc.clone());
                 }
 
-                self.group_engine.clear_migration_state(wb);
+                state.step = MigrationStep::Finished as i32;
+                self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
                 self.desc_updated = true;
             }
             migration::Event::Abort => {
-                let state = self
+                let mut state = self
                     .group_engine
                     .migration_state()
                     .expect("The MigrationState should exists before abort");
@@ -248,7 +250,8 @@ impl GroupStateMachine {
 
                 debug_assert!(state.step == MigrationStep::Prepare as i32);
 
-                self.group_engine.clear_migration_state(wb);
+                state.step = MigrationStep::Finished as i32;
+                self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
             }
         }
