@@ -15,7 +15,6 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
-use rand::seq::SliceRandom;
 
 use self::policy_replica_cnt::ReplicaCountPolicy;
 use super::RootShared;
@@ -120,25 +119,16 @@ impl<T: AllocSource> Allocator<T> {
     }
 
     /// Find a group to place shard.
-    pub fn place_group_for_shard(&self /* , _shard_usage: &ShardDesc */) -> Option<GroupDesc> {
+    pub async fn place_group_for_shard(
+        &self, /* , _shard_usage: &ShardDesc */
+    ) -> Result<Option<GroupDesc>> {
+        self.alloc_source.refresh_all().await?;
         let mut groups = self.alloc_source.groups();
         if groups.is_empty() {
-            return None;
+            return Ok(None);
         }
-        if groups.iter().any(|g| g.capacity.is_none()) {
-            groups
-                .choose(&mut rand::thread_rng())
-                .map(ToOwned::to_owned)
-        } else {
-            groups.sort_by(|g1, g2| {
-                g1.capacity
-                    .as_ref()
-                    .unwrap()
-                    .shard_count
-                    .cmp(&g2.capacity.as_ref().unwrap().shard_count)
-            });
-            groups.get(0).map(ToOwned::to_owned)
-        }
+        groups.sort_by(|g1, g2| g1.shards.len().cmp(&g2.shards.len()));
+        Ok(groups.get(0).map(ToOwned::to_owned))
     }
 }
 
