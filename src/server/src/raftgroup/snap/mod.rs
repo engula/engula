@@ -59,16 +59,13 @@ pub struct SnapshotGuard {
     manager: SnapManager,
 }
 
-#[allow(unused)]
 pub struct ReplicaSnapManager {
-    replica_id: u64,
     /// The parent dir of an replica snapshots.
     base_dir: PathBuf,
     next_snapshot_index: usize,
     snapshots: Vec<SnapshotInfo>,
 }
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct SnapManager
 where
@@ -87,7 +84,6 @@ struct SnapManagerInner {
     replicas: HashMap<u64, ReplicaSnapManager>,
 }
 
-#[allow(unused)]
 impl SnapManager {
     pub fn recovery<P: AsRef<Path>>(executor: &Executor, root_dir: P) -> Result<SnapManager> {
         use prost::Message;
@@ -165,7 +161,6 @@ impl SnapManager {
         let parent = dir_name.parent();
         match parent {
             Some(parent) if parent == replica.base_dir => {
-                use std::os::unix::ffi::OsStrExt;
                 let name = dir_name.file_name().unwrap().to_string_lossy().to_owned();
                 let snapshot_index = name.parse::<usize>().expect("install invalid snapshot dir");
                 let snapshot_id = format!("{}", snapshot_index).as_bytes().to_owned();
@@ -184,7 +179,7 @@ impl SnapManager {
     }
 
     pub fn latest_snap(&self, replica_id: u64) -> Option<SnapshotInfo> {
-        let mut inner = self.shared.inner.lock().unwrap();
+        let inner = self.shared.inner.lock().unwrap();
         inner
             .replicas
             .get(&replica_id)
@@ -241,7 +236,6 @@ impl ReplicaSnapManager {
     fn new(replica_id: u64, root_dir: PathBuf) -> Self {
         let base_dir = root_dir.join(&format!("{}", replica_id));
         ReplicaSnapManager {
-            replica_id,
             base_dir,
             next_snapshot_index: 0,
             snapshots: vec![],

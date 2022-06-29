@@ -58,10 +58,9 @@ impl node_server::Node for Server {
         }))
     }
 
-    #[allow(unused)]
     async fn get_root(
         &self,
-        request: Request<GetRootRequest>,
+        _request: Request<GetRootRequest>,
     ) -> Result<Response<GetRootResponse>, Status> {
         let addrs = self.node.get_root().await;
         Ok(Response::new(GetRootResponse { addrs }))
@@ -134,7 +133,6 @@ impl node_server::Node for Server {
         Ok(Response::new(resp))
     }
 
-    #[allow(unused)]
     async fn pull(
         &self,
         request: Request<PullRequest>,
@@ -144,7 +142,6 @@ impl node_server::Node for Server {
         Ok(Response::new(stream))
     }
 
-    #[allow(unused)]
     async fn forward(
         &self,
         request: Request<ForwardRequest>,

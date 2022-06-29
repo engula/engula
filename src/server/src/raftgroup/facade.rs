@@ -30,7 +30,6 @@ where
     request_sender: mpsc::Sender<Request>,
 }
 
-#[allow(unused)]
 impl RaftNodeFacade {
     /// Open the existed raft node.
     pub fn open(sender: mpsc::Sender<Request>) -> Self {
