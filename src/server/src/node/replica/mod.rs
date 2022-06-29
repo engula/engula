@@ -284,6 +284,7 @@ impl Replica {
         // TODO(walter) check request epoch and shard id.
         self.check_leader_early()?;
 
+        info!("ingest {} data for shard {}", chunk.data.len(), shard_id);
         let mut wb = WriteBatch::default();
         for data in &chunk.data {
             self.group_engine

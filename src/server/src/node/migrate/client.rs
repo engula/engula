@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
+use std::{collections::HashMap, future::Future, time::Duration};
 
 use engula_api::server::v1::*;
 use engula_client::{NodeClient, Router};
 use tracing::warn;
 
-use crate::{raftgroup::AddressResolver, Error, Result};
+use crate::{Error, Result};
 
 pub struct GroupClient {
     group_id: u64,

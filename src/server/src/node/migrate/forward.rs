@@ -11,13 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::sync::Arc;
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
 use engula_client::Router;
 
 use super::GroupClient;
-use crate::{raftgroup::AddressResolver, Result};
+use crate::Result;
 
 #[derive(Debug)]
 pub struct ForwardCtx {

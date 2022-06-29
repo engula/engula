@@ -11,44 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::sync::Arc;
-
-use tracing::{error, info};
-
 use crate::{
     node::{engine::SnapshotMode, GroupEngine, Replica},
-    runtime::{Executor, TaskPriority},
     Result,
 };
-
-// #[allow(unused)]
-// pub async fn setup_remove_shard(
-//     executor: &Executor,
-//     replica: Arc<Replica>,
-//     group_engine: GroupEngine,
-//     shard_id: u64,
-// ) {
-//     let info = replica.replica_info();
-//     let id = info.group_id.to_le_bytes();
-//     let tag = Some(id.as_slice());
-//     executor.spawn(tag, TaskPriority::IoLow, async move {
-//         match remove_shard(replica, group_engine, shard_id).await {
-//             Ok(()) => {
-//                 info!(
-//                     "replica {} remove shard {} success",
-//                     info.replica_id, shard_id
-//                 );
-//                 // TODO(walter) change migration state.
-//             }
-//             Err(err) => {
-//                 error!(
-//                     "replica {} remove shard {}: {}",
-//                     info.replica_id, shard_id, err
-//                 );
-//             }
-//         }
-//     });
-// }
 
 pub async fn remove_shard(
     replica: &Replica,
@@ -76,13 +42,11 @@ async fn collect_chunks(
     let mut snapshot = group_engine.snapshot(shard_id, snapshot_mode)?;
     let mut buf = Vec::with_capacity(256);
     for mvcc_iter in snapshot.iter() {
-        info!("collect next user key");
         buf.extend(mvcc_iter.map(|e| (e.user_key().to_owned(), e.version())));
         if buf.len() >= 256 {
             break;
         }
     }
     snapshot.status()?;
-    info!("collect {} keys to delete", buf.len());
     Ok(buf)
 }

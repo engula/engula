@@ -161,15 +161,18 @@ impl GroupStateMachine {
                     .group_engine
                     .migration_state()
                     .expect("The MigrationState should exists before ingest");
-                debug_assert!(
-                    state.step == MigrationStep::Migrating as i32
-                        || state.step == MigrationStep::Prepare as i32
-                );
+
+                // If only the ingested key changes, there is no need to notify the migration
+                // controller to perform corresponding operations.
+                if state.step == MigrationStep::Prepare as i32 {
+                    state.step = MigrationStep::Migrating as i32;
+                    self.migration_state_updated = true;
+                }
+
+                debug_assert!(state.step == MigrationStep::Migrating as i32);
                 state.last_migrated_key = migration.last_ingested_key;
-                state.step = MigrationStep::Migrating as i32;
 
                 self.group_engine.set_migration_state(wb, &state);
-                self.migration_state_updated = true;
             }
             migration::Event::Commit => {
                 let mut state = self

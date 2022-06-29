@@ -14,7 +14,10 @@
 
 use std::{collections::HashMap, future::Future, time::Duration};
 
-use engula_api::server::v1::*;
+use engula_api::{
+    server::v1::*,
+    v1::{PutRequest, PutResponse},
+};
 use engula_client::NodeClient;
 use engula_server::{runtime, Error, Result};
 use prost::Message;
@@ -60,6 +63,19 @@ impl GroupClient {
             next_access_index: 0,
 
             nodes,
+        }
+    }
+
+    pub async fn put(&mut self, shard_id: u64, req: PutRequest) -> Result<PutResponse> {
+        let resp = self
+            .group_inner(group_request_union::Request::Put(ShardPutRequest {
+                shard_id,
+                put: Some(req),
+            }))
+            .await?;
+        match resp {
+            group_response_union::Response::Put(resp) => Ok(resp),
+            _ => panic!("invalid response for accept_shard(): {:?}", resp),
         }
     }
 

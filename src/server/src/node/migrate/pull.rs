@@ -20,34 +20,9 @@ use std::{
 
 use engula_api::server::v1::*;
 use futures::StreamExt;
-use tracing::warn;
 
 use super::GroupClient;
-use crate::{node::Replica, raftgroup::AddressResolver, serverpb::v1::*, Result};
-
-// pub async fn pull_shard(
-//     address_resolver: Arc<dyn AddressResolver>,
-//     replica: &Replica,
-//     state: MigrationState,
-// ) -> Result<()> {
-//     let info = replica.replica_info();
-//     let desc = state.migration_desc.as_ref().unwrap();
-//     let shard_id = desc.shard_desc.as_ref().unwrap().id;
-//     let mut group_client = GroupClient::new(desc.src_group_id, None, address_resolver);
-//     while let Ok(()) = replica.on_leader(true).await {
-//         match pull_shard_round(&mut group_client, replica.as_ref(), &state).await {
-//             Ok(()) => {
-//                 return Ok(());
-//             }
-//             Err(err) => {
-//                 warn!(
-//                     "replica {} pull shard {}: {}",
-//                     info.replica_id, shard_id, err
-//                 );
-//             }
-//         }
-//     }
-// }
+use crate::{node::Replica, Result};
 
 pub async fn pull_shard(
     group_client: &mut GroupClient,
@@ -87,6 +62,7 @@ impl ShardChunkStream {
         if shard_chunk.data.is_empty() {
             Ok(None)
         } else {
+            self.last_key = shard_chunk.data.last().as_ref().unwrap().key.clone();
             Ok(Some(shard_chunk))
         }
     }

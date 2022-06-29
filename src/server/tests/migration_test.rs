@@ -18,7 +18,7 @@ mod helper;
 
 use std::{collections::HashMap, thread, time::Duration};
 
-use engula_api::server::v1::*;
+use engula_api::{server::v1::*, v1::PutRequest};
 use tracing::info;
 
 use crate::helper::{client::*, cluster::*, runtime::block_on_current};
@@ -65,9 +65,27 @@ async fn accept_shard(
     c.accept_shard(req).await.unwrap();
 }
 
-/// Migration test within groups which have only one member.
+async fn insert(
+    nodes: &HashMap<u64, String>,
+    group_id: u64,
+    shard_id: u64,
+    range: std::ops::Range<u64>,
+) {
+    let mut c = GroupClient::new(group_id, nodes.clone());
+    for i in range {
+        let key = format!("key-{}", i);
+        let value = format!("value-{}", i);
+        let req = PutRequest {
+            key: key.as_bytes().to_vec(),
+            value: value.as_bytes().to_vec(),
+        };
+        c.put(shard_id, req).await.unwrap();
+    }
+}
+
+/// Migration test within groups which have only one member, shard is empty.
 #[test]
-fn single_replica_migration() {
+fn single_replica_empty_shard_migration() {
     block_on_current(async {
         let nodes = bootstrap_servers("single-replica-migration", 2).await;
         let node_1_id = 0;
@@ -128,5 +146,74 @@ fn single_replica_migration() {
 
         // FIXME(walter) find a more efficient way to detect migration finished.
         thread::sleep(Duration::from_secs(30));
+    });
+}
+
+/// Migration test within groups which have only one member, shard have 1000 key values.
+#[test]
+fn single_replica_migration() {
+    block_on_current(async {
+        let nodes = bootstrap_servers("single-replica-migration", 2).await;
+        let node_1_id = 0;
+        let node_2_id = 1;
+        let group_id_1 = 100000;
+        let group_id_2 = 100001;
+        let replica_1 = 1000000;
+        let replica_2 = 2000000;
+        let shard_id = 10000000;
+
+        info!(
+            "create group {} at node {} with replica {} and shard {}",
+            group_id_1, node_1_id, replica_1, shard_id,
+        );
+
+        let shard_desc = ShardDesc {
+            id: shard_id,
+            collection_id: shard_id,
+            partition: Some(shard_desc::Partition::Range(
+                shard_desc::RangePartition::default(),
+            )),
+        };
+        let replica_desc_1 = ReplicaDesc {
+            id: replica_1,
+            node_id: node_1_id,
+            role: ReplicaRole::Voter as i32,
+        };
+        let group_desc_1 = GroupDesc {
+            id: group_id_1,
+            shards: vec![shard_desc.clone()],
+            replicas: vec![replica_desc_1.clone()],
+            ..Default::default()
+        };
+        create_replica(&nodes, group_desc_1.clone(), replica_1, node_1_id).await;
+
+        info!("insert data into group {} shard {}", group_id_1, shard_id);
+        insert(&nodes, group_id_1, shard_id, 0..1000).await;
+
+        info!(
+            "create group {} at node {} with replica {}",
+            group_id_2, node_2_id, replica_2
+        );
+        let replica_desc_2 = ReplicaDesc {
+            id: replica_2,
+            node_id: node_2_id,
+            role: ReplicaRole::Voter as i32,
+        };
+        let group_desc_2 = GroupDesc {
+            id: group_id_2,
+            shards: vec![],
+            replicas: vec![replica_desc_2.clone()],
+            ..Default::default()
+        };
+        create_replica(&nodes, group_desc_2.clone(), replica_2, node_2_id).await;
+
+        info!(
+            "issue accept shard {} request to group {}",
+            shard_id, group_id_2
+        );
+        accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 3).await;
+
+        // FIXME(walter) find a more efficient way to detect migration finished.
+        thread::sleep(Duration::from_secs(60));
     });
 }
