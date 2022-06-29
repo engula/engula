@@ -129,7 +129,6 @@ impl MigrateController {
             .clone()
             .expect("MigrationDesc::shard_desc is not None");
 
-        let shard_id = shard_desc.id;
         let expect_epoch = Some(desc.src_group_epoch);
         let mut group_client =
             GroupClient::new(desc.src_group_id, expect_epoch, self.shared.router.clone());
@@ -146,11 +145,11 @@ impl MigrateController {
                 );
                 self.enter_pulling_step(replica, desc).await;
             }
-            Err(Error::EpochNotMatch(_)) => {
+            Err(Error::EpochNotMatch(group_desc)) => {
                 // Since the epoch is not matched, this migration should be rollback.
                 warn!(
-                    "abort migration of shard {:?} since epoch not match",
-                    shard_desc
+                    "abort migration of shard {:?} since epoch not match, new epoch {}",
+                    shard_desc, group_desc.epoch
                 );
                 self.abort_migration(replica, desc).await;
             }
