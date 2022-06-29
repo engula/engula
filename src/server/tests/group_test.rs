@@ -15,15 +15,18 @@
 
 mod helper;
 
-use std::{thread, time::Duration};
+use std::{collections::HashMap, thread, time::Duration};
 
-use engula_api::server::v1::GroupDesc;
+use engula_api::server::v1::*;
 use engula_client::RequestBatchBuilder;
 use engula_server::runtime::ExecutorOwner;
 use tempdir::TempDir;
+use tracing::info;
 
 use crate::helper::{
-    client::node_client_with_retry, runtime::block_on_current, socket::next_avail_port,
+    client::{node_client_with_retry, GroupClient},
+    runtime::block_on_current,
+    socket::next_avail_port,
 };
 
 #[ctor::ctor]
@@ -33,6 +36,7 @@ fn init() {
     panic::set_hook(Box::new(move |panic_info| {
         // invoke the default handler and exit the process
         orig_hook(panic_info);
+        tracing::error!("{:#?}", panic_info);
         tracing::error!("{:#?}", std::backtrace::Backtrace::force_capture());
         process::exit(1);
     }));
@@ -44,11 +48,12 @@ fn next_listen_address() -> String {
     format!("localhost:{}", next_avail_port())
 }
 
-fn spawn_server(name: &'static str, addr: &str, init: bool, join_list: Vec<String>) {
+fn spawn_server(name: &str, addr: &str, init: bool, join_list: Vec<String>) {
     let addr = addr.to_owned();
+    let name = name.to_string();
     thread::spawn(move || {
         let owner = ExecutorOwner::new(1);
-        let tmp_dir = TempDir::new(name).unwrap().into_path();
+        let tmp_dir = TempDir::new(&name).unwrap().into_path();
 
         engula_server::run(owner.executor(), tmp_dir, addr, init, join_list).unwrap()
     });
@@ -94,6 +99,94 @@ fn add_replica() {
         let resps = client_1.batch_group_requests(req).await.unwrap();
         assert_eq!(resps.len(), 1);
         assert!(resps[0].error.is_none());
+
+        // FIXME(walter) find a more efficient way to detect leader elections.
+        thread::sleep(Duration::from_secs(2));
+    });
+}
+
+async fn bootstrap_servers(prefix: &str, num_server: usize) -> HashMap<u64, String> {
+    let mut nodes = HashMap::new();
+    let mut root_addr = String::default();
+    for i in 0..num_server {
+        let name = format!("{}-{}", prefix, i + 1);
+        let next_addr = next_listen_address();
+        if i == 0 {
+            spawn_server(&name, &next_addr, true, vec![]);
+            root_addr = next_addr.clone();
+        } else {
+            // Join node one by one so that the node id is increment.
+            spawn_server(&name, &next_addr, false, vec![root_addr.clone()]);
+            node_client_with_retry(&next_addr).await;
+        }
+        let node_id = i as u64;
+        nodes.insert(node_id, next_addr);
+    }
+    nodes
+}
+
+#[test]
+fn create_group_with_multi_replicas() {
+    block_on_current(async {
+        let nodes = bootstrap_servers("create-group", 4).await;
+        let client_1 = node_client_with_retry(nodes.get(&0).unwrap()).await;
+        let client_2 = node_client_with_retry(nodes.get(&1).unwrap()).await;
+        let client_3 = node_client_with_retry(nodes.get(&2).unwrap()).await;
+        let client_4 = node_client_with_retry(nodes.get(&3).unwrap()).await;
+
+        let group_id = 100000000;
+        let group_desc = GroupDesc {
+            id: group_id,
+            replicas: vec![
+                ReplicaDesc {
+                    id: 100,
+                    node_id: 0,
+                    role: ReplicaRole::Voter as i32,
+                },
+                ReplicaDesc {
+                    id: 101,
+                    node_id: 1,
+                    role: ReplicaRole::Voter as i32,
+                },
+                ReplicaDesc {
+                    id: 102,
+                    node_id: 2,
+                    role: ReplicaRole::Voter as i32,
+                },
+            ],
+            ..Default::default()
+        };
+
+        // 1. create group
+        client_1
+            .create_replica(100, group_desc.clone())
+            .await
+            .unwrap();
+        client_2
+            .create_replica(101, group_desc.clone())
+            .await
+            .unwrap();
+        client_3
+            .create_replica(102, group_desc.clone())
+            .await
+            .unwrap();
+
+        info!("create new replica 103");
+
+        // 2. create single replica
+        let empty_desc = GroupDesc {
+            id: group_id,
+            ..Default::default()
+        };
+        client_4.create_replica(103, empty_desc).await.unwrap();
+
+        info!("add replica 103 to group 1");
+
+        let mut group_client = GroupClient::new(nodes);
+        let req = RequestBatchBuilder::new(0)
+            .add_replica(group_id, 3, 103, 3)
+            .build();
+        group_client.group(req.requests[0].clone()).await.unwrap();
 
         // FIXME(walter) find a more efficient way to detect leader elections.
         thread::sleep(Duration::from_secs(2));

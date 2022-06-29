@@ -183,8 +183,9 @@ impl Storage {
     }
 
     #[inline]
-    pub fn post_apply(&mut self, applied_index: u64) {
-        self.cache.drains_to(applied_index);
+    pub fn post_apply(&mut self, _applied_index: u64) {
+        // FIXME(walter) `Storage::term` need to fetch log entries from disk if drain the cached
+        // entries. self.cache.drains_to(applied_index);
     }
 
     #[inline]
@@ -207,6 +208,7 @@ impl Storage {
             &local_state,
         )
         .unwrap();
+        self.local_state = local_state;
         lb
     }
 
@@ -431,6 +433,7 @@ impl EntryCache {
         self.entries.extend(entries.iter().cloned());
     }
 
+    #[allow(dead_code)]
     pub fn drains_to(&mut self, applied_index: u64) {
         if let Some(cache_low) = self.entries.front().map(Entry::get_index) {
             let len = applied_index.checked_sub(cache_low).unwrap() as usize;
@@ -454,27 +457,27 @@ pub async fn write_initial_state(
     let mut last_index: u64 = 0;
     if !voters.is_empty() {
         voters.sort_unstable();
-        last_index += 1;
 
-        let change_replicas = ChangeReplicas {
-            changes: voters
-                .iter()
-                .cloned()
-                .map(|(replica_id, node_id)| ChangeReplica {
+        // The underlying `raft-rs` crate isn't allow empty configs enter joint state,
+        // so have to add replicas one by one.
+        for (replica_id, node_id) in voters {
+            last_index += 1;
+            let change_replicas = ChangeReplicas {
+                changes: vec![ChangeReplica {
                     change_type: ChangeReplicaType::Add.into(),
                     replica_id,
                     node_id,
-                })
-                .collect(),
-        };
-        let conf_change = super::encode_to_conf_change(change_replicas);
-        let mut e = Entry::default();
-        e.index = last_index;
-        e.term = 1;
-        e.set_entry_type(EntryType::EntryConfChangeV2);
-        e.data = conf_change.encode_to_vec();
-        e.context = vec![];
-        initial_entries.push(e);
+                }],
+            };
+            let conf_change = super::encode_to_conf_change(change_replicas);
+            let mut e = Entry::default();
+            e.index = last_index;
+            e.term = 1;
+            e.set_entry_type(EntryType::EntryConfChangeV2);
+            e.data = conf_change.encode_to_vec();
+            e.context = vec![];
+            initial_entries.push(e);
+        }
     }
 
     if !initial_eval_results.is_empty() {

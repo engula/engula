@@ -20,6 +20,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use tracing::info;
 use engula_api::server::v1::*;
 use prost::Message;
 
@@ -108,6 +109,7 @@ impl GroupEngine {
 
         let group_id = group_desc.id;
         let name = group_id.to_string();
+        info!("create group engine for {}, cf name is {}", group_id, name);
         // FIXME(walter) clean staled data if the column families already exists.
         raw_db.create_cf(&name, &Options::default())?;
 
