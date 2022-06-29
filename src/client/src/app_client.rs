@@ -249,10 +249,12 @@ impl Collection {
         let epoch = group
             .epoch
             .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
+        let leader = group
+            .leader_id
+            .ok_or_else(|| crate::Error::NotFound(format!("leader unavailable (key={:?})", key)))?;
         let node_id = group
             .replicas
-            .values()
-            .next()
+            .get(&leader)
             .map(|desc| desc.node_id)
             .ok_or_else(|| crate::Error::NotFound(format!("node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);

@@ -15,6 +15,7 @@
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap},
     sync::Arc,
+    time::Duration,
 };
 
 use engula_api::{
@@ -27,6 +28,7 @@ use engula_api::{
 };
 use engula_client::{NodeClient, RequestBatchBuilder};
 use prost::Message;
+use tokio::time;
 use tracing::info;
 
 use super::store::RootStore;
@@ -155,43 +157,71 @@ impl Schema {
     }
 
     pub async fn create_shards(&self, group_id: u64, descs: Vec<ShardDesc>) -> Result<()> {
-        let group = self
-            .get_group(group_id)
-            .await?
-            .ok_or(Error::GroupNotFound(group_id))?;
-        let epoch = group.epoch;
+        loop {
+            let group = self
+                .get_group(group_id)
+                .await?
+                .ok_or(Error::GroupNotFound(group_id))?;
+            let epoch = group.epoch;
 
-        let mut group_leader = None;
-        for replica in &group.replicas {
-            if replica.role != ReplicaRole::Voter.into() {
-                continue;
-            }
-            if let Some(rs) = self.get_replica_state(group_id, replica.id).await? {
-                if rs.role == RaftRole::Leader.into() {
-                    group_leader = Some(replica);
-                    break;
+            let mut group_leader = None;
+            for replica in &group.replicas {
+                if replica.role != ReplicaRole::Voter.into() {
+                    continue;
+                }
+                if let Some(rs) = self.get_replica_state(group_id, replica.id).await? {
+                    if rs.role == RaftRole::Leader.into() {
+                        group_leader = Some(replica);
+                        break;
+                    }
                 }
             }
+
+            if group_leader.is_none() {
+                // TODO: retry
+                time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+
+            let group_leader = group_leader.take().unwrap();
+            let node_id = group_leader.node_id;
+
+            let node = self.get_node(node_id).await?.unwrap();
+
+            if let Err(err) =
+                Self::try_create_shards(node_id, node.addr, group_id, epoch, &descs).await
+            {
+                let need_retry = matches!(
+                    &err,
+                    Error::NotLeader(_, _)
+                        | Error::GroupNotFound(_)
+                        | Error::EpochNotMatch(_)
+                        | Error::GroupNotReady(_)
+                );
+                if need_retry {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+            break;
         }
 
-        if group_leader.is_none() {
-            // TODO: retry
-        }
+        Ok(())
+    }
 
-        let group_leader = group_leader.take().unwrap();
-        let node_id = group_leader.node_id;
-
-        let node = self.get_node(node_id).await?.unwrap();
-
+    async fn try_create_shards(
+        node_id: u64,
+        addr: String,
+        group_id: u64,
+        epoch: u64,
+        descs: &[ShardDesc],
+    ) -> Result<()> {
         let mut batch = RequestBatchBuilder::new(node_id);
         for desc in descs {
-            batch = batch.create_shard(group_id, epoch, desc);
+            batch = batch.create_shard(group_id, epoch, desc.to_owned());
         }
-        let client = NodeClient::connect(node.addr).await?;
+        let client = NodeClient::connect(addr).await?;
         client.batch_group_requests(batch.build()).await?;
-
-        // TODO: retry..
-
         Ok(())
     }
 
