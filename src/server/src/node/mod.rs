@@ -18,6 +18,7 @@ pub mod migrate;
 pub mod replica;
 pub mod resolver;
 pub mod route_table;
+pub mod shard;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
@@ -552,7 +553,6 @@ mod tests {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: None,
         };
 
         executor.block_on(async {
@@ -582,7 +582,6 @@ mod tests {
                 node_id: 1,
                 role: ReplicaRole::Voter.into(),
             }],
-            capacity: None,
         };
 
         executor.block_on(async {
@@ -608,7 +607,6 @@ mod tests {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: None,
         };
 
         executor.block_on(async {

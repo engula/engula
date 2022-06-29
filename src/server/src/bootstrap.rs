@@ -262,7 +262,6 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     // Create the first raft group of cluster, this node is the only member of the raft group.
     let (shards, _) = Schema::init_shards();
 
-    let shard_count = shards.len() as u64;
     let group = GroupDesc {
         id: ROOT_GROUP_ID,
         epoch: INITIAL_EPOCH,
@@ -272,7 +271,6 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
             node_id: FIRST_NODE_ID,
             role: ReplicaRole::Voter.into(),
         }],
-        capacity: Some(GroupCapacity { shard_count }),
     };
     node.create_replica(FIRST_REPLICA_ID, group).await?;
 

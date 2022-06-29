@@ -307,7 +307,7 @@ impl raft::Storage for Storage {
         assert!(
             self.cache
                 .first_index()
-                .map(|fi| fi < idx)
+                .map(|fi| fi <= idx)
                 .unwrap_or_default(),
             "acquired term of index {} is out of the range of cached entries",
             idx
@@ -368,7 +368,7 @@ impl EntryCache {
 
     fn entry(&self, index: u64) -> Option<&Entry> {
         let first_index = self.entries.front()?.index;
-        if index > first_index {
+        if index >= first_index {
             Some(&self.entries[(index - first_index) as usize])
         } else {
             None

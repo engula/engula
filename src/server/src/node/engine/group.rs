@@ -20,14 +20,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use engula_api::server::v1::{GroupCapacity, GroupDesc};
+use engula_api::server::v1::*;
 use prost::Message;
 
-use crate::{
-    bootstrap::INITIAL_EPOCH,
-    serverpb::v1::{ApplyState, MigrateMeta},
-    Error, Result,
-};
+use crate::{bootstrap::INITIAL_EPOCH, node::shard, serverpb::v1::*, Error, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
@@ -52,7 +48,7 @@ where
 {
     name: String,
     raw_db: Arc<rocksdb::DB>,
-    collections: Arc<RwLock<HashMap<u64, u64>>>,
+    shard_descs: Arc<RwLock<HashMap<u64, ShardDesc>>>,
 }
 
 /// Traverse the data of the group engine, but don't care about the data format.
@@ -65,6 +61,7 @@ pub struct RawIterator<'a> {
 enum SnapshotRange {
     Target { target_key: Vec<u8> },
     Prefix { prefix: Vec<u8> },
+    Range { start: Vec<u8>, end: Vec<u8> },
 }
 
 pub struct Snapshot<'a> {
@@ -119,13 +116,12 @@ impl GroupEngine {
             epoch: INITIAL_EPOCH,
             shards: vec![],
             replicas: vec![],
-            capacity: Some(GroupCapacity { shard_count: 0 }),
         };
 
         let engine = GroupEngine {
             name,
             raw_db,
-            collections: Arc::default(),
+            shard_descs: Arc::default(),
         };
 
         // The group descriptor should be persisted into disk.
@@ -151,17 +147,17 @@ impl GroupEngine {
             .get_pinned_cf(&cf_handle, raw_key)?
             .expect("group descriptor will persisted when creating group");
         let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
-        let collections = desc
+        let shards = desc
             .shards
             .iter()
-            .map(|shard| (shard.id, shard.collection_id))
+            .map(|shard| (shard.id, shard.clone()))
             .collect::<HashMap<_, _>>();
         // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
         raw_db.flush_cf(&cf_handle)?;
         Ok(Some(GroupEngine {
             name,
             raw_db: raw_db.clone(),
-            collections: Arc::new(RwLock::new(collections)),
+            shard_descs: Arc::new(RwLock::new(shards)),
         }))
     }
 
@@ -173,27 +169,19 @@ impl GroupEngine {
     }
 
     pub fn migrate_meta(&self) -> Result<Option<MigrateMeta>> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let raw_key = keys::migrate_meta();
         Ok(self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)?
+            .get_pinned_cf(&self.cf_handle(), raw_key)?
             .map(|val| MigrateMeta::decode(val.as_ref()).expect("MigrateMeta")))
     }
 
     /// Return the group descriptor
     pub fn descriptor(&self) -> Result<GroupDesc> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let raw_key = keys::descriptor();
         let value = self
             .raw_db
-            .get_pinned_cf(&cf_handle, raw_key)?
+            .get_pinned_cf(&self.cf_handle(), raw_key)?
             .expect("group descriptor will persisted when creating group");
         let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
         Ok(desc)
@@ -202,16 +190,12 @@ impl GroupEngine {
     /// Return the persisted apply state of raft.
     pub fn flushed_apply_state(&self) -> ApplyState {
         use rocksdb::{ReadOptions, ReadTier};
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let mut opt = ReadOptions::default();
         opt.set_read_tier(ReadTier::Persisted);
         let raw_key = keys::apply_state();
         let value = self
             .raw_db
-            .get_pinned_cf_opt(&cf_handle, raw_key, &opt)
+            .get_pinned_cf_opt(&self.cf_handle(), raw_key, &opt)
             .unwrap()
             .expect("apply state will persisted when creating group");
         ApplyState::decode(value.as_ref()).expect("should encoded ApplyState")
@@ -239,21 +223,17 @@ impl GroupEngine {
         value: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
-        let collection_id = self
-            .collection_id(shard_id)
-            .expect("shard id to collection id");
+        let desc = self.shard_desc(shard_id)?;
+        let collection_id = desc.collection_id;
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
+        debug_assert!(shard::belong_to(&desc, key));
 
         wb.put_cf(
-            &cf_handle,
+            &self.cf_handle(),
             keys::mvcc_key(collection_id, key, version),
             values::data(value),
         );
+
         Ok(())
     }
 
@@ -265,20 +245,17 @@ impl GroupEngine {
         key: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
-        let collection_id = self
-            .collection_id(shard_id)
-            .expect("shard id to collection id");
+        let desc = self.shard_desc(shard_id)?;
+        let collection_id = desc.collection_id;
+        debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
+        debug_assert!(shard::belong_to(&desc, key));
 
         wb.put_cf(
-            &cf_handle,
+            &self.cf_handle(),
             keys::mvcc_key(collection_id, key, version),
             values::tombstone(),
         );
+
         Ok(())
     }
 
@@ -289,16 +266,16 @@ impl GroupEngine {
         key: &[u8],
         version: u64,
     ) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
+        let desc = self.shard_desc(shard_id)?;
+        let collection_id = desc.collection_id;
+        debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
+        debug_assert!(shard::belong_to(&desc, key));
 
-        let collection_id = self
-            .collection_id(shard_id)
-            .expect("shard id to collection id");
+        wb.delete_cf(
+            &self.cf_handle(),
+            keys::mvcc_key(collection_id, key, version),
+        );
 
-        wb.delete_cf(&cf_handle, keys::mvcc_key(collection_id, key, version));
         Ok(())
     }
 
@@ -318,24 +295,15 @@ impl GroupEngine {
         wb.migrate_meta = Some(migrate_meta.clone());
     }
 
+    #[inline]
     pub fn clear_migrate_meta(&self, wb: &mut WriteBatch) {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
-        let raw_key = keys::migrate_meta();
-        wb.delete_cf(&cf_handle, raw_key);
+        wb.delete_cf(&self.cf_handle(), keys::migrate_meta());
     }
 
     pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
+        let cf_handle = self.cf_handle();
         let mut inner_wb = wb.inner;
         if let Some(apply_state) = wb.apply_state {
             inner_wb.put_cf(&cf_handle, keys::apply_state(), apply_state.encode_to_vec());
@@ -353,11 +321,12 @@ impl GroupEngine {
         self.raw_db.write_opt(inner_wb, &opts)?;
 
         if let Some(desc) = wb.descriptor {
-            let mut collections = self.collections.write().unwrap();
-            collections.clear();
+            let mut shard_descs = self.shard_descs.write().unwrap();
+            shard_descs.clear();
             for shard in desc.shards {
-                collections.insert(shard.id, shard.collection_id);
+                shard_descs.insert(shard.id, shard.clone());
             }
+            // TODO(walter) add migration shard desc.
         }
 
         Ok(())
@@ -366,74 +335,80 @@ impl GroupEngine {
     pub fn snapshot(&self, shard_id: u64, mode: SnapshotMode) -> Result<Snapshot> {
         use rocksdb::{Direction, IteratorMode, ReadOptions};
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-        let collection_id = self
-            .collection_id(shard_id)
-            .expect("shard id to collection id");
+        let desc = self.shard_desc(shard_id)?;
+        let collection_id = desc.collection_id;
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
+
         let opts = ReadOptions::default();
         let key = match &mode {
-            SnapshotMode::Start {
-                start_key: Some(start_key),
-            } => keys::raw(collection_id, start_key),
-            SnapshotMode::Start { start_key: None } => keys::raw(collection_id, &[]),
-            SnapshotMode::Key { key } => keys::raw(collection_id, key),
-            SnapshotMode::Prefix { key } => keys::raw(collection_id, key),
+            SnapshotMode::Start { start_key } => {
+                let start_key = start_key.unwrap_or_else(|| shard::start_key(&desc));
+                debug_assert!(shard::belong_to(&desc, start_key));
+                keys::raw(collection_id, start_key)
+            }
+            SnapshotMode::Key { key } => {
+                debug_assert!(shard::belong_to(&desc, key));
+                keys::raw(collection_id, key)
+            }
+            SnapshotMode::Prefix { key } => {
+                debug_assert!(shard::belong_to(&desc, key));
+                keys::raw(collection_id, key)
+            }
         };
         let inner_mode = IteratorMode::From(&key, Direction::Forward);
-        let iter = self.raw_db.iterator_cf_opt(&cf_handle, opts, inner_mode);
-        // FIXME(walter) snapshot might across shard?
-        Ok(Snapshot::new(collection_id, iter, mode))
+        let iter = self
+            .raw_db
+            .iterator_cf_opt(&self.cf_handle(), opts, inner_mode);
+        Ok(Snapshot::new(collection_id, iter, mode, &desc))
     }
 
     pub fn raw_iter(&self) -> Result<RawIterator> {
         use rocksdb::{IteratorMode, ReadOptions};
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
         let opts = ReadOptions::default();
         let iter = self
             .raw_db
-            .iterator_cf_opt(&cf_handle, opts, IteratorMode::Start);
+            .iterator_cf_opt(&self.cf_handle(), opts, IteratorMode::Start);
         RawIterator::new(iter)
     }
 
     /// Ingest data into group engine.
     pub fn ingest<P: AsRef<Path>>(&self, files: Vec<P>) -> Result<()> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(&self.name)
-            .expect("column family handle");
-
         use rocksdb::{IngestExternalFileOptions, Options};
+
         self.raw_db.drop_cf(&self.name)?;
         self.raw_db.create_cf(&self.name, &Options::default())?;
 
         let opts = IngestExternalFileOptions::default();
         self.raw_db
-            .ingest_external_file_cf_opts(&cf_handle, &opts, files)?;
+            .ingest_external_file_cf_opts(&self.cf_handle(), &opts, files)?;
 
         let desc = self.descriptor().unwrap();
-        let mut collections = self.collections.write().unwrap();
-        collections.clear();
+        let mut shard_descs = self.shard_descs.write().unwrap();
+        shard_descs.clear();
         for shard in desc.shards {
-            collections.insert(shard.id, shard.collection_id);
+            shard_descs.insert(shard.id, shard.clone());
         }
+        // TODO(walter) add migration shard desc.
 
         Ok(())
     }
 
-    fn collection_id(&self, shard_id: u64) -> Option<u64> {
-        self.collections
+    #[inline]
+    fn shard_desc(&self, shard_id: u64) -> Result<ShardDesc> {
+        self.shard_descs
             .read()
             .expect("read lock")
             .get(&shard_id)
             .cloned()
+            .ok_or_else(|| Error::InvalidArgument(format!("no such {} shard exists", shard_id)))
+    }
+
+    #[inline]
+    fn cf_handle(&self) -> Arc<rocksdb::BoundColumnFamily> {
+        self.raw_db
+            .cf_handle(&self.name)
+            .expect("column family handle")
     }
 }
 
@@ -482,6 +457,7 @@ impl<'a> Snapshot<'a> {
         collection_id: u64,
         db_iter: rocksdb::DBIterator<'a>,
         snapshot_mode: SnapshotMode<'b>,
+        desc: &ShardDesc,
     ) -> Self {
         let range = match snapshot_mode {
             SnapshotMode::Key { key } => Some(SnapshotRange::Target {
@@ -490,7 +466,12 @@ impl<'a> Snapshot<'a> {
             SnapshotMode::Prefix { key } => Some(SnapshotRange::Prefix {
                 prefix: key.to_owned(),
             }),
-            _ => None,
+            SnapshotMode::Start { start_key } => Some(SnapshotRange::Range {
+                start: start_key
+                    .unwrap_or_else(|| shard::start_key(desc))
+                    .to_owned(),
+                end: shard::end_key(desc).to_owned(),
+            }),
         };
 
         Snapshot {
@@ -655,6 +636,7 @@ impl SnapshotRange {
         match self {
             SnapshotRange::Target { target_key } if target_key == key => true,
             SnapshotRange::Prefix { prefix } if key.starts_with(prefix) => true,
+            SnapshotRange::Range { start, end } if shard::in_range(start, end, key) => true,
             _ => false,
         }
     }
@@ -895,6 +877,18 @@ mod tests {
     }
 
     fn create_engine(executor: Executor, group_id: u64, shard_id: u64) -> GroupEngine {
+        create_engine_with_range(executor, group_id, shard_id, vec![], vec![])
+    }
+
+    fn create_engine_with_range(
+        executor: Executor,
+        group_id: u64,
+        shard_id: u64,
+        start: Vec<u8>,
+        end: Vec<u8>,
+    ) -> GroupEngine {
+        use shard_desc::*;
+
         let tmp_dir = TempDir::new("engula").unwrap().into_path();
         let db_dir = tmp_dir.join("db");
 
@@ -919,7 +913,7 @@ mod tests {
                 shards: vec![ShardDesc {
                     id: shard_id,
                     collection_id: 1,
-                    partition: None,
+                    partition: Some(Partition::Range(RangePartition { start, end })),
                 }],
                 ..Default::default()
             },
@@ -1152,5 +1146,68 @@ mod tests {
             let v = group_engine.get(1, b"b12345678").await.unwrap();
             assert!(v.is_some());
         });
+    }
+
+    #[test]
+    fn iterate_in_range() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let group_engine = create_engine(executor, 1, 1);
+        let mut wb = WriteBatch::default();
+        group_engine.put(&mut wb, 1, b"a", b"", 123).unwrap();
+        group_engine.tombstone(&mut wb, 1, b"a", 124).unwrap();
+        group_engine.put(&mut wb, 1, b"b", b"123", 123).unwrap();
+        group_engine.put(&mut wb, 1, b"b", b"124", 124).unwrap();
+        group_engine.commit(wb, false).unwrap();
+
+        // Add new shard
+        use shard_desc::*;
+        let mut wb = WriteBatch::default();
+        group_engine.set_group_desc(
+            &mut wb,
+            &GroupDesc {
+                id: 1,
+                shards: vec![
+                    ShardDesc {
+                        id: 1,
+                        collection_id: 1,
+                        partition: Some(Partition::Range(RangePartition {
+                            start: vec![],
+                            end: b"b".to_vec(),
+                        })),
+                    },
+                    ShardDesc {
+                        id: 2,
+                        collection_id: 1,
+                        partition: Some(Partition::Range(RangePartition {
+                            start: b"b".to_vec(),
+                            end: vec![],
+                        })),
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+        group_engine.commit(wb, false).unwrap();
+
+        // Iterate shard 1
+        let snapshot_mode = SnapshotMode::default();
+        let mut snapshot = group_engine.snapshot(1, snapshot_mode).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap();
+        let entry = mvcc_key_iter.next().unwrap();
+        assert_eq!(entry.user_key(), b"a");
+        assert!(user_data_iter.next().is_none());
+
+        // Iterate shard 2
+        let snapshot_mode = SnapshotMode::default();
+        let mut snapshot = group_engine.snapshot(2, snapshot_mode).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap();
+        let entry = mvcc_key_iter.next().unwrap();
+        assert_eq!(entry.user_key(), b"b");
+        assert!(user_data_iter.next().is_none());
+
+        assert!(snapshot.status().is_ok());
     }
 }
