@@ -14,7 +14,7 @@
 
 use futures::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::{
     raftgroup::snap::send::{send_snapshot, SnapshotChunkStream},
@@ -31,10 +31,26 @@ impl raft_server::Raft for Server {
         request: Request<Streaming<RaftMessage>>,
     ) -> Result<Response<RaftDone>, Status> {
         let mut in_stream = request.into_inner();
-        while let Some(result) = in_stream.next().await {
-            match result {
+        while let Some(next_msg) = in_stream.next().await {
+            match next_msg {
                 Ok(msg) => {
-                    self.handle_raft_message(msg).await;
+                    let target_replica_id = match msg.to_replica.as_ref() {
+                        None => {
+                            error!("receive messages {:?} without to replica", msg);
+                            break;
+                        }
+                        Some(r) => r.id,
+                    };
+                    if let Some(mut sender) = self.node.raft_route_table().find(target_replica_id) {
+                        if sender.step(msg).is_ok() {
+                            continue;
+                        }
+                    }
+                    warn!(
+                        "receive message to a not existed replica {}",
+                        target_replica_id
+                    );
+                    break;
                 }
                 Err(e) => {
                     warn!(err = ?e, "receive messages");
@@ -54,16 +70,5 @@ impl raft_server::Raft for Server {
 
         let stream = send_snapshot(snap_mgr, request.replica_id, request.snapshot_id).await?;
         Ok(Response::new(stream))
-    }
-}
-
-impl Server {
-    async fn handle_raft_message(&self, msg: RaftMessage) {
-        let target_replica = msg.to_replica.as_ref().expect("to_replica is required");
-        if let Some(mut sender) = self.node.raft_route_table().find(target_replica.id) {
-            sender.step(msg).expect("raft are shutdown?");
-        } else {
-            todo!("target replica not found");
-        }
     }
 }

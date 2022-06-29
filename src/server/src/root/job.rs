@@ -172,7 +172,9 @@ impl Root {
         match group_action {
             GroupAction::Noop => {}
             GroupAction::Add(cnt) => self.create_groups(cnt).await?,
-            GroupAction::Remove(_) => todo!(),
+            GroupAction::Remove(_) => {
+                // TODO
+            }
         }
 
         let replica_actions = self.alloc.compute_replica_action().await?;
