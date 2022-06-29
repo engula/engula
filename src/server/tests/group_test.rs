@@ -15,7 +15,7 @@
 
 mod helper;
 
-use std::{collections::HashMap, thread, time::Duration};
+use std::{thread, time::Duration};
 
 use engula_api::server::v1::*;
 use engula_client::RequestBatchBuilder;
