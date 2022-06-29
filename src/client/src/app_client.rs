@@ -18,8 +18,8 @@ use engula_api::{server::v1::*, v1::*};
 use tokio::sync::Mutex;
 
 use crate::{
-    AdminRequestBuilder, AdminResponseExtractor, NodeClient, RequestBatchBuilder, RootClient,
-    Router,
+    AdminRequestBuilder, AdminResponseExtractor, NodeClient, RequestBatchBuilder, RetryState,
+    RootClient, Router,
 };
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl Client {
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
-            None => Err(crate::Error::NotFound("database".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -69,7 +69,7 @@ impl Client {
             .admin(AdminRequestBuilder::get_database(name.clone()))
             .await?;
         match AdminResponseExtractor::get_database(resp) {
-            None => Err(crate::Error::NotFound("database".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -97,7 +97,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
-            None => Err(crate::Error::NotFound("collection".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -118,7 +118,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::get_collection(resp) {
-            None => Err(crate::Error::NotFound("collection".to_string(), name)),
+            None => Err(crate::Error::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -138,71 +138,46 @@ pub struct Collection {
 
 impl Collection {
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
+        let mut retry_state = RetryState::default();
+
+        loop {
+            match self.put_inner(&key, &value).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if !retry_state.retry(&err).await {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn put_inner(&self, key: &[u8], value: &[u8]) -> Result<(), crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = match router.find_shard(self.co_desc.clone(), &key) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "shard".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(shard) => shard,
-        };
-        let group = match router.find_group(shard.id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "group".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(group) => group,
-        };
-        let epoch = match group.epoch {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "epoch".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(epoch) => epoch,
-        };
-        let leader_id = match group.leader_id {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "leader_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(leader_id) => leader_id,
-        };
-        let node_id = match group.replicas.get(&leader_id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "leader_node_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(desc) => desc.node_id,
-        };
+        let shard = router.find_shard(self.co_desc.clone(), key)?;
+        let group = router.find_group(shard.id)?;
+        let epoch = group
+            .epoch
+            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
+        let leader_id = group
+            .leader_id
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_id (key={:?})", key)))?;
+        let node_id = group
+            .replicas
+            .get(&leader_id)
+            .map(|desc| desc.node_id)
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
-                let addr = match router.find_node_addr(node_id) {
-                    None => {
-                        return Err(crate::Error::NotFound(
-                            "node_addr".to_string(),
-                            format!("{:?}", key.clone()),
-                        ));
-                    }
-                    Some(addr) => addr,
-                };
+                let addr = router.find_node_addr(node_id)?;
                 let client = NodeClient::connect(addr).await?;
                 inner.node_clients.insert(node_id, client.clone());
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .put(group.id, epoch, shard.id, key, value)
+                            .put(group.id, epoch, shard.id, key.to_vec(), value.to_vec())
                             .build(),
                     )
                     .await?
@@ -211,7 +186,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .put(group.id, epoch, shard.id, key, value)
+                            .put(group.id, epoch, shard.id, key.to_vec(), value.to_vec())
                             .build(),
                     )
                     .await?
@@ -219,8 +194,8 @@ impl Collection {
         };
 
         for r in resp {
-            if let Some(err) = r.error {
-                return Err(crate::Error::Internal(format!("{:?}", err)));
+            if let Some(err) = crate::Error::from_group_response(&r) {
+                return Err(err);
             }
         }
 
@@ -228,62 +203,44 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
+        let mut retry_state = RetryState::default();
+
+        loop {
+            match self.get_inner(&key).await {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    if !retry_state.retry(&err).await {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn get_inner(&self, key: &[u8]) -> Result<Option<Vec<u8>>, crate::Error> {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
-        let shard = match router.find_shard(self.co_desc.clone(), &key) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "shard".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(shard) => shard,
-        };
-        let group = match router.find_group(shard.id) {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "group".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(group) => group,
-        };
-        let epoch = match group.epoch {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "epoch".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(epoch) => epoch,
-        };
-        let node_id = match group.replicas.values().next() {
-            None => {
-                return Err(crate::Error::NotFound(
-                    "node_id".to_string(),
-                    format!("{:?}", key.clone()),
-                ));
-            }
-            Some(desc) => desc.node_id,
-        };
+        let shard = router.find_shard(self.co_desc.clone(), key)?;
+        let group = router.find_group(shard.id)?;
+        let epoch = group
+            .epoch
+            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
+        let node_id = group
+            .replicas
+            .values()
+            .next()
+            .map(|desc| desc.node_id)
+            .ok_or_else(|| crate::Error::NotFound(format!("node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);
         let resp = match client {
             None => {
-                let addr = match router.find_node_addr(node_id) {
-                    None => {
-                        return Err(crate::Error::NotFound(
-                            "node_addr".to_string(),
-                            format!("{:?}", key.clone()),
-                        ));
-                    }
-                    Some(addr) => addr,
-                };
+                let addr = router.find_node_addr(node_id)?;
                 let client = NodeClient::connect(addr).await?;
                 inner.node_clients.insert(node_id, client.clone());
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .get(group.id, epoch, shard.id, key)
+                            .get(group.id, epoch, shard.id, key.to_vec())
                             .build(),
                     )
                     .await?
@@ -292,7 +249,7 @@ impl Collection {
                 client
                     .batch_group_requests(
                         RequestBatchBuilder::new(node_id)
-                            .get(group.id, epoch, shard.id, key)
+                            .get(group.id, epoch, shard.id, key.to_vec())
                             .build(),
                     )
                     .await?
@@ -300,8 +257,8 @@ impl Collection {
         };
 
         for r in resp {
-            if let Some(err) = r.error {
-                return Err(crate::Error::Internal(format!("{:?}", err)));
+            if let Some(err) = crate::Error::from_group_response(&r) {
+                return Err(err);
             }
             if let Some(GroupResponseUnion {
                 response: Some(group_response_union::Response::Get(GetResponse { value })),

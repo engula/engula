@@ -17,11 +17,13 @@
 mod app_client;
 mod error;
 mod node_client;
+mod retry;
 mod root_client;
 mod router;
 
 pub use app_client::Client as EngulaClient;
 pub use error::Error;
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
+pub use retry::RetryState;
 pub use root_client::{AdminRequestBuilder, AdminResponseExtractor, Client as RootClient};
 pub use router::{Router, RouterGroupState};
