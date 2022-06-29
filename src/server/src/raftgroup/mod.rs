@@ -160,7 +160,6 @@ pub fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
         match ReplicaRole::from_i32(replica.role).unwrap_or(ReplicaRole::Voter) {
             ReplicaRole::Voter => {
                 cs.voters.push(replica.id);
-                cs.voters_outgoing.push(replica.id);
             }
             ReplicaRole::Learner => {
                 cs.learners.push(replica.id);
