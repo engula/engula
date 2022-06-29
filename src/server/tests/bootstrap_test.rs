@@ -15,35 +15,19 @@ mod helper;
 
 use std::{thread, time::Duration};
 
-use engula_server::{runtime::ExecutorOwner, Result};
-use tempdir::TempDir;
+use engula_server::Result;
 
-use crate::helper::{
-    client::node_client_with_retry, runtime::block_on_current, socket::next_avail_port,
-};
+use crate::helper::{client::node_client_with_retry, cluster::*, runtime::block_on_current};
 
 #[ctor::ctor]
 fn init() {
     tracing_subscriber::fmt::init();
 }
 
-fn next_listen_address() -> String {
-    format!("localhost:{}", next_avail_port())
-}
-
-fn spawn_server(name: &'static str, addr: String, init: bool, join_list: Vec<String>) {
-    thread::spawn(move || {
-        let owner = ExecutorOwner::new(1);
-        let tmp_dir = TempDir::new(name).unwrap().into_path();
-
-        engula_server::run(owner.executor(), tmp_dir, addr.to_string(), init, join_list).unwrap()
-    });
-}
-
 #[test]
 fn bootstrap_cluster() -> Result<()> {
     let node_1_addr = next_listen_address();
-    spawn_server("bootstrap-node", node_1_addr.clone(), true, vec![]);
+    spawn_server("bootstrap-node", &node_1_addr, true, vec![]);
 
     block_on_current(async {
         node_client_with_retry(&node_1_addr).await;
@@ -56,12 +40,12 @@ fn bootstrap_cluster() -> Result<()> {
 #[test]
 fn join_node() -> Result<()> {
     let node_1_addr = next_listen_address();
-    spawn_server("join-node-1", node_1_addr.clone(), true, vec![]);
+    spawn_server("join-node-1", &node_1_addr, true, vec![]);
 
     let node_2_addr = next_listen_address();
     spawn_server(
         "join-node-2",
-        node_2_addr.clone(),
+        &node_2_addr,
         false,
         vec![node_1_addr.clone()],
     );
