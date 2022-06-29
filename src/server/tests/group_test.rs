@@ -133,11 +133,8 @@ fn create_group_with_multi_replicas() {
 
         info!("add replica 103 to group 1");
 
-        let mut group_client = GroupClient::new(nodes);
-        let req = RequestBatchBuilder::new(0)
-            .add_replica(group_id, 3, 103, 3)
-            .build();
-        group_client.group(req.requests[0].clone()).await.unwrap();
+        let mut group_client = GroupClient::new(group_id, nodes);
+        group_client.add_replica(3, 103).await.unwrap();
 
         // FIXME(walter) find a more efficient way to detect leader elections.
         thread::sleep(Duration::from_secs(2));

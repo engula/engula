@@ -25,7 +25,7 @@ use crate::{
 /// A wrapper function that detects and completes retries as quickly as possible.
 pub async fn execute(
     replica: &Replica,
-    mut exec_ctx: ExecCtx,
+    exec_ctx: ExecCtx,
     request: GroupRequest,
 ) -> Result<GroupResponse> {
     execute_internal(None, replica, exec_ctx, request).await
@@ -34,7 +34,7 @@ pub async fn execute(
 pub async fn forwardable_execute(
     migrate_ctrl: &MigrateController,
     replica: &Replica,
-    mut exec_ctx: ExecCtx,
+    exec_ctx: ExecCtx,
     request: GroupRequest,
 ) -> Result<GroupResponse> {
     execute_internal(Some(migrate_ctrl), replica, exec_ctx, request).await

@@ -756,7 +756,8 @@ impl StateMachineObserver for LeaseStateObserver {
             if let Some(migration_state) = lease_state.migration_state.as_ref() {
                 lease_state
                     .migration_state_subscriber
-                    .unbounded_send(migration_state.to_owned());
+                    .unbounded_send(migration_state.to_owned())
+                    .unwrap_or_default();
             }
         }
     }
@@ -768,7 +769,8 @@ impl StateMachineObserver for LeaseStateObserver {
             if lease_state.is_ready_for_serving() {
                 lease_state
                     .migration_state_subscriber
-                    .unbounded_send(migration_state.to_owned());
+                    .unbounded_send(migration_state.to_owned())
+                    .unwrap_or_default();
             }
         }
     }

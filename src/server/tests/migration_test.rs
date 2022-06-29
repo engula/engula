@@ -37,9 +37,6 @@ fn init() {
     tracing_subscriber::fmt::init();
 }
 
-async fn add_shard(nodes: &HashMap<u64, String>, group_id: u64, epoch: u64, shard_desc: ShardDesc) {
-}
-
 async fn create_replica(
     nodes: &HashMap<u64, String>,
     desc: GroupDesc,
@@ -58,22 +55,13 @@ async fn accept_shard(
     src_group_id: u64,
     src_group_epoch: u64,
 ) {
-    let mut c = GroupClient::new(nodes.clone());
-    let union = GroupRequestUnion {
-        request: Some(group_request_union::Request::AcceptShard(
-            AcceptShardRequest {
-                src_group_id,
-                src_group_epoch,
-                shard_desc: Some(shard_desc.to_owned()),
-            },
-        )),
+    let mut c = GroupClient::new(group_id, nodes.clone());
+    let req = AcceptShardRequest {
+        src_group_id,
+        src_group_epoch,
+        shard_desc: Some(shard_desc.to_owned()),
     };
-    let req = GroupRequest {
-        group_id,
-        epoch: 0,
-        request: Some(union),
-    };
-    c.group(req).await.unwrap();
+    c.accept_shard(req).await.unwrap();
 }
 
 /// Migration test within groups which have only one member.
@@ -83,11 +71,6 @@ fn single_replica_migration() {
         let nodes = bootstrap_servers("single-replica-migration", 2).await;
         let node_1_id = 0;
         let node_2_id = 1;
-        let node_1_addr = nodes.get(&node_1_id).unwrap();
-        let node_2_addr = nodes.get(&node_2_id).unwrap();
-        let client_1 = node_client_with_retry(&node_1_addr).await;
-        let client_2 = node_client_with_retry(&node_2_addr).await;
-
         let group_id_1 = 100000;
         let group_id_2 = 100001;
         let replica_1 = 1000000;
@@ -143,6 +126,6 @@ fn single_replica_migration() {
         accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 3).await;
 
         // FIXME(walter) find a more efficient way to detect migration finished.
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(30));
     });
 }

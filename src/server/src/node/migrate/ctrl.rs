@@ -61,6 +61,12 @@ impl MigrateController {
         let ctrl = self.clone();
         self.spawn_group_task(group_id, async move {
             while let Some(state) = receiver.next().await {
+                debug!(
+                    "replica {} group {} step migration step {:?}",
+                    replica_id,
+                    group_id,
+                    MigrationStep::from_i32(state.step)
+                );
                 ctrl.on_migration_step(group_id, &replica, state).await;
             }
             debug!("replica {} migration state watcher is stopped", replica_id);
@@ -94,6 +100,7 @@ impl MigrateController {
         let desc = state
             .migration_desc
             .expect("MigrationState::migration_desc is not None");
+        debug!(desc = ?desc, "on dest group step");
         match MigrationStep::from_i32(state.step).unwrap() {
             MigrationStep::Prepare => {
                 self.initialize_src_group(replica, desc).await;
