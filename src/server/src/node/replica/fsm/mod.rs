@@ -14,13 +14,15 @@
 
 mod checkpoint;
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use engula_api::server::v1::{
-    ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
+    ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, MigrationDesc, ReplicaDesc,
+    ReplicaRole,
 };
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
 
+use super::ReplicaInfo;
 use crate::{
     node::engine::{GroupEngine, WriteBatch},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
@@ -51,6 +53,8 @@ pub struct GroupStateMachine
 where
     Self: Send,
 {
+    info: Arc<ReplicaInfo>,
+
     group_engine: GroupEngine,
     observer: Box<dyn StateMachineObserver>,
 
@@ -61,11 +65,16 @@ where
 }
 
 impl GroupStateMachine {
-    pub fn new(group_engine: GroupEngine, observer: Box<dyn StateMachineObserver>) -> Self {
+    pub fn new(
+        info: Arc<ReplicaInfo>,
+        group_engine: GroupEngine,
+        observer: Box<dyn StateMachineObserver>,
+    ) -> Self {
         let apply_state = group_engine
             .flushed_apply_state()
             .expect("access flushed index");
         GroupStateMachine {
+            info,
             group_engine,
             observer,
             desc_updated: false,
@@ -139,13 +148,27 @@ impl GroupStateMachine {
         migration: Migration,
         group_desc: &mut GroupDesc,
     ) {
-        match migration::Event::from_i32(migration.event).unwrap() {
-            migration::Event::Prepare => {
-                // TODO(walter) add group id or replica id.
-                info!(
-                    "prepare migration: {:?}",
-                    migration.migration_desc.as_ref().unwrap()
-                );
+        let event = MigrationEvent::from_i32(migration.event).expect("unknown migration event");
+        if let Some(desc) = migration.migration_desc.as_ref() {
+            info!(
+                replica = self.info.replica_id,
+                group = self.info.group_id,
+                %desc,
+                ?event,
+                "apply migration event"
+            );
+        }
+
+        match event {
+            MigrationEvent::Setup => {
+                if migration.migration_desc.is_none() {
+                    warn!(
+                        replica_id = self.info.replica_id,
+                        group = self.info.group_id,
+                        "Migration::migration_desc is None"
+                    );
+                    return;
+                }
 
                 let state = MigrationState {
                     migration_desc: migration.migration_desc,
@@ -156,11 +179,8 @@ impl GroupStateMachine {
                 self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
             }
-            migration::Event::Ingest => {
-                let mut state = self
-                    .group_engine
-                    .migration_state()
-                    .expect("The MigrationState should exists before ingest");
+            MigrationEvent::Ingest => {
+                let mut state = self.must_migration_state();
 
                 // If only the ingested key changes, there is no need to notify the migration
                 // controller to perform corresponding operations.
@@ -174,90 +194,58 @@ impl GroupStateMachine {
 
                 self.group_engine.set_migration_state(wb, &state);
             }
-            migration::Event::Commit => {
-                let mut state = self
-                    .group_engine
-                    .migration_state()
-                    .expect("The MigrationState should exists before ingest");
+            MigrationEvent::Commit => {
+                let mut state = self.must_migration_state();
                 debug_assert!(
                     state.step == MigrationStep::Migrating as i32
                         || state.step == MigrationStep::Prepare as i32
-                );
-                info!(
-                    "all data of shard {:?} is migrated",
-                    state
-                        .migration_desc
-                        .as_ref()
-                        .unwrap()
-                        .shard_desc
-                        .as_ref()
-                        .unwrap()
                 );
                 state.step = MigrationStep::Migrated as i32;
                 self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
             }
-            migration::Event::Finished => {
-                let mut state = self
-                    .group_engine
-                    .migration_state()
-                    .expect("The MigrationState should exists before finish");
+            MigrationEvent::Apply => {
+                let mut state = self.must_migration_state();
                 debug_assert!(state.step == MigrationStep::Migrated as i32);
 
-                info!(
-                    "shard {:?} migration is finished",
-                    state
-                        .migration_desc
-                        .as_ref()
-                        .unwrap()
-                        .shard_desc
-                        .as_ref()
-                        .unwrap()
-                );
-                let desc = state
-                    .migration_desc
-                    .as_ref()
-                    .expect("MigrationState::migration_desc is not None");
-                let shard_desc = desc
-                    .shard_desc
-                    .as_ref()
-                    .expect("MigrationDesc::shard_desc is not None");
-                if desc.src_group_id == group_desc.id {
-                    // The source group, need to remove it..
-                    group_desc.shards.drain_filter(|r| r.id == shard_desc.id);
-                } else {
-                    debug_assert_eq!(desc.dest_group_id, group_desc.id);
-                    group_desc.shards.push(shard_desc.clone());
-                }
+                let desc = state.get_migration_desc();
+                self.apply_migration(group_desc, desc);
 
                 state.step = MigrationStep::Finished as i32;
                 self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
-                self.desc_updated = true;
             }
-            migration::Event::Abort => {
-                let mut state = self
-                    .group_engine
-                    .migration_state()
-                    .expect("The MigrationState should exists before abort");
-                info!(
-                    "shard {:?} migration is abort",
-                    state
-                        .migration_desc
-                        .as_ref()
-                        .unwrap()
-                        .shard_desc
-                        .as_ref()
-                        .unwrap()
-                );
-
+            MigrationEvent::Abort => {
+                let mut state = self.must_migration_state();
                 debug_assert!(state.step == MigrationStep::Prepare as i32);
 
-                state.step = MigrationStep::Finished as i32;
+                state.step = MigrationStep::Aborted as i32;
                 self.group_engine.set_migration_state(wb, &state);
                 self.migration_state_updated = true;
             }
         }
+    }
+
+    fn apply_migration(&mut self, group_desc: &mut GroupDesc, desc: &MigrationDesc) {
+        let shard_desc = desc.get_shard_desc();
+
+        group_desc.epoch += 1;
+        let msg = if desc.src_group_id == group_desc.id {
+            group_desc.shards.drain_filter(|r| r.id == shard_desc.id);
+            "shard migrated out"
+        } else {
+            debug_assert_eq!(desc.dest_group_id, group_desc.id);
+            group_desc.shards.push(shard_desc.clone());
+            "shard migrated in"
+        };
+        info!(
+            replica = self.info.replica_id,
+            group = self.info.group_id,
+            epoch = group_desc.epoch,
+            shard = shard_desc.id,
+            msg
+        );
+        self.desc_updated = true;
     }
 
     fn flush_updated_events(&mut self, term: u64) {
@@ -284,6 +272,13 @@ impl GroupStateMachine {
         self.group_engine
             .flushed_apply_state()
             .expect("access flushed index")
+    }
+
+    #[inline]
+    fn must_migration_state(&self) -> MigrationState {
+        self.group_engine
+            .migration_state()
+            .expect("The MigrationState should exist")
     }
 }
 

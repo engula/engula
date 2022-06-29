@@ -145,7 +145,8 @@ impl Replica {
             lease_state.clone(),
             state_channel,
         ));
-        let fsm = GroupStateMachine::new(group_engine.clone(), state_observer.clone());
+        let fsm =
+            GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
         let raft_node = raft_mgr
             .start_raft_group(group_id, desc, fsm, state_observer)
             .await?;
@@ -216,7 +217,7 @@ impl Replica {
     }
 
     /// Propose `SyncOp` to raft log.
-    pub(super) async fn propose_sync_op(&self, op: SyncOp) -> Result<()> {
+    pub(super) async fn propose_sync_op(&self, op: Box<SyncOp>) -> Result<()> {
         self.check_leader_early()?;
 
         let eval_result = EvalResult {
@@ -292,14 +293,9 @@ impl Replica {
         }
 
         let sync_op = if !forwarded {
-            Some(SyncOp {
-                migration: Some(Migration {
-                    event: migration::Event::Ingest as i32,
-                    last_ingested_key: chunk.data.last().as_ref().unwrap().key.clone(),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
+            Some(SyncOp::ingest(
+                chunk.data.last().as_ref().unwrap().key.clone(),
+            ))
         } else {
             None
         };
@@ -382,22 +378,7 @@ impl Replica {
             }
         }
 
-        let mut op = Migration::default();
-        let event = match action {
-            MigrateAction::Prepare => migration::Event::Prepare,
-            MigrateAction::Migrating => migration::Event::Ingest,
-            MigrateAction::Abort => migration::Event::Abort,
-            MigrateAction::Commit => migration::Event::Commit,
-            MigrateAction::Clean => migration::Event::Finished,
-        };
-        op.event = event as i32;
-        op.migration_desc = Some(desc.clone());
-
-        let sync_op = SyncOp {
-            migration: Some(op),
-            ..Default::default()
-        };
-
+        let sync_op = SyncOp::migration(action.as_event(), desc.clone());
         let eval_result = EvalResult {
             batch: None,
             op: Some(sync_op),
@@ -776,6 +757,18 @@ impl StateMachineObserver for LeaseStateObserver {
                     .unbounded_send(migration_state.to_owned())
                     .unwrap_or_default();
             }
+        }
+    }
+}
+
+impl MigrateAction {
+    fn as_event(&self) -> MigrationEvent {
+        match self {
+            MigrateAction::Prepare => MigrationEvent::Setup,
+            MigrateAction::Migrating => MigrationEvent::Ingest,
+            MigrateAction::Abort => MigrationEvent::Abort,
+            MigrateAction::Commit => MigrationEvent::Commit,
+            MigrateAction::Clean => MigrationEvent::Apply,
         }
     }
 }

@@ -244,7 +244,7 @@ async fn create_group(
         ..Default::default()
     };
     for (replica_id, node_id) in replica_ids {
-        create_replica(&nodes, group_desc.clone(), replica_id, node_id).await;
+        create_replica(nodes, group_desc.clone(), replica_id, node_id).await;
     }
 }
 

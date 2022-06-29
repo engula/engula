@@ -159,11 +159,7 @@ impl GroupEngine {
         let group_desc = internal::descriptor(&raw_db, &cf_handle)?;
         let migration_state = internal::migration_state(&raw_db, &cf_handle)?;
         let mut shard_descs = internal::shard_descs(&group_desc);
-        if let Some(shard_desc) = migration_state.as_ref().and_then(|m| {
-            m.migration_desc
-                .as_ref()
-                .and_then(|d| d.shard_desc.as_ref())
-        }) {
+        if let Some(shard_desc) = migration_state.as_ref().map(|m| m.get_shard_desc()) {
             shard_descs
                 .entry(shard_desc.id)
                 .or_insert_with(|| shard_desc.clone());
@@ -405,7 +401,7 @@ impl GroupEngine {
         if let Some(shard_desc) = core
             .migration_state
             .as_ref()
-            .and_then(|m| m.migration_desc.as_ref().and_then(|d| d.shard_desc.clone()))
+            .map(|m| m.get_shard_desc().clone())
         {
             core.shard_descs.entry(shard_desc.id).or_insert(shard_desc);
         }

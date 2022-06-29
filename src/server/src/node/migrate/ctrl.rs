@@ -22,7 +22,6 @@ use tracing::{debug, error, info, warn};
 use super::{ForwardCtx, GroupClient};
 use crate::{
     node::{replica::MigrateAction, Replica},
-    raftgroup::AddressResolver,
     runtime::Executor,
     serverpb::v1::*,
     Error, Result,
@@ -35,22 +34,13 @@ pub struct MigrateController {
 
 struct MigrateControllerShared {
     executor: Executor,
-    address_resolver: Arc<dyn AddressResolver>,
     router: Router,
 }
 
 impl MigrateController {
-    pub fn new(
-        address_resolver: Arc<dyn AddressResolver>,
-        executor: Executor,
-        router: Router,
-    ) -> Self {
+    pub fn new(executor: Executor, router: Router) -> Self {
         MigrateController {
-            shared: Arc::new(MigrateControllerShared {
-                address_resolver,
-                executor,
-                router,
-            }),
+            shared: Arc::new(MigrateControllerShared { executor, router }),
         }
     }
 
@@ -160,12 +150,8 @@ impl MigrateController {
     }
 
     async fn commit_source_group(&self, replica: &Replica, desc: MigrationDesc) {
-        use super::GroupClient;
-
         info!("commit source group");
 
-        let shard_desc = desc.shard_desc.clone().unwrap();
-        let shard_id = shard_desc.id;
         let mut group_client =
             GroupClient::new(desc.src_group_id, None, self.shared.router.clone());
 

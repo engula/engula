@@ -44,10 +44,10 @@ fn add_replica() {
         let nodes = bootstrap_servers("add-replica-node", 2).await;
         let node_1_id = 0;
         let node_2_id = 1;
-        let node_1_addr = nodes.get(&node_1_id).unwrap().clone();
+        let node_1_addr = nodes.get(&node_1_id).unwrap();
         let node_2_addr = nodes.get(&node_2_id).unwrap();
-        let client_1 = node_client_with_retry(&node_1_addr).await;
-        let client_2 = node_client_with_retry(&node_2_addr).await;
+        let client_1 = node_client_with_retry(node_1_addr).await;
+        let client_2 = node_client_with_retry(node_2_addr).await;
 
         let group_id = 0;
         let new_replica_id = 123;

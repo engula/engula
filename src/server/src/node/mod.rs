@@ -96,7 +96,7 @@ impl Node {
             raft_route_table.clone(),
         );
         let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
-        let migrate_ctrl = MigrateController::new(address_resolver, executor.clone(), router);
+        let migrate_ctrl = MigrateController::new(executor.clone(), router);
         Ok(Node {
             raw_db,
             executor,

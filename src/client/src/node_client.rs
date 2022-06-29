@@ -82,10 +82,7 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    pub async fn migrate(
-        &self,
-        req: MigrateRequest,
-    ) -> Result<MigrateResponse, tonic::Status> {
+    pub async fn migrate(&self, req: MigrateRequest) -> Result<MigrateResponse, tonic::Status> {
         let mut client = self.client.clone();
         let res = client.migrate(req).await?;
         Ok(res.into_inner())

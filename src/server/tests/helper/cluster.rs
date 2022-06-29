@@ -19,10 +19,12 @@ use tempdir::TempDir;
 use super::client::node_client_with_retry;
 use crate::helper::socket::next_avail_port;
 
+#[allow(dead_code)]
 pub fn next_listen_address() -> String {
     format!("localhost:{}", next_avail_port())
 }
 
+#[allow(dead_code)]
 pub fn spawn_server(name: &str, addr: &str, init: bool, join_list: Vec<String>) {
     let addr = addr.to_owned();
     let name = name.to_string();
@@ -35,6 +37,7 @@ pub fn spawn_server(name: &str, addr: &str, init: bool, join_list: Vec<String>) 
 }
 
 /// Create a set of servers and bootstrap all of them.
+#[allow(dead_code)]
 pub async fn bootstrap_servers(prefix: &str, num_server: usize) -> HashMap<u64, String> {
     let mut nodes = HashMap::new();
     let mut root_addr = String::default();

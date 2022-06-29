@@ -104,7 +104,7 @@ message MigrationState {
 /// EvalResult is the structured proposal payload.
 message EvalResult {
   WriteBatchRep batch = 1;
-  SyncOp op = 2;
+  optional SyncOp op = 2;
 }
 
 /// WriteBatchRep is the serialized representation of DB write batch.
@@ -120,6 +120,9 @@ message SyncOp {
   PurgeOrphanReplica purge_replica = 2;
   /// An event of shard migration.
   Migration migration = 3;
+
+  /// A trick, force prost box the `SyncOp`, because `SyncOp` message is too large.
+  EvalResult must_boxed = 128;
 }
 
 message AddShard {
@@ -135,12 +138,12 @@ message PurgeOrphanReplica {
 
 message Migration {
   enum Event {
-    PREPARE = 0;
+    SETUP = 0;
     INGEST = 1;
     COMMIT = 2;
     ABORT = 3;
     /// Remove migration state.
-    FINISHED = 4;
+    APPLY = 4;
   }
 
   Event event = 1;
