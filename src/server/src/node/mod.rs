@@ -37,7 +37,7 @@ use self::{
     migrate::{MigrateController, ShardChunkStream},
 };
 use crate::{
-    node::replica::{ExecCtx, MigrateAction, ReplicaInfo},
+    node::replica::{ExecCtx, ReplicaInfo},
     raftgroup::{AddressResolver, RaftManager, TransportManager},
     runtime::{Executor, JoinHandle},
     serverpb::v1::*,
@@ -392,8 +392,6 @@ impl Node {
 
     // This request is issued by dest group.
     pub async fn migrate(&self, request: MigrateRequest) -> Result<MigrateResponse> {
-        use migrate_request::Action;
-
         let desc = request
             .desc
             .ok_or_else(|| Error::InvalidArgument("MigrateRequest::desc".to_owned()))?;
@@ -412,9 +410,9 @@ impl Node {
             }
         };
 
-        match Action::from_i32(request.action) {
-            Some(Action::Prepare) => {
-                match replica.migrate(&desc, MigrateAction::Prepare).await {
+        match MigrateAction::from_i32(request.action) {
+            Some(MigrateAction::Setup) => {
+                match replica.setup_migration(&desc).await {
                     Ok(()) => {}
                     Err(Error::ServiceIsBusy(_)) => {
                         // already exists a migration task
@@ -425,8 +423,8 @@ impl Node {
                     }
                 };
             }
-            Some(Action::Commit) => {
-                replica.migrate(&desc, MigrateAction::Commit).await?;
+            Some(MigrateAction::Commit) => {
+                replica.commit_migration(&desc).await?;
             }
             _ => return Err(Error::InvalidArgument("unknown action".to_owned())),
         }

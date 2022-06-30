@@ -283,7 +283,7 @@ message MigrateRequest {
   MigrationDesc desc = 1;
 
   enum Action {
-    PREPARE = 0;
+    SETUP = 0;
     COMMIT = 1;
   }
 

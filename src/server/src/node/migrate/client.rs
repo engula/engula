@@ -26,9 +26,6 @@ pub struct GroupClient {
     /// Node id to node client.
     node_clients: HashMap<u64, NodeClient>,
 
-    /// Specific the expected epoch of request. Don't retry if epoch isn't matched.
-    expect_epoch: Option<u64>,
-
     epoch: u64,
     leader_node_id: Option<u64>,
     replicas: Vec<ReplicaDesc>,
@@ -38,12 +35,11 @@ pub struct GroupClient {
 }
 
 impl GroupClient {
-    pub fn new(group_id: u64, expect_epoch: Option<u64>, router: Router) -> Self {
+    pub fn new(group_id: u64, router: Router) -> Self {
         GroupClient {
             group_id,
 
             node_clients: HashMap::default(),
-            expect_epoch,
             epoch: 0,
             leader_node_id: None,
             replicas: Vec::default(),
@@ -52,10 +48,24 @@ impl GroupClient {
         }
     }
 
-    pub async fn migrate(&mut self, req: MigrateRequest) -> Result<MigrateResponse> {
+    pub async fn setup_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
         let op = |_, _, _, client: NodeClient| {
-            let cloned_req = req.clone();
-            async move { client.migrate(cloned_req).await }
+            let req = MigrateRequest {
+                desc: Some(desc.clone()),
+                action: MigrateAction::Setup as i32,
+            };
+            async move { client.migrate(req).await }
+        };
+        self.invoke_opt(op, /* accurate_epoch= */ true).await
+    }
+
+    pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
+        let op = |_, _, _, client: NodeClient| {
+            let req = MigrateRequest {
+                desc: Some(desc.clone()),
+                action: MigrateAction::Commit as i32,
+            };
+            async move { client.migrate(req).await }
         };
         self.invoke(op).await
     }
@@ -90,6 +100,14 @@ impl GroupClient {
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
+        self.invoke_opt(op, false).await
+    }
+
+    async fn invoke_opt<F, O, V>(&mut self, op: F, accurate_epoch: bool) -> Result<V>
+    where
+        F: Fn(u64, u64, u64, NodeClient) -> O,
+        O: Future<Output = std::result::Result<V, tonic::Status>>,
+    {
         loop {
             let client = self.recommend_client().await;
             match op(
@@ -102,7 +120,7 @@ impl GroupClient {
             {
                 Ok(s) => return Ok(s),
                 Err(status) => {
-                    self.apply_status(status).await?;
+                    self.apply_status(status, accurate_epoch).await?;
                 }
             }
         }
@@ -176,7 +194,7 @@ impl GroupClient {
         None
     }
 
-    async fn apply_status(&mut self, status: tonic::Status) -> Result<()> {
+    async fn apply_status(&mut self, status: tonic::Status, accurate_epoch: bool) -> Result<()> {
         match Error::from(status) {
             Error::GroupNotFound(_) => {
                 self.leader_node_id = None;
@@ -186,19 +204,16 @@ impl GroupClient {
                 self.leader_node_id = replica_desc.map(|r| r.node_id);
                 Ok(())
             }
-            Error::EpochNotMatch(group_desc) if self.expect_epoch.is_none() => {
-                self.apply_desc(group_desc);
+            // If the exact epoch is required, don't retry if epoch isn't matched.
+            Error::EpochNotMatch(group_desc) if !accurate_epoch => {
+                if group_desc.epoch > self.epoch {
+                    self.replicas = group_desc.replicas;
+                } else {
+                    self.leader_node_id = None;
+                }
                 Ok(())
             }
             e => Err(e),
-        }
-    }
-
-    fn apply_desc(&mut self, group_desc: GroupDesc) {
-        if group_desc.epoch > self.epoch {
-            self.replicas = group_desc.replicas;
-        } else {
-            self.leader_node_id = None;
         }
     }
 }

@@ -31,7 +31,7 @@ pub async fn forward_request(
     request: &Request,
 ) -> Result<Response> {
     let group_id = forward_ctx.dest_group_id;
-    let mut group_client = GroupClient::new(group_id, None, router);
+    let mut group_client = GroupClient::new(group_id, router);
     let req = ForwardRequest {
         shard_id: forward_ctx.shard_id,
         group_id,

@@ -87,7 +87,7 @@ async fn insert(
 #[test]
 fn single_replica_empty_shard_migration() {
     block_on_current(async {
-        let nodes = bootstrap_servers("single-replica-migration", 2).await;
+        let nodes = bootstrap_servers("single-replica-empty-shard-migration", 2).await;
         let node_1_id = 0;
         let node_2_id = 1;
         let group_id_1 = 100000;
@@ -252,7 +252,7 @@ async fn create_group(
 #[test]
 fn basic_migration() {
     block_on_current(async {
-        let nodes = bootstrap_servers("single-replica-migration", 3).await;
+        let nodes = bootstrap_servers("basic-migration", 3).await;
         let node_1_id = 0;
         let node_2_id = 1;
         let node_3_id = 2;

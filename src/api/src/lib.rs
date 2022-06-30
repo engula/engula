@@ -24,5 +24,7 @@ pub mod server {
     pub mod v1 {
         #![allow(clippy::all)]
         tonic::include_proto!("engula.server.v1");
+
+        pub type MigrateAction = migrate_request::Action;
     }
 }

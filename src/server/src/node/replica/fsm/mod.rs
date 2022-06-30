@@ -137,7 +137,7 @@ impl GroupStateMachine {
         }
 
         self.group_engine.set_apply_state(&mut wb, index, term);
-        self.group_engine.commit(wb, false)?;
+        self.group_engine.commit(wb, false).unwrap();
 
         Ok(())
     }
@@ -243,6 +243,7 @@ impl GroupStateMachine {
             group = self.info.group_id,
             epoch = group_desc.epoch,
             shard = shard_desc.id,
+            "apply migration: {}",
             msg
         );
         self.desc_updated = true;

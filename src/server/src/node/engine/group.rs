@@ -183,6 +183,7 @@ impl GroupEngine {
     pub async fn destory(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
         let name = group_id.to_string();
         raw_db.drop_cf(&name)?;
+        info!("destory column family {}", name);
         Ok(())
     }
 
@@ -308,7 +309,9 @@ impl GroupEngine {
             opts.disable_wal(true);
         }
         wb.write_states(&self.cf_handle());
-        self.raw_db.write_opt(wb.inner, &opts)?;
+        if let Err(e) = self.raw_db.write_opt(wb.inner, &opts) {
+            panic!("cf handle name is {}: {}", self.name, e);
+        };
 
         if wb.descriptor.is_some() || wb.migration_state.is_some() {
             self.apply_core_states(wb.descriptor, wb.migration_state);

@@ -15,6 +15,7 @@
 mod eval;
 pub mod fsm;
 pub mod job;
+mod migrate;
 pub mod retry;
 
 use std::{
@@ -30,11 +31,7 @@ use futures::channel::mpsc;
 use tracing::info;
 
 use self::fsm::{GroupStateMachine, StateMachineObserver};
-use super::{
-    engine::{GroupEngine, SnapshotMode},
-    job::StateChannel,
-    migrate::MigrateController,
-};
+use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
@@ -71,15 +68,6 @@ struct LeaseStateObserver {
 enum MetaAclGuard<'a> {
     Read(tokio::sync::RwLockReadGuard<'a, ()>),
     Write(tokio::sync::RwLockWriteGuard<'a, ()>),
-}
-
-#[derive(Debug)]
-pub enum MigrateAction {
-    Prepare,
-    Migrating,
-    Abort,
-    Commit,
-    Clean,
 }
 
 /// ExecCtx contains the required infos during request execution.
@@ -223,165 +211,6 @@ impl Replica {
         let eval_result = EvalResult {
             op: Some(op),
             ..Default::default()
-        };
-        self.raft_node.clone().propose(eval_result).await??;
-
-        Ok(())
-    }
-
-    pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
-        self.check_leader_early()?;
-
-        let mut kvs = vec![];
-        let mut size = 0;
-
-        let snapshot_mode = SnapshotMode::Start {
-            start_key: if last_key.is_empty() {
-                None
-            } else {
-                Some(last_key)
-            },
-        };
-        let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
-        for mut key_iter in snapshot.iter() {
-            // NOTICE:  Only migrate first version.
-            if let Some(entry) = key_iter.next() {
-                if entry.user_key() == last_key {
-                    continue;
-                }
-                let key: Vec<_> = entry.user_key().to_owned();
-                let value: Vec<_> = match entry.value() {
-                    Some(v) => v.to_owned(),
-                    None => {
-                        // Skip tombstone.
-                        continue;
-                    }
-                };
-                size += key.len() + value.len();
-                kvs.push(ShardData {
-                    key,
-                    value,
-                    version: self::eval::MIGRATING_KEY_VERSION,
-                });
-            }
-
-            // TODO(walter) magic value
-            if size > 64 * 1024 * 1024 {
-                break;
-            }
-        }
-
-        Ok(ShardChunk { data: kvs })
-    }
-
-    pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk, forwarded: bool) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
-        if chunk.data.is_empty() {
-            return Ok(());
-        }
-
-        // TODO(walter) return if migration already finished.
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
-
-        info!("ingest {} data for shard {}", chunk.data.len(), shard_id);
-        let mut wb = WriteBatch::default();
-        for data in &chunk.data {
-            self.group_engine
-                .put(&mut wb, shard_id, &data.key, &data.value, data.version)?;
-        }
-
-        let sync_op = if !forwarded {
-            Some(SyncOp::ingest(
-                chunk.data.last().as_ref().unwrap().key.clone(),
-            ))
-        } else {
-            None
-        };
-
-        let eval_result = EvalResult {
-            batch: Some(WriteBatchRep {
-                data: wb.data().to_owned(),
-            }),
-            op: sync_op,
-        };
-        self.raft_node.clone().propose(eval_result).await??;
-
-        Ok(())
-    }
-
-    pub async fn delete_chunks(&self, shard_id: u64, keys: &[(Vec<u8>, u64)]) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
-        if keys.is_empty() {
-            return Ok(());
-        }
-
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
-
-        let mut wb = WriteBatch::default();
-        info!("delete chunks with {} keys", keys.len());
-        for (key, version) in keys {
-            self.group_engine.delete(&mut wb, shard_id, key, *version)?;
-        }
-
-        let eval_result = EvalResult {
-            batch: Some(WriteBatchRep {
-                data: wb.data().to_owned(),
-            }),
-            op: None,
-        };
-        self.raft_node.clone().propose(eval_result).await??;
-
-        Ok(())
-    }
-
-    pub async fn migrate(&self, desc: &MigrationDesc, action: MigrateAction) -> Result<()> {
-        let _guard = self.take_write_acl_guard().await;
-
-        {
-            let epoch = desc.src_group_epoch;
-            let group_id = self.info.group_id;
-            let lease_state = self.lease_state.lock().unwrap();
-            if !lease_state.is_ready_for_serving() {
-                return Err(Error::NotLeader(group_id, lease_state.leader_descriptor()));
-            } else if matches!(action, MigrateAction::Prepare) {
-                if epoch < lease_state.descriptor.epoch {
-                    // This migration needs to be rollback.
-                    return Err(Error::EpochNotMatch(lease_state.descriptor.clone()));
-                } else if let Some(existed_desc) = lease_state
-                    .migration_state
-                    .as_ref()
-                    .and_then(|s| s.migration_desc.as_ref())
-                {
-                    if existed_desc == desc {
-                        return Err(Error::ServiceIsBusy("already exists a migration request"));
-                    } else {
-                        // The migration has been prepared.
-                        info!("migration already exists");
-                        return Ok(());
-                    }
-                }
-            } else {
-                // Check epochs equals
-                if lease_state
-                    .migration_state
-                    .as_ref()
-                    .and_then(|s| s.migration_desc.as_ref())
-                    .map(|d| d != desc)
-                    .unwrap_or_default()
-                {
-                    todo!("migrate {:?} but migrate desc isn't matches", action);
-                }
-            }
-        }
-
-        let sync_op = SyncOp::migration(action.as_event(), desc.clone());
-        let eval_result = EvalResult {
-            batch: None,
-            op: Some(sync_op),
         };
         self.raft_node.clone().propose(eval_result).await??;
 
@@ -757,18 +586,6 @@ impl StateMachineObserver for LeaseStateObserver {
                     .unbounded_send(migration_state.to_owned())
                     .unwrap_or_default();
             }
-        }
-    }
-}
-
-impl MigrateAction {
-    fn as_event(&self) -> MigrationEvent {
-        match self {
-            MigrateAction::Prepare => MigrationEvent::Setup,
-            MigrateAction::Migrating => MigrationEvent::Ingest,
-            MigrateAction::Abort => MigrationEvent::Abort,
-            MigrateAction::Commit => MigrationEvent::Commit,
-            MigrateAction::Clean => MigrationEvent::Apply,
         }
     }
 }
