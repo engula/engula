@@ -345,7 +345,7 @@ impl Replica {
         {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
         } else if let Some(shard_id) = exec_ctx.forward_shard_id {
-            if lease_state.is_forwarding_shard(shard_id) {
+            if lease_state.is_migrating_shard(shard_id) {
                 Ok(())
             } else {
                 // FIXME(walter) maybe migration is finished!!!!
@@ -469,13 +469,16 @@ impl LeaseState {
     }
 
     #[inline]
-    fn is_forwarding_shard(&self, shard_id: u64) -> bool {
+    fn is_migrating_shard(&self, shard_id: u64) -> bool {
         self.migration_state
             .as_ref()
-            .and_then(|m| m.migration_desc.as_ref())
-            .and_then(|m| m.shard_desc.as_ref())
-            .map(|s| s.id == shard_id)
+            .map(|s| s.get_shard_id() == shard_id)
             .unwrap_or_default()
+    }
+
+    #[inline]
+    fn is_same_migration(&self, desc: &MigrationDesc) -> bool {
+        self.migration_state.as_ref().unwrap().get_migration_desc() == desc
     }
 
     #[inline]

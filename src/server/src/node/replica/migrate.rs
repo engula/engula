@@ -15,14 +15,17 @@
 use engula_api::server::v1::*;
 use tracing::info;
 
-use super::Replica;
-use crate::{node::engine::SnapshotMode, serverpb::v1::*, Error, Result};
+use super::{LeaseState, Replica, ReplicaInfo};
+use crate::{
+    node::engine::{SnapshotMode, WriteBatch},
+    serverpb::v1::*,
+    Error, Result,
+};
 
 impl Replica {
     pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
         let _acl_guard = self.take_read_acl_guard().await;
-
-        self.check_leader_early()?;
+        self.check_migrating_request_early(shard_id)?;
 
         let mut kvs = vec![];
         let mut size = 0;
@@ -36,7 +39,7 @@ impl Replica {
         };
         let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
         for mut key_iter in snapshot.iter() {
-            // NOTICE:  Only migrate first version.
+            // NOTICE: Only migrate the first version.
             if let Some(entry) = key_iter.next() {
                 if entry.user_key() == last_key {
                     continue;
@@ -67,19 +70,13 @@ impl Replica {
     }
 
     pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk, forwarded: bool) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
         if chunk.data.is_empty() {
             return Ok(());
         }
 
-        let _acl_guard = self.take_write_acl_guard().await;
+        let _acl_guard = self.take_read_acl_guard().await;
+        self.check_migrating_request_early(shard_id)?;
 
-        // TODO(walter) return if migration already finished.
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
-
-        info!("ingest {} data for shard {}", chunk.data.len(), shard_id);
         let mut wb = WriteBatch::default();
         for data in &chunk.data {
             self.group_engine
@@ -106,18 +103,14 @@ impl Replica {
     }
 
     pub async fn delete_chunks(&self, shard_id: u64, keys: &[(Vec<u8>, u64)]) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
         if keys.is_empty() {
             return Ok(());
         }
 
-        let _acl_guard = self.take_write_acl_guard().await;
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
+        let _acl_guard = self.take_read_acl_guard().await;
+        self.check_migrating_request_early(shard_id)?;
 
         let mut wb = WriteBatch::default();
-        info!("delete chunks with {} keys", keys.len());
         for (key, version) in keys {
             self.group_engine.delete(&mut wb, shard_id, key, *version)?;
         }
@@ -134,63 +127,39 @@ impl Replica {
     }
 
     pub async fn setup_migration(&self, desc: &MigrationDesc) -> Result<()> {
-        self.migrate(desc, MigrationEvent::Setup).await
+        self.update_migration_state(desc, MigrationEvent::Setup)
+            .await
     }
 
     pub async fn enter_pulling_step(&self, desc: &MigrationDesc) -> Result<()> {
-        self.migrate(desc, MigrationEvent::Ingest).await
+        self.update_migration_state(desc, MigrationEvent::Ingest)
+            .await
     }
 
     pub async fn commit_migration(&self, desc: &MigrationDesc) -> Result<()> {
-        self.migrate(desc, MigrationEvent::Commit).await
+        self.update_migration_state(desc, MigrationEvent::Commit)
+            .await
     }
 
     pub async fn abort_migration(&self, desc: &MigrationDesc) -> Result<()> {
-        self.migrate(desc, MigrationEvent::Abort).await
+        self.update_migration_state(desc, MigrationEvent::Abort)
+            .await
     }
 
     pub async fn finish_migration(&self, desc: &MigrationDesc) -> Result<()> {
-        self.migrate(desc, MigrationEvent::Apply).await
+        self.update_migration_state(desc, MigrationEvent::Apply)
+            .await
     }
 
-    async fn migrate(&self, desc: &MigrationDesc, event: MigrationEvent) -> Result<()> {
+    async fn update_migration_state(
+        &self,
+        desc: &MigrationDesc,
+        event: MigrationEvent,
+    ) -> Result<()> {
         let _guard = self.take_write_acl_guard().await;
 
-        {
-            let epoch = desc.src_group_epoch;
-            let group_id = self.info.group_id;
-            let lease_state = self.lease_state.lock().unwrap();
-            if !lease_state.is_ready_for_serving() {
-                return Err(Error::NotLeader(group_id, lease_state.leader_descriptor()));
-            } else if matches!(event, MigrationEvent::Setup) {
-                if epoch < lease_state.descriptor.epoch {
-                    // This migration needs to be rollback.
-                    return Err(Error::EpochNotMatch(lease_state.descriptor.clone()));
-                } else if let Some(existed_desc) = lease_state
-                    .migration_state
-                    .as_ref()
-                    .and_then(|s| s.migration_desc.as_ref())
-                {
-                    if existed_desc == desc {
-                        return Err(Error::ServiceIsBusy("already exists a migration request"));
-                    } else {
-                        // The migration has been prepared.
-                        info!("migration already exists");
-                        return Ok(());
-                    }
-                }
-            } else {
-                // Check epochs equals
-                if lease_state
-                    .migration_state
-                    .as_ref()
-                    .and_then(|s| s.migration_desc.as_ref())
-                    .map(|d| d != desc)
-                    .unwrap_or_default()
-                {
-                    todo!("migrate {:?} but migrate desc isn't matches", event);
-                }
-            }
+        if !self.check_migration_state_update_early(desc, event)? {
+            return Ok(());
         }
 
         let sync_op = SyncOp::migration(event, desc.clone());
@@ -201,5 +170,69 @@ impl Replica {
         self.raft_node.clone().propose(eval_result).await??;
 
         Ok(())
+    }
+
+    fn check_migrating_request_early(&self, shard_id: u64) -> Result<()> {
+        let lease_state = self.lease_state.lock().unwrap();
+        if lease_state.is_ready_for_serving() {
+            Err(Error::NotLeader(
+                self.info.group_id,
+                lease_state.leader_descriptor(),
+            ))
+        } else if !lease_state.is_migrating_shard(shard_id) {
+            let msg = format!("shard {} is not migrating", shard_id);
+            Err(Error::InvalidArgument(msg))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn check_migration_state_update_early(
+        &self,
+        desc: &MigrationDesc,
+        event: MigrationEvent,
+    ) -> Result<bool> {
+        let group_id = self.info.group_id;
+
+        let lease_state = self.lease_state.lock().unwrap();
+        if !lease_state.is_ready_for_serving() {
+            Err(Error::NotLeader(group_id, lease_state.leader_descriptor()))
+        } else if matches!(event, MigrationEvent::Setup) {
+            Self::check_migration_setup(self.info.as_ref(), &lease_state, desc)
+        } else if lease_state.migration_state.is_none() {
+            Err(Error::InvalidArgument(
+                "no such migration exists".to_owned(),
+            ))
+        } else if !lease_state.is_same_migration(desc) {
+            Err(Error::InvalidArgument(
+                "exists another migration".to_owned(),
+            ))
+        } else {
+            Ok(true)
+        }
+    }
+
+    fn check_migration_setup(
+        info: &ReplicaInfo,
+        lease_state: &LeaseState,
+        desc: &MigrationDesc,
+    ) -> Result<bool> {
+        let epoch = desc.src_group_epoch;
+        if epoch < lease_state.descriptor.epoch {
+            // This migration needs to be rollback.
+            Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
+        } else if lease_state.migration_state.is_none() {
+            debug_assert_eq!(epoch, lease_state.descriptor.epoch);
+            Ok(true)
+        } else if !lease_state.is_same_migration(desc) {
+            Err(Error::ServiceIsBusy("already exists a migration request"))
+        } else {
+            info!(
+                replica = info.replica_id,
+                group = info.group_id,
+                %desc,
+                "the same migration already exists");
+            Ok(false)
+        }
     }
 }

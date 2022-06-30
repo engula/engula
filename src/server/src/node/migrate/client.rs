@@ -91,10 +91,11 @@ impl GroupClient {
         shard_id: u64,
         last_key: &[u8],
     ) -> Result<RetryableShardChunkStreaming> {
-        let streaming = self.pull(shard_id, last_key).await?;
+        let last_key = last_key.to_owned();
+        let streaming = self.pull(shard_id, &last_key).await?;
         let retryable_streaming = RetryableShardChunkStreaming {
             shard_id,
-            last_key: last_key.to_owned(),
+            last_key,
             client: self,
             streaming,
         };

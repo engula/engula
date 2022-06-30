@@ -77,5 +77,10 @@ pub mod v1 {
                 .as_ref()
                 .expect("MigrationState::migration_desc is not None")
         }
+
+        #[inline]
+        pub fn get_shard_id(&self) -> u64 {
+            self.get_shard_desc().id
+        }
     }
 }

@@ -30,6 +30,7 @@ pub async fn forward_request(
     forward_ctx: &ForwardCtx,
     request: &Request,
 ) -> Result<Response> {
+    // FIXME(walter) performance
     let group_id = forward_ctx.dest_group_id;
     let mut group_client = GroupClient::new(group_id, router);
     let req = ForwardRequest {
