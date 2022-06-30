@@ -169,9 +169,8 @@ async fn try_join_cluster(
     info!("try join a bootstrapted cluster");
 
     let join_list = join_list
-        .iter()
+        .into_iter()
         .filter(|addr| *addr != local_addr)
-        .cloned()
         .collect::<Vec<_>>();
 
     if join_list.is_empty() {
