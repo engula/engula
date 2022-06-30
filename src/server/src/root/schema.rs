@@ -157,7 +157,14 @@ impl Schema {
     }
 
     pub async fn create_shards(&self, group_id: u64, descs: Vec<ShardDesc>) -> Result<()> {
+        let mut wait_create = descs.to_owned();
         loop {
+            let mut desc = wait_create.pop();
+            if desc.is_none() {
+                break;
+            }
+            let desc = desc.take().unwrap();
+
             let group = self
                 .get_group(group_id)
                 .await?
@@ -189,7 +196,7 @@ impl Schema {
             let node = self.get_node(node_id).await?.unwrap();
 
             if let Err(err) =
-                Self::try_create_shards(node_id, node.addr, group_id, epoch, &descs).await
+                Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc).await
             {
                 let need_retry = matches!(
                     &err,
@@ -200,28 +207,33 @@ impl Schema {
                 );
                 if need_retry {
                     time::sleep(Duration::from_secs(1)).await;
+                    wait_create.push(desc);
                     continue;
+                } else {
+                    return Err(err);
                 }
             }
-            break;
         }
 
         Ok(())
     }
 
-    async fn try_create_shards(
+    async fn try_create_shard(
         node_id: u64,
         addr: String,
         group_id: u64,
         epoch: u64,
-        descs: &[ShardDesc],
+        desc: &ShardDesc,
     ) -> Result<()> {
-        let mut batch = RequestBatchBuilder::new(node_id);
-        for desc in descs {
-            batch = batch.create_shard(group_id, epoch, desc.to_owned());
-        }
         let client = NodeClient::connect(addr).await?;
-        client.batch_group_requests(batch.build()).await?;
+        let batch =
+            RequestBatchBuilder::new(node_id).create_shard(group_id, epoch, desc.to_owned());
+        let resps = client.batch_group_requests(batch.build()).await?;
+        for resp in resps {
+            if let Some(err) = resp.error {
+                return Err(err.into());
+            }
+        }
         Ok(())
     }
 
