@@ -12,58 +12,105 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use engula_api::{server::v1::*, v1::*};
+use tokio::sync::Mutex;
 use tonic::{transport::Channel, Streaming};
 
 use crate::NodeClient;
 
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: root_client::RootClient<Channel>,
+    ensemble: Vec<String>,
+    client: Arc<Mutex<root_client::RootClient<Channel>>>,
+}
+
+async fn find_root_client(
+    ensemble: &[String],
+) -> Result<root_client::RootClient<Channel>, crate::Error> {
+    let node_client = find_node_client(ensemble).await?;
+    let root_candidates = node_client.get_root().await?;
+    let mut errs = vec![];
+    for addr in root_candidates {
+        let root_addr = format!("http://{}", addr);
+        match root_client::RootClient::connect(root_addr).await {
+            Ok(client) => return Ok(client),
+            Err(err) => errs.push(err),
+        }
+    }
+    Err(crate::Error::MultiTransport(errs))
+}
+
+async fn find_node_client(ensemble: &[String]) -> Result<NodeClient, crate::Error> {
+    let mut errs = vec![];
+    for addr in ensemble {
+        match NodeClient::connect(addr.clone()).await {
+            Ok(client) => return Ok(client),
+            Err(err) => errs.push(err),
+        }
+    }
+    Err(crate::Error::MultiTransport(errs))
 }
 
 impl Client {
-    pub async fn connect(addr: String) -> Result<Self, crate::Error> {
-        let node_client = NodeClient::connect(addr).await?;
-        let root_addrs = node_client.get_root().await?;
-        let mut errs = vec![];
-        for root_addr in root_addrs {
-            let root_addr = format!("http://{}", root_addr);
-            match root_client::RootClient::connect(root_addr).await {
-                Ok(client) => return Ok(Self { client }),
-                Err(err) => errs.push(err),
-            }
-        }
-        Err(crate::Error::MultiTransport(errs))
+    pub async fn connect(ensemble: Vec<String>) -> Result<Self, crate::Error> {
+        let client = find_root_client(ensemble.as_slice()).await?;
+        let client = Arc::new(Mutex::new(client));
+        Ok(Self { ensemble, client })
     }
 
-    pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse, tonic::Status> {
-        let mut client = self.client.clone();
-        let res = client.admin(req).await?;
+    pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse, crate::Error> {
+        let mut client = self.client.lock().await;
+        let res = match client.admin(req.clone()).await {
+            Ok(res) => res,
+            Err(_) => {
+                *client = find_root_client(self.ensemble.as_slice()).await?;
+                client.admin(req.clone()).await?
+            }
+        };
         Ok(res.into_inner())
     }
 
-    pub async fn join_node(&self, req: JoinNodeRequest) -> Result<JoinNodeResponse, tonic::Status> {
-        let mut client = self.client.clone();
-        let res = client.join(req).await?;
+    pub async fn join_node(&self, req: JoinNodeRequest) -> Result<JoinNodeResponse, crate::Error> {
+        let mut client = self.client.lock().await;
+        let res = match client.join(req.clone()).await {
+            Ok(res) => res,
+            Err(_) => {
+                *client = find_root_client(self.ensemble.as_slice()).await?;
+                client.join(req.clone()).await?
+            }
+        };
         Ok(res.into_inner())
     }
 
     // TODO removed once `watch` implemented
-    pub async fn resolve(&self, node_id: u64) -> Result<Option<NodeDesc>, tonic::Status> {
-        let mut client = self.client.clone();
-        let res = client.resolve(ResolveNodeRequest { node_id }).await?;
-        Ok(res.into_inner().node)
+    pub async fn resolve(&self, node_id: u64) -> Result<ResolveNodeResponse, crate::Error> {
+        let req = ResolveNodeRequest { node_id };
+        let mut client = self.client.lock().await;
+        let res = match client.resolve(req.clone()).await {
+            Ok(res) => res,
+            Err(_) => {
+                *client = find_root_client(self.ensemble.as_slice()).await?;
+                client.resolve(req.clone()).await?
+            }
+        };
+        Ok(res.into_inner())
     }
 
     pub async fn watch(
         &self,
         cur_group_epochs: HashMap<u64, u64>,
-    ) -> Result<Streaming<WatchResponse>, tonic::Status> {
-        let mut client = self.client.clone();
-        let res = client.watch(WatchRequest { cur_group_epochs }).await?;
+    ) -> Result<Streaming<WatchResponse>, crate::Error> {
+        let req = WatchRequest { cur_group_epochs };
+        let mut client = self.client.lock().await;
+        let res = match client.watch(req.clone()).await {
+            Ok(res) => res,
+            Err(_) => {
+                *client = find_root_client(self.ensemble.as_slice()).await?;
+                client.watch(req.clone()).await?
+            }
+        };
         Ok(res.into_inner())
     }
 }

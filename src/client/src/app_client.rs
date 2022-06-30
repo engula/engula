@@ -36,7 +36,7 @@ struct ClientInner {
 
 impl Client {
     pub async fn connect(addr: String) -> Result<Self, crate::Error> {
-        let root_client = RootClient::connect(addr.clone()).await?;
+        let root_client = RootClient::connect(vec![addr.clone()]).await?;
         let router = Router::new(addr).await;
         Ok(Self {
             inner: Arc::new(Mutex::new(ClientInner {

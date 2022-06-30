@@ -14,6 +14,8 @@
 
 #![feature(map_try_insert)]
 
+extern crate core;
+
 mod app_client;
 mod error;
 mod node_client;

@@ -110,7 +110,7 @@ impl Router {
 async fn state_main(state: Arc<Mutex<State>>, addr: String) {
     let mut interval = 1;
     let root_client = loop {
-        match RootClient::connect(addr.clone()).await {
+        match RootClient::connect(vec![addr.clone()]).await {
             Ok(c) => break c,
             Err(e) => {
                 warn!(err = ?e, addr=?addr, "connect root server");

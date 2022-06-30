@@ -209,7 +209,7 @@ async fn issue_join_request(
     local_addr: &str,
     node_capacity: NodeCapacity,
 ) -> Result<JoinNodeResponse> {
-    let client = RootClient::connect(target_addr.to_string()).await?;
+    let client = RootClient::connect(vec![target_addr.to_string()]).await?;
     let resp = client
         .join_node(JoinNodeRequest {
             addr: local_addr.to_owned(),
