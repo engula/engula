@@ -232,6 +232,7 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                                 co_shards_lookup.insert(shard.collection_id, vec![shard]);
                             }
                             Some(shards) => {
+                                shards.retain(|s| s.id != shard.id);
                                 shards.push(shard);
                             }
                         }
