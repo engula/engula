@@ -27,6 +27,7 @@ async fn main() -> Result<(), Error> {
     let v = "rust_in_actions".as_bytes().to_vec();
     co.put(k.clone(), v).await?;
     let r = co.get(k).await?;
+    let r = r.map(String::from_utf8);
     println!("{:?}", r);
     Ok(())
 }
