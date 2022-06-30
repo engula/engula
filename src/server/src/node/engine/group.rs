@@ -102,6 +102,11 @@ pub enum SnapshotMode<'a> {
     Prefix { key: &'a [u8] },
 }
 
+struct ColumnFamilyDecorator<'a, 'b> {
+    cf_handle: Arc<rocksdb::BoundColumnFamily<'b>>,
+    wb: &'a mut rocksdb::WriteBatch,
+}
+
 impl GroupEngine {
     /// Create a new instance of group engine.
     pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<()> {
@@ -230,8 +235,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.put_cf(
-            &self.cf_handle(),
+        wb.put(
             keys::mvcc_key(collection_id, key, version),
             values::data(value),
         );
@@ -252,8 +256,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.put_cf(
-            &self.cf_handle(),
+        wb.put(
             keys::mvcc_key(collection_id, key, version),
             values::tombstone(),
         );
@@ -273,10 +276,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.delete_cf(
-            &self.cf_handle(),
-            keys::mvcc_key(collection_id, key, version),
-        );
+        wb.delete(keys::mvcc_key(collection_id, key, version));
 
         Ok(())
     }
@@ -302,10 +302,18 @@ impl GroupEngine {
         wb.delete_cf(&self.cf_handle(), keys::migrate_meta());
     }
 
-    pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
+    pub fn commit(&self, mut wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
         let cf_handle = self.cf_handle();
+        let mut inner_wb = rocksdb::WriteBatch::default();
+        let mut decorator = ColumnFamilyDecorator {
+            cf_handle: cf_handle.clone(),
+            wb: &mut inner_wb,
+        };
+        wb.inner.iterate(&mut decorator);
+        wb.inner = inner_wb;
+
         let mut inner_wb = wb.inner;
         if let Some(apply_state) = wb.apply_state {
             inner_wb.put_cf(&cf_handle, keys::apply_state(), apply_state.encode_to_vec());
@@ -746,6 +754,16 @@ mod values {
         buf.push(DATA);
         buf.extend_from_slice(v);
         buf
+    }
+}
+
+impl<'a, 'b> rocksdb::WriteBatchIterator for ColumnFamilyDecorator<'a, 'b> {
+    fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
+        self.wb.put_cf(&self.cf_handle, key, value);
+    }
+
+    fn delete(&mut self, key: Box<[u8]>) {
+        self.wb.delete_cf(&self.cf_handle, key);
     }
 }
 
