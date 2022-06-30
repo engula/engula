@@ -310,9 +310,7 @@ impl GroupEngine {
             opts.disable_wal(true);
         }
         wb.write_states(&self.cf_handle());
-        if let Err(e) = self.raw_db.write_opt(wb.inner, &opts) {
-            panic!("cf handle name is {}: {}", self.name, e);
-        };
+        self.raw_db.write_opt(wb.inner, &opts)?;
 
         if wb.descriptor.is_some() || wb.migration_state.is_some() {
             self.apply_core_states(wb.descriptor, wb.migration_state);

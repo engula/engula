@@ -137,7 +137,7 @@ impl GroupStateMachine {
         }
 
         self.group_engine.set_apply_state(&mut wb, index, term);
-        self.group_engine.commit(wb, false).unwrap();
+        self.group_engine.commit(wb, false)?;
 
         Ok(())
     }
