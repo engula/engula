@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, time::Duration};
+use std::{collections::HashMap, future::Future, task::Poll, time::Duration};
 
 use engula_api::server::v1::*;
 use engula_client::{NodeClient, Router};
+use futures::{FutureExt, StreamExt};
 use tracing::warn;
 
 use crate::{Error, Result};
+
+pub struct RetryableShardChunkStreaming<'a> {
+    shard_id: u64,
+    last_key: Vec<u8>,
+    client: &'a mut GroupClient,
+    streaming: tonic::Streaming<ShardChunk>,
+}
 
 pub struct GroupClient {
     group_id: u64,
@@ -78,7 +86,22 @@ impl GroupClient {
         self.invoke(op).await
     }
 
-    pub async fn pull(
+    pub async fn retryable_pull(
+        &mut self,
+        shard_id: u64,
+        last_key: &[u8],
+    ) -> Result<RetryableShardChunkStreaming> {
+        let streaming = self.pull(shard_id, last_key).await?;
+        let retryable_streaming = RetryableShardChunkStreaming {
+            shard_id,
+            last_key: last_key.to_owned(),
+            client: self,
+            streaming,
+        };
+        Ok(retryable_streaming)
+    }
+
+    async fn pull(
         &mut self,
         shard_id: u64,
         last_key: &[u8],
@@ -215,5 +238,47 @@ impl GroupClient {
             }
             e => Err(e),
         }
+    }
+}
+
+impl<'a> RetryableShardChunkStreaming<'a> {
+    async fn next(&mut self) -> Option<Result<ShardChunk>> {
+        loop {
+            let item = match self.streaming.next().await {
+                None => return None,
+                Some(item) => item,
+            };
+            match item {
+                Ok(item) => {
+                    debug_assert!(!item.data.is_empty());
+                    self.last_key = item.data.last().unwrap().key.clone();
+                    return Some(Ok(item));
+                }
+                Err(status) => {
+                    if let Err(e) = self.client.apply_status(status, false).await {
+                        return Some(Err(e));
+                    }
+                }
+            }
+
+            // retry, by recreate new stream.
+            match self.client.pull(self.shard_id, &self.last_key).await {
+                Ok(streaming) => self.streaming = streaming,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+}
+
+impl<'a> futures::Stream for RetryableShardChunkStreaming<'a> {
+    type Item = Result<ShardChunk>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let future = self.get_mut().next();
+        futures::pin_mut!(future);
+        future.poll_unpin(cx)
     }
 }

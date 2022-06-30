@@ -249,17 +249,23 @@ impl Replica {
 }
 
 impl Replica {
+    #[inline]
     async fn take_acl_guard<'a>(&'a self, request: &'a Request) -> MetaAclGuard<'a> {
         if is_change_meta_request(request) {
-            MetaAclGuard::Write(self.meta_acl.write().await)
+            self.take_write_acl_guard().await
         } else {
-            MetaAclGuard::Read(self.meta_acl.read().await)
+            self.take_read_acl_guard().await
         }
     }
 
     #[inline]
     async fn take_write_acl_guard(&self) -> MetaAclGuard {
         MetaAclGuard::Write(self.meta_acl.write().await)
+    }
+
+    #[inline]
+    async fn take_read_acl_guard(&self) -> MetaAclGuard {
+        MetaAclGuard::Read(self.meta_acl.read().await)
     }
 
     /// Delegates the eval method for the given `Request`.

@@ -20,6 +20,8 @@ use crate::{node::engine::SnapshotMode, serverpb::v1::*, Error, Result};
 
 impl Replica {
     pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
+        let _acl_guard = self.take_read_acl_guard().await;
+
         self.check_leader_early()?;
 
         let mut kvs = vec![];
@@ -71,6 +73,8 @@ impl Replica {
             return Ok(());
         }
 
+        let _acl_guard = self.take_write_acl_guard().await;
+
         // TODO(walter) return if migration already finished.
         // TODO(walter) check request epoch and shard id.
         self.check_leader_early()?;
@@ -108,6 +112,7 @@ impl Replica {
             return Ok(());
         }
 
+        let _acl_guard = self.take_write_acl_guard().await;
         // TODO(walter) check request epoch and shard id.
         self.check_leader_early()?;
 
