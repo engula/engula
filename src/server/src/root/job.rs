@@ -185,6 +185,15 @@ impl Root {
                 }
             }
         }
+
+        let shard_actions = self.alloc.compute_shard_action().await?;
+        for shard_action in shard_actions {
+            match shard_action {
+                super::allocator::ShardAction::Noop => {}
+                super::allocator::ShardAction::Migrate(_action) => {}
+            }
+        }
+
         Ok(())
     }
 }

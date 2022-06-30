@@ -1,6 +1,6 @@
 // Copyright 2022 The Engula Authors.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Apache &License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -14,7 +14,10 @@
 
 use std::{
     collections::{hash_map::Entry, HashMap},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
 };
 
 use engula_api::server::v1::{GroupDesc, NodeCapacity, ReplicaRole, ShardDesc};
@@ -82,7 +85,7 @@ fn sim_boostrap_join_node_balance() {
 
         println!("3. group0 be repaired");
         p.set_groups(vec![GroupDesc {
-            id: 1,
+            id: 0,
             epoch: 0,
             shards: vec![],
             replicas: vec![
@@ -151,7 +154,19 @@ fn sim_boostrap_join_node_balance() {
         assert!(ract.is_empty());
         p.display();
 
-        println!("5. node 4 joined");
+        println!("5. assign shard in groups");
+        let cg = a.place_group_for_shard(9).await.unwrap();
+        for id in 0..9 {
+            let group = cg.get(id % cg.len()).unwrap();
+            p.assign_shard(group.id);
+            println!(
+                "assign shard to group {}, prev_shard_cnt: {}",
+                group.id,
+                group.shards.len()
+            );
+        }
+
+        println!("6. node 4 joined");
         let mut nodes = p.nodes();
         nodes.extend_from_slice(&[NodeDesc {
             id: 4,
@@ -165,7 +180,7 @@ fn sim_boostrap_join_node_balance() {
         p.set_nodes(nodes);
         p.display();
 
-        println!("6. balance group for new node");
+        println!("7. balance group for new node");
         let act = a.compute_group_action().await.unwrap();
         match act {
             GroupAction::Add(n) => {
@@ -208,12 +223,12 @@ fn sim_boostrap_join_node_balance() {
         assert!(matches!(act, GroupAction::Noop));
         p.display();
 
-        println!("7. balance replica between nodes");
+        println!("8. balance replica between nodes");
         let racts = a.compute_replica_action().await.unwrap();
         assert!(!racts.is_empty());
         for act in &racts {
             match act {
-                ReplicaAction::Migrate(MigrateAction {
+                ReplicaAction::Migrate(ReallocateReplica {
                     source_replica,
                     target_node,
                 }) => {
@@ -227,7 +242,7 @@ fn sim_boostrap_join_node_balance() {
         assert!(!racts.is_empty());
         for act in &racts {
             match act {
-                ReplicaAction::Migrate(MigrateAction {
+                ReplicaAction::Migrate(ReallocateReplica {
                     source_replica,
                     target_node,
                 }) => {
@@ -241,17 +256,54 @@ fn sim_boostrap_join_node_balance() {
         assert!(racts.is_empty());
         p.display();
 
-        println!("8. assign shard in groups");
-        let cg = a.place_group_for_shard(8).await.unwrap();
-        for id in 0..8 {
-            let group = cg.get(id % cg.len()).unwrap();
-            p.assign_shard(group.id);
-            println!(
-                "assign shard to group {}, prev_shard_cnt: {}",
-                group.id,
-                group.shards.len()
-            );
+        println!("9. balance shards between groups");
+        let sact = a.compute_shard_action().await.unwrap();
+        assert!(!sact.is_empty());
+        for act in &sact {
+            match act {
+                ShardAction::Migrate(ReallocateShard {
+                    shard,
+                    source_group,
+                    target_group,
+                }) => {
+                    println!(
+                        "move shard {} from {} to {}",
+                        shard, source_group, target_group
+                    );
+                    p.move_shards(
+                        source_group.to_owned(),
+                        target_group.to_owned(),
+                        shard.to_owned(),
+                    );
+                }
+                ShardAction::Noop => unreachable!(),
+            }
         }
+        let sact = a.compute_shard_action().await.unwrap();
+        assert!(!sact.is_empty());
+        for act in &sact {
+            match act {
+                ShardAction::Migrate(ReallocateShard {
+                    shard,
+                    source_group,
+                    target_group,
+                }) => {
+                    println!(
+                        "move shard {} from {} to {}",
+                        shard, source_group, target_group
+                    );
+                    p.move_shards(
+                        source_group.to_owned(),
+                        target_group.to_owned(),
+                        shard.to_owned(),
+                    );
+                }
+                ShardAction::Noop => unreachable!(),
+            }
+        }
+        let sact = a.compute_shard_action().await.unwrap();
+        assert!(sact.is_empty());
+        p.display();
 
         println!("done");
     });
@@ -260,6 +312,7 @@ fn sim_boostrap_join_node_balance() {
 pub struct MockInfoProvider {
     nodes: Arc<Mutex<Vec<NodeDesc>>>,
     groups: Arc<Mutex<GroupInfo>>,
+    shard_id_gen: AtomicU64,
 }
 
 #[derive(Default)]
@@ -273,6 +326,7 @@ impl MockInfoProvider {
         Self {
             nodes: Default::default(),
             groups: Default::default(),
+            shard_id_gen: AtomicU64::new(1),
         }
     }
 }
@@ -356,11 +410,43 @@ impl MockInfoProvider {
         self.set_groups(groups);
     }
 
+    pub fn move_shards(&self, sgroup: u64, tgroup: u64, shard: u64) {
+        let mut groups = self.groups();
+
+        let mut shard_desc = None;
+        for group in groups.iter_mut() {
+            if group.id == sgroup {
+                group.shards.retain(|s| {
+                    if s.id == shard {
+                        shard_desc = Some(s.to_owned())
+                    }
+                    s.id != shard
+                });
+                break;
+            }
+        }
+
+        if let Some(shard_desc) = shard_desc {
+            for group in groups.iter_mut() {
+                if group.id == tgroup {
+                    group.shards.push(shard_desc);
+                    break;
+                }
+            }
+        }
+
+        self.set_groups(groups);
+    }
+
     pub fn assign_shard(&self, group_id: u64) {
         let mut groups = self.groups();
         for group in groups.iter_mut() {
             if group.id == group_id {
-                group.shards.push(ShardDesc::default());
+                let s = ShardDesc {
+                    id: self.shard_id_gen.fetch_add(1, Ordering::Relaxed),
+                    ..Default::default()
+                };
+                group.shards.push(s);
             }
         }
         self.set_groups(groups);
@@ -371,11 +457,17 @@ impl MockInfoProvider {
         println!("----------");
         for (n, g) in &groups.node_replicas {
             println!(
-                "node: {} -> {:?}",
+                "node replicas: {} -> {:?}",
                 n,
                 g.iter().map(|r| r.id).collect::<Vec<u64>>()
             )
         }
+
+        for g in &groups.descs {
+            let shards = g.shards.iter().map(|s| s.id).collect::<Vec<u64>>();
+            println!("group shards: {} -> {:?}", g.id, shards);
+        }
+
         let nodes = self.nodes.lock().unwrap();
         println!(
             "cluster_nodes: {:?}",

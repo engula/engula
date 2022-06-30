@@ -87,7 +87,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if Self::node_balance_state(sim_count, mean) == BalanceStatus::Overfull {
                 continue;
             }
-            return Some(ReplicaAction::Migrate(MigrateAction {
+            return Some(ReplicaAction::Migrate(ReallocateReplica {
                 source_replica: source_replica.id,
                 target_node: target.to_owned(),
             }));
