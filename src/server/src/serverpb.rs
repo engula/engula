@@ -15,35 +15,72 @@
 #![allow(clippy::all)]
 
 pub mod v1 {
-    use engula_api::server::v1::ShardDesc;
+    use engula_api::server::v1::{MigrationDesc, ShardDesc};
 
     tonic::include_proto!("serverpb.v1");
 
     pub type ApplyState = EntryId;
-    pub type MigrateEventValue = migrate_event::Value;
+    pub type MigrationEvent = migration::Event;
 
     impl SyncOp {
-        pub fn add_shard(shard: ShardDesc) -> Self {
-            SyncOp {
+        #[inline]
+        pub fn add_shard(shard: ShardDesc) -> Box<Self> {
+            Box::new(SyncOp {
                 add_shard: Some(AddShard { shard: Some(shard) }),
                 ..Default::default()
-            }
+            })
         }
 
-        pub fn purge_replica(orphan_replica_id: u64) -> Self {
-            SyncOp {
+        #[inline]
+        pub fn purge_replica(orphan_replica_id: u64) -> Box<Self> {
+            Box::new(SyncOp {
                 purge_replica: Some(PurgeOrphanReplica {
                     replica_id: orphan_replica_id,
                 }),
                 ..Default::default()
-            }
+            })
         }
 
-        pub fn migrate_event(value: migrate_event::Value) -> Self {
-            SyncOp {
-                migrate_event: Some(MigrateEvent { value: Some(value) }),
+        #[inline]
+        pub fn migration(event: MigrationEvent, desc: MigrationDesc) -> Box<Self> {
+            Box::new(SyncOp {
+                migration: Some(Migration {
+                    event: event as i32,
+                    migration_desc: Some(desc),
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }
+            })
+        }
+        #[inline]
+        pub fn ingest(key: Vec<u8>) -> Box<Self> {
+            Box::new(SyncOp {
+                migration: Some(Migration {
+                    event: MigrationEvent::Ingest as i32,
+                    last_ingested_key: key,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+        }
+    }
+
+    impl MigrationState {
+        #[inline]
+        pub fn get_shard_desc(&self) -> &ShardDesc {
+            self.get_migration_desc().get_shard_desc()
+        }
+
+        #[inline]
+        pub fn get_migration_desc(&self) -> &MigrationDesc {
+            self.migration_desc
+                .as_ref()
+                .expect("MigrationState::migration_desc is not None")
+        }
+
+        #[inline]
+        pub fn get_shard_id(&self) -> u64 {
+            self.get_shard_desc().id
         }
     }
 }

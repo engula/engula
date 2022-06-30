@@ -20,46 +20,21 @@ use std::{
 
 use engula_api::server::v1::*;
 use futures::StreamExt;
-use tracing::warn;
 
 use super::GroupClient;
-use crate::{node::Replica, raftgroup::AddressResolver, serverpb::v1::*, Result};
+use crate::{node::Replica, Result};
 
 pub async fn pull_shard(
-    address_resolver: Arc<dyn AddressResolver>,
-    replica: Arc<Replica>,
-    migrate_meta: MigrateMeta,
-) {
-    let info = replica.replica_info();
-    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
-    let mut group_client = GroupClient::new(migrate_meta.src_group_id, address_resolver);
-    while let Ok(()) = replica.on_leader(true).await {
-        match pull_shard_round(&mut group_client, replica.as_ref(), &migrate_meta).await {
-            Ok(()) => {
-                // TODO(walter)
-                // update migrate state to half finished.
-                return;
-            }
-            Err(err) => {
-                warn!(
-                    "replica {} pull shard {}: {}",
-                    info.replica_id, shard_id, err
-                );
-            }
-        }
-    }
-}
-
-async fn pull_shard_round(
     group_client: &mut GroupClient,
     replica: &Replica,
-    migrate_meta: &MigrateMeta,
+    desc: &MigrationDesc,
+    last_migrated_key: Vec<u8>,
 ) -> Result<()> {
-    let shard_id = migrate_meta.shard_desc.as_ref().unwrap().id;
-    let mut shard_chunk_stream = group_client
-        .pull(shard_id, &migrate_meta.last_migrated_key)
+    let shard_id = desc.get_shard_id();
+    let mut streaming = group_client
+        .retryable_pull(shard_id, last_migrated_key)
         .await?;
-    while let Some(shard_chunk) = shard_chunk_stream.next().await {
+    while let Some(shard_chunk) = streaming.next().await {
         let shard_chunk = shard_chunk?;
         replica.ingest(shard_id, shard_chunk, false).await?;
     }
@@ -89,6 +64,7 @@ impl ShardChunkStream {
         if shard_chunk.data.is_empty() {
             Ok(None)
         } else {
+            self.last_key = shard_chunk.data.last().as_ref().unwrap().key.clone();
             Ok(Some(shard_chunk))
         }
     }

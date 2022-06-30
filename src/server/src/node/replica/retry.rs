@@ -17,10 +17,31 @@ use std::time::Duration;
 use engula_api::server::v1::{group_request_union::Request, *};
 
 use super::{ExecCtx, Replica};
-use crate::{node::shard, Error, Result};
+use crate::{
+    node::{migrate::MigrateController, shard},
+    Error, Result,
+};
 
 /// A wrapper function that detects and completes retries as quickly as possible.
 pub async fn execute(
+    replica: &Replica,
+    exec_ctx: ExecCtx,
+    request: GroupRequest,
+) -> Result<GroupResponse> {
+    execute_internal(None, replica, exec_ctx, request).await
+}
+
+pub async fn forwardable_execute(
+    migrate_ctrl: &MigrateController,
+    replica: &Replica,
+    exec_ctx: ExecCtx,
+    request: GroupRequest,
+) -> Result<GroupResponse> {
+    execute_internal(Some(migrate_ctrl), replica, exec_ctx, request).await
+}
+
+async fn execute_internal(
+    migrate_ctrl: Option<&MigrateController>,
     replica: &Replica,
     mut exec_ctx: ExecCtx,
     request: GroupRequest,
@@ -46,9 +67,12 @@ pub async fn execute(
                 return Ok(resp);
             }
             Err(Error::Forward(forward_ctx)) => {
-                let ctrl = replica.migrate_ctrl();
-                let resp = ctrl.forward(forward_ctx, request).await?;
-                return Ok(GroupResponse::new(resp));
+                if let Some(ctrl) = migrate_ctrl {
+                    let resp = ctrl.forward(forward_ctx, request).await?;
+                    return Ok(GroupResponse::new(resp));
+                } else {
+                    panic!("receive forward response but no migration controller set");
+                }
             }
             Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
                 // sleep and retry.

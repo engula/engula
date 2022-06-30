@@ -33,7 +33,7 @@ pub const LOCAL_COLLECTION_ID: u64 = 0;
 pub struct WriteBatch {
     apply_state: Option<ApplyState>,
     descriptor: Option<GroupDesc>,
-    migrate_meta: Option<MigrateMeta>,
+    migration_state: Option<MigrationState>,
     inner: rocksdb::WriteBatch,
 }
 
@@ -49,7 +49,14 @@ where
 {
     name: String,
     raw_db: Arc<rocksdb::DB>,
-    shard_descs: Arc<RwLock<HashMap<u64, ShardDesc>>>,
+    core: Arc<RwLock<GroupEngineCore>>,
+}
+
+#[derive(Default)]
+struct GroupEngineCore {
+    group_desc: GroupDesc,
+    shard_descs: HashMap<u64, ShardDesc>,
+    migration_state: Option<MigrationState>,
 }
 
 /// Traverse the data of the group engine, but don't care about the data format.
@@ -111,6 +118,7 @@ impl GroupEngine {
         let name = group_id.to_string();
         info!("create group engine for {}, cf name is {}", group_id, name);
         // FIXME(walter) clean staled data if the column families already exists.
+        debug_assert!(raw_db.cf_handle(&name).is_none());
         raw_db.create_cf(&name, &Options::default())?;
 
         let desc = GroupDesc {
@@ -123,7 +131,11 @@ impl GroupEngine {
         let engine = GroupEngine {
             name,
             raw_db,
-            shard_descs: Arc::default(),
+            core: Arc::new(RwLock::new(GroupEngineCore {
+                group_desc: desc.clone(),
+                shard_descs: Default::default(),
+                migration_state: None,
+            })),
         };
 
         // The group descriptor should be persisted into disk.
@@ -144,22 +156,27 @@ impl GroupEngine {
                 return Ok(None);
             }
         };
-        let raw_key = keys::descriptor();
-        let value = raw_db
-            .get_pinned_cf(&cf_handle, raw_key)?
-            .expect("group descriptor will persisted when creating group");
-        let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
-        let shards = desc
-            .shards
-            .iter()
-            .map(|shard| (shard.id, shard.clone()))
-            .collect::<HashMap<_, _>>();
+
+        let group_desc = internal::descriptor(&raw_db, &cf_handle)?;
+        let migration_state = internal::migration_state(&raw_db, &cf_handle)?;
+        let mut shard_descs = internal::shard_descs(&group_desc);
+        if let Some(shard_desc) = migration_state.as_ref().map(|m| m.get_shard_desc()) {
+            shard_descs
+                .entry(shard_desc.id)
+                .or_insert_with(|| shard_desc.clone());
+        }
+        let core = GroupEngineCore {
+            migration_state,
+            group_desc,
+            shard_descs,
+        };
+
         // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
         raw_db.flush_cf(&cf_handle)?;
         Ok(Some(GroupEngine {
             name,
             raw_db: raw_db.clone(),
-            shard_descs: Arc::new(RwLock::new(shards)),
+            core: Arc::new(RwLock::new(core)),
         }))
     }
 
@@ -167,40 +184,26 @@ impl GroupEngine {
     pub async fn destory(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
         let name = group_id.to_string();
         raw_db.drop_cf(&name)?;
+        info!("destory column family {}", name);
         Ok(())
     }
 
-    pub fn migrate_meta(&self) -> Result<Option<MigrateMeta>> {
-        let raw_key = keys::migrate_meta();
-        Ok(self
-            .raw_db
-            .get_pinned_cf(&self.cf_handle(), raw_key)?
-            .map(|val| MigrateMeta::decode(val.as_ref()).expect("MigrateMeta")))
+    /// Return the migrate state.
+    #[inline]
+    pub fn migration_state(&self) -> Option<MigrationState> {
+        self.core.read().unwrap().migration_state.clone()
     }
 
-    /// Return the group descriptor
-    pub fn descriptor(&self) -> Result<GroupDesc> {
-        let raw_key = keys::descriptor();
-        let value = self
-            .raw_db
-            .get_pinned_cf(&self.cf_handle(), raw_key)?
-            .expect("group descriptor will persisted when creating group");
-        let desc = GroupDesc::decode(value.as_ref()).expect("group descriptor format");
-        Ok(desc)
+    /// Return the group descriptor.
+    #[inline]
+    pub fn descriptor(&self) -> GroupDesc {
+        self.core.read().unwrap().group_desc.clone()
     }
 
     /// Return the persisted apply state of raft.
-    pub fn flushed_apply_state(&self) -> ApplyState {
-        use rocksdb::{ReadOptions, ReadTier};
-        let mut opt = ReadOptions::default();
-        opt.set_read_tier(ReadTier::Persisted);
-        let raw_key = keys::apply_state();
-        let value = self
-            .raw_db
-            .get_pinned_cf_opt(&self.cf_handle(), raw_key, &opt)
-            .unwrap()
-            .expect("apply state will persisted when creating group");
-        ApplyState::decode(value.as_ref()).expect("should encoded ApplyState")
+    #[inline]
+    pub fn flushed_apply_state(&self) -> Result<ApplyState> {
+        internal::flushed_apply_state(&self.raw_db, &self.cf_handle())
     }
 
     /// Get key value from the corresponding shard.
@@ -293,26 +296,12 @@ impl GroupEngine {
     }
 
     #[inline]
-    pub fn set_migrate_meta(&self, wb: &mut WriteBatch, migrate_meta: &MigrateMeta) {
-        wb.migrate_meta = Some(migrate_meta.clone());
+    pub fn set_migration_state(&self, wb: &mut WriteBatch, migration_state: &MigrationState) {
+        wb.migration_state = Some(migration_state.clone());
     }
 
-    #[inline]
-    pub fn clear_migrate_meta(&self, wb: &mut WriteBatch) {
-        wb.delete_cf(&self.cf_handle(), keys::migrate_meta());
-    }
-
-    pub fn commit(&self, wb: WriteBatch, persisted: bool) -> Result<()> {
+    pub fn commit(&self, mut wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
-
-        let cf_handle = self.cf_handle();
-        let mut inner_wb = wb.inner;
-        if let Some(apply_state) = wb.apply_state {
-            inner_wb.put_cf(&cf_handle, keys::apply_state(), apply_state.encode_to_vec());
-        }
-        if let Some(desc) = &wb.descriptor {
-            inner_wb.put_cf(&cf_handle, keys::descriptor(), desc.encode_to_vec());
-        }
 
         let mut opts = WriteOptions::default();
         if persisted {
@@ -320,15 +309,11 @@ impl GroupEngine {
         } else {
             opts.disable_wal(true);
         }
-        self.raw_db.write_opt(inner_wb, &opts)?;
+        wb.write_states(&self.cf_handle());
+        self.raw_db.write_opt(wb.inner, &opts)?;
 
-        if let Some(desc) = wb.descriptor {
-            let mut shard_descs = self.shard_descs.write().unwrap();
-            shard_descs.clear();
-            for shard in desc.shards {
-                shard_descs.insert(shard.id, shard.clone());
-            }
-            // TODO(walter) add migration shard desc.
+        if wb.descriptor.is_some() || wb.migration_state.is_some() {
+            self.apply_core_states(wb.descriptor, wb.migration_state);
         }
 
         Ok(())
@@ -382,25 +367,54 @@ impl GroupEngine {
         self.raw_db.create_cf(&self.name, &Options::default())?;
 
         let opts = IngestExternalFileOptions::default();
+        let cf_handle = self.cf_handle();
         self.raw_db
-            .ingest_external_file_cf_opts(&self.cf_handle(), &opts, files)?;
+            .ingest_external_file_cf_opts(&cf_handle, &opts, files)?;
 
-        let desc = self.descriptor().unwrap();
-        let mut shard_descs = self.shard_descs.write().unwrap();
-        shard_descs.clear();
-        for shard in desc.shards {
-            shard_descs.insert(shard.id, shard.clone());
-        }
-        // TODO(walter) add migration shard desc.
+        let group_desc = internal::descriptor(&self.raw_db, &cf_handle)?;
+        let migration_state = internal::migration_state(&self.raw_db, &cf_handle)?;
+        self.apply_core_states(Some(group_desc), migration_state);
 
         Ok(())
     }
 
+    pub fn apply_core_states(
+        &self,
+        descriptor: Option<GroupDesc>,
+        migration_state: Option<MigrationState>,
+    ) {
+        let mut core = self.core.write().unwrap();
+        if let Some(desc) = descriptor {
+            core.group_desc = desc;
+        }
+
+        // TODO(walter) remove shard desc if migration task is aborted.
+        if let Some(migration_state) = migration_state {
+            if migration_state.step == MigrationStep::Finished as i32
+                || migration_state.step == MigrationStep::Aborted as i32
+            {
+                core.migration_state = None;
+            } else {
+                core.migration_state = Some(migration_state);
+            }
+        }
+
+        core.shard_descs = internal::shard_descs(&core.group_desc);
+        if let Some(shard_desc) = core
+            .migration_state
+            .as_ref()
+            .map(|m| m.get_shard_desc().clone())
+        {
+            core.shard_descs.entry(shard_desc.id).or_insert(shard_desc);
+        }
+    }
+
     #[inline]
     fn shard_desc(&self, shard_id: u64) -> Result<ShardDesc> {
-        self.shard_descs
+        self.core
             .read()
             .expect("read lock")
+            .shard_descs
             .get(&shard_id)
             .cloned()
             .ok_or_else(|| Error::InvalidArgument(format!("no such {} shard exists", shard_id)))
@@ -653,7 +667,7 @@ impl<'a> Default for SnapshotMode<'a> {
 mod keys {
     const APPLY_STATE: &[u8] = b"APPLY_STATE";
     const DESCRIPTOR: &[u8] = b"DESCRIPTOR";
-    const MIGRATE_META: &[u8] = b"MIGRATE_META";
+    const MIGRATE_STATE: &[u8] = b"MIGRATE_STATE";
 
     #[inline]
     pub fn raw(collection_id: u64, key: &[u8]) -> Vec<u8> {
@@ -724,10 +738,10 @@ mod keys {
     }
 
     #[inline]
-    pub fn migrate_meta() -> Vec<u8> {
-        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + MIGRATE_META.len());
+    pub fn migrate_state() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + MIGRATE_STATE.len());
         buf.extend_from_slice(super::LOCAL_COLLECTION_ID.to_le_bytes().as_slice());
-        buf.extend_from_slice(MIGRATE_META);
+        buf.extend_from_slice(MIGRATE_STATE);
         buf
     }
 }
@@ -756,6 +770,30 @@ impl WriteBatch {
             ..Default::default()
         }
     }
+
+    fn write_states(&mut self, cf_handle: &impl rocksdb::AsColumnFamilyRef) {
+        let inner_wb = &mut self.inner;
+        if let Some(apply_state) = &self.apply_state {
+            inner_wb.put_cf(cf_handle, keys::apply_state(), apply_state.encode_to_vec());
+        }
+        if let Some(desc) = &self.descriptor {
+            inner_wb.put_cf(cf_handle, keys::descriptor(), desc.encode_to_vec());
+        }
+        if let Some(migration_state) = &self.migration_state {
+            // Migrations in abort or finish steps are not persisted.
+            if migration_state.step != MigrationStep::Finished as i32
+                && migration_state.step != MigrationStep::Aborted as i32
+            {
+                inner_wb.put_cf(
+                    cf_handle,
+                    keys::migrate_state(),
+                    migration_state.encode_to_vec(),
+                );
+            } else {
+                inner_wb.delete_cf(cf_handle, keys::migrate_state());
+            }
+        }
+    }
 }
 
 impl Deref for WriteBatch {
@@ -769,6 +807,55 @@ impl Deref for WriteBatch {
 impl DerefMut for WriteBatch {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+mod internal {
+    use prost::Message;
+
+    use super::*;
+
+    pub(super) fn descriptor(
+        db: &rocksdb::DB,
+        cf_handle: &impl rocksdb::AsColumnFamilyRef,
+    ) -> Result<GroupDesc> {
+        let value = db
+            .get_pinned_cf(cf_handle, keys::descriptor())?
+            .expect("group descriptor will persisted when creating group");
+        Ok(GroupDesc::decode(value.as_ref())?)
+    }
+
+    pub(super) fn migration_state(
+        db: &rocksdb::DB,
+        cf_handle: &impl rocksdb::AsColumnFamilyRef,
+    ) -> Result<Option<MigrationState>> {
+        if let Some(v) = db.get_pinned_cf(cf_handle, keys::migrate_state())? {
+            Ok(Some(MigrationState::decode(v.as_ref())?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(super) fn flushed_apply_state(
+        db: &rocksdb::DB,
+        cf_handle: &impl rocksdb::AsColumnFamilyRef,
+    ) -> Result<ApplyState> {
+        use rocksdb::{ReadOptions, ReadTier};
+        let mut opt = ReadOptions::default();
+        opt.set_read_tier(ReadTier::Persisted);
+        let value = db
+            .get_pinned_cf_opt(cf_handle, keys::apply_state(), &opt)?
+            .expect("apply state will persisted when creating group");
+        Ok(ApplyState::decode(value.as_ref())?)
+    }
+
+    #[inline]
+    pub(super) fn shard_descs(group_desc: &GroupDesc) -> HashMap<u64, ShardDesc> {
+        group_desc
+            .shards
+            .iter()
+            .map(|shard| (shard.id, shard.clone()))
+            .collect::<HashMap<_, _>>()
     }
 }
 
