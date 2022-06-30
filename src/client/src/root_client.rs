@@ -82,7 +82,7 @@ impl Client {
         let res = match client.admin(req.clone()).await {
             Ok(res) => res,
             Err(status) => {
-                let _ = not_leader(Error::decode(status.details())).ok_or_else(|| status)?;
+                let _ = not_leader(Error::decode(status.details())).ok_or(status)?;
                 *client = find_root_client(self.ensemble.as_slice()).await?;
                 client.admin(req.clone()).await?
             }
@@ -95,7 +95,7 @@ impl Client {
         let res = match client.join(req.clone()).await {
             Ok(res) => res,
             Err(status) => {
-                let _ = not_leader(Error::decode(status.details())).ok_or_else(|| status)?;
+                let _ = not_leader(Error::decode(status.details())).ok_or(status)?;
                 *client = find_root_client(self.ensemble.as_slice()).await?;
                 client.join(req.clone()).await?
             }
@@ -110,7 +110,7 @@ impl Client {
         let res = match client.resolve(req.clone()).await {
             Ok(res) => res,
             Err(status) => {
-                let _ = not_leader(Error::decode(status.details())).ok_or_else(|| status)?;
+                let _ = not_leader(Error::decode(status.details())).ok_or(status)?;
                 *client = find_root_client(self.ensemble.as_slice()).await?;
                 client.resolve(req.clone()).await?
             }
@@ -127,7 +127,7 @@ impl Client {
         let res = match client.watch(req.clone()).await {
             Ok(res) => res,
             Err(status) => {
-                let _ = not_leader(Error::decode(status.details())).ok_or_else(|| status)?;
+                let _ = not_leader(Error::decode(status.details())).ok_or(status)?;
                 *client = find_root_client(self.ensemble.as_slice()).await?;
                 client.watch(req.clone()).await?
             }
