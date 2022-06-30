@@ -15,6 +15,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use engula_api::{server::v1::*, v1::*};
+use prost::{DecodeError, Message};
 use tokio::sync::Mutex;
 use tonic::{transport::Channel, Streaming};
 
@@ -53,6 +54,20 @@ async fn find_node_client(ensemble: &[String]) -> Result<NodeClient, crate::Erro
     Err(crate::Error::MultiTransport(errs))
 }
 
+fn is_not_leader(err: Result<Error, DecodeError>) -> bool {
+    if err.is_err() {
+        return false;
+    }
+
+    let details = err.unwrap().details;
+    if details.is_empty() {
+        return false;
+    }
+
+    let v = &details[0].detail.as_ref().and_then(|u| u.value.clone());
+    matches!(v, Some(error_detail_union::Value::NotLeader(_)))
+}
+
 impl Client {
     pub async fn connect(ensemble: Vec<String>) -> Result<Self, crate::Error> {
         let client = find_root_client(ensemble.as_slice()).await?;
@@ -64,9 +79,13 @@ impl Client {
         let mut client = self.client.lock().await;
         let res = match client.admin(req.clone()).await {
             Ok(res) => res,
-            Err(_) => {
-                *client = find_root_client(self.ensemble.as_slice()).await?;
-                client.admin(req.clone()).await?
+            Err(status) => {
+                if is_not_leader(Error::decode(status.details())) {
+                    *client = find_root_client(self.ensemble.as_slice()).await?;
+                    client.admin(req.clone()).await?
+                } else {
+                    return Err(status.into());
+                }
             }
         };
         Ok(res.into_inner())
@@ -76,9 +95,13 @@ impl Client {
         let mut client = self.client.lock().await;
         let res = match client.join(req.clone()).await {
             Ok(res) => res,
-            Err(_) => {
-                *client = find_root_client(self.ensemble.as_slice()).await?;
-                client.join(req.clone()).await?
+            Err(status) => {
+                if is_not_leader(Error::decode(status.details())) {
+                    *client = find_root_client(self.ensemble.as_slice()).await?;
+                    client.join(req.clone()).await?
+                } else {
+                    return Err(status.into());
+                }
             }
         };
         Ok(res.into_inner())
@@ -90,9 +113,13 @@ impl Client {
         let mut client = self.client.lock().await;
         let res = match client.resolve(req.clone()).await {
             Ok(res) => res,
-            Err(_) => {
-                *client = find_root_client(self.ensemble.as_slice()).await?;
-                client.resolve(req.clone()).await?
+            Err(status) => {
+                if is_not_leader(Error::decode(status.details())) {
+                    *client = find_root_client(self.ensemble.as_slice()).await?;
+                    client.resolve(req.clone()).await?
+                } else {
+                    return Err(status.into());
+                }
             }
         };
         Ok(res.into_inner())
@@ -106,9 +133,13 @@ impl Client {
         let mut client = self.client.lock().await;
         let res = match client.watch(req.clone()).await {
             Ok(res) => res,
-            Err(_) => {
-                *client = find_root_client(self.ensemble.as_slice()).await?;
-                client.watch(req.clone()).await?
+            Err(status) => {
+                if is_not_leader(Error::decode(status.details())) {
+                    *client = find_root_client(self.ensemble.as_slice()).await?;
+                    client.watch(req.clone()).await?
+                } else {
+                    return Err(status.into());
+                }
             }
         };
         Ok(res.into_inner())
