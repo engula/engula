@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
-use tracing::info;
+use tracing::{debug, info};
 
 use super::{LeaseState, Replica, ReplicaInfo};
 use crate::{
@@ -156,8 +156,13 @@ impl Replica {
         desc: &MigrationDesc,
         event: MigrationEvent,
     ) -> Result<()> {
-        let _guard = self.take_write_acl_guard().await;
+        debug!(replica = self.info.replica_id,
+            group = self.info.group_id,
+            %desc,
+            ?event,
+            "update migration state");
 
+        let _guard = self.take_write_acl_guard().await;
         if !self.check_migration_state_update_early(desc, event)? {
             return Ok(());
         }
@@ -174,7 +179,7 @@ impl Replica {
 
     fn check_migrating_request_early(&self, shard_id: u64) -> Result<()> {
         let lease_state = self.lease_state.lock().unwrap();
-        if lease_state.is_ready_for_serving() {
+        if !lease_state.is_ready_for_serving() {
             Err(Error::NotLeader(
                 self.info.group_id,
                 lease_state.leader_descriptor(),

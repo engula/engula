@@ -118,6 +118,7 @@ impl GroupEngine {
         let name = group_id.to_string();
         info!("create group engine for {}, cf name is {}", group_id, name);
         // FIXME(walter) clean staled data if the column families already exists.
+        debug_assert!(raw_db.cf_handle(&name).is_none());
         raw_db.create_cf(&name, &Options::default())?;
 
         let desc = GroupDesc {

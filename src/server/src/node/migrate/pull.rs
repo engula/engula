@@ -32,7 +32,7 @@ pub async fn pull_shard(
 ) -> Result<()> {
     let shard_id = desc.get_shard_id();
     let mut streaming = group_client
-        .retryable_pull(shard_id, &last_migrated_key)
+        .retryable_pull(shard_id, last_migrated_key)
         .await?;
     while let Some(shard_chunk) = streaming.next().await {
         let shard_chunk = shard_chunk?;
