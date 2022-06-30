@@ -15,7 +15,6 @@
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
-    ops::Range,
     sync::Arc,
 };
 
@@ -23,7 +22,7 @@ use engula_api::server::v1::{ChangeReplica, ChangeReplicaType, ChangeReplicas};
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Command, Engine, LogBatch, MessageExt};
-use tracing::debug;
+use tracing::{debug, error};
 
 use super::{node::WriteTask, snap::SnapManager};
 use crate::{
@@ -50,13 +49,13 @@ struct EntryCache {
     entries: VecDeque<Entry>,
 }
 
-/// AsyncFetchTask contains the context for asynchronously fetching entries.
-pub struct AsyncFetchTask {
-    pub context: GetEntriesContext,
-    pub max_size: usize,
-    pub range: Range<u64>,
-    pub cached_entries: Vec<Entry>,
-}
+// /// AsyncFetchTask contains the context for asynchronously fetching entries.
+// pub struct AsyncFetchTask {
+//     pub context: GetEntriesContext,
+//     pub max_size: usize,
+//     pub range: Range<u64>,
+//     pub cached_entries: Vec<Entry>,
+// }
 
 /// The implementation of [`raft::Storage`].
 pub struct Storage {
@@ -72,7 +71,7 @@ pub struct Storage {
     pub create_snapshot: Cell<bool>,
     pub is_creating_snapshot: Cell<bool>,
     snap_mgr: SnapManager,
-    tasks: RefCell<Vec<AsyncFetchTask>>,
+    engine: Arc<Engine>,
 }
 
 impl Storage {
@@ -131,10 +130,10 @@ impl Storage {
             hard_state,
             initial_conf_state: RefCell::new(Some(conf_state)),
             local_state,
-            tasks: RefCell::new(vec![]),
             snap_mgr,
             create_snapshot: Cell::new(false),
             is_creating_snapshot: Cell::new(false),
+            engine,
         })
     }
 
@@ -183,9 +182,8 @@ impl Storage {
     }
 
     #[inline]
-    pub fn post_apply(&mut self, _applied_index: u64) {
-        // FIXME(walter) `Storage::term` need to fetch log entries from disk if drain the cached
-        // entries. self.cache.drains_to(applied_index);
+    pub fn post_apply(&mut self, applied_index: u64) {
+        self.cache.drains_to(applied_index);
     }
 
     #[inline]
@@ -265,7 +263,7 @@ impl raft::Storage for Storage {
         low: u64,
         high: u64,
         max_size: impl Into<Option<u64>>,
-        context: GetEntriesContext,
+        _context: GetEntriesContext,
     ) -> raft::Result<Vec<Entry>> {
         self.check_range(low, high)?;
         let mut entries = Vec::with_capacity((high - low) as usize);
@@ -275,29 +273,31 @@ impl raft::Storage for Storage {
 
         let max_size = max_size.into().unwrap_or(u64::MAX) as usize;
         let cache_low = self.cache.first_index().unwrap_or(u64::MAX);
-        let fetched_size = self.cache.fetch_entries_to(
+        if cache_low > low {
+            // TODO(walter) support load entries asynchronously.
+            if let Err(e) = self.engine.fetch_entries_to::<MessageExtTyped>(
+                self.replica_id,
+                low,
+                cache_low,
+                Some(max_size),
+                &mut entries,
+            ) {
+                error!(
+                    replica = self.replica_id,
+                    "fetch entries from engine: {}", e
+                );
+                return Err(other_store_error(e));
+            }
+        }
+
+        self.cache.fetch_entries_to(
             std::cmp::max(low, cache_low),
             std::cmp::max(high, cache_low),
             max_size,
             &mut entries,
         );
 
-        if cache_low <= low {
-            Ok(entries)
-        } else {
-            assert!(context.can_async(), "only support async");
-            // FIXME(walter) how to control the max size when loading from disk?
-            let task = AsyncFetchTask {
-                context,
-                max_size: max_size.saturating_sub(fetched_size),
-                range: low..std::cmp::min(high, cache_low),
-                cached_entries: entries,
-            };
-            self.tasks.borrow_mut().push(task);
-            Err(raft::Error::Store(
-                raft::StorageError::LogTemporarilyUnavailable,
-            ))
-        }
+        Ok(entries)
     }
 
     fn term(&self, idx: u64) -> raft::Result<u64> {
@@ -306,20 +306,28 @@ impl raft::Storage for Storage {
         }
 
         self.check_range(idx, idx + 1)?;
-        assert!(
-            self.cache
-                .first_index()
-                .map(|fi| fi <= idx)
-                .unwrap_or_default(),
-            "acquired term of index {} is out of the range of cached entries",
-            idx
-        );
-
-        Ok(self
+        if self
             .cache
-            .entry(idx)
-            .map(|e| e.term)
-            .expect("acquire term out of the range of cached entries"))
+            .first_index()
+            .map(|fi| fi <= idx)
+            .unwrap_or_default()
+        {
+            // TODO(walter) support fetch in asynchronously.
+            match self
+                .engine
+                .get_entry::<MessageExtTyped>(self.replica_id, idx)
+            {
+                Err(e) => Err(other_store_error(e)),
+                Ok(Some(entry)) => Ok(entry.get_term()),
+                Ok(None) => Err(raft::Error::Store(raft::StorageError::Compacted)),
+            }
+        } else {
+            Ok(self
+                .cache
+                .entry(idx)
+                .map(|e| e.term)
+                .expect("acquire term out of the range of cached entries"))
+        }
     }
 
     #[inline]
@@ -531,4 +539,8 @@ pub async fn write_initial_state(
 pub mod keys {
     pub const HARD_STATE_KEY: &[u8] = b"hard_state";
     pub const LOCAL_STATE_KEY: &[u8] = b"local_state";
+}
+
+fn other_store_error(e: raft_engine::Error) -> raft::Error {
+    raft::Error::Store(raft::StorageError::Other(Box::new(e)))
 }
