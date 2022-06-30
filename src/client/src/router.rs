@@ -15,6 +15,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use engula_api::{server::v1::*, v1::*};
@@ -27,7 +28,6 @@ use crate::RootClient;
 #[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct Router {
-    root_client: RootClient,
     state: Arc<Mutex<State>>,
 }
 
@@ -54,15 +54,13 @@ pub struct RouterGroupState {
 
 #[allow(unused)]
 impl Router {
-    pub async fn connect(addr: String) -> Result<Self, crate::Error> {
-        let root_client = RootClient::connect(addr).await?;
-        let events = root_client.watch(HashMap::new()).await?;
+    pub async fn new(addr: String) -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let state_clone = state.clone();
         tokio::spawn(async move {
-            state_main(state_clone, events).await;
+            state_main(state_clone, addr).await;
         });
-        Ok(Self { root_client, state })
+        Self { state }
     }
 
     pub fn find_shard(&self, desc: CollectionDesc, key: &[u8]) -> Result<ShardDesc, crate::Error> {
@@ -109,10 +107,49 @@ impl Router {
     }
 }
 
-async fn state_main(state: Arc<Mutex<State>>, mut events: Streaming<WatchResponse>) {
-    use watch_response::{delete_event::Event as DeleteEvent, update_event::Event as UpdateEvent};
+async fn state_main(state: Arc<Mutex<State>>, addr: String) {
+    let mut interval = 1;
+    let root_client = loop {
+        match RootClient::connect(addr.clone()).await {
+            Ok(c) => break c,
+            Err(e) => {
+                warn!(err = ?e, addr=?addr, "connect root server");
+            }
+        };
+
+        tokio::time::sleep(Duration::from_millis(interval)).await;
+        interval = std::cmp::min(interval * 2, 1000);
+    };
 
     info!("start watching events...");
+
+    interval = 1;
+    loop {
+        let cur_group_epochs = {
+            let state = state.lock().unwrap();
+            state
+                .group_id_lookup
+                .iter()
+                .map(|(id, s)| (*id, s.epoch.unwrap_or_default()))
+                .collect()
+        };
+        let events = match root_client.watch(cur_group_epochs).await {
+            Ok(events) => events,
+            Err(e) => {
+                warn!(err = ?e, "watch events");
+                tokio::time::sleep(Duration::from_millis(interval)).await;
+                interval = std::cmp::min(interval * 2, 1000);
+                continue;
+            }
+        };
+
+        interval = 1;
+        watch_events(state.as_ref(), events).await;
+    }
+}
+
+async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>) {
+    use watch_response::{delete_event::Event as DeleteEvent, update_event::Event as UpdateEvent};
 
     while let Some(event) = events.next().await {
         let (updates, deletes) = match event {
