@@ -49,14 +49,6 @@ struct EntryCache {
     entries: VecDeque<Entry>,
 }
 
-// /// AsyncFetchTask contains the context for asynchronously fetching entries.
-// pub struct AsyncFetchTask {
-//     pub context: GetEntriesContext,
-//     pub max_size: usize,
-//     pub range: Range<u64>,
-//     pub cached_entries: Vec<Entry>,
-// }
-
 /// The implementation of [`raft::Storage`].
 pub struct Storage {
     replica_id: u64,
