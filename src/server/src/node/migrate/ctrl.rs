@@ -49,6 +49,10 @@ impl MigrateController {
         }
     }
 
+    pub fn router(&self) -> Router {
+        self.shared.router.clone()
+    }
+
     /// Watch migration state and do the corresponding step.
     pub fn watch_state_changes(
         &self,

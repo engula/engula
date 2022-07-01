@@ -81,7 +81,7 @@ impl root_server::Root for Server {
 
     async fn alloc_replica(
         &self,
-        request: Request<AllocReplicaRequest>,
+        _request: Request<AllocReplicaRequest>,
     ) -> std::result::Result<Response<AllocReplicaResponse>, Status> {
         todo!()
     }

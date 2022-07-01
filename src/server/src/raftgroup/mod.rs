@@ -103,6 +103,11 @@ impl RaftManager {
         self.engine.raft_groups()
     }
 
+    #[inline]
+    pub fn executor(&self) -> &Executor {
+        &self.executor
+    }
+
     pub async fn start_raft_group<M: 'static + StateMachine>(
         &self,
         group_id: u64,

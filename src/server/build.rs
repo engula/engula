@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     config.extern_path(".eraftpb", "::raft::eraftpb");
     tonic_build::configure().compile_with_config(
         config,
-        &["v1/metadata.proto", "v1/raft.proto"],
+        &["v1/metadata.proto", "v1/raft.proto", "v1/schedule.proto"],
         &["proto", "proto/include", "../api/"],
     )?;
     Ok(())
