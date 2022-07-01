@@ -31,7 +31,7 @@ use prost::Message;
 use tokio::time;
 use tracing::info;
 
-use super::store::RootStore;
+use super::{store::RootStore, job::is_retry_err};
 use crate::{bootstrap::*, node::engine::LOCAL_COLLECTION_ID, Error, Result};
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
@@ -198,14 +198,7 @@ impl Schema {
             if let Err(err) =
                 Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc).await
             {
-                let need_retry = matches!(
-                    &err,
-                    Error::NotLeader(_, _)
-                        | Error::GroupNotFound(_)
-                        | Error::EpochNotMatch(_)
-                        | Error::GroupNotReady(_)
-                );
-                if need_retry {
+                if is_retry_err(&err) {
                     time::sleep(Duration::from_secs(1)).await;
                     wait_create.push(desc);
                     continue;

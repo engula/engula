@@ -190,6 +190,53 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn remove_replica(mut self, group_id: u64, epoch: u64, replica_id: u64) -> Self {
+        let change_replicas = ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas {
+                changes: vec![ChangeReplica {
+                    change_type: ChangeReplicaType::Remove.into(),
+                    replica_id,
+                    ..Default::default()
+                }],
+            }),
+        };
+
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::ChangeReplicas(
+                    change_replicas,
+                )),
+            }),
+        });
+        self
+    }
+
+    pub fn accept_shard(
+        mut self,
+        group_id: u64,
+        epoch: u64,
+        src_group_id: u64,
+        src_group_epoch: u64,
+        shard_desc: &ShardDesc,
+    ) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::AcceptShard(
+                    AcceptShardRequest {
+                        src_group_id,
+                        src_group_epoch,
+                        shard_desc: Some(shard_desc.to_owned()),
+                    },
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn build(self) -> BatchRequest {
         BatchRequest {
             node_id: self.node_id,

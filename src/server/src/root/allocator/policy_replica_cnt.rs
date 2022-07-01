@@ -78,7 +78,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         ranked_nodes: &[(NodeDesc, BalanceStatus)],
     ) -> Option<ReplicaAction> {
         let mean = self.mean_replica_count();
-        let source_replica = self.preferred_remove_replica(src)?;
+        let (source_replica, group) = self.preferred_remove_replica(src)?;
         for (target, state) in ranked_nodes.iter().rev() {
             if *state != BalanceStatus::Underfull {
                 break;
@@ -88,6 +88,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
                 continue;
             }
             return Some(ReplicaAction::Migrate(ReallocateReplica {
+                group,
                 source_replica: source_replica.id,
                 target_node: target.to_owned(),
             }));
@@ -95,7 +96,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         None
     }
 
-    fn preferred_remove_replica(&self, n: &NodeDesc) -> Option<ReplicaDesc> {
+    fn preferred_remove_replica(&self, n: &NodeDesc) -> Option<(ReplicaDesc, u64)> {
         let replicas = self.alloc_source.node_replicas(&n.id);
         // TODO: ranking replica and choose the preferred one.
         replicas.get(0).map(ToOwned::to_owned)

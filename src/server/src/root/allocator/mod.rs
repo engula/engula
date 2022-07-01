@@ -49,15 +49,16 @@ pub enum ShardAction {
 
 #[allow(dead_code)]
 pub struct ReallocateReplica {
-    source_replica: u64,
-    target_node: NodeDesc,
+    pub group: u64,
+    pub source_replica: u64,
+    pub target_node: NodeDesc,
 }
 
 #[allow(dead_code)]
 pub struct ReallocateShard {
-    shard: u64,
-    source_group: u64,
-    target_group: u64,
+    pub shard: u64,
+    pub source_group: u64,
+    pub target_group: u64,
 }
 
 #[derive(Clone)]

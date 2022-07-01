@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use engula_api::server::v1::{
     watch_response::{update_event, UpdateEvent},
     *,
 };
-use engula_client::NodeClient;
+use engula_client::{NodeClient, RequestBatchBuilder};
+use tokio::time;
 use tracing::warn;
 
 use super::{
-    allocator::{GroupAction, ReplicaAction},
+    allocator::{GroupAction, ReallocateReplica, ReallocateShard, ReplicaAction},
     Root, Schema,
 };
 use crate::Result;
@@ -181,7 +182,8 @@ impl Root {
         for replica_action in replica_actions {
             match replica_action {
                 ReplicaAction::Noop => {}
-                ReplicaAction::Migrate(_action) => { // TODO:
+                ReplicaAction::Migrate(action) => {
+                    self.reallocate_replica(action).await?;
                 }
             }
         }
@@ -190,10 +192,185 @@ impl Root {
         for shard_action in shard_actions {
             match shard_action {
                 super::allocator::ShardAction::Noop => {}
-                super::allocator::ShardAction::Migrate(_action) => {}
+                super::allocator::ShardAction::Migrate(action) => {
+                    self.reallocate_shard(action).await?;
+                }
             }
         }
 
         Ok(())
     }
+
+    async fn reallocate_replica(&self, action: ReallocateReplica) -> Result<()> {
+        let schema = self.schema()?;
+
+        loop {
+            if let Err(err) =
+                Self::try_add_replica(schema.to_owned(), action.group, action.target_node.id).await
+            {
+                if is_retry_err(&err) {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
+            break;
+        }
+
+        loop {
+            if let Err(err) =
+                Self::try_remove_replica(schema.to_owned(), action.group, action.source_replica)
+                    .await
+            {
+                if is_retry_err(&err) {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
+            break;
+        }
+
+        Ok(())
+    }
+
+    async fn try_add_replica(schema: Arc<Schema>, group: u64, target_node: u64) -> Result<()> {
+        let new_replica = schema.next_replica_id().await?;
+        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group).await?;
+        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let batch = RequestBatchBuilder::new(req_node.id).add_replica(
+            group.id,
+            group.epoch,
+            new_replica,
+            target_node,
+        );
+        let resps = client.batch_group_requests(batch.build()).await?;
+        for resp in resps {
+            if let Some(err) = resp.error {
+                return Err(err.into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn try_remove_replica(
+        schema: Arc<Schema>,
+        group: u64,
+        remove_replica: u64,
+    ) -> Result<()> {
+        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group).await?;
+        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let batch = RequestBatchBuilder::new(req_node.id).remove_replica(
+            group.id,
+            group.epoch,
+            remove_replica,
+        );
+        let resps = client.batch_group_requests(batch.build()).await?;
+        for resp in resps {
+            if let Some(err) = resp.error {
+                return Err(err.into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_group_leader(schema: Arc<Schema>, group_id: u64) -> Result<(GroupDesc, NodeDesc)> {
+        let group = schema
+            .get_group(group_id)
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group_id))?;
+
+        let mut group_leader = None;
+        for replica in &group.replicas {
+            if replica.role != ReplicaRole::Voter.into() {
+                continue;
+            }
+            if let Some(rs) = schema.get_replica_state(group_id, replica.id).await? {
+                if rs.role == RaftRole::Leader.into() {
+                    group_leader = Some(replica);
+                    break;
+                }
+            }
+        }
+
+        let group_leader = group_leader.ok_or(crate::Error::GroupNotFound(group_id))?;
+
+        let leader_noder = schema
+            .get_node(group_leader.node_id)
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group_id))?;
+
+        Ok((group.to_owned(), leader_noder))
+    }
+
+    async fn reallocate_shard(&self, action: ReallocateShard) -> Result<()> {
+        let schema = self.schema()?;
+
+        loop {
+            if let Err(err) = Self::try_migrate_shard(
+                schema.to_owned(),
+                action.shard,
+                action.source_group,
+                action.target_group,
+            )
+            .await
+            {
+                if is_retry_err(&err) {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
+            break;
+        }
+
+        Ok(())
+    }
+
+    async fn try_migrate_shard(
+        schema: Arc<Schema>,
+        shard: u64,
+        src_group: u64,
+        target_group: u64,
+    ) -> Result<()> {
+        let (target_group, target_node) =
+            Self::get_group_leader(schema.to_owned(), target_group).await?;
+
+        let (src_group, _) = Self::get_group_leader(schema.to_owned(), src_group).await?;
+
+        let shard = src_group
+            .shards
+            .iter()
+            .find(|s| s.id == shard)
+            .ok_or(crate::Error::GroupNotFound(src_group.id))?;
+
+        let client = NodeClient::connect(target_node.addr.to_owned()).await?;
+        let batch = RequestBatchBuilder::new(target_node.id).accept_shard(
+            target_group.id,
+            target_group.epoch,
+            src_group.id,
+            src_group.epoch,
+            shard,
+        );
+        let resps = client.batch_group_requests(batch.build()).await?;
+        for resp in resps {
+            if let Some(err) = resp.error {
+                return Err(err.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn is_retry_err(err: &crate::Error) -> bool {
+    matches!(
+        err,
+        crate::Error::NotLeader(_, _)
+            | crate::Error::GroupNotFound(_)
+            | crate::Error::EpochNotMatch(_)
+            | crate::Error::GroupNotReady(_)
+    )
 }

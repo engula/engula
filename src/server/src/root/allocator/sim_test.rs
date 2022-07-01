@@ -1,6 +1,6 @@
 // Copyright 2022 The Engula Authors.
 //
-// Licensed under the Apache &License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -229,10 +229,14 @@ fn sim_boostrap_join_node_balance() {
         for act in &racts {
             match act {
                 ReplicaAction::Migrate(ReallocateReplica {
+                    group,
                     source_replica,
                     target_node,
                 }) => {
-                    println!("move replica {} to {}", source_replica, target_node.id);
+                    println!(
+                        "move group {} replica {} to {}",
+                        group, source_replica, target_node.id
+                    );
                     p.move_replica(*source_replica, target_node.id)
                 }
                 ReplicaAction::Noop => unreachable!(),
@@ -243,10 +247,14 @@ fn sim_boostrap_join_node_balance() {
         for act in &racts {
             match act {
                 ReplicaAction::Migrate(ReallocateReplica {
+                    group,
                     source_replica,
                     target_node,
                 }) => {
-                    println!("move replica {} to {}", source_replica, target_node.id);
+                    println!(
+                        "move group {} replica {} to {}",
+                        group, source_replica, target_node.id
+                    );
                     p.move_replica(*source_replica, target_node.id)
                 }
                 ReplicaAction::Noop => unreachable!(),
@@ -318,7 +326,7 @@ pub struct MockInfoProvider {
 #[derive(Default)]
 struct GroupInfo {
     descs: Vec<GroupDesc>,
-    node_replicas: HashMap<u64, Vec<ReplicaDesc>>,
+    node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64)>>,
 }
 
 impl MockInfoProvider {
@@ -347,7 +355,7 @@ impl AllocSource for MockInfoProvider {
         groups.descs.to_owned()
     }
 
-    fn node_replicas(&self, node_id: &u64) -> Vec<ReplicaDesc> {
+    fn node_replicas(&self, node_id: &u64) -> Vec<(ReplicaDesc, u64)> {
         let groups = self.groups.lock().unwrap();
         groups
             .node_replicas
@@ -365,15 +373,15 @@ impl MockInfoProvider {
 
     fn set_groups(&self, gs: Vec<GroupDesc>) {
         let mut groups = self.groups.lock().unwrap();
-        let mut node_replicas: HashMap<u64, Vec<ReplicaDesc>> = HashMap::new();
+        let mut node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64)>> = HashMap::new();
         for group in gs.iter() {
             for replica in &group.replicas {
                 match node_replicas.entry(replica.node_id) {
                     Entry::Occupied(mut ent) => {
-                        (*ent.get_mut()).push(replica.to_owned());
+                        (*ent.get_mut()).push((replica.to_owned(), group.id.to_owned()));
                     }
                     Entry::Vacant(ent) => {
-                        ent.insert(vec![replica.to_owned()]);
+                        ent.insert(vec![(replica.to_owned(), group.id.to_owned())]);
                     }
                 };
             }
@@ -459,7 +467,7 @@ impl MockInfoProvider {
             println!(
                 "node replicas: {} -> {:?}",
                 n,
-                g.iter().map(|r| r.id).collect::<Vec<u64>>()
+                g.iter().map(|r| r.0.id).collect::<Vec<u64>>()
             )
         }
 
