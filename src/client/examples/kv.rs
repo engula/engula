@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_client::{EngulaClient, Error};
+use engula_client::{EngulaClient, Error, Partition};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -21,12 +21,15 @@ async fn main() -> Result<(), Error> {
     let addr = "127.0.0.1:21805";
     let client = EngulaClient::connect(addr.to_string()).await?;
     let db = client.create_database("test_db".to_string()).await?;
-    let co = db.create_collection("test_co".to_string()).await?;
+    let co = db
+        .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
+        .await?;
 
     let k = "book_name".as_bytes().to_vec();
     let v = "rust_in_actions".as_bytes().to_vec();
     co.put(k.clone(), v).await?;
     let r = co.get(k).await?;
+    let r = r.map(String::from_utf8);
     println!("{:?}", r);
     Ok(())
 }

@@ -20,7 +20,7 @@ use std::{
 };
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
-use engula_client::RootClient;
+use engula_client::{RootClient, Router};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -57,12 +57,22 @@ pub fn run(
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
     let address_resolver = Arc::new(AddressResolver::new(join_list.clone()));
+
+    let router = executor.block_on(async {
+        Router::new(if init {
+            addr.clone()
+        } else {
+            join_list[0].clone()
+        })
+        .await
+    });
     let node = Node::new(
         log_path,
         raw_db,
         state_engine,
         executor.clone(),
         address_resolver.clone(),
+        router,
     )?;
 
     let (node_id, root) = executor.block_on(async {
@@ -169,7 +179,7 @@ async fn try_join_cluster(
     info!("try join a bootstrapted cluster");
 
     let join_list = join_list
-        .iter()
+        .into_iter()
         .filter(|addr| *addr != local_addr)
         .collect::<Vec<_>>();
 
@@ -183,40 +193,34 @@ async fn try_join_cluster(
         cpu_nums: num_cpus::get() as f64,
         ..Default::default()
     };
+
+    let req = JoinNodeRequest {
+        addr: local_addr.to_owned(),
+        capacity: Some(capacity),
+    };
+
     let mut backoff: u64 = 1;
     loop {
-        for addr in &join_list {
-            match issue_join_request(addr, local_addr, capacity.to_owned()).await {
-                Ok(resp) => {
+        match RootClient::connect(join_list.clone()).await {
+            Ok(client) => match client.join_node(req.clone()).await {
+                Ok(res) => {
                     debug!("issue join request to root server success");
                     let node_ident =
-                        save_node_ident(node.state_engine(), resp.cluster_id, resp.node_id).await;
-                    node.update_root(resp.roots).await?;
+                        save_node_ident(node.state_engine(), res.cluster_id, res.node_id).await;
+                    node.update_root(res.roots).await?;
                     return node_ident;
                 }
                 Err(e) => {
-                    warn!(err = ?e, root = ?addr, "issue join request to root server");
+                    warn!(err = ?e, join_list = ?join_list, "failed to join cluster");
                 }
+            },
+            Err(e) => {
+                warn!(err = ?e, join_list = ?join_list, "cannot connect to root server");
             }
         }
         std::thread::sleep(Duration::from_secs(backoff));
         backoff = std::cmp::min(backoff * 2, 120);
     }
-}
-
-async fn issue_join_request(
-    target_addr: &str,
-    local_addr: &str,
-    node_capacity: NodeCapacity,
-) -> Result<JoinNodeResponse> {
-    let client = RootClient::connect(target_addr.to_string()).await?;
-    let resp = client
-        .join_node(JoinNodeRequest {
-            addr: local_addr.to_owned(),
-            capacity: Some(node_capacity),
-        })
-        .await?;
-    Ok(resp)
 }
 
 pub(crate) async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIdent> {

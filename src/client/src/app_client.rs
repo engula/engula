@@ -14,7 +14,10 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use engula_api::{server::v1::*, v1::*};
+use engula_api::{
+    server::v1::*,
+    v1::{create_collection_request::*, *},
+};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -36,7 +39,7 @@ struct ClientInner {
 
 impl Client {
     pub async fn connect(addr: String) -> Result<Self, crate::Error> {
-        let root_client = RootClient::connect(addr.clone()).await?;
+        let root_client = RootClient::connect(vec![addr.clone()]).await?;
         let router = Router::new(addr).await;
         Ok(Self {
             inner: Arc::new(Mutex::new(ClientInner {
@@ -84,8 +87,28 @@ pub struct Database {
     client: Client,
 }
 
+pub enum Partition {
+    Hash { slots: u32 },
+    Range,
+}
+
+impl From<Partition> for create_collection_request::Partition {
+    fn from(p: Partition) -> Self {
+        match p {
+            Partition::Hash { slots } => {
+                create_collection_request::Partition::Hash(HashPartition { slots })
+            }
+            Partition::Range => create_collection_request::Partition::Range(RangePartition {}),
+        }
+    }
+}
+
 impl Database {
-    pub async fn create_collection(&self, name: String) -> Result<Collection, crate::Error> {
+    pub async fn create_collection(
+        &self,
+        name: String,
+        partition: Option<Partition>,
+    ) -> Result<Collection, crate::Error> {
         let client = self.client.clone();
         let db_desc = self.desc.clone();
         let inner = client.inner.lock().await;
@@ -94,6 +117,7 @@ impl Database {
             .admin(AdminRequestBuilder::create_collection(
                 db_desc.name.clone(),
                 name.clone(),
+                partition.map(Into::into),
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
@@ -156,7 +180,7 @@ impl Collection {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group(shard.id)?;
+        let group = router.find_group_by_shard(shard.id)?;
         let epoch = group
             .epoch
             .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
@@ -221,14 +245,16 @@ impl Collection {
         let mut inner = self.client.inner.lock().await;
         let router = inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group(shard.id)?;
+        let group = router.find_group_by_shard(shard.id)?;
         let epoch = group
             .epoch
             .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
+        let leader = group
+            .leader_id
+            .ok_or_else(|| crate::Error::NotFound(format!("leader unavailable (key={:?})", key)))?;
         let node_id = group
             .replicas
-            .values()
-            .next()
+            .get(&leader)
             .map(|desc| desc.node_id)
             .ok_or_else(|| crate::Error::NotFound(format!("node_id (key={:?})", key)))?;
         let client = inner.node_clients.get(&node_id);

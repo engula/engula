@@ -33,11 +33,12 @@ pub async fn delete(
         .as_ref()
         .ok_or_else(|| Error::InvalidArgument("ShardDeleteRequest::delete is None".into()))?;
 
-    if let Some(migrating_digest) = exec_ctx.migrating_digest.as_ref() {
-        if migrating_digest.shard_id == req.shard_id {
+    if let Some(desc) = exec_ctx.migration_desc.as_ref() {
+        let shard_id = desc.shard_desc.as_ref().unwrap().id;
+        if shard_id == req.shard_id {
             let forward_ctx = ForwardCtx {
-                shard_id: migrating_digest.shard_id,
-                dest_group_id: migrating_digest.dest_group_id,
+                shard_id,
+                dest_group_id: desc.dest_group_id,
                 payloads: vec![],
             };
             return Err(Error::Forward(forward_ctx));

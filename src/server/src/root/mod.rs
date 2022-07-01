@@ -19,7 +19,7 @@ mod store;
 mod watch;
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map, HashMap},
     sync::{Arc, Mutex},
     task::Poll,
     time::Duration,
@@ -27,7 +27,10 @@ use std::{
 
 use engula_api::{
     server::v1::{report_request::GroupUpdates, watch_response::*, *},
-    v1::{CollectionDesc, DatabaseDesc},
+    v1::{
+        collection_desc as co_desc, create_collection_request as co_req, CollectionDesc,
+        DatabaseDesc,
+    },
 };
 use engula_client::NodeClient;
 use tracing::{info, warn};
@@ -36,7 +39,7 @@ pub(crate) use self::schema::*;
 pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
 use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
 use crate::{
-    bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP},
+    bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
     serverpb::v1::NodeIdent,
@@ -232,29 +235,103 @@ impl Root {
         &self,
         name: String,
         database: String,
+        partition: Option<co_req::Partition>,
     ) -> Result<CollectionDesc> {
         let schema = self.schema()?;
         let db = schema.get_database(&database).await?;
         if db.is_none() {
             return Err(Error::DatabaseNotFound(database));
         }
-        let group_id = self.alloc.place_group_for_shard().await?.unwrap().id;
-        let desc = schema
-            .create_collection(
-                CollectionDesc {
-                    name,
-                    db: db.unwrap().id,
-                    ..Default::default()
-                },
-                group_id,
-            )
+        let collection = schema
+            .create_collection(CollectionDesc {
+                name,
+                db: db.unwrap().id,
+                partition: partition.map(|p| match p {
+                    co_req::Partition::Hash(hash) => {
+                        co_desc::Partition::Hash(co_desc::HashPartition { slots: hash.slots })
+                    }
+                    co_req::Partition::Range(_) => {
+                        co_desc::Partition::Range(co_desc::RangePartition {})
+                    }
+                }),
+                ..Default::default()
+            })
             .await?;
+
+        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
+        // handle hearbeat resp).
+        self.create_collection_shard(schema.to_owned(), collection.to_owned())
+            .await?;
+
         self.watcher_hub()
             .notify_updates(vec![UpdateEvent {
-                event: Some(update_event::Event::Collection(desc.to_owned())),
+                event: Some(update_event::Event::Collection(collection.to_owned())),
             }])
             .await;
-        Ok(desc)
+
+        Ok(collection)
+    }
+
+    async fn create_collection_shard(
+        &self,
+        schema: Arc<Schema>,
+        collection: CollectionDesc,
+    ) -> Result<()> {
+        let partition =
+            collection
+                .partition
+                .unwrap_or(co_desc::Partition::Hash(co_desc::HashPartition {
+                    slots: 1,
+                }));
+
+        let partitions = match partition {
+            co_desc::Partition::Hash(hash_partition) => {
+                let mut ps = Vec::with_capacity(hash_partition.slots as usize);
+                for id in 0..hash_partition.slots {
+                    ps.push(shard_desc::Partition::Hash(shard_desc::HashPartition {
+                        slot_id: id as u32,
+                        slots: hash_partition.slots.to_owned(),
+                    }));
+                }
+                ps
+            }
+            co_desc::Partition::Range(_) => {
+                vec![shard_desc::Partition::Range(shard_desc::RangePartition {
+                    start: SHARD_MIN.to_owned(),
+                    end: SHARD_MAX.to_owned(),
+                })]
+            }
+        };
+
+        let candiate_groups = self.alloc.place_group_for_shard(partitions.len()).await?;
+        assert!(!candiate_groups.is_empty());
+
+        let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
+        for (group_idx, partition) in partitions.into_iter().enumerate() {
+            let id = schema.next_shard_id().await?;
+            let shard = ShardDesc {
+                id,
+                collection_id: collection.id.to_owned(),
+                partition: Some(partition),
+            };
+            let group = candiate_groups
+                .get(group_idx % candiate_groups.len())
+                .unwrap();
+            match group_shards.entry(group.id.to_owned()) {
+                hash_map::Entry::Occupied(mut ent) => {
+                    ent.get_mut().push(shard);
+                }
+                hash_map::Entry::Vacant(ent) => {
+                    ent.insert(vec![shard]);
+                }
+            }
+        }
+
+        for (group_id, descs) in group_shards {
+            schema.create_shards(group_id, descs).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn delete_collection(&self, name: &str, database: &str) -> Result<()> {
@@ -416,6 +493,7 @@ mod root_test {
         server::v1::watch_response::{update_event, UpdateEvent},
         v1::DatabaseDesc,
     };
+    use engula_client::Router;
     use futures::StreamExt;
     use tempdir::TempDir;
 
@@ -442,7 +520,16 @@ mod root_test {
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
         let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
-        Node::new(log_dir, db, state_engine, executor, address_resolver).unwrap()
+        let router = executor.block_on(async { Router::new("".to_owned()).await });
+        Node::new(
+            log_dir,
+            db,
+            state_engine,
+            executor,
+            address_resolver,
+            router,
+        )
+        .unwrap()
     }
 
     #[test]

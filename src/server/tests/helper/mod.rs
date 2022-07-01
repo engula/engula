@@ -13,5 +13,6 @@
 // limitations under the License.
 
 pub mod client;
+pub mod cluster;
 pub mod runtime;
 pub mod socket;

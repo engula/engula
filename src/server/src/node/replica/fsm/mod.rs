@@ -14,13 +14,15 @@
 
 mod checkpoint;
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use engula_api::server::v1::{
-    ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
+    ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, MigrationDesc, ReplicaDesc,
+    ReplicaRole,
 };
-use tracing::trace;
+use tracing::{info, trace, warn};
 
+use super::ReplicaInfo;
 use crate::{
     node::engine::{GroupEngine, WriteBatch},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
@@ -35,34 +37,48 @@ enum ChangeReplicaKind {
     LeaveJoint,
 }
 
-/// An abstracted structure used to subscribe to descriptor changes.
-pub trait DescObserver: Send + Sync {
+/// An abstracted structure used to subscribe to state machine changes.
+pub trait StateMachineObserver: Send + Sync {
     /// This function will be called every time the `GroupDesc` changes.
     fn on_descriptor_updated(&mut self, descriptor: GroupDesc);
 
     /// This function will be called once the encountered term changes.
     fn on_term_updated(&mut self, term: u64);
+
+    /// This function will be called once the migrate state changes.
+    fn on_migrate_state_updated(&mut self, migrate_state: Option<MigrationState>);
 }
 
 pub struct GroupStateMachine
 where
     Self: Send,
 {
+    info: Arc<ReplicaInfo>,
+
     group_engine: GroupEngine,
-    desc_observer: Box<dyn DescObserver>,
+    observer: Box<dyn StateMachineObserver>,
 
     /// Whether `GroupDesc` changes during apply.
     desc_updated: bool,
+    migration_state_updated: bool,
     last_applied_term: u64,
 }
 
 impl GroupStateMachine {
-    pub fn new(group_engine: GroupEngine, desc_observer: Box<dyn DescObserver>) -> Self {
-        let apply_state = group_engine.flushed_apply_state();
+    pub fn new(
+        info: Arc<ReplicaInfo>,
+        group_engine: GroupEngine,
+        observer: Box<dyn StateMachineObserver>,
+    ) -> Self {
+        let apply_state = group_engine
+            .flushed_apply_state()
+            .expect("access flushed index");
         GroupStateMachine {
+            info,
             group_engine,
-            desc_observer,
+            observer,
             desc_updated: false,
+            migration_state_updated: false,
             last_applied_term: apply_state.term,
         }
     }
@@ -76,10 +92,7 @@ impl GroupStateMachine {
         change_replicas: ChangeReplicas,
     ) -> Result<()> {
         let mut wb = WriteBatch::default();
-        let mut desc = self
-            .group_engine
-            .descriptor()
-            .expect("GroupEngine::descriptor");
+        let mut desc = self.group_engine.descriptor();
         match ChangeReplicaKind::new(&change_replicas) {
             ChangeReplicaKind::LeaveJoint => apply_leave_joint(&mut desc),
             ChangeReplicaKind::EnterJoint => apply_enter_joint(&mut desc, &change_replicas.changes),
@@ -104,10 +117,7 @@ impl GroupStateMachine {
         };
 
         if let Some(op) = eval_result.op {
-            let mut desc = self
-                .group_engine
-                .descriptor()
-                .expect("GroupEngine::descriptor");
+            let mut desc = self.group_engine.descriptor();
             if let Some(AddShard { shard: Some(shard) }) = op.add_shard {
                 for existed_shard in &desc.shards {
                     if existed_shard.id == shard.id {
@@ -118,9 +128,11 @@ impl GroupStateMachine {
                 desc.epoch += 1;
                 desc.shards.push(shard);
             }
-            if let Some(MigrateEvent { value: Some(value) }) = op.migrate_event {
-                self.apply_migrate_event(&mut wb, value);
+            if let Some(m) = op.migration {
+                self.apply_migration_event(&mut wb, m, &mut desc);
             }
+
+            // Any sync_op will update group desc.
             self.group_engine.set_group_desc(&mut wb, &desc);
         }
 
@@ -130,35 +142,144 @@ impl GroupStateMachine {
         Ok(())
     }
 
-    fn apply_migrate_event(&mut self, wb: &mut WriteBatch, value: MigrateEventValue) {
-        match value {
-            MigrateEventValue::Ingest(migrate_event::Ingest { last_key }) => {
-                let mut migrate_meta = self
-                    .group_engine
-                    .migrate_meta()
-                    .unwrap()
-                    .expect("The MigrateMeta should exists before ingest");
-                migrate_meta.last_migrated_key = last_key;
-                self.group_engine.set_migrate_meta(wb, &migrate_meta);
-            }
-            MigrateEventValue::Prepare(migrate_event::Prepare {
-                shard_desc,
-                src_group_id,
-                src_group_epoch,
-                dest_group_id,
-            }) => {
-                let migrate_meta = MigrateMeta {
-                    shard_desc,
-                    src_group_id,
-                    src_group_epoch,
-                    dest_group_id,
-                    last_migrated_key: Vec::default(),
-                    state: MigrateState::Initial as i32,
-                };
-                self.group_engine.set_migrate_meta(wb, &migrate_meta);
-            }
-            _ => todo!(),
+    fn apply_migration_event(
+        &mut self,
+        wb: &mut WriteBatch,
+        migration: Migration,
+        group_desc: &mut GroupDesc,
+    ) {
+        let event = MigrationEvent::from_i32(migration.event).expect("unknown migration event");
+        if let Some(desc) = migration.migration_desc.as_ref() {
+            info!(
+                replica = self.info.replica_id,
+                group = self.info.group_id,
+                %desc,
+                ?event,
+                "apply migration event"
+            );
         }
+
+        match event {
+            MigrationEvent::Setup => {
+                if migration.migration_desc.is_none() {
+                    warn!(
+                        replica_id = self.info.replica_id,
+                        group = self.info.group_id,
+                        "Migration::migration_desc is None"
+                    );
+                    return;
+                }
+
+                let state = MigrationState {
+                    migration_desc: migration.migration_desc,
+                    last_migrated_key: vec![],
+                    step: MigrationStep::Prepare as i32,
+                };
+                debug_assert!(state.migration_desc.is_some());
+                self.group_engine.set_migration_state(wb, &state);
+                self.migration_state_updated = true;
+            }
+            MigrationEvent::Ingest => {
+                let mut state = self.must_migration_state();
+
+                // If only the ingested key changes, there is no need to notify the migration
+                // controller to perform corresponding operations.
+                if state.step == MigrationStep::Prepare as i32 {
+                    state.step = MigrationStep::Migrating as i32;
+                    self.migration_state_updated = true;
+                }
+
+                debug_assert!(state.step == MigrationStep::Migrating as i32);
+                state.last_migrated_key = migration.last_ingested_key;
+
+                self.group_engine.set_migration_state(wb, &state);
+            }
+            MigrationEvent::Commit => {
+                let mut state = self.must_migration_state();
+                debug_assert!(
+                    state.step == MigrationStep::Migrating as i32
+                        || state.step == MigrationStep::Prepare as i32
+                );
+                state.step = MigrationStep::Migrated as i32;
+                self.group_engine.set_migration_state(wb, &state);
+                self.migration_state_updated = true;
+            }
+            MigrationEvent::Apply => {
+                let mut state = self.must_migration_state();
+                debug_assert!(state.step == MigrationStep::Migrated as i32);
+
+                let desc = state.get_migration_desc();
+                self.apply_migration(group_desc, desc);
+
+                state.step = MigrationStep::Finished as i32;
+                self.group_engine.set_migration_state(wb, &state);
+                self.migration_state_updated = true;
+            }
+            MigrationEvent::Abort => {
+                let mut state = self.must_migration_state();
+                debug_assert!(state.step == MigrationStep::Prepare as i32);
+
+                state.step = MigrationStep::Aborted as i32;
+                self.group_engine.set_migration_state(wb, &state);
+                self.migration_state_updated = true;
+            }
+        }
+    }
+
+    fn apply_migration(&mut self, group_desc: &mut GroupDesc, desc: &MigrationDesc) {
+        let shard_desc = desc.get_shard_desc();
+
+        group_desc.epoch += 1;
+        let msg = if desc.src_group_id == group_desc.id {
+            group_desc.shards.drain_filter(|r| r.id == shard_desc.id);
+            "shard migrated out"
+        } else {
+            debug_assert_eq!(desc.dest_group_id, group_desc.id);
+            group_desc.shards.push(shard_desc.clone());
+            "shard migrated in"
+        };
+        info!(
+            replica = self.info.replica_id,
+            group = self.info.group_id,
+            epoch = group_desc.epoch,
+            shard = shard_desc.id,
+            "apply migration: {}",
+            msg
+        );
+        self.desc_updated = true;
+    }
+
+    fn flush_updated_events(&mut self, term: u64) {
+        if self.desc_updated {
+            self.desc_updated = false;
+            self.observer
+                .on_descriptor_updated(self.group_engine.descriptor());
+        }
+
+        if term > self.last_applied_term {
+            self.last_applied_term = term;
+            self.observer.on_term_updated(term);
+        }
+
+        if self.migration_state_updated {
+            self.migration_state_updated = false;
+            self.observer
+                .on_migrate_state_updated(self.group_engine.migration_state());
+        }
+    }
+
+    #[inline]
+    fn flushed_apply_state(&self) -> ApplyState {
+        self.group_engine
+            .flushed_apply_state()
+            .expect("access flushed index")
+    }
+
+    #[inline]
+    fn must_migration_state(&self) -> MigrationState {
+        self.group_engine
+            .migration_state()
+            .expect("The MigrationState should exist")
     }
 }
 
@@ -176,29 +297,17 @@ impl StateMachine for GroupStateMachine {
             }
         }
 
-        if self.desc_updated {
-            self.desc_updated = false;
-            self.desc_observer.on_descriptor_updated(
-                self.group_engine
-                    .descriptor()
-                    .expect("GroupEngine::descriptor"),
-            );
-        }
-
-        if term > self.last_applied_term {
-            self.last_applied_term = term;
-            self.desc_observer.on_term_updated(term);
-        }
+        self.flush_updated_events(term);
 
         Ok(())
     }
 
     fn apply_snapshot(&mut self, snap_dir: &Path) -> Result<()> {
         checkpoint::apply_snapshot(&self.group_engine, snap_dir)?;
-        self.desc_observer
-            .on_descriptor_updated(self.group_engine.descriptor().unwrap());
-        let apply_state = self.group_engine.flushed_apply_state();
-        self.desc_observer.on_term_updated(apply_state.term);
+        self.observer
+            .on_descriptor_updated(self.group_engine.descriptor());
+        let apply_state = self.flushed_apply_state();
+        self.observer.on_term_updated(apply_state.term);
         Ok(())
     }
 
@@ -208,15 +317,18 @@ impl StateMachine for GroupStateMachine {
         ))
     }
 
+    #[inline]
     fn flushed_index(&self) -> u64 {
         // FIXME(walter) avoid disk IO.
-        self.group_engine.flushed_apply_state().index
+        self.group_engine
+            .flushed_apply_state()
+            .expect("access flushed index")
+            .index
     }
 
+    #[inline]
     fn descriptor(&self) -> GroupDesc {
-        self.group_engine
-            .descriptor()
-            .expect("GroupEngine::descriptor")
+        self.group_engine.descriptor()
     }
 }
 

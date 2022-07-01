@@ -15,6 +15,7 @@
 mod eval;
 pub mod fsm;
 pub mod job;
+mod migrate;
 pub mod retry;
 
 use std::{
@@ -26,14 +27,11 @@ use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
+use futures::channel::mpsc;
 use tracing::info;
 
-use self::fsm::{DescObserver, GroupStateMachine};
-use super::{
-    engine::{GroupEngine, SnapshotMode},
-    job::StateChannel,
-    migrate::MigrateController,
-};
+use self::fsm::{GroupStateMachine, StateMachineObserver};
+use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
@@ -47,14 +45,14 @@ pub struct ReplicaInfo {
     local_state: AtomicI32,
 }
 
-#[derive(Default)]
 struct LeaseState {
     leader_id: u64,
     /// the largest term which state machine already known.
     applied_term: u64,
     replica_state: ReplicaState,
     descriptor: GroupDesc,
-    migrate_meta: Option<MigrateMeta>,
+    migration_state: Option<MigrationState>,
+    migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
     leader_subscribers: Vec<Waker>,
 }
 
@@ -72,12 +70,6 @@ enum MetaAclGuard<'a> {
     Write(tokio::sync::RwLockWriteGuard<'a, ()>),
 }
 
-#[derive(Clone)]
-struct MigratingDigest {
-    shard_id: u64,
-    dest_group_id: u64,
-}
-
 /// ExecCtx contains the required infos during request execution.
 #[derive(Default, Clone)]
 pub struct ExecCtx {
@@ -86,8 +78,8 @@ pub struct ExecCtx {
     /// The epoch of `GroupDesc` carried in this request.
     pub epoch: u64,
 
-    /// The digest of migrating meta, filled by `check_request_early`.
-    migrating_digest: Option<MigratingDigest>,
+    /// The migration desc, filled by `check_request_early`.
+    migration_desc: Option<MigrationDesc>,
 }
 
 pub struct Replica
@@ -97,7 +89,6 @@ where
     info: Arc<ReplicaInfo>,
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
-    migrate_ctrl: MigrateController,
     lease_state: Arc<Mutex<LeaseState>>,
     meta_acl: Arc<tokio::sync::RwLock<()>>,
 }
@@ -133,29 +124,31 @@ impl Replica {
         group_engine: GroupEngine,
         raft_mgr: &RaftManager,
         migrate_ctrl: MigrateController,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
+        let (sender, receiver) = mpsc::unbounded();
         let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
-        let lease_state = Arc::new(Mutex::new(LeaseState {
-            descriptor: group_engine.descriptor().unwrap(),
-            ..Default::default()
-        }));
+        let lease_state = Arc::new(Mutex::new(LeaseState::new(&group_engine, sender)));
         let state_observer = Box::new(LeaseStateObserver::new(
             info.clone(),
             lease_state.clone(),
             state_channel,
         ));
-        let fsm = GroupStateMachine::new(group_engine.clone(), state_observer.clone());
+        let fsm =
+            GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
         let raft_node = raft_mgr
             .start_raft_group(group_id, desc, fsm, state_observer)
             .await?;
-        Ok(Replica {
+
+        let replica = Arc::new(Replica {
             info,
             group_engine,
             raft_node,
-            migrate_ctrl,
             lease_state,
             meta_acl: Arc::default(),
-        })
+        });
+        migrate_ctrl.watch_state_changes(replica.clone(), receiver);
+
+        Ok(replica)
     }
 
     /// Shutdown this replicas with the newer `GroupDesc`.
@@ -212,120 +205,12 @@ impl Replica {
     }
 
     /// Propose `SyncOp` to raft log.
-    pub(super) async fn propose_sync_op(&self, op: SyncOp) -> Result<()> {
+    pub(super) async fn propose_sync_op(&self, op: Box<SyncOp>) -> Result<()> {
         self.check_leader_early()?;
 
         let eval_result = EvalResult {
             op: Some(op),
             ..Default::default()
-        };
-        self.raft_node.clone().propose(eval_result).await??;
-
-        Ok(())
-    }
-
-    pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
-        self.check_leader_early()?;
-
-        let mut kvs = vec![];
-        let mut size = 0;
-
-        let snapshot_mode = SnapshotMode::Start {
-            start_key: if last_key.is_empty() {
-                None
-            } else {
-                Some(last_key)
-            },
-        };
-        let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
-        for mut key_iter in snapshot.iter() {
-            // NOTICE:  Only migrate first version.
-            if let Some(entry) = key_iter.next() {
-                if entry.user_key() == last_key {
-                    continue;
-                }
-                let key: Vec<_> = entry.user_key().to_owned();
-                let value: Vec<_> = match entry.value() {
-                    Some(v) => v.to_owned(),
-                    None => {
-                        // Skip tombstone.
-                        continue;
-                    }
-                };
-                size += key.len() + value.len();
-                kvs.push(ShardData {
-                    key,
-                    value,
-                    version: self::eval::MIGRATING_KEY_VERSION,
-                });
-            }
-
-            // TODO(walter) magic value
-            if size > 64 * 1024 * 1024 {
-                break;
-            }
-        }
-
-        Ok(ShardChunk { data: kvs })
-    }
-
-    pub async fn ingest(&self, shard_id: u64, chunk: ShardChunk, forwarded: bool) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
-        if chunk.data.is_empty() {
-            return Ok(());
-        }
-
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
-
-        let mut wb = WriteBatch::default();
-        for data in &chunk.data {
-            self.group_engine
-                .put(&mut wb, shard_id, &data.key, &data.value, data.version)?;
-        }
-
-        let sync_op = if !forwarded {
-            Some(SyncOp::migrate_event(MigrateEventValue::Ingest(
-                migrate_event::Ingest {
-                    last_key: chunk.data.last().as_ref().unwrap().key.clone(),
-                },
-            )))
-        } else {
-            None
-        };
-
-        let eval_result = EvalResult {
-            batch: Some(WriteBatchRep {
-                data: wb.data().to_owned(),
-            }),
-            op: sync_op,
-        };
-        self.raft_node.clone().propose(eval_result).await??;
-
-        Ok(())
-    }
-
-    pub async fn delete_chunks(&self, shard_id: u64, keys: &[(Vec<u8>, u64)]) -> Result<()> {
-        use crate::node::engine::WriteBatch;
-
-        if keys.is_empty() {
-            return Ok(());
-        }
-
-        // TODO(walter) check request epoch and shard id.
-        self.check_leader_early()?;
-
-        let mut wb = WriteBatch::default();
-        for (key, version) in keys {
-            self.group_engine.delete(&mut wb, shard_id, key, *version)?;
-        }
-
-        let eval_result = EvalResult {
-            batch: Some(WriteBatchRep {
-                data: wb.data().to_owned(),
-            }),
-            op: None,
         };
         self.raft_node.clone().propose(eval_result).await??;
 
@@ -358,18 +243,29 @@ impl Replica {
     }
 
     #[inline]
-    pub fn migrate_ctrl(&self) -> &MigrateController {
-        &self.migrate_ctrl
+    pub fn group_engine(&self) -> GroupEngine {
+        self.group_engine.clone()
     }
 }
 
 impl Replica {
+    #[inline]
     async fn take_acl_guard<'a>(&'a self, request: &'a Request) -> MetaAclGuard<'a> {
         if is_change_meta_request(request) {
-            MetaAclGuard::Write(self.meta_acl.write().await)
+            self.take_write_acl_guard().await
         } else {
-            MetaAclGuard::Read(self.meta_acl.read().await)
+            self.take_read_acl_guard().await
         }
+    }
+
+    #[inline]
+    async fn take_write_acl_guard(&self) -> MetaAclGuard {
+        MetaAclGuard::Write(self.meta_acl.write().await)
+    }
+
+    #[inline]
+    async fn take_read_acl_guard(&self) -> MetaAclGuard {
+        MetaAclGuard::Read(self.meta_acl.read().await)
     }
 
     /// Delegates the eval method for the given `Request`.
@@ -416,10 +312,10 @@ impl Replica {
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
             }
-            Request::MigrateShard(req) => {
-                let eval_result = eval::migrate(self.info.group_id, req).await;
-                let resp = MigrateShardResponse {};
-                (Some(eval_result), Response::MigrateShard(resp))
+            Request::AcceptShard(req) => {
+                let eval_result = eval::accept_shard(self.info.group_id, exec_ctx.epoch, req).await;
+                let resp = AcceptShardResponse {};
+                (Some(eval_result), Response::AcceptShard(resp))
             }
         };
 
@@ -449,13 +345,14 @@ impl Replica {
         {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
         } else if let Some(shard_id) = exec_ctx.forward_shard_id {
-            if lease_state.is_forwarding_shard(shard_id) {
+            if lease_state.is_migrating_shard(shard_id) {
                 Ok(())
             } else {
+                // FIXME(walter) maybe migration is finished!!!!
                 // Maybe this request has expired?
                 Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
             }
-        } else if lease_state.is_migrating() && matches!(req, Request::MigrateShard(_)) {
+        } else if lease_state.is_migrating() && matches!(req, Request::AcceptShard(_)) {
             // At the same time, there can only be one migration task.
             Err(Error::ServiceIsBusy("migration"))
         } else {
@@ -463,14 +360,10 @@ impl Replica {
             // it is expected that the input epoch should not be larger than the leaders.
             debug_assert_eq!(exec_ctx.epoch, lease_state.descriptor.epoch);
             let migrating_digest = lease_state
-                .migrate_meta
+                .migration_state
                 .as_ref()
-                .filter(|m| m.src_group_id == group_id)
-                .map(|m| MigratingDigest {
-                    shard_id: m.shard_desc.as_ref().unwrap().id,
-                    dest_group_id: m.dest_group_id,
-                });
-            exec_ctx.migrating_digest = migrating_digest;
+                .and_then(|m| m.migration_desc.clone());
+            exec_ctx.migration_desc = migrating_digest;
             Ok(())
         }
     }
@@ -530,14 +423,30 @@ impl ExecCtx {
 
     #[inline]
     fn is_migrating_shard(&self, shard_id: u64) -> bool {
-        self.migrating_digest
+        self.migration_desc
             .as_ref()
-            .map(|m| m.shard_id == shard_id)
+            .and_then(|m| m.shard_desc.as_ref())
+            .map(|d| d.id == shard_id)
             .unwrap_or_default()
     }
 }
 
 impl LeaseState {
+    fn new(
+        group_engine: &GroupEngine,
+        migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
+    ) -> Self {
+        LeaseState {
+            descriptor: group_engine.descriptor(),
+            migration_state: group_engine.migration_state(),
+            migration_state_subscriber,
+            leader_id: 0,
+            applied_term: 0,
+            replica_state: ReplicaState::default(),
+            leader_subscribers: vec![],
+        }
+    }
+
     #[inline]
     fn is_raft_leader(&self) -> bool {
         self.replica_state.role == RaftRole::Leader.into()
@@ -556,16 +465,20 @@ impl LeaseState {
 
     #[inline]
     fn is_migrating(&self) -> bool {
-        self.migrate_meta.is_some()
+        self.migration_state.is_some()
     }
 
     #[inline]
-    fn is_forwarding_shard(&self, shard_id: u64) -> bool {
-        self.migrate_meta
+    fn is_migrating_shard(&self, shard_id: u64) -> bool {
+        self.migration_state
             .as_ref()
-            .and_then(|m| m.shard_desc.as_ref())
-            .map(|s| s.id == shard_id)
+            .map(|s| s.get_shard_id() == shard_id)
             .unwrap_or_default()
+    }
+
+    #[inline]
+    fn is_same_migration(&self, desc: &MigrationDesc) -> bool {
+        self.migration_state.as_ref().unwrap().get_migration_desc() == desc
     }
 
     #[inline]
@@ -646,7 +559,7 @@ impl StateObserver for LeaseStateObserver {
     }
 }
 
-impl DescObserver for LeaseStateObserver {
+impl StateMachineObserver for LeaseStateObserver {
     fn on_descriptor_updated(&mut self, descriptor: GroupDesc) {
         if self.update_descriptor(descriptor.clone()) {
             self.state_channel
@@ -663,13 +576,32 @@ impl DescObserver for LeaseStateObserver {
                 self.info.replica_id, self.info.group_id, term
             );
             lease_state.wake_all_waiters();
+            if let Some(migration_state) = lease_state.migration_state.as_ref() {
+                lease_state
+                    .migration_state_subscriber
+                    .unbounded_send(migration_state.to_owned())
+                    .unwrap_or_default();
+            }
+        }
+    }
+
+    fn on_migrate_state_updated(&mut self, migration_state: Option<MigrationState>) {
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.migration_state = migration_state;
+        if let Some(migration_state) = lease_state.migration_state.as_ref() {
+            if lease_state.is_ready_for_serving() {
+                lease_state
+                    .migration_state_subscriber
+                    .unbounded_send(migration_state.to_owned())
+                    .unwrap_or_default();
+            }
         }
     }
 }
 
 pub(self) fn is_change_meta_request(request: &Request) -> bool {
     match request {
-        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::MigrateShard(_) => true,
+        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::AcceptShard(_) => true,
         Request::Get(_)
         | Request::Put(_)
         | Request::Delete(_)

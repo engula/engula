@@ -16,7 +16,7 @@ use engula_api::server::v1::RaftRole;
 use futures::channel::oneshot;
 use raft::{prelude::*, ConfChangeI, StateRole, Storage as RaftStorage};
 use raft_engine::LogBatch;
-use tracing::debug;
+use tracing::trace;
 
 use super::{
     applier::{Applier, ReplicaCache},
@@ -290,7 +290,7 @@ where
         }
 
         if !ready.committed_entries().is_empty() {
-            debug!(
+            trace!(
                 "apply committed entries {}",
                 ready.committed_entries().len()
             );

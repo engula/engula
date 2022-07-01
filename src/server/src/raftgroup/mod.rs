@@ -45,7 +45,6 @@ use crate::{
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
 #[derive(Debug)]
-#[allow(unused)]
 pub enum ReadPolicy {
     /// Do nothing
     Relaxed,

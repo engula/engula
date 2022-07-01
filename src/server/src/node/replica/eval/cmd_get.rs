@@ -31,8 +31,9 @@ pub async fn get(
         .ok_or_else(|| Error::InvalidArgument("ShardGetRequest::get is None".into()))?;
 
     let value = engine.get(req.shard_id, &get.key).await?;
-    if let Some(migrating_digest) = exec_ctx.migrating_digest.as_ref() {
-        if migrating_digest.shard_id == req.shard_id {
+    if let Some(desc) = exec_ctx.migration_desc.as_ref() {
+        let shard_id = desc.shard_desc.as_ref().unwrap().id;
+        if shard_id == req.shard_id {
             let payloads = if let Some(value) = value {
                 vec![ShardData {
                     key: get.key.clone(),
@@ -43,8 +44,8 @@ pub async fn get(
                 Vec::default()
             };
             let forward_ctx = ForwardCtx {
-                shard_id: migrating_digest.shard_id,
-                dest_group_id: migrating_digest.dest_group_id,
+                shard_id,
+                dest_group_id: desc.dest_group_id,
                 payloads,
             };
             return Err(Error::Forward(forward_ctx));

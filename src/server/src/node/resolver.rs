@@ -43,9 +43,9 @@ impl AddressResolver {
     }
 
     async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<Option<NodeDesc>> {
-        let client = RootClient::connect(target_addr.to_string()).await?;
-        let node_desc = client.resolve(node_id).await?;
-        Ok(node_desc)
+        let client = RootClient::connect(vec![target_addr.to_string()]).await?;
+        let res = client.resolve(node_id).await?;
+        Ok(res.node)
     }
 }
 
