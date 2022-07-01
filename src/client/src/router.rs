@@ -64,8 +64,37 @@ impl Router {
     }
 
     pub fn find_shard(&self, desc: CollectionDesc, key: &[u8]) -> Result<ShardDesc, crate::Error> {
-        if let Some(collection_desc::Partition::Hash(_)) = desc.partition {
-            unimplemented!("Hash partition is not implemented yet.")
+        if let Some(collection_desc::Partition::Hash(collection_desc::HashPartition { slots })) =
+            desc.partition
+        {
+            // TODO: it's temp hash impl..
+            let crc = crc32fast::hash(key);
+            let slot = crc & (slots as u32);
+
+            let state = self.state.lock().unwrap();
+
+            let shards = state
+                .co_shards_lookup
+                .get(&desc.id)
+                .ok_or_else(|| crate::Error::NotFound(format!("shard (key={:?})", key)))?;
+
+            if slots != shards.len() as u32 {
+                return Err(crate::Error::NotFound("expired shard info".into()));
+            }
+
+            let shard = shards
+                .iter()
+                .find(|s| {
+                    if let shard_desc::Partition::Hash(p) = s.partition.as_ref().unwrap() {
+                        if p.slot_id == slot {
+                            return true;
+                        }
+                    }
+                    false
+                })
+                .unwrap();
+
+            return Ok(shard.clone());
         }
 
         let state = self.state.lock().unwrap();
@@ -203,6 +232,7 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                                 co_shards_lookup.insert(shard.collection_id, vec![shard]);
                             }
                             Some(shards) => {
+                                shards.retain(|s| s.id != shard.id);
                                 shards.push(shard);
                             }
                         }

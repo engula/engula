@@ -15,6 +15,7 @@
 use std::time::Duration;
 
 use tokio::time;
+use tracing::debug;
 
 use crate::Error;
 
@@ -25,7 +26,7 @@ pub struct RetryState {
 
 impl Default for RetryState {
     fn default() -> Self {
-        RetryState::new(5, Duration::from_millis(1))
+        RetryState::new(10, Duration::from_millis(200))
     }
 }
 
@@ -38,6 +39,7 @@ impl RetryState {
         if self.cnt > 0 && err.should_retry() {
             self.cnt -= 1;
             time::sleep(self.interval).await;
+            debug!("retry: {:?}", err);
             true
         } else {
             false

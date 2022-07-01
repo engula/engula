@@ -14,7 +14,10 @@
 
 use std::{collections::HashMap, future::Future, sync::Arc};
 
-use engula_api::{server::v1::*, v1::*};
+use engula_api::{
+    server::v1::*,
+    v1::{create_collection_request::Partition, *},
+};
 use prost::{DecodeError, Message};
 use tokio::sync::Mutex;
 use tonic::{transport::Channel, Status, Streaming};
@@ -160,13 +163,18 @@ impl AdminRequestBuilder {
         }
     }
 
-    pub fn create_collection(db_name: String, co_name: String) -> AdminRequest {
+    pub fn create_collection(
+        db_name: String,
+        co_name: String,
+        partition: Option<Partition>,
+    ) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
                 request: Some(admin_request_union::Request::CreateCollection(
                     CreateCollectionRequest {
                         name: co_name,
                         parent: db_name,
+                        partition,
                     },
                 )),
             }),

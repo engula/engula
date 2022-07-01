@@ -242,8 +242,9 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("8. assign shard in groups");
-        for _ in 0..8 {
-            let group = a.place_group_for_shard().await.unwrap().unwrap();
+        let cg = a.place_group_for_shard(8).await.unwrap();
+        for id in 0..8 {
+            let group = cg.get(id % cg.len()).unwrap();
             p.assign_shard(group.id);
             println!(
                 "assign shard to group {}, prev_shard_cnt: {}",

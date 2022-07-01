@@ -20,9 +20,11 @@ pub fn in_range(start: &[u8], end: &[u8], key: &[u8]) -> bool {
 /// Return whether a key belongs to the corresponding shard.
 pub fn belong_to(shard: &ShardDesc, key: &[u8]) -> bool {
     match shard.partition.as_ref().unwrap() {
-        Partition::Hash(_hash) => {
-            // TODO(walter) compute hash slot.
-            false
+        Partition::Hash(hash) => {
+            // TODO: it's temp hash impl..
+            let crc = crc32fast::hash(key);
+            let slot = crc & (hash.slots as u32);
+            hash.slot_id == slot
         }
         Partition::Range(RangePartition { start, end }) => in_range(start, end, key),
     }

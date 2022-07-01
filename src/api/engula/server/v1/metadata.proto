@@ -34,7 +34,8 @@ message ShardDesc {
 
   message HashPartition {
     // TODO: hash function
-    uint64 slot = 1;
+    uint32 slot_id = 1;
+    uint32 slots = 2;
   }
 
   message RangePartition {
