@@ -109,6 +109,11 @@ pub enum SnapshotMode<'a> {
     Prefix { key: &'a [u8] },
 }
 
+struct ColumnFamilyDecorator<'a, 'b> {
+    cf_handle: Arc<rocksdb::BoundColumnFamily<'b>>,
+    wb: &'a mut rocksdb::WriteBatch,
+}
+
 impl GroupEngine {
     /// Create a new instance of group engine.
     pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<()> {
@@ -233,8 +238,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.put_cf(
-            &self.cf_handle(),
+        wb.put(
             keys::mvcc_key(collection_id, key, version),
             values::data(value),
         );
@@ -255,8 +259,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.put_cf(
-            &self.cf_handle(),
+        wb.put(
             keys::mvcc_key(collection_id, key, version),
             values::tombstone(),
         );
@@ -276,10 +279,7 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.delete_cf(
-            &self.cf_handle(),
-            keys::mvcc_key(collection_id, key, version),
-        );
+        wb.delete(keys::mvcc_key(collection_id, key, version));
 
         Ok(())
     }
@@ -303,13 +303,22 @@ impl GroupEngine {
     pub fn commit(&self, mut wb: WriteBatch, persisted: bool) -> Result<()> {
         use rocksdb::WriteOptions;
 
+        let cf_handle = self.cf_handle();
+        let mut inner_wb = rocksdb::WriteBatch::default();
+        let mut decorator = ColumnFamilyDecorator {
+            cf_handle: cf_handle.clone(),
+            wb: &mut inner_wb,
+        };
+        wb.inner.iterate(&mut decorator);
+        wb.inner = inner_wb;
+        wb.write_states(&self.cf_handle());
+
         let mut opts = WriteOptions::default();
         if persisted {
             opts.set_sync(true);
         } else {
             opts.disable_wal(true);
         }
-        wb.write_states(&self.cf_handle());
         self.raw_db.write_opt(wb.inner, &opts)?;
 
         if wb.descriptor.is_some() || wb.migration_state.is_some() {
@@ -760,6 +769,16 @@ mod values {
         buf.push(DATA);
         buf.extend_from_slice(v);
         buf
+    }
+}
+
+impl<'a, 'b> rocksdb::WriteBatchIterator for ColumnFamilyDecorator<'a, 'b> {
+    fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
+        self.wb.put_cf(&self.cf_handle, key, value);
+    }
+
+    fn delete(&mut self, key: Box<[u8]>) {
+        self.wb.delete_cf(&self.cf_handle, key);
     }
 }
 
@@ -1298,5 +1317,20 @@ mod tests {
         assert!(user_data_iter.next().is_none());
 
         assert!(snapshot.status().is_ok());
+    }
+
+    #[test]
+    fn cf_id_irrelevant_write_batch() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let engine_1 = create_engine(executor.clone(), 1, 1);
+        let engine_2 = create_engine(executor, 1, 1);
+
+        // Put in engine 1, commit in engine 2.
+        let mut wb = WriteBatch::default();
+        engine_1.put(&mut wb, 1, b"a", b"", 123).unwrap();
+        engine_1.put(&mut wb, 1, b"b", b"123", 123).unwrap();
+
+        engine_2.commit(wb, false).unwrap();
     }
 }

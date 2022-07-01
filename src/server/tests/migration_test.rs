@@ -248,10 +248,8 @@ async fn create_group(
     }
 }
 
-// FIXME(walter) since the different replica has different column family id, the `WriteBatchRep`
-// structure need to be update.
 /// The basic migration test.
-#[allow(unused)]
+#[test]
 fn basic_migration() {
     block_on_current(async {
         let nodes = bootstrap_servers("basic-migration", 3).await;
@@ -314,6 +312,6 @@ fn basic_migration() {
         accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 4).await;
 
         // FIXME(walter) find a more efficient way to detect migration finished.
-        thread::sleep(Duration::from_secs(30));
+        thread::sleep(Duration::from_secs(10));
     });
 }
