@@ -1318,4 +1318,19 @@ mod tests {
 
         assert!(snapshot.status().is_ok());
     }
+
+    #[test]
+    fn cf_id_irrelevant_write_batch() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let engine_1 = create_engine(executor.clone(), 1, 1);
+        let engine_2 = create_engine(executor.clone(), 1, 1);
+
+        // Put in engine 1, commit in engine 2.
+        let mut wb = WriteBatch::default();
+        engine_1.put(&mut wb, 1, b"a", b"", 123).unwrap();
+        engine_1.put(&mut wb, 1, b"b", b"123", 123).unwrap();
+
+        engine_2.commit(wb, false).unwrap();
+    }
 }
