@@ -36,7 +36,7 @@ pub use self::{
     snap::SnapManager,
     storage::write_initial_state,
     transport::{retrive_snapshot, AddressResolver, TransportManager},
-    worker::StateObserver,
+    worker::{RaftGroupState, StateObserver},
 };
 use crate::{
     runtime::{Executor, TaskPriority},

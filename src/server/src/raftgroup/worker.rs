@@ -19,7 +19,7 @@ use futures::{
     channel::{mpsc, oneshot},
     FutureExt, SinkExt, StreamExt,
 };
-use raft::{prelude::*, StateRole};
+use raft::{prelude::*, SoftState, StateRole};
 use raft_engine::{Engine, LogBatch};
 use tracing::{debug, warn};
 
@@ -66,6 +66,36 @@ pub enum Request {
         target_id: u64,
     },
     Start,
+    State(oneshot::Sender<RaftGroupState>),
+}
+
+pub struct PeerState {
+    /// How much state is matched.
+    pub matched: u64,
+    /// The next index to apply
+    pub next_idx: u64,
+
+    /// Committed index in raft_log
+    pub committed_index: u64,
+
+    pub might_lost: bool,
+}
+
+pub struct RaftGroupState {
+    /// The hardstate of the raft, representing voted state.
+    pub hs: HardState,
+    /// The softstate of the raft, representing proposed state.
+    pub ss: SoftState,
+    /// The index of the last entry which has been applied.
+    pub applied: u64,
+    /// The index of the last entry which has been committed.
+    pub committed: u64,
+    /// The first index of log entries.
+    pub first_index: u64,
+    /// The last index of log entries.
+    pub last_index: u64,
+
+    pub peers: HashMap<u64, PeerState>,
 }
 
 /// An abstraction for observing raft roles and state changes.
@@ -306,6 +336,14 @@ where
             Request::InstallSnapshot { msg } => {
                 self.raft_node.step(msg)?;
             }
+            Request::State(sender) => {
+                let store = self.raft_node.mut_store();
+                let first_index = store.first_index().unwrap();
+                let last_index = store.last_index().unwrap();
+                sender
+                    .send(self.raft_group_state(first_index, last_index))
+                    .unwrap_or_default();
+            }
             Request::Start => {}
         }
         Ok(())
@@ -383,5 +421,32 @@ where
         }
 
         self.snap_mgr.recycle_snapshots(self.desc.id, to);
+    }
+
+    fn raft_group_state(&self, first_index: u64, last_index: u64) -> RaftGroupState {
+        let status = self.raft_node.raft_status();
+
+        let mut peer_states = HashMap::new();
+        if let Some(tracker) = status.progress {
+            for (id, progress) in tracker.iter() {
+                let state = PeerState {
+                    matched: progress.matched,
+                    next_idx: progress.next_idx,
+                    committed_index: progress.next_idx,
+                    might_lost: progress.might_lost,
+                };
+                peer_states.insert(*id, state);
+            }
+        }
+
+        RaftGroupState {
+            hs: status.hs,
+            ss: status.ss,
+            applied: status.applied,
+            committed: self.raft_node.committed_index(),
+            first_index,
+            last_index,
+            peers: peer_states,
+        }
     }
 }
