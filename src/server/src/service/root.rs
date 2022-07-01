@@ -78,6 +78,13 @@ impl root_server::Root for Server {
         self.wrap(self.root.report(request.updates).await).await?;
         Ok(Response::new(ReportResponse {}))
     }
+
+    async fn alloc_replica(
+        &self,
+        request: Request<AllocReplicaRequest>,
+    ) -> std::result::Result<Response<AllocReplicaResponse>, Status> {
+        todo!()
+    }
 }
 
 impl Server {
