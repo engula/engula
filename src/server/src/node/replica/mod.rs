@@ -304,10 +304,7 @@ impl Replica {
             }
             Request::ChangeReplicas(req) => {
                 if let Some(change) = &req.change_replicas {
-                    self.raft_node
-                        .clone()
-                        .change_config(change.clone())
-                        .await?;
+                    self.raft_node.clone().change_config(change.clone()).await?;
                 }
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))

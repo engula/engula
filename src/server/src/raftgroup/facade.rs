@@ -94,7 +94,7 @@ impl RaftNodeFacade {
     fn send(&mut self, req: Request) -> Result<()> {
         use crate::Error;
 
-        if let Err(_) = self.request_sender.try_send(req) {
+        if self.request_sender.try_send(req).is_err() {
             // The target raft group is shutdown.
             return Err(Error::ServiceIsBusy("raft"));
         }
