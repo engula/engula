@@ -26,7 +26,7 @@ use super::{
     allocator::{GroupAction, ReallocateReplica, ReallocateShard, ReplicaAction},
     Root, Schema,
 };
-use crate::Result;
+use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 impl Root {
     pub async fn send_heartbeat(&self, schema: Schema) -> Result<()> {
@@ -193,6 +193,10 @@ impl Root {
             match shard_action {
                 super::allocator::ShardAction::Noop => {}
                 super::allocator::ShardAction::Migrate(action) => {
+                    assert!(
+                        action.source_group != ROOT_GROUP_ID
+                            && action.target_group != ROOT_GROUP_ID
+                    );
                     self.reallocate_shard(action).await?;
                 }
             }

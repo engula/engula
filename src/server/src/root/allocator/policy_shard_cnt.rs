@@ -17,7 +17,7 @@ use std::{cmp::Ordering, sync::Arc};
 use engula_api::server::v1::{GroupDesc, ShardDesc};
 
 use super::{AllocSource, ReallocateShard, ShardAction};
-use crate::Result;
+use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 #[derive(PartialEq, Eq)]
 enum BalanceStatus {
@@ -36,7 +36,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
     }
 
     pub fn allocate_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
-        let mut groups = self.alloc_source.groups();
+        let mut groups = self.current_user_groups();
         if groups.is_empty() {
             return Ok(vec![]);
         }
@@ -46,7 +46,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
 
     pub fn compute_balance(&self) -> Result<Vec<ShardAction>> {
         let mean_cnt = self.mean_shard_count();
-        let candicate_groups = self.alloc_source.groups();
+        let candicate_groups = self.current_user_groups();
 
         let ranked_candicates = Self::rank_group_for_balance(candicate_groups, mean_cnt);
         for (src_group, status) in &ranked_candicates {
@@ -62,7 +62,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
     }
 
     fn mean_shard_count(&self) -> f64 {
-        let groups = self.alloc_source.groups();
+        let groups = self.current_user_groups();
         let total_shards = groups.iter().map(|n| n.shards.len() as u64).sum::<u64>() as f64;
         total_shards / (groups.len() as f64)
     }
@@ -132,5 +132,11 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         let replicas = src_group.shards.to_owned();
         // TODO: ranking shards and choose the preferred one.
         replicas.get(0).map(ToOwned::to_owned)
+    }
+
+    fn current_user_groups(&self) -> Vec<GroupDesc> {
+        let mut groups = self.alloc_source.groups();
+        groups.retain(|g| g.id != ROOT_GROUP_ID);
+        groups
     }
 }
