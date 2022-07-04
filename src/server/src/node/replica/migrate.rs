@@ -97,7 +97,7 @@ impl Replica {
             }),
             op: sync_op,
         };
-        self.raft_node.clone().propose(eval_result).await??;
+        self.raft_node.clone().propose(eval_result).await?;
 
         Ok(())
     }
@@ -121,7 +121,7 @@ impl Replica {
             }),
             op: None,
         };
-        self.raft_node.clone().propose(eval_result).await??;
+        self.raft_node.clone().propose(eval_result).await?;
 
         Ok(())
     }
@@ -172,7 +172,7 @@ impl Replica {
             batch: None,
             op: Some(sync_op),
         };
-        self.raft_node.clone().propose(eval_result).await??;
+        self.raft_node.clone().propose(eval_result).await?;
 
         Ok(())
     }

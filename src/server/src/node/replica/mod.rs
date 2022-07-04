@@ -226,7 +226,7 @@ impl Replica {
             op: Some(op),
             ..Default::default()
         };
-        self.raft_node.clone().propose(eval_result).await??;
+        self.raft_node.clone().propose(eval_result).await?;
 
         Ok(())
     }
@@ -318,10 +318,7 @@ impl Replica {
             }
             Request::ChangeReplicas(req) => {
                 if let Some(change) = &req.change_replicas {
-                    self.raft_node
-                        .clone()
-                        .change_config(change.clone())
-                        .await??;
+                    self.raft_node.clone().change_config(change.clone()).await?;
                 }
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
@@ -330,6 +327,10 @@ impl Replica {
                 let eval_result = eval::accept_shard(self.info.group_id, exec_ctx.epoch, req).await;
                 let resp = AcceptShardResponse {};
                 (Some(eval_result), Response::AcceptShard(resp))
+            }
+            Request::Transfer(req) => {
+                self.raft_node.clone().transfer_leader(req.transferee)?;
+                return Ok(Response::Transfer(TransferResponse {}));
             }
         };
 
@@ -341,7 +342,7 @@ impl Replica {
     }
 
     async fn propose(&self, eval_result: EvalResult) -> Result<()> {
-        self.raft_node.clone().propose(eval_result).await??;
+        self.raft_node.clone().propose(eval_result).await?;
         Ok(())
     }
 
@@ -615,7 +616,10 @@ impl StateMachineObserver for LeaseStateObserver {
 
 pub(self) fn is_change_meta_request(request: &Request) -> bool {
     match request {
-        Request::ChangeReplicas(_) | Request::CreateShard(_) | Request::AcceptShard(_) => true,
+        Request::ChangeReplicas(_)
+        | Request::CreateShard(_)
+        | Request::AcceptShard(_)
+        | Request::Transfer(_) => true,
         Request::Get(_)
         | Request::Put(_)
         | Request::Delete(_)

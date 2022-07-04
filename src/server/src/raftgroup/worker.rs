@@ -58,9 +58,8 @@ pub enum Request {
         sender: oneshot::Sender<Result<()>>,
     },
     Transfer {
-        target_id: u64,
+        transferee: u64,
     },
-    Campaign,
     Message(RaftMessage),
     Unreachable {
         target_id: u64,
@@ -302,11 +301,10 @@ where
             Request::CreateSnapshotFinished => {
                 self.raft_node.mut_store().is_creating_snapshot.set(false);
             }
-            Request::Transfer { target_id } => {
+            Request::Transfer {
+                transferee: target_id,
+            } => {
                 self.raft_node.transfer_leader(target_id);
-            }
-            Request::Campaign => {
-                todo!()
             }
             Request::Message(msg) => {
                 self.handle_msg(msg).unwrap();
