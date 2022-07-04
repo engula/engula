@@ -21,7 +21,7 @@ mod retry;
 mod root_client;
 mod router;
 
-pub use app_client::{Client as EngulaClient, Partition};
+pub use app_client::{Client as EngulaClient, Collection, Database, Partition};
 pub use error::Error;
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
 pub use retry::RetryState;
