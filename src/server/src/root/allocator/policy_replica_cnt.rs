@@ -40,31 +40,31 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         existing_replicas: Vec<ReplicaDesc>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
-        let mut candicate_nodes = self.alloc_source.nodes();
+        let mut candidate_nodes = self.alloc_source.nodes();
 
         // skip the nodes already have group replicas.
-        candicate_nodes.retain(|n| !existing_replicas.iter().any(|r| r.node_id == n.id));
+        candidate_nodes.retain(|n| !existing_replicas.iter().any(|r| r.node_id == n.id));
 
         // sort by alloc score
-        candicate_nodes.sort_by(|n1, n2| {
+        candidate_nodes.sort_by(|n1, n2| {
             Self::node_alloc_score(n2)
                 .partial_cmp(&Self::node_alloc_score(n1))
                 .unwrap()
         });
 
-        Ok(candicate_nodes.into_iter().take(wanted_count).collect())
+        Ok(candidate_nodes.into_iter().take(wanted_count).collect())
     }
 
     pub fn compute_balance(&self) -> Result<Vec<ReplicaAction>> {
         let mean_cnt = self.mean_replica_count();
-        let candicate_nodes = self.alloc_source.nodes();
+        let candidate_nodes = self.alloc_source.nodes();
 
-        let ranked_candicates = Self::rank_node_for_balance(candicate_nodes, mean_cnt);
-        for (src_node, status) in &ranked_candicates {
+        let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
+        for (src_node, status) in &ranked_candidates {
             if *status != BalanceStatus::Overfull {
                 break;
             }
-            if let Some(action) = self.rebalance_target(src_node, &ranked_candicates) {
+            if let Some(action) = self.rebalance_target(src_node, &ranked_candidates) {
                 return Ok(vec![action]);
             }
         }
@@ -103,11 +103,11 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
     fn mean_replica_count(&self) -> f64 {
         let nodes = self.alloc_source.nodes();
-        let total_replcas = nodes
+        let total_replicas = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().replica_count)
             .sum::<u64>() as f64;
-        total_replcas / (nodes.len() as f64)
+        total_replicas / (nodes.len() as f64)
     }
 
     fn rank_node_for_balance(ns: Vec<NodeDesc>, mean_cnt: f64) -> Vec<(NodeDesc, BalanceStatus)> {

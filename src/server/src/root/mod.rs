@@ -299,8 +299,8 @@ impl Root {
             }
         };
 
-        let candiate_groups = self.alloc.place_group_for_shard(partitions.len()).await?;
-        assert!(!candiate_groups.is_empty());
+        let candidate_groups = self.alloc.place_group_for_shard(partitions.len()).await?;
+        assert!(!candidate_groups.is_empty());
 
         let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
         for (group_idx, partition) in partitions.into_iter().enumerate() {
@@ -310,8 +310,8 @@ impl Root {
                 collection_id: collection.id.to_owned(),
                 partition: Some(partition),
             };
-            let group = candiate_groups
-                .get(group_idx % candiate_groups.len())
+            let group = candidate_groups
+                .get(group_idx % candidate_groups.len())
                 .unwrap();
             match group_shards.entry(group.id.to_owned()) {
                 hash_map::Entry::Occupied(mut ent) => {
@@ -437,7 +437,28 @@ impl Root {
         group_id: u64,
         num_required: u64,
     ) -> Result<Vec<ReplicaDesc>> {
-        todo!()
+        let schema = self.schema()?;
+        let existing_replicas = match schema.get_group(group_id).await? {
+            Some(desc) => desc.replicas,
+            None => {
+                todo!()
+            }
+        };
+        let node_desc = self
+            .alloc
+            .allocate_group_replica(existing_replicas, num_required as usize)
+            .await?;
+
+        let mut replicas = Vec::new();
+        for n in &node_desc {
+            let replica_id = schema.next_replica_id().await?;
+            replicas.push(ReplicaDesc {
+                id: replica_id,
+                node_id: n.id,
+                role: ReplicaRole::Voter.into(),
+            });
+        }
+        Ok(replicas)
     }
 
     async fn create_groups(&self, cnt: usize) -> Result<()> {
