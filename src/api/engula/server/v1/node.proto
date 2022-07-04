@@ -75,6 +75,10 @@ message GroupRequestUnion {
 
     /// Issue a migration request. This request need to send to the dest group.
     AcceptShardRequest accept_shard = 8;
+
+    /// Transfer leadership to another replicas. This request is executed as a notice, so
+    /// the response doesn't reflect the actual execution result of transferring.
+    TransferRequest transfer = 9;
   }
 }
 
@@ -88,6 +92,7 @@ message GroupResponseUnion {
     CreateShardResponse create_shard = 6;
     ChangeReplicasResponse change_replicas = 7;
     AcceptShardResponse accept_shard = 8;
+    TransferResponse transfer = 9;
   }
 }
 
@@ -175,6 +180,12 @@ message AcceptShardRequest {
 }
 
 message AcceptShardResponse {}
+
+message TransferRequest {
+  uint64 transferee = 1;
+}
+
+message TransferResponse {}
 
 message HeartbeatRequest {
   uint64 timestamp = 1;
