@@ -161,6 +161,71 @@ pub struct Collection {
 }
 
 impl Collection {
+    pub async fn delete(&self, key: Vec<u8>) -> Result<(), crate::Error> {
+        let mut retry_state = RetryState::default();
+
+        loop {
+            match self.delete_inner(&key).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if !retry_state.retry(&err).await {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn delete_inner(&self, key: &[u8]) -> Result<(), crate::Error> {
+        let mut inner = self.client.inner.lock().await;
+        let router = inner.router.clone();
+        let shard = router.find_shard(self.co_desc.clone(), key)?;
+        let group = router.find_group_by_shard(shard.id)?;
+        let epoch = group
+            .epoch
+            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
+        let leader_id = group
+            .leader_id
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_id (key={:?})", key)))?;
+        let node_id = group
+            .replicas
+            .get(&leader_id)
+            .map(|desc| desc.node_id)
+            .ok_or_else(|| crate::Error::NotFound(format!("leader_node_id (key={:?})", key)))?;
+        let client = inner.node_clients.get(&node_id);
+        let resp = match client {
+            None => {
+                let addr = router.find_node_addr(node_id)?;
+                let client = NodeClient::connect(addr).await?;
+                inner.node_clients.insert(node_id, client.clone());
+                client
+                    .batch_group_requests(
+                        RequestBatchBuilder::new(node_id)
+                            .delete(group.id, epoch, shard.id, key.to_vec())
+                            .build(),
+                    )
+                    .await?
+            }
+            Some(client) => {
+                client
+                    .batch_group_requests(
+                        RequestBatchBuilder::new(node_id)
+                            .delete(group.id, epoch, shard.id, key.to_vec())
+                            .build(),
+                    )
+                    .await?
+            }
+        };
+
+        for r in resp {
+            if let Some(err) = crate::Error::from_group_response(&r) {
+                return Err(err);
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
         let mut retry_state = RetryState::default();
 
