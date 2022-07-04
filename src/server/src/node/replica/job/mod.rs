@@ -13,5 +13,7 @@
 // limitations under the License.
 
 mod purge_replica;
+mod schedule;
 
 pub use purge_replica::setup as setup_purge_replica;
+pub use schedule::scheduler_main;

@@ -284,6 +284,11 @@ where
         self.raw_node.status()
     }
 
+    #[inline]
+    pub fn committed_index(&self) -> u64 {
+        self.raw_node.raft.raft_log.committed
+    }
+
     fn handle_apply(&mut self, template: &mut impl AdvanceTemplate, ready: &mut Ready) {
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());

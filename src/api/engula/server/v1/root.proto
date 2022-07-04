@@ -34,6 +34,9 @@ service Root {
 
   /// Report the changes of metadata and volatile states of group or replicas.
   rpc Report(ReportRequest) returns (ReportResponse) {}
+
+  /// Alloc replica id and node for the corresponding group.
+  rpc AllocReplica(AllocReplicaRequest) returns (AllocReplicaResponse) {}
 }
 
 message WatchRequest {
@@ -95,3 +98,16 @@ message ReportRequest {
 }
 
 message ReportResponse {}
+
+message AllocReplicaRequest {
+  uint64 group_id = 1;
+  uint64 epoch = 2;
+  uint64 current_term = 3;
+  uint64 leader_id = 4;
+
+  uint64 num_required = 5;
+}
+
+message AllocReplicaResponse {
+  repeated ReplicaDesc replicas = 1;
+}

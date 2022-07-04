@@ -122,6 +122,19 @@ impl Client {
         Ok(res.into_inner())
     }
 
+    pub async fn alloc_replica(
+        &self,
+        req: AllocReplicaRequest,
+    ) -> Result<AllocReplicaResponse, crate::Error> {
+        let resp = self
+            .invoke(|mut client| {
+                let req = req.clone();
+                async move { client.alloc_replica(req).await }
+            })
+            .await?;
+        Ok(resp.into_inner())
+    }
+
     async fn invoke<F, O, V>(&self, op: F) -> Result<V, crate::Error>
     where
         F: Fn(root_client::RootClient<Channel>) -> O,

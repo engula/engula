@@ -148,6 +148,18 @@ impl Replica {
         });
         migrate_ctrl.watch_state_changes(replica.clone(), receiver);
 
+        use crate::runtime::TaskPriority;
+
+        let tag_owner = group_id.to_le_bytes();
+        let tag = Some(tag_owner.as_slice());
+        let router = migrate_ctrl.router();
+        let cloned_replica = replica.clone();
+        raft_mgr
+            .executor()
+            .spawn(tag, TaskPriority::IoHigh, async move {
+                job::scheduler_main(router, cloned_replica).await;
+            });
+
         Ok(replica)
     }
 
@@ -183,7 +195,7 @@ impl Replica {
         self.evaluate_command(&exec_ctx, request).await
     }
 
-    pub async fn on_leader(&self, immediate: bool) -> Result<()> {
+    pub async fn on_leader(&self, immediate: bool) -> Result<Option<u64>> {
         if self.info.is_terminated() {
             return Err(Error::NotLeader(self.info.group_id, None));
         }
@@ -193,8 +205,10 @@ impl Replica {
         poll_fn(|ctx| {
             let mut lease_state = self.lease_state.lock().unwrap();
             if lease_state.is_ready_for_serving() {
-                Poll::Ready(Ok(()))
-            } else if immediate || self.info.is_terminated() {
+                Poll::Ready(Ok(Some(lease_state.replica_state.term)))
+            } else if immediate {
+                Poll::Ready(Ok(None))
+            } else if self.info.is_terminated() {
                 Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
             } else {
                 lease_state.leader_subscribers.push(ctx.waker().clone());

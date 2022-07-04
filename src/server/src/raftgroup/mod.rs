@@ -36,7 +36,7 @@ pub use self::{
     snap::SnapManager,
     storage::write_initial_state,
     transport::{retrive_snapshot, AddressResolver, TransportManager},
-    worker::StateObserver,
+    worker::{RaftGroupState, StateObserver},
 };
 use crate::{
     runtime::{Executor, TaskPriority},
@@ -101,6 +101,11 @@ impl RaftManager {
     #[inline]
     pub async fn list_groups(&self) -> Vec<u64> {
         self.engine.raft_groups()
+    }
+
+    #[inline]
+    pub fn executor(&self) -> &Executor {
+        &self.executor
     }
 
     pub async fn start_raft_group<M: 'static + StateMachine>(

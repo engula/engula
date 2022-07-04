@@ -1263,7 +1263,7 @@ dependencies = [
 [[package]]
 name = "raft"
 version = "0.7.0"
-source = "git+https://github.com/w41ter/raft-rs.git#640a176751ed4b7d17a50a79fdbc3caf5dd0cb8c"
+source = "git+https://github.com/w41ter/raft-rs.git#7a667aa16e60bc0d0c88da378971770cf6880be8"
 dependencies = [
  "fxhash",
  "getset",
@@ -1310,7 +1310,7 @@ dependencies = [
 [[package]]
 name = "raft-proto"
 version = "0.7.0"
-source = "git+https://github.com/w41ter/raft-rs.git#640a176751ed4b7d17a50a79fdbc3caf5dd0cb8c"
+source = "git+https://github.com/w41ter/raft-rs.git#7a667aa16e60bc0d0c88da378971770cf6880be8"
 dependencies = [
  "lazy_static",
  "prost",

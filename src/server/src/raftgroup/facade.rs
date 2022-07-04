@@ -15,7 +15,10 @@
 use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
 
-use super::{worker::Request, ReadPolicy};
+use super::{
+    worker::{RaftGroupState, Request},
+    ReadPolicy,
+};
 use crate::{
     serverpb::v1::{EvalResult, RaftMessage},
     Result,
@@ -124,6 +127,20 @@ impl RaftNodeFacade {
         }
 
         receiver
+    }
+
+    pub async fn raft_group_state(&mut self) -> Option<RaftGroupState> {
+        let (sender, receiver) = oneshot::channel();
+        let request = Request::State(sender);
+        match self.request_sender.try_send(request) {
+            Ok(()) => {}
+            Err(_) => return None,
+        }
+
+        match receiver.await {
+            Ok(state) => Some(state),
+            Err(_) => None,
+        }
     }
 
     pub fn report_unreachable(&mut self, target_id: u64) {
