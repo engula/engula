@@ -15,7 +15,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use engula_api::server::v1::{group_request_union::Request, *};
@@ -66,6 +66,7 @@ impl Scheduler {
             if self.cure_group_task.is_none() && self.ctx.is_group_sicked() {
                 self.setup_cure_group_task().await;
             }
+            crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
