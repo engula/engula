@@ -17,37 +17,42 @@ pub fn in_range(start: &[u8], end: &[u8], key: &[u8]) -> bool {
     start <= key && (key < end || end.is_empty())
 }
 
+#[inline]
+pub fn key_slot(key: &[u8], slots: u32) -> u32 {
+    // TODO: it's temp hash impl..
+    crc32fast::hash(key) & slots
+}
+
 /// Return whether a key belongs to the corresponding shard.
 pub fn belong_to(shard: &ShardDesc, key: &[u8]) -> bool {
     match shard.partition.as_ref().unwrap() {
-        Partition::Hash(hash) => {
-            // TODO: it's temp hash impl..
-            let crc = crc32fast::hash(key);
-            let slot = crc & (hash.slots as u32);
-            hash.slot_id == slot
-        }
+        Partition::Hash(hash) => hash.slot_id == key_slot(key, hash.slots),
         Partition::Range(RangePartition { start, end }) => in_range(start, end, key),
     }
 }
 
 /// Return the start key of the corresponding shard.
 #[inline]
-pub fn start_key(shard: &ShardDesc) -> &[u8] {
+pub fn start_key(shard: &ShardDesc) -> Vec<u8> {
     match shard.partition.as_ref().unwrap() {
-        Partition::Hash(_hash) => {
-            todo!("the range of hash shard")
-        }
-        Partition::Range(RangePartition { start, .. }) => start.as_slice(),
+        Partition::Hash(hash) => hash.slot_id.to_le_bytes().as_slice().to_owned(),
+        Partition::Range(RangePartition { start, .. }) => start.as_slice().to_owned(),
     }
 }
 
 /// Return the end key of the corresponding shard.
 #[inline]
-pub fn end_key(shard: &ShardDesc) -> &[u8] {
+pub fn end_key(shard: &ShardDesc) -> Vec<u8> {
     match shard.partition.as_ref().unwrap() {
-        Partition::Hash(_hash) => {
-            todo!("the range of hash shard")
-        }
-        Partition::Range(RangePartition { end, .. }) => end.as_slice(),
+        Partition::Hash(hash) => (hash.slot_id + 1).to_le_bytes().as_slice().to_owned(),
+        Partition::Range(RangePartition { end, .. }) => end.as_slice().to_owned(),
+    }
+}
+
+/// Return the slot of the corresponding shard.  `None` is returned if shard is range partition.
+pub fn slot(shard: &ShardDesc) -> Option<u32> {
+    match shard.partition.as_ref().unwrap() {
+        Partition::Hash(hash) => Some(hash.slot_id),
+        Partition::Range(_) => None,
     }
 }

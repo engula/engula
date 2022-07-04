@@ -67,9 +67,21 @@ pub struct RawIterator<'a> {
 }
 
 enum SnapshotRange {
-    Target { target_key: Vec<u8> },
-    Prefix { prefix: Vec<u8> },
-    Range { start: Vec<u8>, end: Vec<u8> },
+    Target {
+        target_key: Vec<u8>,
+    },
+    Prefix {
+        prefix: Vec<u8>,
+    },
+    Range {
+        start: Vec<u8>,
+        end: Vec<u8>,
+    },
+    #[allow(dead_code)]
+    HashRange {
+        slot: u32,
+        start: Vec<u8>,
+    },
 }
 
 pub struct Snapshot<'a> {
@@ -80,6 +92,7 @@ pub struct Snapshot<'a> {
 }
 
 pub struct SnapshotCore<'a> {
+    expect_slot: Option<u32>,
     db_iter: rocksdb::DBIterator<'a>,
     current_key: Option<Vec<u8>>,
     cached_entry: Option<MvccEntry>,
@@ -98,6 +111,7 @@ pub struct MvccIterator<'a, 'b> {
 
 pub struct MvccEntry {
     key: Box<[u8]>,
+    slot: Option<u32>,
     user_key: Vec<u8>,
     value: Box<[u8]>,
 }
@@ -239,7 +253,7 @@ impl GroupEngine {
         debug_assert!(shard::belong_to(&desc, key));
 
         wb.put(
-            keys::mvcc_key(collection_id, key, version),
+            keys::mvcc_key(collection_id, shard::slot(&desc), key, version),
             values::data(value),
         );
 
@@ -260,7 +274,7 @@ impl GroupEngine {
         debug_assert!(shard::belong_to(&desc, key));
 
         wb.put(
-            keys::mvcc_key(collection_id, key, version),
+            keys::mvcc_key(collection_id, shard::slot(&desc), key, version),
             values::tombstone(),
         );
 
@@ -279,7 +293,12 @@ impl GroupEngine {
         debug_assert_ne!(collection_id, LOCAL_COLLECTION_ID);
         debug_assert!(shard::belong_to(&desc, key));
 
-        wb.delete(keys::mvcc_key(collection_id, key, version));
+        wb.delete(keys::mvcc_key(
+            collection_id,
+            shard::slot(&desc),
+            key,
+            version,
+        ));
 
         Ok(())
     }
@@ -337,18 +356,23 @@ impl GroupEngine {
 
         let opts = ReadOptions::default();
         let key = match &mode {
-            SnapshotMode::Start { start_key } => {
-                let start_key = start_key.unwrap_or_else(|| shard::start_key(&desc));
+            SnapshotMode::Start {
+                start_key: Some(start_key),
+            } => {
                 debug_assert!(shard::belong_to(&desc, start_key));
-                keys::raw(collection_id, start_key)
+                keys::raw(collection_id, shard::slot(&desc), start_key)
+            }
+            SnapshotMode::Start { start_key: None } => {
+                // An empty key with hash slot is equivalent to range start key.
+                keys::raw(collection_id, None, &shard::start_key(&desc))
             }
             SnapshotMode::Key { key } => {
                 debug_assert!(shard::belong_to(&desc, key));
-                keys::raw(collection_id, key)
+                keys::raw(collection_id, shard::slot(&desc), key)
             }
             SnapshotMode::Prefix { key } => {
                 debug_assert!(shard::belong_to(&desc, key));
-                keys::raw(collection_id, key)
+                keys::raw(collection_id, shard::slot(&desc), key)
             }
         };
         let inner_mode = IteratorMode::From(&key, Direction::Forward);
@@ -484,6 +508,8 @@ impl<'a> Snapshot<'a> {
         snapshot_mode: SnapshotMode<'b>,
         desc: &ShardDesc,
     ) -> Self {
+        let expect_slot = shard::slot(desc);
+
         let range = match snapshot_mode {
             SnapshotMode::Key { key } => Some(SnapshotRange::Target {
                 target_key: key.to_owned(),
@@ -491,11 +517,19 @@ impl<'a> Snapshot<'a> {
             SnapshotMode::Prefix { key } => Some(SnapshotRange::Prefix {
                 prefix: key.to_owned(),
             }),
+            SnapshotMode::Start { start_key } if expect_slot.is_some() => {
+                Some(SnapshotRange::HashRange {
+                    slot: expect_slot.unwrap(),
+                    start: start_key
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(Vec::default),
+                })
+            }
             SnapshotMode::Start { start_key } => Some(SnapshotRange::Range {
                 start: start_key
-                    .unwrap_or_else(|| shard::start_key(desc))
-                    .to_owned(),
-                end: shard::end_key(desc).to_owned(),
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| shard::start_key(desc)),
+                end: shard::end_key(desc),
             }),
         };
 
@@ -503,6 +537,7 @@ impl<'a> Snapshot<'a> {
             collection_id,
             range,
             core: RefCell::new(SnapshotCore {
+                expect_slot,
                 db_iter,
                 current_key: None,
                 cached_entry: None,
@@ -531,7 +566,7 @@ impl<'a> Snapshot<'a> {
         loop {
             if let Some(entry) = core.cached_entry.as_ref() {
                 if let Some(range) = self.range.as_ref() {
-                    if !range.is_valid_key(entry.user_key()) {
+                    if !range.is_valid_key(entry.user_key(), entry.slot()) {
                         // The iterate target has been consumed.
                         return None;
                     }
@@ -578,7 +613,7 @@ impl<'a> SnapshotCore<'a> {
             return None;
         }
 
-        self.cached_entry = Some(MvccEntry::new(key, value));
+        self.cached_entry = Some(MvccEntry::new(self.expect_slot.is_some(), key, value));
         Some(())
     }
 
@@ -608,10 +643,11 @@ impl<'a, 'b> Iterator for MvccIterator<'a, 'b> {
 }
 
 impl MvccEntry {
-    fn new(key: Box<[u8]>, value: Box<[u8]>) -> Self {
-        let user_key = keys::revert_mvcc_key(&key);
+    fn new(with_slot: bool, key: Box<[u8]>, value: Box<[u8]>) -> Self {
+        let (user_key, slot) = keys::revert_mvcc_key(&key, with_slot);
         MvccEntry {
             key,
+            slot,
             user_key,
             value,
         }
@@ -620,6 +656,11 @@ impl MvccEntry {
     #[inline]
     pub fn raw_key(&self) -> &[u8] {
         &self.key
+    }
+
+    #[inline]
+    pub fn slot(&self) -> Option<u32> {
+        self.slot
     }
 
     #[inline]
@@ -657,11 +698,16 @@ impl MvccEntry {
 
 impl SnapshotRange {
     #[inline]
-    fn is_valid_key(&self, key: &[u8]) -> bool {
+    fn is_valid_key(&self, key: &[u8], parsed_slot: Option<u32>) -> bool {
         match self {
             SnapshotRange::Target { target_key } if target_key == key => true,
             SnapshotRange::Prefix { prefix } if key.starts_with(prefix) => true,
             SnapshotRange::Range { start, end } if shard::in_range(start, end, key) => true,
+            SnapshotRange::HashRange { slot, .. }
+                if parsed_slot.map(|s| s == *slot).unwrap_or_default() =>
+            {
+                true
+            }
             _ => false,
         }
     }
@@ -679,22 +725,37 @@ mod keys {
     const MIGRATE_STATE: &[u8] = b"MIGRATE_STATE";
 
     #[inline]
-    pub fn raw(collection_id: u64, key: &[u8]) -> Vec<u8> {
+    pub fn raw(collection_id: u64, slot: Option<u32>, key: &[u8]) -> Vec<u8> {
         if key.is_empty() {
-            collection_id.to_le_bytes().as_slice().to_owned()
+            if let Some(slot) = slot {
+                let mut buf =
+                    Vec::with_capacity(core::mem::size_of::<u64>() + core::mem::size_of::<u32>());
+                buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
+                buf.extend_from_slice(slot.to_le_bytes().as_slice());
+                buf
+            } else {
+                collection_id.to_le_bytes().as_slice().to_owned()
+            }
         } else {
-            mvcc_key(collection_id, key, u64::MAX)
+            mvcc_key(collection_id, slot, key, u64::MAX)
         }
     }
 
     /// Generate mvcc key with the memcomparable format.
-    pub fn mvcc_key(collection_id: u64, key: &[u8], version: u64) -> Vec<u8> {
+    pub fn mvcc_key(collection_id: u64, slot: Option<u32>, key: &[u8], version: u64) -> Vec<u8> {
         use std::io::{Cursor, Read};
 
         debug_assert!(!key.is_empty());
         let actual_len = (((key.len() - 1) / 8) + 1) * 9;
-        let mut buf = Vec::with_capacity(2 * core::mem::size_of::<u64>() + actual_len);
+        let mut buf_len = 2 * core::mem::size_of::<u64>() + actual_len;
+        if slot.is_some() {
+            buf_len += core::mem::size_of::<u32>();
+        }
+        let mut buf = Vec::with_capacity(buf_len);
         buf.extend_from_slice(collection_id.to_le_bytes().as_slice());
+        if let Some(slot) = slot {
+            buf.extend_from_slice(slot.to_le_bytes().as_slice());
+        }
         let mut cursor = Cursor::new(key);
         while !cursor.is_empty() {
             let mut group = [0u8; 8];
@@ -710,13 +771,23 @@ mod keys {
         buf
     }
 
-    pub fn revert_mvcc_key(key: &[u8]) -> Vec<u8> {
+    pub fn revert_mvcc_key(key: &[u8], with_slot: bool) -> (Vec<u8>, Option<u32>) {
         use std::io::{Cursor, Read};
 
         const L: usize = core::mem::size_of::<u64>();
         let len = key.len();
         debug_assert!(len > 2 * L);
-        let encoded_user_key = &key[L..(len - L)];
+        let mut encoded_user_key = &key[L..(len - L)];
+        let slot = if with_slot {
+            debug_assert!(encoded_user_key.len() >= core::mem::size_of::<u32>());
+            let mut buf = [0u8; 4];
+            buf[..].copy_from_slice(&encoded_user_key[..core::mem::size_of::<u32>()]);
+            encoded_user_key = &encoded_user_key[4..];
+            Some(u32::from_le_bytes(buf))
+        } else {
+            None
+        };
+
         debug_assert_eq!(encoded_user_key.len() % 9, 0);
         let num_groups = encoded_user_key.len() / 9;
         let mut buf = Vec::with_capacity(num_groups * 8);
@@ -727,7 +798,7 @@ mod keys {
             let num_element = std::cmp::min((group[8] - b'0') as usize, 8);
             buf.extend_from_slice(&group[..num_element]);
         }
-        buf
+        (buf, slot)
     }
 
     #[inline]
@@ -972,8 +1043,8 @@ mod tests {
             },
         ];
         for (idx, t) in tests.iter().enumerate() {
-            let left = keys::mvcc_key(0, t.left, t.left_version);
-            let right = keys::mvcc_key(0, t.right, t.right_version);
+            let left = keys::mvcc_key(0, None, t.left, t.left_version);
+            let right = keys::mvcc_key(0, None, t.right, t.right_version);
             assert!(
                 left < right,
                 "index {}, left {:?}, right {:?}",
@@ -1296,6 +1367,76 @@ mod tests {
                 ..Default::default()
             },
         );
+        group_engine.commit(wb, false).unwrap();
+
+        // Iterate shard 1
+        let snapshot_mode = SnapshotMode::default();
+        let mut snapshot = group_engine.snapshot(1, snapshot_mode).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap();
+        let entry = mvcc_key_iter.next().unwrap();
+        assert_eq!(entry.user_key(), b"a");
+        assert!(user_data_iter.next().is_none());
+
+        // Iterate shard 2
+        let snapshot_mode = SnapshotMode::default();
+        let mut snapshot = group_engine.snapshot(2, snapshot_mode).unwrap();
+        let mut user_data_iter = snapshot.iter();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap();
+        let entry = mvcc_key_iter.next().unwrap();
+        assert_eq!(entry.user_key(), b"b");
+        assert!(user_data_iter.next().is_none());
+
+        assert!(snapshot.status().is_ok());
+    }
+
+    #[test]
+    fn iterate_in_hash_range() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let group_engine = create_engine(executor, 1, 1);
+
+        let slots = 256;
+        let shard_1_slot_id = shard::key_slot(b"a", slots);
+        let shard_2_slot_id = shard::key_slot(b"b", slots);
+        debug_assert_ne!(shard_1_slot_id, shard_2_slot_id);
+
+        // Add new shard
+        use shard_desc::*;
+        let mut wb = WriteBatch::default();
+        group_engine.set_group_desc(
+            &mut wb,
+            &GroupDesc {
+                id: 1,
+                shards: vec![
+                    ShardDesc {
+                        id: 1,
+                        collection_id: 1,
+                        partition: Some(Partition::Hash(HashPartition {
+                            slot_id: shard_1_slot_id,
+                            slots,
+                        })),
+                    },
+                    ShardDesc {
+                        id: 2,
+                        collection_id: 1,
+                        partition: Some(Partition::Hash(HashPartition {
+                            slot_id: shard_2_slot_id,
+                            slots,
+                        })),
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+        group_engine.commit(wb, false).unwrap();
+
+        let mut wb = WriteBatch::default();
+
+        group_engine.put(&mut wb, 1, b"a", b"", 123).unwrap();
+        group_engine.tombstone(&mut wb, 1, b"a", 124).unwrap();
+        group_engine.put(&mut wb, 2, b"b", b"123", 123).unwrap();
+        group_engine.put(&mut wb, 2, b"b", b"124", 124).unwrap();
         group_engine.commit(wb, false).unwrap();
 
         // Iterate shard 1
