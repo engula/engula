@@ -618,11 +618,30 @@ impl Schema {
             shards,
         });
 
+        batch.put_group(GroupDesc {
+            id: INIT_USER_GROUP_ID,
+            epoch: INITIAL_EPOCH,
+            replicas: vec![ReplicaDesc {
+                id: INIT_USER_REPLICA_ID,
+                node_id: FIRST_NODE_ID,
+                role: ReplicaRole::Voter.into(),
+            }],
+            shards: vec![],
+        });
+
         batch.put_replica_state(ReplicaState {
             replica_id: FIRST_REPLICA_ID,
             group_id: ROOT_GROUP_ID,
             term: 0,
             voted_for: FIRST_REPLICA_ID,
+            role: RaftRole::Leader.into(),
+        });
+
+        batch.put_replica_state(ReplicaState {
+            replica_id: INIT_USER_REPLICA_ID,
+            group_id: INIT_USER_GROUP_ID,
+            term: 0,
+            voted_for: INIT_USER_REPLICA_ID,
             role: RaftRole::Leader.into(),
         });
 
@@ -747,7 +766,7 @@ impl Schema {
         );
         batch.put_meta(
             META_GROUP_ID_KEY.into(),
-            (ROOT_GROUP_ID + 1).to_le_bytes().to_vec(),
+            (INIT_USER_GROUP_ID + 1).to_le_bytes().to_vec(),
         );
         batch.put_meta(
             META_NODE_ID_KEY.into(),
@@ -755,7 +774,7 @@ impl Schema {
         );
         batch.put_meta(
             META_REPLICA_ID_KEY.into(),
-            (FIRST_REPLICA_ID + 1).to_le_bytes().to_vec(),
+            (INIT_USER_REPLICA_ID + 1).to_le_bytes().to_vec(),
         );
         batch.put_meta(
             META_SHARD_ID_KEY.into(),
