@@ -96,18 +96,6 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    // TODO removed once `watch` implemented
-    pub async fn resolve(&self, node_id: u64) -> Result<ResolveNodeResponse, crate::Error> {
-        let req = ResolveNodeRequest { node_id };
-        let res = self
-            .invoke(|mut client| {
-                let req = req.clone();
-                async move { client.resolve(req).await }
-            })
-            .await?;
-        Ok(res.into_inner())
-    }
-
     pub async fn watch(
         &self,
         cur_group_epochs: HashMap<u64, u64>,

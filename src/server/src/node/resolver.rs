@@ -11,61 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::{collections::HashMap, sync::Mutex};
 
 use engula_api::server::v1::NodeDesc;
-use engula_client::RootClient;
-use tracing::warn;
+use engula_client::Router;
 
 use crate::{Error, Result};
 
 pub struct AddressResolver {
-    root_list: Vec<String>,
-    nodes: Mutex<HashMap<u64, NodeDesc>>,
+    router: Router,
 }
 
 impl AddressResolver {
-    pub fn new(root_list: Vec<String>) -> Self {
-        AddressResolver {
-            root_list,
-            nodes: Mutex::default(),
-        }
-    }
-
-    pub fn insert(&self, desc: &NodeDesc) {
-        let mut nodes = self.nodes.lock().unwrap();
-        nodes.insert(desc.id, desc.to_owned());
-    }
-
-    pub fn find(&self, node_id: u64) -> Option<NodeDesc> {
-        let nodes = self.nodes.lock().unwrap();
-        nodes.get(&node_id).cloned()
-    }
-
-    async fn issue_resolve_request(target_addr: &str, node_id: u64) -> Result<Option<NodeDesc>> {
-        let client = RootClient::connect(vec![target_addr.to_string()]).await?;
-        let res = client.resolve(node_id).await?;
-        Ok(res.node)
+    pub fn new(router: Router) -> Self {
+        AddressResolver { router }
     }
 }
 
 #[crate::async_trait]
 impl crate::raftgroup::AddressResolver for AddressResolver {
     async fn resolve(&self, node_id: u64) -> Result<NodeDesc> {
-        if let Some(desc) = self.find(node_id) {
-            return Ok(desc);
-        }
-
-        for addr in &self.root_list {
-            match Self::issue_resolve_request(addr, node_id).await {
-                Ok(resp) => match resp {
-                    Some(desc) => return Ok(desc),
-                    None => continue,
-                },
-                Err(e) => {
-                    warn!(err = ?e, root = ?addr, "issue resolve request to root server");
-                }
-            }
+        if let Ok(addr) = self.router.find_node_addr(node_id) {
+            return Ok(NodeDesc {
+                id: node_id,
+                addr,
+                ..Default::default()
+            });
         }
 
         Err(Error::InvalidArgument("no such node exists".into()))
