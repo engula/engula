@@ -31,7 +31,7 @@ use prost::Message;
 use tokio::time;
 use tracing::info;
 
-use super::{store::RootStore, job::is_retry_err};
+use super::{job::is_retry_err, store::RootStore};
 use crate::{bootstrap::*, node::engine::LOCAL_COLLECTION_ID, Error, Result};
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
