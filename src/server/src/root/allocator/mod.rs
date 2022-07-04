@@ -50,6 +50,7 @@ pub enum ShardAction {
 #[allow(dead_code)]
 pub struct ReallocateReplica {
     pub group: u64,
+    pub source_node: u64,
     pub source_replica: u64,
     pub target_node: NodeDesc,
 }
@@ -108,6 +109,10 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaAction>> {
         self.alloc_source.refresh_all().await?;
 
+        if self.alloc_source.nodes().len() < self.replicas_per_group {
+            return Ok(Vec::new());
+        }
+
         // TODO: try qps rebalance.
 
         // try replica-count rebalance.
@@ -121,6 +126,10 @@ impl<T: AllocSource> Allocator<T> {
 
     pub async fn compute_shard_action(&self) -> Result<Vec<ShardAction>> {
         self.alloc_source.refresh_all().await?;
+
+        if self.alloc_source.nodes().len() < self.replicas_per_group {
+            return Ok(Vec::new());
+        }
 
         let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
         if !actions.is_empty() {

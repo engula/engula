@@ -89,6 +89,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             }
             return Some(ReplicaAction::Migrate(ReallocateReplica {
                 group,
+                source_node: source_replica.node_id,
                 source_replica: source_replica.id,
                 target_node: target.to_owned(),
             }));

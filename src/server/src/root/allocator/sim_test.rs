@@ -230,6 +230,7 @@ fn sim_boostrap_join_node_balance() {
             match act {
                 ReplicaAction::Migrate(ReallocateReplica {
                     group,
+                    source_node: _,
                     source_replica,
                     target_node,
                 }) => {
@@ -248,6 +249,7 @@ fn sim_boostrap_join_node_balance() {
             match act {
                 ReplicaAction::Migrate(ReallocateReplica {
                     group,
+                    source_node: _,
                     source_replica,
                     target_node,
                 }) => {

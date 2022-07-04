@@ -49,6 +49,21 @@ impl Client {
         Ok(())
     }
 
+    // NOTE: This method is always called by the root group.
+    pub async fn remove_replica(
+        &self,
+        replica_id: u64,
+        group: GroupDesc,
+    ) -> Result<(), tonic::Status> {
+        let mut client = self.client.clone();
+        let req = RemoveReplicaRequest {
+            replica_id,
+            group: Some(group),
+        };
+        client.remove_replica(req).await?;
+        Ok(())
+    }
+
     pub async fn batch_group_requests(
         &self,
         req: BatchRequest,

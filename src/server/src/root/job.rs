@@ -20,7 +20,7 @@ use engula_api::server::v1::{
 };
 use engula_client::{NodeClient, RequestBatchBuilder};
 use tokio::time;
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::{
     allocator::{GroupAction, ReallocateReplica, ReallocateShard, ReplicaAction},
@@ -223,9 +223,13 @@ impl Root {
         }
 
         loop {
-            if let Err(err) =
-                Self::try_remove_replica(schema.to_owned(), action.group, action.source_replica)
-                    .await
+            if let Err(err) = Self::try_remove_replica(
+                schema.to_owned(),
+                action.group,
+                action.source_replica,
+                action.source_node,
+            )
+            .await
             {
                 if is_retry_err(&err) {
                     time::sleep(Duration::from_secs(1)).await;
@@ -240,31 +244,59 @@ impl Root {
         Ok(())
     }
 
-    async fn try_add_replica(schema: Arc<Schema>, group: u64, target_node: u64) -> Result<()> {
+    async fn try_add_replica(
+        schema: Arc<Schema>,
+        group_id: u64,
+        target_node_id: u64,
+    ) -> Result<()> {
+        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group_id).await?;
+
+        // Create replica in target node.
         let new_replica = schema.next_replica_id().await?;
-        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group).await?;
-        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let target_node = schema
+            .get_node(target_node_id.to_owned())
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group_id))?;
+        let target_cli = NodeClient::connect((&target_node.addr).to_owned()).await?;
+        let mut target_group = group.to_owned();
+        target_group.replicas.push(ReplicaDesc {
+            id: new_replica,
+            node_id: target_node_id,
+            role: ReplicaRole::Voter.into(),
+        });
+        target_cli.create_replica(new_replica, target_group).await?;
+
+        // Add new replica to group.
+        let gl_client = NodeClient::connect(req_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).add_replica(
             group.id,
             group.epoch,
             new_replica,
-            target_node,
+            target_node_id,
         );
-        let resps = client.batch_group_requests(batch.build()).await?;
+        let resps = gl_client.batch_group_requests(batch.build()).await?;
         for resp in resps {
             if let Some(err) = resp.error {
                 return Err(err.into());
             }
         }
+
+        info!(
+            "add replica: {} to group: {} in node: {}",
+            new_replica, group.id, target_node_id
+        );
         Ok(())
     }
 
     async fn try_remove_replica(
         schema: Arc<Schema>,
-        group: u64,
+        group_id: u64,
         remove_replica: u64,
+        source_node_id: u64,
     ) -> Result<()> {
-        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group).await?;
+        let (group, req_node) = Self::get_group_leader(schema.to_owned(), group_id).await?;
+
+        // Remove from leader desc.
         let client = NodeClient::connect(req_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).remove_replica(
             group.id,
@@ -277,6 +309,21 @@ impl Root {
                 return Err(err.into());
             }
         }
+
+        // Remove from replica node.
+        let source_node = schema
+            .get_node(source_node_id.to_owned())
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group_id))?;
+        let source_cli = NodeClient::connect((&source_node.addr).to_owned()).await?;
+        source_cli
+            .remove_replica(remove_replica, group.to_owned())
+            .await?;
+
+        info!(
+            "remove replica: {} to group: {} from node: {}",
+            remove_replica, group.id, source_node_id,
+        );
         Ok(())
     }
 
