@@ -432,6 +432,14 @@ impl Root {
         Ok(())
     }
 
+    pub async fn alloc_replica(
+        &self,
+        group_id: u64,
+        num_required: u64,
+    ) -> Result<Vec<ReplicaDesc>> {
+        todo!()
+    }
+
     async fn create_groups(&self, cnt: usize) -> Result<()> {
         for _ in 0..cnt {
             let nodes = self

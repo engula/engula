@@ -23,6 +23,7 @@ use engula_client::Router;
 use tracing::{error, info};
 
 use crate::{
+    bootstrap::ROOT_GROUP_ID,
     node::{replica::ExecCtx, Replica},
     raftgroup::{RaftGroupState, RaftNodeFacade},
     serverpb::v1::*,
@@ -43,11 +44,14 @@ struct ScheduleContext {
     raft_node: RaftNodeFacade,
     router: Router,
 
+    current_term: u64,
+
     lost_peers: HashMap<u64, Instant>,
 }
 
 impl Scheduler {
     async fn run(&mut self, current_term: u64) {
+        self.ctx.current_term = current_term;
         self.recover_pending_tasks().await;
         while let Ok(Some(term)) = self.ctx.replica.on_leader(true).await {
             if term != current_term {
@@ -79,7 +83,15 @@ impl Scheduler {
     }
 
     async fn setup_cure_group_task(&mut self) {
-        let replicas = match self.alloc_addition_replicas().await {
+        let outgoing_voters = self.ctx.lost_replicas();
+        if outgoing_voters.is_empty() {
+            return;
+        }
+
+        let replicas = match self
+            .alloc_addition_replicas(outgoing_voters.len() as u64)
+            .await
+        {
             Ok(replicas) => replicas,
             Err(e) => {
                 error!(
@@ -92,7 +104,6 @@ impl Scheduler {
             }
         };
 
-        let outgoing_voters = self.ctx.lost_replicas();
         let create_replica_step = CreateReplicaStep {
             replicas: replicas.clone(),
         };
@@ -131,8 +142,28 @@ impl Scheduler {
         }
     }
 
-    async fn alloc_addition_replicas(&mut self) -> Result<Vec<ReplicaDesc>> {
-        todo!("alloc id from root")
+    async fn alloc_addition_replicas(&mut self, num_required: u64) -> Result<Vec<ReplicaDesc>> {
+        use engula_client::RootClient;
+
+        let root_group_state = self.ctx.router.find_group(ROOT_GROUP_ID)?;
+        let root_replicas = root_group_state.replicas.values().cloned();
+
+        let mut root_list = vec![];
+        for replica in root_replicas {
+            root_list.push(self.ctx.router.find_node_addr(replica.id)?);
+        }
+
+        let root_client = RootClient::connect(root_list).await?;
+        let resp = root_client
+            .alloc_replica(AllocReplicaRequest {
+                group_id: self.ctx.group_id,
+                epoch: self.ctx.replica.epoch(),
+                current_term: self.ctx.current_term,
+                leader_id: self.ctx.replica_id,
+                num_required,
+            })
+            .await?;
+        Ok(resp.replicas)
     }
 }
 
@@ -146,6 +177,7 @@ impl ScheduleContext {
             replica,
             raft_node,
             router,
+            current_term: 0,
             lost_peers: HashMap::default(),
         }
     }

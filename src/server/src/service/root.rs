@@ -81,9 +81,17 @@ impl root_server::Root for Server {
 
     async fn alloc_replica(
         &self,
-        _request: Request<AllocReplicaRequest>,
+        request: Request<AllocReplicaRequest>,
     ) -> std::result::Result<Response<AllocReplicaResponse>, Status> {
-        todo!()
+        let req = request.into_inner();
+        let replicas = self
+            .wrap(
+                self.root
+                    .alloc_replica(req.group_id, req.num_required)
+                    .await,
+            )
+            .await?;
+        Ok(Response::new(AllocReplicaResponse { replicas }))
     }
 }
 
