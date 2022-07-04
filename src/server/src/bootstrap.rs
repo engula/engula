@@ -56,16 +56,10 @@ pub fn run(
     let log_path = path.join("log");
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
-    let address_resolver = Arc::new(AddressResolver::new(join_list.clone()));
 
-    let router = executor.block_on(async {
-        Router::new(if init {
-            addr.clone()
-        } else {
-            join_list[0].clone()
-        })
-        .await
-    });
+    let router = create_router(&executor, init, addr.clone(), join_list.clone());
+    let address_resolver = Arc::new(AddressResolver::new(router.clone()));
+
     let node = Node::new(
         log_path,
         raw_db,
@@ -75,21 +69,13 @@ pub fn run(
         router,
     )?;
 
-    let (node_id, root) = executor.block_on(async {
+    let (_node_id, root) = executor.block_on(async {
         let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
         node.bootstrap(&ident).await?;
         let mut root = Root::new(executor.clone(), &ident, addr.to_owned());
         root.bootstrap(&node).await?;
         Ok::<(u64, Root), Error>((ident.node_id, root))
     })?;
-
-    // TODO address_resolver watches node descriptors.
-    let node_desc = NodeDesc {
-        id: node_id,
-        addr: addr.to_owned(),
-        ..Default::default()
-    };
-    address_resolver.insert(&node_desc);
 
     let server = Server {
         node: Arc::new(node),
@@ -101,6 +87,15 @@ pub fn run(
     });
 
     executor.block_on(handle)
+}
+
+fn create_router(
+    executor: &Executor,
+    init: bool,
+    local_addr: String,
+    join_list: Vec<String>,
+) -> Router {
+    executor.block_on(async { Router::new(if init { vec![local_addr] } else { join_list }).await })
 }
 
 /// Listen and serve incoming rpc requests.

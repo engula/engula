@@ -539,13 +539,13 @@ mod root_test {
         let db_dir = tmp_dir.join("db");
         let log_dir = tmp_dir.join("log");
 
-        use crate::bootstrap::open_engine;
+        use crate::{bootstrap::open_engine, node::resolver::AddressResolver};
 
         let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
-        let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
-        let router = executor.block_on(async { Router::new("".to_owned()).await });
+        let router = executor.block_on(async { Router::new(vec!["".to_owned()]).await });
+        let address_resolver = Arc::new(AddressResolver::new(router.clone()));
         Node::new(
             log_dir,
             db,

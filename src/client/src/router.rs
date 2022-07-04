@@ -54,11 +54,11 @@ pub struct RouterGroupState {
 
 #[allow(unused)]
 impl Router {
-    pub async fn new(addr: String) -> Self {
+    pub async fn new(addrs: Vec<String>) -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let state_clone = state.clone();
         tokio::spawn(async move {
-            state_main(state_clone, addr).await;
+            state_main(state_clone, addrs).await;
         });
         Self { state }
     }
@@ -142,13 +142,13 @@ impl Router {
     }
 }
 
-async fn state_main(state: Arc<Mutex<State>>, addr: String) {
+async fn state_main(state: Arc<Mutex<State>>, addrs: Vec<String>) {
     let mut interval = 1;
     let root_client = loop {
-        match RootClient::connect(vec![addr.clone()]).await {
+        match RootClient::connect(addrs.clone()).await {
             Ok(c) => break c,
             Err(e) => {
-                warn!(err = ?e, addr=?addr, "connect root server");
+                warn!(err = ?e, addr=?addrs, "connect root server");
             }
         };
 
