@@ -119,7 +119,7 @@ impl Replica {
 
         {
             let mut lease_state = self.lease_state.lock().unwrap();
-            lease_state.wake_all_waiters();
+            lease_state.terminate();
         }
 
         Ok(())
@@ -369,7 +369,7 @@ impl ReplicaInfo {
 
         const TERMINATED: i32 = ReplicaLocalState::Terminated as i32;
         let mut local_state: i32 = self.local_state().into();
-        while local_state == TERMINATED {
+        while local_state != TERMINATED {
             local_state = self
                 .local_state
                 .compare_exchange(local_state, TERMINATED, Ordering::AcqRel, Ordering::Acquire)

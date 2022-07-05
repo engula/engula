@@ -32,6 +32,10 @@ impl WaitGroup {
         WaitGroup::default()
     }
 
+    pub fn count(&self) -> usize {
+        self.inner.lock().unwrap().count
+    }
+
     pub async fn wait(self) {
         use futures::future::poll_fn;
 

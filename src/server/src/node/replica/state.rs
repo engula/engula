@@ -110,6 +110,12 @@ impl LeaseState {
             .find(|r| r.id == self.leader_id)
             .cloned()
     }
+
+    #[inline]
+    pub fn terminate(&mut self) {
+        self.wake_all_waiters();
+        self.migration_state_subscriber.close_channel();
+    }
 }
 
 impl LeaseStateObserver {

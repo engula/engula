@@ -224,8 +224,8 @@ impl Node {
             Some(replica) => replica,
             None => {
                 warn!(
-                    group_id = group_id,
-                    replica_id = replica_id,
+                    group = group_id,
+                    replica = replica_id,
                     "remove a not existed replica"
                 );
                 return Ok(());
@@ -234,6 +234,7 @@ impl Node {
 
         replica.shutdown(actual_desc).await?;
         self.replica_route_table.remove(group_id);
+        self.raft_route_table.delete(replica_id);
 
         let wait_group = {
             let mut node_state = self.node_state.lock().await;
@@ -557,8 +558,46 @@ impl NodeState {
     }
 }
 
+async fn open_group_engine(raw_db: Arc<rocksdb::DB>, group_id: u64) -> Result<GroupEngine> {
+    match GroupEngine::open(group_id, raw_db).await? {
+        Some(group_engine) => Ok(group_engine),
+        None => {
+            panic!("no such group engine exists, group {group_id}");
+        }
+    }
+}
+
+async fn start_raft_group(
+    raft_mgr: &RaftManager,
+    info: Arc<ReplicaInfo>,
+    lease_state: Arc<std::sync::Mutex<LeaseState>>,
+    channel: StateChannel,
+    group_engine: GroupEngine,
+    wait_group: WaitGroup,
+) -> Result<RaftNodeFacade> {
+    let group_id = info.group_id;
+    let state_observer = Box::new(LeaseStateObserver::new(
+        info.clone(),
+        lease_state.clone(),
+        channel,
+    ));
+    let fsm = GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
+    raft_mgr
+        .start_raft_group(
+            group_id,
+            info.replica_id,
+            info.node_id,
+            fsm,
+            state_observer,
+            wait_group.clone(),
+        )
+        .await
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use engula_api::server::v1::{ReplicaDesc, ReplicaRole};
     use tempdir::TempDir;
 
@@ -676,42 +715,37 @@ mod tests {
                 node_id: 1,
             };
             node.bootstrap(&ident).await.unwrap();
-        })
+        });
     }
-}
 
-async fn open_group_engine(raw_db: Arc<rocksdb::DB>, group_id: u64) -> Result<GroupEngine> {
-    match GroupEngine::open(group_id, raw_db).await? {
-        Some(group_engine) => Ok(group_engine),
-        None => {
-            panic!("no such group engine exists, group {group_id}");
-        }
+    #[test]
+    fn remove_replica() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        executor_owner.executor().block_on(async {
+            let node = create_node(executor.clone()).await;
+
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
+            node.create_replica(replica_id, group.clone())
+                .await
+                .unwrap();
+            let ident = NodeIdent {
+                cluster_id: vec![],
+                node_id: 1,
+            };
+            node.bootstrap(&ident).await.unwrap();
+
+            crate::runtime::time::sleep(Duration::from_millis(10)).await;
+
+            node.remove_replica(replica_id, &group).await.unwrap();
+        });
     }
-}
-
-async fn start_raft_group(
-    raft_mgr: &RaftManager,
-    info: Arc<ReplicaInfo>,
-    lease_state: Arc<std::sync::Mutex<LeaseState>>,
-    channel: StateChannel,
-    group_engine: GroupEngine,
-    wait_group: WaitGroup,
-) -> Result<RaftNodeFacade> {
-    let group_id = info.group_id;
-    let state_observer = Box::new(LeaseStateObserver::new(
-        info.clone(),
-        lease_state.clone(),
-        channel,
-    ));
-    let fsm = GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
-    raft_mgr
-        .start_raft_group(
-            group_id,
-            info.replica_id,
-            info.node_id,
-            fsm,
-            state_observer,
-            wait_group.clone(),
-        )
-        .await
 }
