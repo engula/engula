@@ -28,10 +28,6 @@ service Root {
   /// bootstrapped cluster, an appropriate error is returned.
   rpc Join(JoinNodeRequest) returns (JoinNodeResponse) {}
 
-  /// A temporary method for querying the NodeDesc corresponding to node_id.
-  /// Once Watch is implemented, this method can be replaced by Watch.
-  rpc Resolve(ResolveNodeRequest) returns (ResolveNodeResponse) {}
-
   /// Report the changes of metadata and volatile states of group or replicas.
   rpc Report(ReportRequest) returns (ReportResponse) {}
 
@@ -78,10 +74,6 @@ message JoinNodeResponse {
   uint64 node_id = 2;
   repeated NodeDesc roots = 3;
 }
-
-message ResolveNodeRequest { uint64 node_id = 2; }
-
-message ResolveNodeResponse { NodeDesc node = 1; }
 
 message ReportRequest {
   message GroupUpdates {

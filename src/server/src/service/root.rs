@@ -52,21 +52,10 @@ impl root_server::Root for Server {
         let (cluster_id, node, roots) = self
             .wrap(self.root.join(request.addr, capacity).await)
             .await?;
-        self.address_resolver.insert(&node);
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
             roots: roots.into(),
-        }))
-    }
-
-    async fn resolve(
-        &self,
-        request: Request<ResolveNodeRequest>,
-    ) -> std::result::Result<Response<ResolveNodeResponse>, Status> {
-        let request = request.into_inner();
-        Ok(Response::new(ResolveNodeResponse {
-            node: self.address_resolver.find(request.node_id),
         }))
     }
 

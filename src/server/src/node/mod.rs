@@ -570,14 +570,16 @@ mod tests {
         let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
         let state_engine = StateEngine::new(db.clone()).unwrap();
-        let address_resolver = Arc::new(crate::node::resolver::AddressResolver::new(vec![]));
+        let router = Router::new(vec!["".to_owned()]).await;
+        let address_resolver =
+            Arc::new(crate::node::resolver::AddressResolver::new(router.clone()));
         Node::new(
             log_dir,
             db,
             state_engine,
             executor,
             address_resolver,
-            Router::new("".to_owned()).await,
+            router,
         )
         .unwrap()
     }
