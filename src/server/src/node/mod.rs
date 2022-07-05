@@ -24,7 +24,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use engula_api::server::v1::*;
 use engula_client::Router;
-use futures::lock::Mutex;
+use futures::{channel::mpsc, lock::Mutex};
 use tracing::{debug, info, warn};
 
 pub use self::{
@@ -37,16 +37,16 @@ use self::{
     migrate::{MigrateController, ShardChunkStream},
 };
 use crate::{
-    node::replica::{ExecCtx, ReplicaInfo},
-    raftgroup::{AddressResolver, RaftManager, TransportManager},
-    runtime::{Executor, JoinHandle},
+    node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
+    raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
+    runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
     Error, Result,
 };
 
 struct ReplicaContext {
     info: Arc<ReplicaInfo>,
-    tasks: Vec<JoinHandle<()>>,
+    wait_group: WaitGroup,
 }
 
 /// A structure holds the states of node. Eg create replica.
@@ -235,18 +235,16 @@ impl Node {
         replica.shutdown(actual_desc).await?;
         self.replica_route_table.remove(group_id);
 
-        let tasks = {
+        let wait_group = {
             let mut node_state = self.node_state.lock().await;
             let ctx = node_state
                 .replicas
                 .remove(&replica_id)
                 .expect("replica should exists");
-            ctx.tasks
+            ctx.wait_group
         };
 
-        for handle in tasks {
-            handle.await;
-        }
+        wait_group.wait().await;
 
         // This replica is shutdowned, we need to update and persisted states.
         self.state_engine
@@ -275,39 +273,46 @@ impl Node {
     ) -> Result<ReplicaContext> {
         use self::replica::job;
 
-        let group_engine = match GroupEngine::open(group_id, self.raw_db.clone()).await? {
-            Some(group_engine) => group_engine,
-            None => {
-                panic!(
-                    "no such group engine exists, group {}, replica {}",
-                    group_id, desc.id
-                );
-            }
-        };
+        let group_engine = open_group_engine(self.raw_db.clone(), group_id).await?;
+        let wait_group = WaitGroup::new();
+        let (sender, receiver) = mpsc::unbounded();
 
-        let replica_id = desc.id;
-        let replica = Replica::recover(
-            group_id,
-            desc,
-            local_state,
-            channel,
-            group_engine,
+        let info = Arc::new(ReplicaInfo::new(&desc, group_id, local_state));
+        let lease_state = Arc::new(std::sync::Mutex::new(LeaseState::new(
+            group_engine.descriptor(),
+            group_engine.migration_state(),
+            sender,
+        )));
+        let raft_node = start_raft_group(
             &self.raft_mgr,
-            self.migrate_ctrl.clone(),
+            info.clone(),
+            lease_state.clone(),
+            channel,
+            group_engine.clone(),
+            wait_group.clone(),
         )
         .await?;
-        self.replica_route_table.update(replica.clone());
-        self.raft_route_table
-            .update(replica_id, replica.raft_node());
 
-        let handles = vec![job::setup_purge_replica(
-            self.executor.clone(),
+        let replica_id = info.replica_id;
+        let replica = Replica::new(info, lease_state, raft_node.clone(), group_engine);
+        let replica = Arc::new(replica);
+        self.replica_route_table.update(replica.clone());
+        self.raft_route_table.update(replica_id, raft_node);
+
+        // Setup jobs
+        self.migrate_ctrl
+            .watch_state_changes(replica.clone(), receiver, wait_group.clone());
+        job::setup_scheduler(
+            &self.executor,
+            self.migrate_ctrl.router(),
             replica.clone(),
-        )];
+            wait_group.clone(),
+        );
+        job::setup_purge_replica(self.executor.clone(), replica.clone(), wait_group.clone());
 
         Ok(ReplicaContext {
             info: replica.replica_info(),
-            tasks: handles,
+            wait_group,
         })
     }
 
@@ -673,4 +678,40 @@ mod tests {
             node.bootstrap(&ident).await.unwrap();
         })
     }
+}
+
+async fn open_group_engine(raw_db: Arc<rocksdb::DB>, group_id: u64) -> Result<GroupEngine> {
+    match GroupEngine::open(group_id, raw_db).await? {
+        Some(group_engine) => Ok(group_engine),
+        None => {
+            panic!("no such group engine exists, group {group_id}");
+        }
+    }
+}
+
+async fn start_raft_group(
+    raft_mgr: &RaftManager,
+    info: Arc<ReplicaInfo>,
+    lease_state: Arc<std::sync::Mutex<LeaseState>>,
+    channel: StateChannel,
+    group_engine: GroupEngine,
+    wait_group: WaitGroup,
+) -> Result<RaftNodeFacade> {
+    let group_id = info.group_id;
+    let state_observer = Box::new(LeaseStateObserver::new(
+        info.clone(),
+        lease_state.clone(),
+        channel,
+    ));
+    let fsm = GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
+    raft_mgr
+        .start_raft_group(
+            group_id,
+            info.replica_id,
+            info.node_id,
+            fsm,
+            state_observer,
+            wait_group.clone(),
+        )
+        .await
 }

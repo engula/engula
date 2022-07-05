@@ -22,9 +22,7 @@ mod worker;
 
 use std::{path::Path, sync::Arc};
 
-use engula_api::server::v1::{
-    ChangeReplicaType, ChangeReplicas, GroupDesc, ReplicaDesc, ReplicaRole,
-};
+use engula_api::server::v1::*;
 use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
@@ -39,7 +37,7 @@ pub use self::{
     worker::{RaftGroupState, StateObserver},
 };
 use crate::{
-    runtime::{Executor, TaskPriority},
+    runtime::{sync::WaitGroup, Executor, TaskPriority},
     Result,
 };
 
@@ -111,17 +109,24 @@ impl RaftManager {
     pub async fn start_raft_group<M: 'static + StateMachine>(
         &self,
         group_id: u64,
-        desc: ReplicaDesc,
+        replica_id: u64,
+        node_id: u64,
         state_machine: M,
         observer: Box<dyn StateObserver>,
+        wait_group: WaitGroup,
     ) -> Result<RaftNodeFacade> {
         // TODO(walter) config channel size.
-        let worker = RaftWorker::open(group_id, desc, state_machine, self, observer).await?;
+        let worker =
+            RaftWorker::open(group_id, replica_id, node_id, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
-        self.executor.spawn(None, TaskPriority::High, async move {
-            // TODO(walter) handle result.
-            worker.run().await.unwrap();
-        });
+
+        let tag = &group_id.to_le_bytes();
+        self.executor
+            .spawn(Some(tag), TaskPriority::High, async move {
+                // TODO(walter) handle result.
+                worker.run().await.unwrap();
+                drop(wait_group);
+            });
         Ok(facade)
     }
 }

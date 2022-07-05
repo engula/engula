@@ -17,24 +17,23 @@ pub mod fsm;
 pub mod job;
 mod migrate;
 pub mod retry;
+mod state;
 
 use std::{
     sync::{atomic::AtomicI32, Arc, Mutex},
-    task::{Poll, Waker},
+    task::Poll,
 };
 
 use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
-use futures::channel::mpsc;
-use tracing::info;
 
-use self::fsm::{GroupStateMachine, StateMachineObserver};
-use super::{engine::GroupEngine, job::StateChannel, migrate::MigrateController};
+pub use self::state::{LeaseState, LeaseStateObserver};
+use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
-    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, StateObserver},
+    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade},
     serverpb::v1::*,
     Error, Result,
 };
@@ -42,27 +41,8 @@ use crate::{
 pub struct ReplicaInfo {
     pub replica_id: u64,
     pub group_id: u64,
+    pub node_id: u64,
     local_state: AtomicI32,
-}
-
-struct LeaseState {
-    leader_id: u64,
-    /// the largest term which state machine already known.
-    applied_term: u64,
-    replica_state: ReplicaState,
-    descriptor: GroupDesc,
-    migration_state: Option<MigrationState>,
-    migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
-    leader_subscribers: Vec<Waker>,
-}
-
-/// A struct that observes changes to `GroupDesc` and `ReplicaState` , and broadcasts those changes
-/// while saving them to `LeaseState`.
-#[derive(Clone)]
-struct LeaseStateObserver {
-    info: Arc<ReplicaInfo>,
-    lease_state: Arc<Mutex<LeaseState>>,
-    state_channel: StateChannel,
 }
 
 enum MetaAclGuard<'a> {
@@ -116,64 +96,31 @@ impl Replica {
     }
 
     /// Open the existed replica of raft group.
-    pub async fn recover(
-        group_id: u64,
-        desc: ReplicaDesc,
-        local_state: ReplicaLocalState,
-        state_channel: StateChannel,
+    pub fn new(
+        info: Arc<ReplicaInfo>,
+        lease_state: Arc<Mutex<LeaseState>>,
+        raft_node: RaftNodeFacade,
         group_engine: GroupEngine,
-        raft_mgr: &RaftManager,
-        migrate_ctrl: MigrateController,
-    ) -> Result<Arc<Self>> {
-        let (sender, receiver) = mpsc::unbounded();
-        let info = Arc::new(ReplicaInfo::new(desc.id, group_id, local_state));
-        let lease_state = Arc::new(Mutex::new(LeaseState::new(&group_engine, sender)));
-        let state_observer = Box::new(LeaseStateObserver::new(
-            info.clone(),
-            lease_state.clone(),
-            state_channel,
-        ));
-        let fsm =
-            GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
-        let raft_node = raft_mgr
-            .start_raft_group(group_id, desc, fsm, state_observer)
-            .await?;
-
-        let replica = Arc::new(Replica {
+    ) -> Self {
+        Replica {
             info,
             group_engine,
             raft_node,
             lease_state,
             meta_acl: Arc::default(),
-        });
-        migrate_ctrl.watch_state_changes(replica.clone(), receiver);
-
-        use crate::runtime::TaskPriority;
-
-        let tag_owner = group_id.to_le_bytes();
-        let tag = Some(tag_owner.as_slice());
-        let router = migrate_ctrl.router();
-        let cloned_replica = replica.clone();
-        raft_mgr
-            .executor()
-            .spawn(tag, TaskPriority::IoHigh, async move {
-                job::scheduler_main(router, cloned_replica).await;
-            });
-
-        Ok(replica)
+        }
     }
 
     /// Shutdown this replicas with the newer `GroupDesc`.
     pub async fn shutdown(&self, _actual_desc: &GroupDesc) -> Result<()> {
         // TODO(walter) check actual desc.
         self.info.terminate();
+        self.raft_node.clone().terminate();
 
         {
             let mut lease_state = self.lease_state.lock().unwrap();
             lease_state.wake_all_waiters();
         }
-
-        // TODO(walter) blocks until all asynchronously task finished.
 
         Ok(())
     }
@@ -196,11 +143,11 @@ impl Replica {
     }
 
     pub async fn on_leader(&self, immediate: bool) -> Result<Option<u64>> {
+        use futures::future::poll_fn;
+
         if self.info.is_terminated() {
             return Err(Error::NotLeader(self.info.group_id, None));
         }
-
-        use futures::future::poll_fn;
 
         poll_fn(|ctx| {
             let mut lease_state = self.lease_state.lock().unwrap();
@@ -394,9 +341,12 @@ impl Replica {
 }
 
 impl ReplicaInfo {
-    pub fn new(replica_id: u64, group_id: u64, local_state: ReplicaLocalState) -> Self {
+    pub fn new(replica_desc: &ReplicaDesc, group_id: u64, local_state: ReplicaLocalState) -> Self {
+        let replica_id = replica_desc.id;
+        let node_id = replica_desc.node_id;
         ReplicaInfo {
             replica_id,
+            node_id,
             group_id,
             local_state: AtomicI32::new(local_state.into()),
         }
@@ -443,174 +393,6 @@ impl ExecCtx {
             .and_then(|m| m.shard_desc.as_ref())
             .map(|d| d.id == shard_id)
             .unwrap_or_default()
-    }
-}
-
-impl LeaseState {
-    fn new(
-        group_engine: &GroupEngine,
-        migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
-    ) -> Self {
-        LeaseState {
-            descriptor: group_engine.descriptor(),
-            migration_state: group_engine.migration_state(),
-            migration_state_subscriber,
-            leader_id: 0,
-            applied_term: 0,
-            replica_state: ReplicaState::default(),
-            leader_subscribers: vec![],
-        }
-    }
-
-    #[inline]
-    fn is_raft_leader(&self) -> bool {
-        self.replica_state.role == RaftRole::Leader.into()
-    }
-
-    /// At least one log for the current term has been applied?
-    #[inline]
-    fn is_log_term_matched(&self) -> bool {
-        self.applied_term == self.replica_state.term
-    }
-
-    #[inline]
-    fn is_ready_for_serving(&self) -> bool {
-        self.is_raft_leader() && self.is_log_term_matched()
-    }
-
-    #[inline]
-    fn is_migrating(&self) -> bool {
-        self.migration_state.is_some()
-    }
-
-    #[inline]
-    fn is_migrating_shard(&self, shard_id: u64) -> bool {
-        self.migration_state
-            .as_ref()
-            .map(|s| s.get_shard_id() == shard_id)
-            .unwrap_or_default()
-    }
-
-    #[inline]
-    fn is_same_migration(&self, desc: &MigrationDesc) -> bool {
-        self.migration_state.as_ref().unwrap().get_migration_desc() == desc
-    }
-
-    #[inline]
-    fn wake_all_waiters(&mut self) {
-        for waker in std::mem::take(&mut self.leader_subscribers) {
-            waker.wake();
-        }
-    }
-
-    #[inline]
-    fn leader_descriptor(&self) -> Option<ReplicaDesc> {
-        self.descriptor
-            .replicas
-            .iter()
-            .find(|r| r.id == self.leader_id)
-            .cloned()
-    }
-}
-
-impl LeaseStateObserver {
-    fn new(
-        info: Arc<ReplicaInfo>,
-        lease_state: Arc<Mutex<LeaseState>>,
-        state_channel: StateChannel,
-    ) -> Self {
-        LeaseStateObserver {
-            info,
-            lease_state,
-            state_channel,
-        }
-    }
-
-    fn update_replica_state(
-        &self,
-        leader_id: u64,
-        voted_for: u64,
-        term: u64,
-        role: RaftRole,
-    ) -> (ReplicaState, Option<GroupDesc>) {
-        let replica_state = ReplicaState {
-            replica_id: self.info.replica_id,
-            group_id: self.info.group_id,
-            term,
-            voted_for,
-            role: role.into(),
-        };
-        let mut lease_state = self.lease_state.lock().unwrap();
-        lease_state.leader_id = leader_id;
-        lease_state.replica_state = replica_state.clone();
-        let desc = if role == RaftRole::Leader {
-            info!(
-                "replica {} become leader of group {} at term {}",
-                self.info.replica_id, self.info.group_id, term
-            );
-            Some(lease_state.descriptor.clone())
-        } else {
-            None
-        };
-        (replica_state, desc)
-    }
-
-    fn update_descriptor(&self, descriptor: GroupDesc) -> bool {
-        let mut lease_state = self.lease_state.lock().unwrap();
-        lease_state.descriptor = descriptor;
-        lease_state.replica_state.role == RaftRole::Leader.into()
-    }
-}
-
-impl StateObserver for LeaseStateObserver {
-    fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole) {
-        let (state, desc) = self.update_replica_state(leader_id, voted_for, term, role);
-        self.state_channel
-            .broadcast_replica_state(self.info.group_id, state);
-        if let Some(desc) = desc {
-            self.state_channel
-                .broadcast_group_descriptor(self.info.group_id, desc);
-        }
-    }
-}
-
-impl StateMachineObserver for LeaseStateObserver {
-    fn on_descriptor_updated(&mut self, descriptor: GroupDesc) {
-        if self.update_descriptor(descriptor.clone()) {
-            self.state_channel
-                .broadcast_group_descriptor(self.info.group_id, descriptor);
-        }
-    }
-
-    fn on_term_updated(&mut self, term: u64) {
-        let mut lease_state = self.lease_state.lock().unwrap();
-        lease_state.applied_term = term;
-        if lease_state.is_ready_for_serving() {
-            info!(
-                "replica {} is ready for serving requests of group {} at term {}",
-                self.info.replica_id, self.info.group_id, term
-            );
-            lease_state.wake_all_waiters();
-            if let Some(migration_state) = lease_state.migration_state.as_ref() {
-                lease_state
-                    .migration_state_subscriber
-                    .unbounded_send(migration_state.to_owned())
-                    .unwrap_or_default();
-            }
-        }
-    }
-
-    fn on_migrate_state_updated(&mut self, migration_state: Option<MigrationState>) {
-        let mut lease_state = self.lease_state.lock().unwrap();
-        lease_state.migration_state = migration_state;
-        if let Some(migration_state) = lease_state.migration_state.as_ref() {
-            if lease_state.is_ready_for_serving() {
-                lease_state
-                    .migration_state_subscriber
-                    .unbounded_send(migration_state.to_owned())
-                    .unwrap_or_default();
-            }
-        }
     }
 }
 

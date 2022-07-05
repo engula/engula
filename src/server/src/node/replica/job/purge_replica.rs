@@ -17,21 +17,21 @@ use tracing::{debug, warn};
 
 use super::super::Replica;
 use crate::{
-    runtime::{Executor, JoinHandle, TaskPriority},
+    runtime::{sync::WaitGroup, Executor, TaskPriority},
     serverpb::v1::SyncOp,
     Error, Result,
 };
 
-/// TODO(walter) purge replica working flows.
-pub fn setup(executor: Executor, replica: Arc<Replica>) -> JoinHandle<()> {
+pub fn setup(executor: Executor, replica: Arc<Replica>, wait_group: WaitGroup) {
     let group_id = replica.replica_info().group_id;
     let tag = &group_id.to_le_bytes();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
-        watch_and_purge_orphan_replicas(replica).await;
-    })
+        purge_orphan_replica_main(replica).await;
+        drop(wait_group);
+    });
 }
 
-async fn watch_and_purge_orphan_replicas(replica: Arc<Replica>) {
+async fn purge_orphan_replica_main(replica: Arc<Replica>) {
     while replica.on_leader(false).await.is_ok() {
         let orphan_replica_id = match find_orphan_replica(replica.as_ref()).await {
             Ok(id) => id,
@@ -70,7 +70,8 @@ async fn watch_and_purge_orphan_replicas(replica: Arc<Replica>) {
 async fn find_orphan_replica(replica: &Replica) -> Result<u64> {
     // TODO(walter) find orphan replicas.
     loop {
-        crate::runtime::time::sleep(Duration::from_secs(1)).await;
+        replica.on_leader(false).await?;
+        crate::runtime::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
