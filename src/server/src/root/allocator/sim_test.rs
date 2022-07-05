@@ -35,7 +35,7 @@ fn sim_boostrap_join_node_balance() {
 
         println!("1. boostrap and no need rebalance");
         p.set_groups(vec![GroupDesc {
-            id: 0,
+            id: 1,
             epoch: 0,
             shards: vec![],
             replicas: vec![ReplicaDesc {
@@ -85,7 +85,7 @@ fn sim_boostrap_join_node_balance() {
 
         println!("3. group0 be repaired");
         p.set_groups(vec![GroupDesc {
-            id: 0,
+            id: 1,
             epoch: 0,
             shards: vec![],
             replicas: vec![
@@ -108,7 +108,7 @@ fn sim_boostrap_join_node_balance() {
         }]);
         p.display();
 
-        let mut group_id_gen = 1;
+        let mut group_id_gen = 2;
         let mut replica_id_gen = 3;
 
         let act = a.compute_group_action().await.unwrap();

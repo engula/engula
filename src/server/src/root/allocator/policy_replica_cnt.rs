@@ -17,7 +17,7 @@ use std::{cmp::Ordering, sync::Arc};
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 
 use super::*;
-use crate::Result;
+use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 pub struct ReplicaCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
@@ -100,7 +100,12 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
     fn preferred_remove_replica(&self, n: &NodeDesc) -> Option<(ReplicaDesc, u64)> {
         let replicas = self.alloc_source.node_replicas(&n.id);
         // TODO: ranking replica and choose the preferred one.
-        replicas.get(0).map(ToOwned::to_owned)
+        for r in replicas {
+            if r.1 != ROOT_GROUP_ID {
+                return Some(r);
+            }
+        }
+        None
     }
 
     fn mean_replica_count(&self) -> f64 {
