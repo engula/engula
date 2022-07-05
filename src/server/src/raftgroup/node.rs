@@ -347,6 +347,14 @@ impl PostReady {
 }
 
 impl WriteTask {
+    #[cfg(test)]
+    pub fn with_entries(entries: Vec<Entry>) -> Self {
+        WriteTask {
+            entries,
+            ..Default::default()
+        }
+    }
+
     pub fn post_ready(self) -> PostReady {
         self.post_ready
     }
