@@ -120,7 +120,7 @@ impl Root {
             let root_replica = self.fetch_root_replica(&replica_table).await;
 
             // Wait the current root replica becomes a leader.
-            if root_replica.on_leader(false).await.is_ok() {
+            if let Ok(Some(_)) = root_replica.on_leader(false).await {
                 match self
                     .step_leader(&self.shared.local_addr, root_replica, &mut bootstrapped)
                     .await

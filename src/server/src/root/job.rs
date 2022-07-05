@@ -258,13 +258,15 @@ impl Root {
             .await?
             .ok_or(crate::Error::GroupNotFound(group_id))?;
         let target_cli = NodeClient::connect((&target_node.addr).to_owned()).await?;
-        let mut target_group = group.to_owned();
-        target_group.replicas.push(ReplicaDesc {
-            id: new_replica,
-            node_id: target_node_id,
-            role: ReplicaRole::Voter.into(),
-        });
-        target_cli.create_replica(new_replica, target_group).await?;
+        target_cli
+            .create_replica(
+                new_replica,
+                GroupDesc {
+                    id: group_id,
+                    ..Default::default()
+                },
+            )
+            .await?;
 
         // Add new replica to group.
         let gl_client = NodeClient::connect(req_node.addr.to_owned()).await?;
@@ -296,6 +298,33 @@ impl Root {
     ) -> Result<()> {
         let (group, req_node) = Self::get_group_leader(schema.to_owned(), group_id).await?;
 
+        let replica_state = schema
+            .get_replica_state(group_id, remove_replica)
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group.id))?;
+
+        if replica_state.role == RaftRole::Leader.into() {
+            if let Some(target_replica) = group.replicas.iter().find(|e| e.id != remove_replica) {
+                info!(
+                    "transfer group {} leader from {} to {}",
+                    group.id, remove_replica, target_replica.id
+                );
+                let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+                let batch = RequestBatchBuilder::new(req_node.id).transfer_leader(
+                    group.id,
+                    group.epoch,
+                    target_replica.id,
+                );
+                let resps = client.batch_group_requests(batch.build()).await?;
+                for resp in resps {
+                    if let Some(err) = resp.error {
+                        return Err(err.into());
+                    }
+                }
+                return Err(crate::Error::GroupNotFound(group_id));
+            }
+        }
+
         // Remove from leader desc.
         let client = NodeClient::connect(req_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).remove_replica(
@@ -309,16 +338,6 @@ impl Root {
                 return Err(err.into());
             }
         }
-
-        // Remove from replica node.
-        let source_node = schema
-            .get_node(source_node_id.to_owned())
-            .await?
-            .ok_or(crate::Error::GroupNotFound(group_id))?;
-        let source_cli = NodeClient::connect((&source_node.addr).to_owned()).await?;
-        source_cli
-            .remove_replica(remove_replica, group.to_owned())
-            .await?;
 
         info!(
             "remove replica: {} to group: {} from node: {}",

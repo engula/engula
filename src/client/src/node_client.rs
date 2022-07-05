@@ -252,6 +252,19 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn transfer_leader(mut self, group_id: u64, epoch: u64, transferee: u64) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::Transfer(TransferRequest {
+                    transferee,
+                })),
+            }),
+        });
+        self
+    }
+
     pub fn build(self) -> BatchRequest {
         BatchRequest {
             node_id: self.node_id,
