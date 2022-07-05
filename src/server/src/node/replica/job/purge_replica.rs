@@ -27,7 +27,6 @@ pub fn setup(executor: Executor, replica: Arc<Replica>, wait_group: WaitGroup) {
     let tag = &group_id.to_le_bytes();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
         purge_orphan_replica_main(replica).await;
-    println!("purge replica exit");
         drop(wait_group);
     });
 }
