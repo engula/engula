@@ -15,39 +15,24 @@
 
 mod helper;
 
-use std::{thread, time::Duration};
-
 use engula_api::server::v1::*;
-use engula_client::RequestBatchBuilder;
+use helper::context::TestContext;
 use tracing::info;
 
-use crate::helper::{client::*, cluster::*, runtime::block_on_current};
+use crate::helper::{client::*, init::setup_panic_hook, runtime::block_on_current};
 
 #[ctor::ctor]
 fn init() {
-    use std::{panic, process};
-    let orig_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        // invoke the default handler and exit the process
-        orig_hook(panic_info);
-        tracing::error!("{:#?}", panic_info);
-        tracing::error!("{:#?}", std::backtrace::Backtrace::force_capture());
-        process::exit(1);
-    }));
-
+    setup_panic_hook();
     tracing_subscriber::fmt::init();
 }
 
 #[test]
 fn add_replica() {
     block_on_current(async {
-        let nodes = bootstrap_servers("add-replica-node", 2).await;
-        let node_1_id = 0;
-        let node_2_id = 1;
-        let node_1_addr = nodes.get(&node_1_id).unwrap();
-        let node_2_addr = nodes.get(&node_2_id).unwrap();
-        let client_1 = node_client_with_retry(node_1_addr).await;
-        let client_2 = node_client_with_retry(node_2_addr).await;
+        let ctx = TestContext::new("add-replica");
+        let nodes = ctx.bootstrap_servers(2).await;
+        let c = ClusterClient::new(nodes).await;
 
         let group_id = 0;
         let new_replica_id = 123;
@@ -58,32 +43,23 @@ fn add_replica() {
         };
 
         // 1. create replica firstly
-        client_2
-            .create_replica(new_replica_id, root_group)
-            .await
-            .unwrap();
+        c.create_replica(1, new_replica_id, root_group).await;
 
         // 2. add replica to group
-        let req = RequestBatchBuilder::new(node_1_id)
-            .add_replica(group_id, 7, new_replica_id, node_2_id)
-            .build();
-        let resps = client_1.batch_group_requests(req).await.unwrap();
-        assert_eq!(resps.len(), 1);
-        assert!(resps[0].error.is_none());
+        let mut group_client = c.group(group_id);
+        group_client.add_replica(new_replica_id, 1).await.unwrap();
 
-        // FIXME(walter) find a more efficient way to detect leader elections.
-        thread::sleep(Duration::from_secs(2));
+        c.assert_group_contains_member(group_id, new_replica_id)
+            .await;
     });
 }
 
 #[test]
 fn create_group_with_multi_replicas() {
     block_on_current(async {
-        let nodes = bootstrap_servers("create-group", 4).await;
-        let client_1 = node_client_with_retry(nodes.get(&0).unwrap()).await;
-        let client_2 = node_client_with_retry(nodes.get(&1).unwrap()).await;
-        let client_3 = node_client_with_retry(nodes.get(&2).unwrap()).await;
-        let client_4 = node_client_with_retry(nodes.get(&3).unwrap()).await;
+        let ctx = TestContext::new("create-group-with-multi-replicas");
+        let nodes = ctx.bootstrap_servers(4).await;
+        let c = ClusterClient::new(nodes).await;
 
         let group_id = 100000000;
         let group_desc = GroupDesc {
@@ -109,18 +85,10 @@ fn create_group_with_multi_replicas() {
         };
 
         // 1. create group
-        client_1
-            .create_replica(100, group_desc.clone())
-            .await
-            .unwrap();
-        client_2
-            .create_replica(101, group_desc.clone())
-            .await
-            .unwrap();
-        client_3
-            .create_replica(102, group_desc.clone())
-            .await
-            .unwrap();
+        c.create_replica(0, 100, group_desc.clone()).await;
+        c.create_replica(1, 101, group_desc.clone()).await;
+        c.create_replica(2, 102, group_desc.clone()).await;
+        c.assert_group_leader(group_id).await;
 
         info!("create new replica 103");
 
@@ -129,14 +97,12 @@ fn create_group_with_multi_replicas() {
             id: group_id,
             ..Default::default()
         };
-        client_4.create_replica(103, empty_desc).await.unwrap();
+        c.create_replica(3, 103, empty_desc).await;
 
         info!("add replica 103 to group 1");
 
-        let mut group_client = GroupClient::new(group_id, nodes);
-        group_client.add_replica(3, 103).await.unwrap();
-
-        // FIXME(walter) find a more efficient way to detect leader elections.
-        thread::sleep(Duration::from_secs(2));
+        let mut group_client = c.group(group_id);
+        group_client.add_replica(103, 3).await.unwrap();
+        c.assert_group_contains_member(group_id, 103).await;
     });
 }
