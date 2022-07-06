@@ -109,9 +109,9 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaAction>> {
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() < self.replicas_per_group {
-            return Ok(Vec::new());
-        }
+        // if self.alloc_source.nodes().len() < self.replicas_per_group {
+        //     return Ok(Vec::new());
+        // }
 
         // TODO: try qps rebalance.
 

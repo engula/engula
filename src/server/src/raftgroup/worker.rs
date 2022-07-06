@@ -307,7 +307,12 @@ where
                 self.raft_node.transfer_leader(target_id);
             }
             Request::Message(msg) => {
-                self.handle_msg(msg).unwrap();
+                let result = self.handle_msg(msg.to_owned());
+                if let Err(crate::Error::Raft(raft::Error::StepPeerNotFound)) = &result {
+                    warn!("meet step peer not found, err: {:?}", msg);
+                } else {
+                    result.unwrap()
+                }
             }
             Request::Unreachable { target_id } => {
                 self.raft_node.report_unreachable(target_id);
