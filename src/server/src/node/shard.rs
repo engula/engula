@@ -20,7 +20,7 @@ pub fn in_range(start: &[u8], end: &[u8], key: &[u8]) -> bool {
 #[inline]
 pub fn key_slot(key: &[u8], slots: u32) -> u32 {
     // TODO: it's temp hash impl..
-    crc32fast::hash(key) & slots
+    crc32fast::hash(key) % slots
 }
 
 /// Return whether a key belongs to the corresponding shard.
