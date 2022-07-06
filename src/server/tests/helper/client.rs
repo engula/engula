@@ -18,7 +18,7 @@ use engula_api::{
     server::v1::*,
     v1::{PutRequest, PutResponse},
 };
-use engula_client::NodeClient;
+use engula_client::{NodeClient, Router};
 use engula_server::{runtime, Error, Result};
 use prost::Message;
 use tonic::{Code, Status};
@@ -154,30 +154,6 @@ impl GroupClient {
         self.invoke(op).await
     }
 
-    // pub async fn group(&mut self, req: GroupRequest) -> Result<GroupResponse> {
-    //     let op = |client: NodeClient| {
-    //         // FIXME(walter) support epoch not match
-    //         let batch_req = BatchRequest {
-    //             node_id: 0,
-    //             requests: vec![req.clone()],
-    //         };
-    //         async move {
-    //             let mut resps = client.batch_group_requests(batch_req).await?;
-    //             let resp = resps.pop().unwrap();
-    //             if resp.response.is_some() {
-    //                 Ok(resp)
-    //             } else {
-    //                 Err(Status::with_details(
-    //                     Code::Unknown,
-    //                     "unknown",
-    //                     resp.error.unwrap().encode_to_vec().into(),
-    //                 ))
-    //             }
-    //         }
-    //     };
-    //     self.invoke(op).await
-    // }
-
     async fn invoke<F, O, V>(&mut self, op: F) -> Result<V>
     where
         F: Fn(u64, u64, u64, NodeClient) -> O,
@@ -284,5 +260,93 @@ impl GroupClient {
             }
             e => Err(e),
         }
+    }
+}
+
+#[allow(unused)]
+pub struct ClusterClient {
+    nodes: HashMap<u64, String>,
+    router: Router,
+}
+
+#[allow(unused)]
+impl ClusterClient {
+    pub async fn new(nodes: HashMap<u64, String>) -> Self {
+        let router = Router::new(nodes.values().cloned().collect()).await;
+        ClusterClient { nodes, router }
+    }
+
+    pub async fn create_replica(&self, node_id: u64, replica_id: u64, desc: GroupDesc) {
+        let node_addr = self.nodes.get(&node_id).unwrap();
+        let client = node_client_with_retry(node_addr).await;
+        client.create_replica(replica_id, desc).await.unwrap();
+    }
+
+    pub fn group(&self, group_id: u64) -> GroupClient {
+        GroupClient::new(group_id, self.nodes.clone())
+    }
+
+    pub async fn assert_group_members(&self, group_id: u64, mut replicas: Vec<u64>) {
+        replicas.sort_unstable();
+        for _ in 0..10000 {
+            if let Ok(state) = self.router.find_group(group_id) {
+                let mut current = state.replicas.keys().cloned().collect::<Vec<_>>();
+                current.sort_unstable();
+                if current == replicas {
+                    return;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} does not have expected replicas {replicas:?}");
+    }
+
+    pub async fn assert_group_contains_member(&self, group_id: u64, replica_id: u64) {
+        for _ in 0..10000 {
+            if let Ok(state) = self.router.find_group(group_id) {
+                if state.replicas.contains_key(&replica_id) {
+                    return;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} is not contains replica {replica_id}");
+    }
+
+    pub async fn get_group_leader(&self, group_id: u64) -> Option<u64> {
+        self.router
+            .find_group(group_id)
+            .ok()
+            .and_then(|s| s.leader_id)
+    }
+
+    pub async fn assert_group_leader(&self, group_id: u64) -> u64 {
+        for _ in 0..10000 {
+            if let Some(leader) = self.get_group_leader(group_id).await {
+                return leader;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} does not have a leader");
+    }
+
+    pub fn get_group_epoch(&self, group_id: u64) -> Option<u64> {
+        self.router.find_group(group_id).ok().and_then(|s| s.epoch)
+    }
+
+    pub async fn assert_group_contains_shard(&self, group_id: u64, shard_id: u64) {
+        for _ in 0..10000 {
+            if let Ok(state) = self.router.find_group_by_shard(shard_id) {
+                if state.id == group_id {
+                    return;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} is not contains shard {shard_id}");
     }
 }

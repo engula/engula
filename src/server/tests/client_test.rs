@@ -12,8 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod client;
-pub mod context;
-pub mod init;
-pub mod runtime;
-pub mod socket;
+// #![feature(backtrace)]
+
+// mod helper;
+
+// use std::{thread, time::Duration};
+
+// use engula_server::Result;
+
+// use crate::helper::{
+//     client::node_client_with_retry, cluster::*, init::setup_panic_hook,
+// runtime::block_on_current, };
+
+// #[ctor::ctor]
+// fn init() {
+//     setup_panic_hook();
+//     tracing_subscriber::fmt::init();
+// }

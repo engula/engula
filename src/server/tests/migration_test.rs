@@ -16,47 +16,27 @@
 
 mod helper;
 
-use std::{collections::HashMap, thread, time::Duration};
+use std::time::Duration;
 
 use engula_api::{server::v1::*, v1::PutRequest};
 use tracing::info;
 
-use crate::helper::{client::*, cluster::*, runtime::block_on_current};
+use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::block_on_current};
 
 #[ctor::ctor]
 fn init() {
-    use std::{panic, process};
-    let orig_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        // invoke the default handler and exit the process
-        orig_hook(panic_info);
-        tracing::error!("{:#?}", panic_info);
-        tracing::error!("{:#?}", std::backtrace::Backtrace::force_capture());
-        process::exit(1);
-    }));
-
+    setup_panic_hook();
     tracing_subscriber::fmt::init();
 }
 
-async fn create_replica(
-    nodes: &HashMap<u64, String>,
-    desc: GroupDesc,
-    replica_id: u64,
-    node_id: u64,
-) {
-    let node_addr = nodes.get(&node_id).unwrap();
-    let client = node_client_with_retry(node_addr).await;
-    client.create_replica(replica_id, desc).await.unwrap();
-}
-
 async fn accept_shard(
-    nodes: &HashMap<u64, String>,
+    c: &ClusterClient,
     shard_desc: &ShardDesc,
     group_id: u64,
     src_group_id: u64,
     src_group_epoch: u64,
 ) {
-    let mut c = GroupClient::new(group_id, nodes.clone());
+    let mut c = c.group(group_id);
     let req = AcceptShardRequest {
         src_group_id,
         src_group_epoch,
@@ -65,13 +45,8 @@ async fn accept_shard(
     c.accept_shard(req).await.unwrap();
 }
 
-async fn insert(
-    nodes: &HashMap<u64, String>,
-    group_id: u64,
-    shard_id: u64,
-    range: std::ops::Range<u64>,
-) {
-    let mut c = GroupClient::new(group_id, nodes.clone());
+async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops::Range<u64>) {
+    let mut c = c.group(group_id);
     for i in range {
         let key = format!("key-{}", i);
         let value = format!("value-{}", i);
@@ -87,7 +62,9 @@ async fn insert(
 #[test]
 fn single_replica_empty_shard_migration() {
     block_on_current(async {
-        let nodes = bootstrap_servers("single-replica-empty-shard-migration", 2).await;
+        let ctx = TestContext::new("single-replica-empty-shard-migration");
+        let nodes = ctx.bootstrap_servers(2).await;
+        let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
         let group_id_1 = 100000;
@@ -119,7 +96,8 @@ fn single_replica_empty_shard_migration() {
             replicas: vec![replica_desc_1.clone()],
             ..Default::default()
         };
-        create_replica(&nodes, group_desc_1.clone(), replica_1, node_1_id).await;
+        c.create_replica(node_1_id, replica_1, group_desc_1.clone())
+            .await;
 
         info!(
             "create group {} at node {} with replica {}",
@@ -136,18 +114,20 @@ fn single_replica_empty_shard_migration() {
             replicas: vec![replica_desc_2.clone()],
             ..Default::default()
         };
-        create_replica(&nodes, group_desc_2.clone(), replica_2, node_2_id).await;
+        c.create_replica(node_2_id, replica_2, group_desc_2.clone())
+            .await;
 
         info!(
             "issue accept shard {} request to group {}",
             shard_id, group_id_2
         );
 
-        // FIXME(walter) src group epoch
-        accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 2).await;
+        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(2);
+        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
 
-        // FIXME(walter) find a more efficient way to detect migration finished.
-        thread::sleep(Duration::from_secs(6));
+        c.assert_group_contains_shard(group_id_2, shard_id).await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
     });
 }
 
@@ -155,7 +135,9 @@ fn single_replica_empty_shard_migration() {
 #[test]
 fn single_replica_migration() {
     block_on_current(async {
-        let nodes = bootstrap_servers("single-replica-migration", 2).await;
+        let ctx = TestContext::new("single-replica-migration");
+        let nodes = ctx.bootstrap_servers(2).await;
+        let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
         let group_id_1 = 100000;
@@ -187,10 +169,11 @@ fn single_replica_migration() {
             replicas: vec![replica_desc_1.clone()],
             ..Default::default()
         };
-        create_replica(&nodes, group_desc_1.clone(), replica_1, node_1_id).await;
+        c.create_replica(node_1_id, replica_1, group_desc_1.clone())
+            .await;
 
         info!("insert data into group {} shard {}", group_id_1, shard_id);
-        insert(&nodes, group_id_1, shard_id, 0..1000).await;
+        insert(&c, group_id_1, shard_id, 0..1000).await;
 
         info!(
             "create group {} at node {} with replica {}",
@@ -207,23 +190,25 @@ fn single_replica_migration() {
             replicas: vec![replica_desc_2.clone()],
             ..Default::default()
         };
-        create_replica(&nodes, group_desc_2.clone(), replica_2, node_2_id).await;
+        c.create_replica(node_2_id, replica_2, group_desc_2.clone())
+            .await;
 
         info!(
             "issue accept shard {} request to group {}",
             shard_id, group_id_2
         );
 
-        // FIXME(walter) src group epoch
-        accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 2).await;
+        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(2);
+        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
 
-        // FIXME(walter) find a more efficient way to detect migration finished.
-        thread::sleep(Duration::from_secs(6));
+        c.assert_group_contains_shard(group_id_2, shard_id).await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
     });
 }
 
 async fn create_group(
-    nodes: &HashMap<u64, String>,
+    c: &ClusterClient,
     id: u64,
     replica_ids: Vec<(u64, u64)>,
     shards: Vec<ShardDesc>,
@@ -244,7 +229,8 @@ async fn create_group(
         ..Default::default()
     };
     for (replica_id, node_id) in replica_ids {
-        create_replica(nodes, group_desc.clone(), replica_id, node_id).await;
+        c.create_replica(node_id, replica_id, group_desc.clone())
+            .await;
     }
 }
 
@@ -252,7 +238,9 @@ async fn create_group(
 #[test]
 fn basic_migration() {
     block_on_current(async {
-        let nodes = bootstrap_servers("basic-migration", 3).await;
+        let ctx = TestContext::new("basic-migration");
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
         let node_3_id = 2;
@@ -277,7 +265,7 @@ fn basic_migration() {
             )),
         };
         create_group(
-            &nodes,
+            &c,
             group_id_1,
             vec![
                 (replica_1_1, node_1_id),
@@ -289,11 +277,11 @@ fn basic_migration() {
         .await;
 
         info!("insert data into group {} shard {}", group_id_1, shard_id);
-        insert(&nodes, group_id_1, shard_id, 0..1000).await;
+        insert(&c, group_id_1, shard_id, 0..1000).await;
 
         info!("create group {} ", group_id_2);
         create_group(
-            &nodes,
+            &c,
             group_id_2,
             vec![
                 (replica_2_1, node_1_id),
@@ -308,10 +296,11 @@ fn basic_migration() {
             shard_id, group_id_2
         );
 
-        // FIXME(walter) src group epoch
-        accept_shard(&nodes, &shard_desc, group_id_2, group_id_1, 4).await;
+        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
+        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
 
-        // FIXME(walter) find a more efficient way to detect migration finished.
-        thread::sleep(Duration::from_secs(10));
+        c.assert_group_contains_shard(group_id_2, shard_id).await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
     });
 }
