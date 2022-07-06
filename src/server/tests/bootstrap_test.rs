@@ -18,8 +18,7 @@ mod helper;
 use engula_server::Result;
 
 use crate::helper::{
-    client::node_client_with_retry,  context::*, init::setup_panic_hook,
-    runtime::block_on_current,
+    client::node_client_with_retry, context::*, init::setup_panic_hook, runtime::block_on_current,
 };
 
 #[ctor::ctor]
