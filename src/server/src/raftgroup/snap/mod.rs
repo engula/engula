@@ -85,6 +85,20 @@ struct SnapManagerInner {
 }
 
 impl SnapManager {
+    #[cfg(test)]
+    pub fn new(dir: PathBuf) -> SnapManager {
+        let (sender, _) = mpsc::unbounded();
+        SnapManager {
+            shared: Arc::new(SnapManagerShared {
+                root_dir: dir,
+                inner: Mutex::new(SnapManagerInner {
+                    sender,
+                    replicas: HashMap::default(),
+                }),
+            }),
+        }
+    }
+
     pub fn recovery<P: AsRef<Path>>(executor: &Executor, root_dir: P) -> Result<SnapManager> {
         use prost::Message;
 

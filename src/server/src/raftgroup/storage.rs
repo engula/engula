@@ -185,12 +185,20 @@ impl Storage {
         debug_assert!(to > self.first_index);
         self.first_index = to;
 
-        let term = self.term(to).unwrap();
+        // `term()` allowed range is `[first_index-1, last_index]`.
+        let truncated_index = to.checked_sub(1).unwrap();
+        let term = self.term(truncated_index).unwrap();
         let local_state = RaftLocalState {
             replica_id: self.replica_id,
-            last_truncated: Some(EntryId { index: to, term }),
+            last_truncated: Some(EntryId {
+                index: truncated_index,
+                term,
+            }),
         };
+
         let mut lb = LogBatch::default();
+        // The semantics of `Command::Compact` is removing all entries with index smaller than
+        // `index`.
         lb.add_command(self.replica_id, Command::Compact { index: to });
         lb.put_message(
             self.replica_id,
@@ -270,7 +278,7 @@ impl raft::Storage for Storage {
             if let Err(e) = self.engine.fetch_entries_to::<MessageExtTyped>(
                 self.replica_id,
                 low,
-                cache_low,
+                std::cmp::min(cache_low, high),
                 Some(max_size),
                 &mut entries,
             ) {
@@ -282,12 +290,14 @@ impl raft::Storage for Storage {
             }
         }
 
-        self.cache.fetch_entries_to(
-            std::cmp::max(low, cache_low),
-            std::cmp::max(high, cache_low),
-            max_size,
-            &mut entries,
-        );
+        if cache_low < high {
+            self.cache.fetch_entries_to(
+                std::cmp::max(low, cache_low),
+                high,
+                max_size,
+                &mut entries,
+            );
+        }
 
         Ok(entries)
     }
@@ -298,7 +308,7 @@ impl raft::Storage for Storage {
         }
 
         self.check_range(idx, idx + 1)?;
-        if self
+        if !self
             .cache
             .first_index()
             .map(|fi| fi <= idx)
@@ -433,7 +443,6 @@ impl EntryCache {
         self.entries.extend(entries.iter().cloned());
     }
 
-    #[allow(dead_code)]
     pub fn drains_to(&mut self, applied_index: u64) {
         if let Some(cache_low) = self.entries.front().map(Entry::get_index) {
             let len = applied_index.checked_sub(cache_low).unwrap() as usize;
@@ -535,4 +544,176 @@ pub mod keys {
 
 fn other_store_error(e: raft_engine::Error) -> raft::Error {
     raft::Error::Store(raft::StorageError::Other(Box::new(e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use raft_engine::{Config, Engine};
+    use tempdir::TempDir;
+
+    use super::*;
+    use crate::runtime::*;
+
+    fn mocked_entries(select_term: Option<u64>) -> Vec<(u64, u64)> {
+        let entries = vec![
+            // term 1
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            // term 2
+            (5, 2),
+            (6, 2),
+            (7, 2),
+            (8, 2),
+            // term 3
+            (9, 3),
+            (10, 3),
+            (11, 3),
+            (12, 3),
+        ];
+        if let Some(expect) = select_term {
+            entries
+                .into_iter()
+                .filter(|(_, term)| *term == expect)
+                .collect()
+        } else {
+            entries
+        }
+    }
+
+    async fn insert_entries(engine: Arc<Engine>, storage: &mut Storage, entries: Vec<(u64, u64)>) {
+        let entries: Vec<Entry> = entries
+            .into_iter()
+            .map(|(idx, term)| {
+                let mut e = Entry::default();
+                e.set_index(idx);
+                e.set_term(term);
+                e
+            })
+            .collect();
+
+        let mut lb = LogBatch::default();
+        let wt = WriteTask::with_entries(entries);
+        storage.write(&mut lb, &wt).unwrap();
+        engine.write(&mut lb, false).unwrap();
+    }
+
+    fn validate_term(storage: &impl raft::Storage, entries: Vec<(u64, u64)>) {
+        for (idx, term) in entries {
+            assert_eq!(storage.term(idx).unwrap(), term);
+        }
+    }
+
+    fn validate_entries(storage: &impl raft::Storage, entries: Vec<(u64, u64)>) {
+        for (idx, term) in entries {
+            println!("index is {} term {}", idx, term);
+            let read_entries = storage
+                .entries(idx, idx + 1, None, GetEntriesContext::empty(false))
+                .unwrap();
+            assert!(!read_entries.is_empty());
+            assert_eq!(read_entries.len(), 1);
+            assert_eq!(read_entries[0].get_term(), term);
+        }
+    }
+
+    fn validate_range(storage: &impl raft::Storage, first_index: u64, last_index: u64) {
+        assert_eq!(storage.first_index(), Ok(first_index));
+        assert_eq!(storage.last_index(), Ok(last_index));
+    }
+
+    fn validate_compacted(
+        storage: &impl raft::Storage,
+        index: u64,
+        truncated_index: u64,
+        truncated_term: u64,
+    ) {
+        if index == truncated_index {
+            assert!(matches!(storage.term(index), Ok(v) if v == truncated_term));
+        } else {
+            assert!(matches!(
+                storage.term(index),
+                Err(raft::Error::Store(raft::StorageError::Compacted))
+            ));
+        }
+        assert!(matches!(
+            storage.entries(index, index + 1, None, GetEntriesContext::empty(false)),
+            Err(raft::Error::Store(raft::StorageError::Compacted))
+        ));
+    }
+
+    async fn raft_storage_inner() {
+        let dir = TempDir::new("raft-storage").unwrap();
+
+        let cfg = Config {
+            dir: dir.path().join("db").to_str().unwrap().to_owned(),
+            ..Default::default()
+        };
+        let engine = Arc::new(Engine::open(cfg).unwrap());
+
+        write_initial_state(engine.as_ref(), 1, vec![], vec![])
+            .await
+            .unwrap();
+
+        let snap_mgr = SnapManager::new(dir.path().join("snap"));
+        let mut storage = Storage::open(1, 0, ConfState::default(), engine.clone(), snap_mgr)
+            .await
+            .unwrap();
+        insert_entries(engine.clone(), &mut storage, mocked_entries(None)).await;
+        validate_term(&storage, mocked_entries(None));
+        validate_entries(&storage, mocked_entries(None));
+        let first_index = mocked_entries(None).first().unwrap().0;
+        let last_index = mocked_entries(None).last().unwrap().0;
+        validate_range(&storage, first_index, last_index);
+
+        // 1. apply all entries in term 1.
+        storage.post_apply(mocked_entries(Some(1)).last().unwrap().0);
+        validate_term(&storage, mocked_entries(None));
+        validate_entries(&storage, mocked_entries(None));
+        validate_range(&storage, first_index, last_index);
+
+        // 2. apply all entries in term 2.
+        storage.post_apply(mocked_entries(Some(2)).last().unwrap().0);
+        validate_term(&storage, mocked_entries(None));
+        validate_entries(&storage, mocked_entries(None));
+        validate_range(&storage, first_index, last_index);
+
+        // 3. compact entries to term 2.
+        let compact_to = mocked_entries(Some(2)).first().unwrap().0;
+        println!("compact to {}", compact_to);
+        let mut lb = storage.compact_to(compact_to);
+        engine.write(&mut lb, false).unwrap();
+        validate_term(&storage, mocked_entries(Some(2)));
+        validate_term(&storage, mocked_entries(Some(3)));
+        validate_entries(&storage, mocked_entries(Some(2)));
+        validate_entries(&storage, mocked_entries(Some(3)));
+        let first_index = compact_to;
+        validate_range(&storage, first_index, last_index);
+
+        // Accesssing compacted entries should returns Error.
+        let compacted_entry_index = mocked_entries(Some(1)).last().unwrap().0;
+        assert_eq!(storage.truncated_index(), compacted_entry_index);
+        validate_compacted(
+            &storage,
+            compacted_entry_index - 1,
+            storage.truncated_index(),
+            storage.truncated_term(),
+        );
+        validate_compacted(
+            &storage,
+            compacted_entry_index - 2,
+            storage.truncated_index(),
+            storage.truncated_term(),
+        );
+    }
+
+    #[test]
+    fn raft_storage() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            raft_storage_inner().await;
+        });
+    }
 }
