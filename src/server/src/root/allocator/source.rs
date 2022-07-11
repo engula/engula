@@ -30,7 +30,7 @@ pub trait AllocSource {
 
     fn groups(&self) -> Vec<GroupDesc>;
 
-    fn node_replicas(&self, node_id: &u64) -> Vec<ReplicaDesc>;
+    fn node_replicas(&self, node_id: &u64) -> Vec<(ReplicaDesc, u64)>;
 }
 
 #[derive(Clone)]
@@ -44,7 +44,7 @@ pub struct SysAllocSource {
 #[derive(Default)]
 struct GroupInfo {
     descs: Vec<GroupDesc>,
-    node_replicas: HashMap<u64, Vec<ReplicaDesc>>,
+    node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64 /* group_id */)>>,
 }
 
 impl SysAllocSource {
@@ -74,7 +74,7 @@ impl AllocSource for SysAllocSource {
         groups.descs.to_owned()
     }
 
-    fn node_replicas(&self, node_id: &u64) -> Vec<ReplicaDesc> {
+    fn node_replicas(&self, node_id: &u64) -> Vec<(ReplicaDesc, u64)> {
         let groups = self.groups.lock().unwrap();
         groups
             .node_replicas
@@ -106,15 +106,15 @@ impl SysAllocSource {
 
     fn set_groups(&self, gs: Vec<GroupDesc>) {
         let mut groups = self.groups.lock().unwrap();
-        let mut node_replicas: HashMap<u64, Vec<ReplicaDesc>> = HashMap::new();
+        let mut node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64)>> = HashMap::new();
         for group in gs.iter() {
             for replica in &group.replicas {
                 match node_replicas.entry(replica.node_id) {
                     Entry::Occupied(mut ent) => {
-                        (*ent.get_mut()).push(replica.to_owned());
+                        (*ent.get_mut()).push((replica.to_owned(), group.id.to_owned()));
                     }
                     Entry::Vacant(ent) => {
-                        ent.insert(vec![replica.to_owned()]);
+                        ent.insert(vec![(replica.to_owned(), group.id.to_owned())]);
                     }
                 };
             }

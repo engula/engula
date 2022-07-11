@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
 
-use self::policy_replica_cnt::ReplicaCountPolicy;
+use self::{policy_replica_cnt::ReplicaCountPolicy, policy_shard_cnt::ShardCountPolicy};
 use super::RootShared;
 use crate::Result;
 
@@ -24,6 +24,7 @@ use crate::Result;
 mod sim_test;
 
 mod policy_replica_cnt;
+mod policy_shard_cnt;
 mod source;
 
 pub use source::{AllocSource, SysAllocSource};
@@ -37,13 +38,28 @@ pub enum GroupAction {
 #[allow(dead_code)]
 pub enum ReplicaAction {
     Noop,
-    Migrate(MigrateAction),
+    Migrate(ReallocateReplica),
 }
 
 #[allow(dead_code)]
-pub struct MigrateAction {
-    source_replica: u64,
-    target_node: NodeDesc,
+pub enum ShardAction {
+    Noop,
+    Migrate(ReallocateShard),
+}
+
+#[allow(dead_code)]
+pub struct ReallocateReplica {
+    pub group: u64,
+    pub source_node: u64,
+    pub source_replica: u64,
+    pub target_node: NodeDesc,
+}
+
+#[allow(dead_code)]
+pub struct ReallocateShard {
+    pub shard: u64,
+    pub source_group: u64,
+    pub target_group: u64,
 }
 
 #[derive(Clone)]
@@ -93,12 +109,29 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaAction>> {
         self.alloc_source.refresh_all().await?;
 
-        // maybe TODO repaire group replica.
+        // if self.alloc_source.nodes().len() < self.replicas_per_group {
+        //     return Ok(Vec::new());
+        // }
 
         // TODO: try qps rebalance.
 
         // try replica-count rebalance.
         let actions = ReplicaCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
+        if !actions.is_empty() {
+            return Ok(actions);
+        }
+
+        Ok(Vec::new())
+    }
+
+    pub async fn compute_shard_action(&self) -> Result<Vec<ShardAction>> {
+        self.alloc_source.refresh_all().await?;
+
+        if self.alloc_source.nodes().len() < self.replicas_per_group {
+            return Ok(Vec::new());
+        }
+
+        let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
         if !actions.is_empty() {
             return Ok(actions);
         }
@@ -121,12 +154,8 @@ impl<T: AllocSource> Allocator<T> {
     /// Find a group to place shard.
     pub async fn place_group_for_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
         self.alloc_source.refresh_all().await?;
-        let mut groups = self.alloc_source.groups();
-        if groups.is_empty() {
-            return Ok(vec![]);
-        }
-        groups.sort_by(|g1, g2| g1.shards.len().cmp(&g2.shards.len()));
-        Ok(groups.into_iter().take(n).collect())
+
+        ShardCountPolicy::with(self.alloc_source.to_owned()).allocate_shard(n)
     }
 }
 

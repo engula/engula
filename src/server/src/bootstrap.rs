@@ -33,9 +33,10 @@ use crate::{
 
 pub const REPLICA_PER_GROUP: usize = 3;
 
-// TODO(walter) root cluster and first replica id.
 pub const ROOT_GROUP_ID: u64 = 0;
+pub const INIT_USER_GROUP_ID: u64 = ROOT_GROUP_ID + 1;
 pub const FIRST_REPLICA_ID: u64 = 1;
+pub const INIT_USER_REPLICA_ID: u64 = FIRST_REPLICA_ID + 1;
 pub const FIRST_NODE_ID: u64 = 0;
 pub const INITIAL_EPOCH: u64 = 0;
 
@@ -231,6 +232,13 @@ pub(crate) async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIde
     state_engine
         .save_replica_state(ROOT_GROUP_ID, FIRST_REPLICA_ID, ReplicaLocalState::Normal)
         .await?;
+    state_engine
+        .save_replica_state(
+            INIT_USER_GROUP_ID,
+            INIT_USER_REPLICA_ID,
+            ReplicaLocalState::Normal,
+        )
+        .await?;
 
     let cluster_id = vec![];
 
@@ -272,6 +280,20 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
         }],
     };
     node.create_replica(FIRST_REPLICA_ID, group).await?;
+
+    // Create another group with empty shard to prepare user usage.
+    let init_group = GroupDesc {
+        id: INIT_USER_GROUP_ID,
+        epoch: INITIAL_EPOCH,
+        shards: vec![],
+        replicas: vec![ReplicaDesc {
+            id: INIT_USER_REPLICA_ID,
+            node_id: FIRST_NODE_ID,
+            role: ReplicaRole::Voter.into(),
+        }],
+    };
+    node.create_replica(INIT_USER_REPLICA_ID, init_group)
+        .await?;
 
     let root_node = NodeDesc {
         id: FIRST_NODE_ID,
