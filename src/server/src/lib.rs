@@ -33,3 +33,11 @@ pub use crate::{
     error::{Error, Result},
     service::Server,
 };
+
+#[cfg(test)]
+mod tests {
+    #[ctor::ctor]
+    fn init() {
+        tracing_subscriber::fmt::init();
+    }
+}

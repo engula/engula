@@ -42,10 +42,10 @@ pub fn dispatch_creating_snap_task(
     executor.spawn(None, TaskPriority::IoLow, async move {
         match create_snapshot(replica_id, &snap_mgr, builder).await {
             Ok(_) => {
-                info!("create snapshot success, replica id {}", replica_id);
+                info!("replica {replica_id} create snapshot success");
             }
             Err(err) => {
-                error!("create snapshot: {}, replica id {}", err, replica_id);
+                error!("replica {replica_id} create snapshot: {err}");
             }
         };
 
@@ -64,8 +64,7 @@ pub(super) async fn create_snapshot(
 ) -> Result<Vec<u8>> {
     let snap_dir = snap_mgr.create(replica_id);
     info!(
-        "replica {} begin create snapshot at {}",
-        replica_id,
+        "replica {replica_id} begin create snapshot at {}",
         snap_dir.display()
     );
 
@@ -98,8 +97,7 @@ pub(super) async fn create_snapshot(
     stable_snapshot_meta(&snap_dir, &snap_meta).await?;
 
     info!(
-        "replica {} create snapshot {} success",
-        replica_id,
+        "replica {replica_id} create snapshot {} success",
         snap_dir.display()
     );
 

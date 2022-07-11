@@ -27,7 +27,7 @@ use std::{
 
 use futures::{channel::mpsc, StreamExt};
 use raft::prelude::{Snapshot, SnapshotMetadata};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub use self::{create::dispatch_creating_snap_task, download::dispatch_downloading_snap_task};
 use crate::{
@@ -76,6 +76,7 @@ where
 
 struct SnapManagerShared {
     root_dir: PathBuf,
+    min_keep_intervals: Duration,
     inner: Mutex<SnapManagerInner>,
 }
 
@@ -91,6 +92,7 @@ impl SnapManager {
         SnapManager {
             shared: Arc::new(SnapManagerShared {
                 root_dir: dir,
+                min_keep_intervals: Duration::from_secs(0),
                 inner: Mutex::new(SnapManagerInner {
                     sender,
                     replicas: HashMap::default(),
@@ -109,10 +111,13 @@ impl SnapManager {
 
         let root_dir = root_dir.as_ref();
         let mut replicas = HashMap::new();
+        let mut num_snaps = 0;
         for (replica_id, replica_dir) in list_numeric_path(root_dir)? {
             for (index, snap_dir) in list_numeric_path(&replica_dir)? {
-                let meta_name = snap_dir.join(SNAP_DATA);
+                let meta_name = snap_dir.join(SNAP_META);
                 if !std::fs::try_exists(&meta_name)? {
+                    warn!("replica {replica_id} recycles snap {index} since {SNAP_META} is not exists, dir {}",
+                        snap_dir.display());
                     sender
                         .start_send((replica_id, snap_dir))
                         .unwrap_or_default();
@@ -121,13 +126,19 @@ impl SnapManager {
                 let bytes = std::fs::read(&meta_name)?;
                 let snapshot_meta = match SnapshotMeta::decode(&*bytes) {
                     Ok(meta) => meta,
-                    Err(_) => {
+                    Err(e) => {
+                        warn!("replica {replica_id} recycles snap {index} since decode {SNAP_META}: {e}");
                         sender
                             .start_send((replica_id, snap_dir))
                             .unwrap_or_default();
                         continue;
                     }
                 };
+
+                info!(
+                    "replica {replica_id} recovers snap {index}, dir {}",
+                    snap_dir.display()
+                );
 
                 let snapshot_id = format!("{}", index).as_bytes().to_owned();
                 let info = SnapshotInfo {
@@ -143,12 +154,19 @@ impl SnapManager {
                 replica_mgr.next_snapshot_index =
                     std::cmp::max(replica_mgr.next_snapshot_index, index as usize);
                 replica_mgr.snapshots.push(info);
+                num_snaps += 1;
             }
         }
+
+        info!(
+            "snap manager recovers {} replicas {num_snaps} snaps",
+            replicas.len()
+        );
 
         Ok(SnapManager {
             shared: Arc::new(SnapManagerShared {
                 root_dir: root_dir.to_owned(),
+                min_keep_intervals: Duration::from_secs(180),
                 inner: Mutex::new(SnapManagerInner { sender, replicas }),
             }),
         })
@@ -179,6 +197,12 @@ impl SnapManager {
                 let snapshot_index = name.parse::<usize>().expect("install invalid snapshot dir");
                 let snapshot_id = format!("{}", snapshot_index).as_bytes().to_owned();
                 debug_assert!(snapshot_index < replica.next_snapshot_index);
+
+                info!(
+                    "replica {replica_id} install snap {snapshot_index}, dir {}",
+                    dir_name.display()
+                );
+
                 replica.snapshots.push(SnapshotInfo {
                     snapshot_id: snapshot_id.clone(),
                     base_dir: replica.base_dir.join(name.as_ref()),
@@ -188,7 +212,7 @@ impl SnapManager {
                 });
                 snapshot_id
             }
-            _ => panic!("install invalid snapshot dir"),
+            _ => panic!("install invalid snapshot dir: {}", dir_name.display()),
         }
     }
 
@@ -228,7 +252,8 @@ impl SnapManager {
                 .snapshots
                 .drain_filter(|info| {
                     info.meta.apply_state.as_ref().unwrap().index < required_index
-                        && info.created_at + Duration::from_secs(300) < now
+                        && info.created_at + self.shared.min_keep_intervals < now
+                        && info.ref_count == 0
                 })
                 .map(|info| info.base_dir)
                 .collect::<Vec<_>>();
@@ -340,22 +365,174 @@ async fn recycle_snapshot(mut receiver: mpsc::UnboundedReceiver<(u64, PathBuf)>)
     while let Some((replica_id, snapshot_dir)) = receiver.next().await {
         if let Err(err) = std::fs::remove_dir_all(&snapshot_dir) {
             error!(
-                "replica {} recycle snapshot {}: {}",
-                replica_id,
+                "replica {replica_id} recycle snapshot {}: {err}",
                 snapshot_dir.display(),
-                err
             );
             continue;
         }
 
         info!(
-            "replica {} recycle snapshot {}",
-            replica_id,
+            "replica {replica_id} recycle snapshot {}",
             snapshot_dir.display()
         );
         // Remove parent directory if it is empty.
         if let Some(parent) = snapshot_dir.parent() {
             std::fs::remove_dir(parent).unwrap_or_default();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use engula_api::server::v1::GroupDesc;
+    use tempdir::TempDir;
+
+    use super::*;
+    use crate::{
+        raftgroup::SnapshotBuilder,
+        runtime::{time::sleep, ExecutorOwner},
+        serverpb::v1::ApplyState,
+    };
+
+    struct SimpleSnapshotBuilder {
+        index: u64,
+        content: Vec<u8>,
+    }
+
+    #[crate::async_trait]
+    impl SnapshotBuilder for SimpleSnapshotBuilder {
+        async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
+            info!("create snapshot at: {}", base_dir.display());
+            if let Some(parent) = base_dir.parent() {
+                std::fs::create_dir_all(&parent)?;
+            }
+            std::fs::write(base_dir, &self.content)?;
+            info!("write snapshot content");
+            let state = ApplyState {
+                index: self.index,
+                term: 0,
+            };
+            Ok((state, GroupDesc::default()))
+        }
+    }
+
+    async fn build_snapshot(
+        manager: &SnapManager,
+        replica_id: u64,
+        index: u64,
+        content: Vec<u8>,
+    ) -> Vec<u8> {
+        let builder: Box<dyn SnapshotBuilder> = Box::new(SimpleSnapshotBuilder { index, content });
+        create::create_snapshot(replica_id, manager, builder)
+            .await
+            .unwrap()
+    }
+
+    #[test]
+    fn recovery() {
+        let owner = ExecutorOwner::new(1);
+        let executor = owner.executor();
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("snap-recovery").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id_1: u64 = 1;
+            let replica_id_2: u64 = 2;
+            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+
+            let snap_id_1 = build_snapshot(&snap_manager, replica_id_1, 1, vec![1]).await;
+            let snap_id_2 = build_snapshot(&snap_manager, replica_id_1, 2, vec![2]).await;
+            let snap_id_3 = build_snapshot(&snap_manager, replica_id_1, 3, vec![3]).await;
+            let replica_snaps_1 = vec![snap_id_1, snap_id_2, snap_id_3.clone()];
+
+            drop(snap_manager);
+
+            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+            for snap_id in &replica_snaps_1 {
+                assert!(
+                    snap_manager
+                        .lock_snap(replica_id_1, snap_id.as_slice())
+                        .is_some(),
+                    "snap id is {snap_id:?}"
+                );
+            }
+            let snap = snap_manager.latest_snap(replica_id_1);
+            assert!(snap.is_some());
+            let snap = snap.unwrap();
+            assert_eq!(snap.snapshot_id, snap_id_3);
+
+            assert!(snap_manager.latest_snap(replica_id_2).is_none());
+        });
+    }
+
+    #[test]
+    fn send_and_save_snapshot() {
+        let owner = ExecutorOwner::new(1);
+        let executor = owner.executor();
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("download-snapshot").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id: u64 = 1;
+            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+
+            // Prepare snapshot
+            let content = vec![1, 2, 3, 4, 5, 6, 7];
+            let snap_id = build_snapshot(&snap_manager, replica_id, 0, content.clone()).await;
+
+            // Send snapshot on leader side.
+            let snapshot_chunk_stream = send::send_snapshot(&snap_manager, replica_id, snap_id)
+                .await
+                .unwrap();
+
+            // Save snapshot on follower side.
+            let new_snap_id =
+                download::save_snapshot(&snap_manager, replica_id + 1, snapshot_chunk_stream)
+                    .await
+                    .unwrap();
+
+            info!("new snap id is {new_snap_id:?}");
+
+            // Validate snapshot content.
+            let snap = snap_manager.lock_snap(replica_id + 1, &new_snap_id);
+            assert!(snap.is_some());
+            let snap = snap.unwrap();
+            let data = snap.base_dir.join(SNAP_DATA);
+            let received_content = std::fs::read_to_string(&data).unwrap();
+            assert_eq!(received_content.as_bytes(), content.as_slice());
+        });
+    }
+
+    #[test]
+    fn recycle() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("snap-recycle").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id: u64 = 1;
+            let snap_manager = SnapManager::new(root_dir.path().to_owned());
+
+            let snap_id_1 = build_snapshot(&snap_manager, replica_id, 1, vec![1]).await;
+            let snap_id_2 = build_snapshot(&snap_manager, replica_id, 2, vec![2]).await;
+            let snap_id_3 = build_snapshot(&snap_manager, replica_id, 3, vec![3]).await;
+
+            sleep(Duration::from_millis(1)).await;
+
+            let snap = snap_manager.lock_snap(replica_id, &snap_id_2);
+            assert!(snap.is_some());
+
+            snap_manager.recycle_snapshots(replica_id, 3);
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_1).is_none());
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_2).is_some());
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_3).is_some());
+
+            drop(snap);
+
+            snap_manager.recycle_snapshots(replica_id, 3);
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_1).is_none());
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_2).is_none());
+            assert!(snap_manager.lock_snap(replica_id, &snap_id_3).is_some());
+        });
     }
 }
