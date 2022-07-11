@@ -63,3 +63,5 @@ jobs:
       with:
         command: test
         args: --workspace
+      env:
+        RUST_LOG: debug
