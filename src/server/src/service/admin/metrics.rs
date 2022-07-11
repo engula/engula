@@ -11,21 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub mod admin;
-pub mod node;
-pub mod raft;
-pub mod root;
+use tonic::codegen::*;
 
-use std::sync::Arc;
+pub(super) struct MetricsHandle;
 
-use crate::{
-    node::{resolver::AddressResolver, Node},
-    root::Root,
-};
-
-#[derive(Clone)]
-pub struct Server {
-    pub node: Arc<Node>,
-    pub root: Root,
-    pub address_resolver: Arc<AddressResolver>,
+#[crate::async_trait]
+impl super::service::HttpHandle for MetricsHandle {
+    async fn call(&self) -> crate::Result<http::Response<String>> {
+        Ok(http::Response::builder()
+            .status(http::StatusCode::OK)
+            .body("OK\n".to_owned())
+            .unwrap())
+    }
 }

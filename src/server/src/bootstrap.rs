@@ -105,6 +105,8 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
 
+    use crate::service::admin::make_admin_service;
+
     let listener = TcpListener::bind(addr).await?;
     let listener = TcpListenerStream::new(listener);
 
@@ -112,6 +114,7 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
         .add_service(NodeServer::new(server.clone()))
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
+        .add_service(make_admin_service())
         .serve_with_incoming(listener)
         .await?;
 

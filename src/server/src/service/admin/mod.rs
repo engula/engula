@@ -11,21 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub mod admin;
-pub mod node;
-pub mod raft;
-pub mod root;
 
-use std::sync::Arc;
+mod metrics;
+mod service;
 
-use crate::{
-    node::{resolver::AddressResolver, Node},
-    root::Root,
-};
+pub use self::service::AdminService;
+use self::service::Router;
 
-#[derive(Clone)]
-pub struct Server {
-    pub node: Arc<Node>,
-    pub root: Root,
-    pub address_resolver: Arc<AddressResolver>,
+pub fn make_admin_service() -> AdminService {
+    let router = Router::empty().route("/metrics", self::metrics::MetricsHandle);
+    let api = Router::nest("/admin", router);
+    AdminService::new(api)
 }
