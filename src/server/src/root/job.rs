@@ -22,10 +22,7 @@ use engula_client::{NodeClient, RequestBatchBuilder};
 use tokio::time;
 use tracing::{info, warn};
 
-use super::{
-    allocator::{GroupAction, ReallocateReplica, ReallocateShard, ReplicaAction},
-    Root, Schema,
-};
+use super::{allocator::*, Root, Schema};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 impl Root {
@@ -168,7 +165,7 @@ impl Root {
 
 impl Root {
     #[allow(dead_code)]
-    pub async fn reconcile_group(&self) -> Result<()> {
+    pub async fn reconcile(&self) -> Result<()> {
         let group_action = self.alloc.compute_group_action().await?;
         match group_action {
             GroupAction::Noop => {}
@@ -191,13 +188,23 @@ impl Root {
         let shard_actions = self.alloc.compute_shard_action().await?;
         for shard_action in shard_actions {
             match shard_action {
-                super::allocator::ShardAction::Noop => {}
-                super::allocator::ShardAction::Migrate(action) => {
+                ShardAction::Noop => {}
+                ShardAction::Migrate(action) => {
                     assert!(
                         action.source_group != ROOT_GROUP_ID
                             && action.target_group != ROOT_GROUP_ID
                     );
                     self.reallocate_shard(action).await?;
+                }
+            }
+        }
+
+        let leader_actions = self.alloc.compute_leader_action().await?;
+        for leader_action in leader_actions {
+            match leader_action {
+                LeaderAction::Noop => {}
+                LeaderAction::Shed(action) => {
+                    self.transfer_leader(&action).await?;
                 }
             }
         }
@@ -424,6 +431,48 @@ impl Root {
             src_group.id,
             src_group.epoch,
             shard,
+        );
+        let resps = client.batch_group_requests(batch.build()).await?;
+        for resp in resps {
+            if let Some(err) = resp.error {
+                return Err(err.into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn transfer_leader(&self, action: &TransferLeader) -> Result<()> {
+        let schema = self.schema()?;
+        loop {
+            if let Err(err) = Self::try_transfer_leader(schema.to_owned(), action).await {
+                if is_retry_err(&err) {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
+            break;
+        }
+        info!(
+            "transfer group {} leader from {}({}) to {}({})",
+            action.group,
+            action.src_node,
+            action.src_replica,
+            action.target_node,
+            action.target_replica,
+        );
+        Ok(())
+    }
+
+    async fn try_transfer_leader(schema: Arc<Schema>, action: &TransferLeader) -> Result<()> {
+        let (group, req_node) = Self::get_group_leader(schema.to_owned(), action.group).await?;
+
+        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let batch = RequestBatchBuilder::new(req_node.id).transfer_leader(
+            group.id,
+            group.epoch,
+            action.target_replica,
         );
         let resps = client.batch_group_requests(batch.build()).await?;
         for resp in resps {

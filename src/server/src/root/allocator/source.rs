@@ -17,7 +17,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
+use engula_api::server::v1::*;
 
 use super::RootShared;
 use crate::Result;
@@ -28,9 +28,13 @@ pub trait AllocSource {
 
     fn nodes(&self) -> Vec<NodeDesc>;
 
-    fn groups(&self) -> Vec<GroupDesc>;
+    fn groups(&self) -> HashMap<u64, GroupDesc>;
 
     fn node_replicas(&self, node_id: &u64) -> Vec<(ReplicaDesc, u64)>;
+
+    fn replica_state(&self, replica_id: &u64) -> Option<ReplicaState>;
+
+    fn replica_states(&self) -> Vec<ReplicaState>;
 }
 
 #[derive(Clone)]
@@ -39,12 +43,18 @@ pub struct SysAllocSource {
 
     nodes: Arc<Mutex<Vec<NodeDesc>>>,
     groups: Arc<Mutex<GroupInfo>>,
+    replicas: Arc<Mutex<ReplicaInfo>>,
 }
 
 #[derive(Default)]
 struct GroupInfo {
-    descs: Vec<GroupDesc>,
+    descs: HashMap<u64, GroupDesc>,
     node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64 /* group_id */)>>,
+}
+
+#[derive(Default)]
+struct ReplicaInfo {
+    replicas: HashMap<u64, ReplicaState>,
 }
 
 impl SysAllocSource {
@@ -53,6 +63,7 @@ impl SysAllocSource {
             root,
             nodes: Default::default(),
             groups: Default::default(),
+            replicas: Default::default(),
         }
     }
 }
@@ -61,7 +72,8 @@ impl SysAllocSource {
 impl AllocSource for SysAllocSource {
     async fn refresh_all(&self) -> Result<()> {
         self.reload_nodes().await?;
-        self.reload_groups().await
+        self.reload_groups().await?;
+        self.reload_replica_status().await
     }
 
     fn nodes(&self) -> Vec<NodeDesc> {
@@ -69,7 +81,7 @@ impl AllocSource for SysAllocSource {
         nodes.to_owned()
     }
 
-    fn groups(&self) -> Vec<GroupDesc> {
+    fn groups(&self) -> HashMap<u64, GroupDesc> {
         let groups = self.groups.lock().unwrap();
         groups.descs.to_owned()
     }
@@ -81,6 +93,20 @@ impl AllocSource for SysAllocSource {
             .get(node_id)
             .map(ToOwned::to_owned)
             .unwrap_or_default()
+    }
+
+    fn replica_state(&self, replica_id: &u64) -> Option<ReplicaState> {
+        let replica_info = self.replicas.lock().unwrap();
+        replica_info.replicas.get(replica_id).map(ToOwned::to_owned)
+    }
+
+    fn replica_states(&self) -> Vec<ReplicaState> {
+        let replica_info = self.replicas.lock().unwrap();
+        replica_info
+            .replicas
+            .iter()
+            .map(|e| e.1.to_owned())
+            .collect()
     }
 }
 
@@ -119,12 +145,35 @@ impl SysAllocSource {
                 };
             }
         }
+        let descs = gs.into_iter().map(|g| (g.id, g)).collect();
         _ = std::mem::replace(
             &mut *groups,
             GroupInfo {
-                descs: gs,
+                descs,
                 node_replicas,
             },
         );
+    }
+
+    async fn reload_replica_status(&self) -> Result<()> {
+        let schema = self.root.schema()?;
+        let replicas = schema.list_replica_state().await?;
+        self.set_replica_states(replicas);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn set_replica_states(&self, rs: Vec<ReplicaState>) {
+        let mut replicas = self.replicas.lock().unwrap();
+        let id_to_state = rs
+            .into_iter()
+            .map(|r| (r.replica_id, r))
+            .collect::<HashMap<u64, ReplicaState>>();
+        _ = std::mem::replace(
+            &mut *replicas,
+            ReplicaInfo {
+                replicas: id_to_state,
+            },
+        )
     }
 }

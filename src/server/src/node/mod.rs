@@ -37,6 +37,7 @@ use self::{
     migrate::{MigrateController, ShardChunkStream},
 };
 use crate::{
+    bootstrap::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
     raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
@@ -475,7 +476,9 @@ impl Node {
                 if info.is_terminated() {
                     continue;
                 }
-
+                if info.group_id == ROOT_GROUP_ID {
+                    continue;
+                }
                 ns.group_count += 1;
                 let descriptor = replica.descriptor();
                 if descriptor.replicas.is_empty() {

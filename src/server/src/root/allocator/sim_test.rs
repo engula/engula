@@ -18,12 +18,16 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Mutex,
     },
+    time::Duration,
 };
 
-use engula_api::server::v1::{GroupDesc, NodeCapacity, ReplicaRole, ShardDesc};
+use engula_api::server::v1::*;
 
 use super::*;
-use crate::{bootstrap::REPLICA_PER_GROUP, runtime::ExecutorOwner};
+use crate::{
+    bootstrap::REPLICA_PER_GROUP,
+    runtime::{time, ExecutorOwner},
+};
 
 #[test]
 fn sim_boostrap_join_node_balance() {
@@ -52,6 +56,13 @@ fn sim_boostrap_join_node_balance() {
                 replica_count: 1,
                 leader_count: 1,
             }),
+        }]);
+        p.set_replica_states(vec![ReplicaState {
+            replica_id: 1,
+            group_id: 1,
+            term: 0,
+            voted_for: 0,
+            role: RaftRole::Leader.into(),
         }]);
 
         let act = a.compute_group_action().await.unwrap();
@@ -86,7 +97,7 @@ fn sim_boostrap_join_node_balance() {
         println!("3. group0 be repaired");
         p.set_groups(vec![GroupDesc {
             id: 1,
-            epoch: 0,
+            epoch: 1,
             shards: vec![],
             replicas: vec![
                 ReplicaDesc {
@@ -106,15 +117,37 @@ fn sim_boostrap_join_node_balance() {
                 },
             ],
         }]);
+        p.set_replica_states(vec![
+            ReplicaState {
+                replica_id: 1,
+                group_id: 1,
+                term: 1,
+                voted_for: 0,
+                role: RaftRole::Leader.into(),
+            },
+            ReplicaState {
+                replica_id: 2,
+                group_id: 1,
+                term: 1,
+                voted_for: 0,
+                role: RaftRole::Follower.into(),
+            },
+            ReplicaState {
+                replica_id: 3,
+                group_id: 1,
+                term: 1,
+                voted_for: 0,
+                role: RaftRole::Follower.into(),
+            },
+        ]);
         p.display();
 
         let mut group_id_gen = 2;
-        let mut replica_id_gen = 3;
+        let mut replica_id_gen = 4;
 
         let act = a.compute_group_action().await.unwrap();
         match act {
             GroupAction::Add(n) => {
-                assert!(matches!(n, REPLICA_PER_GROUP));
                 for _ in 0..n {
                     let nodes = a
                         .allocate_group_replica(vec![], REPLICA_PER_GROUP)
@@ -126,22 +159,41 @@ fn sim_boostrap_join_node_balance() {
                         nodes.iter().map(|n| n.id).collect::<Vec<u64>>()
                     );
                     let mut groups = p.groups();
+                    let mut replica_states = p.replica_states();
                     let mut replicas = Vec::new();
+                    let mut first = true;
                     for n in nodes {
                         replicas.push(ReplicaDesc {
                             id: replica_id_gen,
                             node_id: n.id,
                             role: ReplicaRole::Voter.into(),
                         });
+                        let role = if first {
+                            first = false;
+                            RaftRole::Leader.into()
+                        } else {
+                            RaftRole::Follower.into()
+                        };
+                        replica_states.push(ReplicaState {
+                            replica_id: replica_id_gen,
+                            group_id: group_id_gen,
+                            term: 0,
+                            voted_for: 0,
+                            role,
+                        });
                         replica_id_gen += 1;
                     }
-                    groups.push(GroupDesc {
-                        id: group_id_gen,
-                        epoch: 0,
-                        shards: vec![],
-                        replicas,
-                    });
-                    p.set_groups(groups);
+                    groups.insert(
+                        group_id_gen,
+                        GroupDesc {
+                            id: group_id_gen,
+                            epoch: 0,
+                            shards: vec![],
+                            replicas,
+                        },
+                    );
+                    p.set_groups(groups.values().into_iter().map(ToOwned::to_owned).collect());
+                    p.set_replica_states(replica_states);
                     group_id_gen += 1;
                 }
             }
@@ -196,22 +248,41 @@ fn sim_boostrap_join_node_balance() {
                         nodes.iter().map(|n| n.id).collect::<Vec<u64>>()
                     );
                     let mut groups = p.groups();
+                    let mut replica_states = p.replica_states();
                     let mut replicas = Vec::new();
+                    let mut first = true;
                     for n in nodes {
                         replicas.push(ReplicaDesc {
                             id: replica_id_gen,
                             node_id: n.id,
                             role: ReplicaRole::Voter.into(),
                         });
+                        let role = if first {
+                            first = false;
+                            RaftRole::Leader.into()
+                        } else {
+                            RaftRole::Follower.into()
+                        };
+                        replica_states.push(ReplicaState {
+                            replica_id: replica_id_gen,
+                            group_id: group_id_gen,
+                            term: 0,
+                            voted_for: 0,
+                            role,
+                        });
                         replica_id_gen += 1;
                     }
-                    groups.push(GroupDesc {
-                        id: group_id_gen,
-                        epoch: 0,
-                        shards: vec![],
-                        replicas,
-                    });
-                    p.set_groups(groups);
+                    groups.insert(
+                        group_id_gen,
+                        GroupDesc {
+                            id: group_id_gen,
+                            epoch: 0,
+                            shards: vec![],
+                            replicas,
+                        },
+                    );
+                    p.set_groups(groups.values().into_iter().map(ToOwned::to_owned).collect());
+                    p.set_replica_states(replica_states);
                     group_id_gen += 1;
                 }
             }
@@ -315,6 +386,27 @@ fn sim_boostrap_join_node_balance() {
         assert!(sact.is_empty());
         p.display();
 
+        loop {
+            let lact = a.compute_leader_action().await.unwrap();
+            if lact.is_empty() {
+                break;
+            }
+            for act in &lact {
+                match act {
+                    LeaderAction::Noop => unreachable!(),
+                    LeaderAction::Shed(action) => {
+                        println!(
+                            "transfer group {} leader from {} to {}",
+                            action.group, action.src_node, action.target_node,
+                        );
+                        p.transfer_leader(action.src_replica, action.target_replica);
+                    }
+                }
+            }
+            p.display();
+            time::sleep(Duration::from_secs(2)).await;
+        }
+
         println!("done");
     });
 }
@@ -322,12 +414,13 @@ fn sim_boostrap_join_node_balance() {
 pub struct MockInfoProvider {
     nodes: Arc<Mutex<Vec<NodeDesc>>>,
     groups: Arc<Mutex<GroupInfo>>,
+    replicas: Arc<Mutex<HashMap<u64, ReplicaState>>>,
     shard_id_gen: AtomicU64,
 }
 
 #[derive(Default)]
 struct GroupInfo {
-    descs: Vec<GroupDesc>,
+    descs: HashMap<u64, GroupDesc>,
     node_replicas: HashMap<u64, Vec<(ReplicaDesc, u64)>>,
 }
 
@@ -336,6 +429,7 @@ impl MockInfoProvider {
         Self {
             nodes: Default::default(),
             groups: Default::default(),
+            replicas: Default::default(),
             shard_id_gen: AtomicU64::new(1),
         }
     }
@@ -352,7 +446,7 @@ impl AllocSource for MockInfoProvider {
         nodes.to_owned()
     }
 
-    fn groups(&self) -> Vec<GroupDesc> {
+    fn groups(&self) -> HashMap<u64, GroupDesc> {
         let groups = self.groups.lock().unwrap();
         groups.descs.to_owned()
     }
@@ -364,6 +458,16 @@ impl AllocSource for MockInfoProvider {
             .get(node_id)
             .map(ToOwned::to_owned)
             .unwrap_or_default()
+    }
+
+    fn replica_state(&self, replica_id: &u64) -> Option<ReplicaState> {
+        let replica_info = self.replicas.lock().unwrap();
+        replica_info.get(replica_id).map(ToOwned::to_owned)
+    }
+
+    fn replica_states(&self) -> Vec<ReplicaState> {
+        let replica_info = self.replicas.lock().unwrap();
+        replica_info.iter().map(|e| e.1.to_owned()).collect()
     }
 }
 
@@ -398,18 +502,63 @@ impl MockInfoProvider {
         }
         self.set_nodes(nodes);
 
+        let descs = gs.into_iter().map(|g| (g.id, g)).collect();
         _ = std::mem::replace(
             &mut *groups,
             GroupInfo {
-                descs: gs,
+                descs,
                 node_replicas,
             },
         );
     }
 
+    fn set_replica_states(&self, rs: Vec<ReplicaState>) {
+        let mut replicas = self.replicas.lock().unwrap();
+
+        // test only, maintain leader count in node.
+        let mut nodes = self.nodes();
+        let groups = self.groups();
+        let mut node_leader = HashMap::new();
+        for r in &rs {
+            if r.role != RaftRole::Leader.into() {
+                continue;
+            }
+            let group = groups.get(&r.group_id).unwrap();
+            let desc = group
+                .replicas
+                .iter()
+                .find(|d| d.id == r.replica_id)
+                .unwrap();
+            match node_leader.entry(&desc.node_id) {
+                Entry::Occupied(mut ent) => {
+                    let v = ent.get_mut();
+                    *v += 1;
+                }
+                Entry::Vacant(ent) => {
+                    ent.insert(1);
+                }
+            }
+        }
+        for n in nodes.iter_mut() {
+            let mut cap = n.capacity.take().unwrap();
+            cap.leader_count = node_leader
+                .get(&n.id)
+                .map(ToOwned::to_owned)
+                .unwrap_or_default();
+            n.capacity = Some(cap);
+        }
+        self.set_nodes(nodes);
+
+        let id_to_state = rs
+            .into_iter()
+            .map(|r| (r.replica_id, r))
+            .collect::<HashMap<u64, ReplicaState>>();
+        _ = std::mem::replace(&mut *replicas, id_to_state)
+    }
+
     pub fn move_replica(&self, replica_id: u64, node: u64) {
         let mut groups = self.groups();
-        for group in groups.iter_mut() {
+        for group in groups.values_mut() {
             for replica in group.replicas.iter_mut() {
                 if replica.id == replica_id {
                     replica.node_id = node;
@@ -417,14 +566,27 @@ impl MockInfoProvider {
                 }
             }
         }
-        self.set_groups(groups);
+        self.set_groups(groups.values().map(ToOwned::to_owned).collect());
+    }
+
+    pub fn transfer_leader(&self, src_replica: u64, desc_replica: u64) {
+        let mut states = self.replica_states();
+        for state in states.iter_mut() {
+            if state.replica_id == src_replica {
+                state.role = RaftRole::Follower.into();
+            }
+            if state.replica_id == desc_replica {
+                state.role = RaftRole::Leader.into();
+            }
+        }
+        self.set_replica_states(states);
     }
 
     pub fn move_shards(&self, sgroup: u64, tgroup: u64, shard: u64) {
         let mut groups = self.groups();
 
         let mut shard_desc = None;
-        for group in groups.iter_mut() {
+        for group in groups.values_mut() {
             if group.id == sgroup {
                 group.shards.retain(|s| {
                     if s.id == shard {
@@ -437,7 +599,7 @@ impl MockInfoProvider {
         }
 
         if let Some(shard_desc) = shard_desc {
-            for group in groups.iter_mut() {
+            for group in groups.values_mut() {
                 if group.id == tgroup {
                     group.shards.push(shard_desc);
                     break;
@@ -445,12 +607,12 @@ impl MockInfoProvider {
             }
         }
 
-        self.set_groups(groups);
+        self.set_groups(groups.values().map(ToOwned::to_owned).collect());
     }
 
     pub fn assign_shard(&self, group_id: u64) {
         let mut groups = self.groups();
-        for group in groups.iter_mut() {
+        for group in groups.values_mut() {
             if group.id == group_id {
                 let s = ShardDesc {
                     id: self.shard_id_gen.fetch_add(1, Ordering::Relaxed),
@@ -459,7 +621,7 @@ impl MockInfoProvider {
                 group.shards.push(s);
             }
         }
-        self.set_groups(groups);
+        self.set_groups(groups.values().map(ToOwned::to_owned).collect());
     }
 
     pub fn display(&self) {
@@ -472,8 +634,8 @@ impl MockInfoProvider {
                 g.iter().map(|r| r.0.id).collect::<Vec<u64>>()
             )
         }
-
-        for g in &groups.descs {
+        let descs = &groups.descs;
+        for g in descs.values() {
             let shards = g.shards.iter().map(|s| s.id).collect::<Vec<u64>>();
             println!("group shards: {} -> {:?}", g.id, shards);
         }
@@ -483,6 +645,33 @@ impl MockInfoProvider {
             "cluster_nodes: {:?}",
             nodes.iter().map(|n| n.id).collect::<Vec<u64>>()
         );
+
+        let state = self.replicas.lock().unwrap();
+        let mut node_leaders: HashMap<u64, Vec<u64>> = HashMap::new();
+        let rs = state.values();
+        for r in rs.filter(|s| s.role == RaftRole::Leader.into()) {
+            let n = groups
+                .descs
+                .get(&r.group_id)
+                .unwrap()
+                .replicas
+                .iter()
+                .find(|d| d.id == r.replica_id)
+                .unwrap()
+                .node_id;
+            match node_leaders.entry(n) {
+                Entry::Occupied(mut ent) => {
+                    ent.get_mut().push(r.group_id);
+                }
+                Entry::Vacant(ent) => {
+                    ent.insert(vec![r.group_id]);
+                }
+            }
+        }
+        for (n, g) in node_leaders {
+            println!("node group leader: {} -> {:?}", n, g,)
+        }
+
         println!("----------");
     }
 }

@@ -387,12 +387,20 @@ impl Schema {
         Ok(Some(state))
     }
 
-    pub async fn list_group_state(&self) -> Result<Vec<GroupState>> {
+    pub async fn list_replica_state(&self) -> Result<Vec<ReplicaState>> {
         let vals = self.list(&SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
-        let mut states: HashMap<u64, GroupState> = HashMap::new();
+        let mut states = Vec::with_capacity(vals.len());
         for val in vals {
             let state = ReplicaState::decode(&*val)
                 .map_err(|_| Error::InvalidData("replica state desc".into()))?;
+            states.push(state);
+        }
+        Ok(states)
+    }
+
+    pub async fn list_group_state(&self) -> Result<Vec<GroupState>> {
+        let mut states: HashMap<u64, GroupState> = HashMap::new();
+        for state in self.list_replica_state().await? {
             match states.entry(state.group_id) {
                 Entry::Occupied(mut ent) => {
                     let group = ent.get_mut();
