@@ -439,6 +439,7 @@ dependencies = [
  "http-body",
  "lazy_static",
  "num_cpus",
+ "prometheus",
  "prost",
  "prost-build",
  "raft",

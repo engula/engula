@@ -14,7 +14,9 @@ engula-client = { path = "../client", version = "0.4.0" }
 async-stream = "0.3.3"
 crc32fast = "1.3.2"
 futures = "0.3.21"
+http-body = "0.4.5"
 lazy_static = "1.4.0"
+prometheus = "0.13.0"
 prost = "0.10.3"
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
@@ -24,7 +26,6 @@ tracing = "0.1"
 uuid = { version = "1.1.1", features = ["v4"] }
 num_cpus = "1.13"
 rand = "0.8"
-http-body = "0.4.5"
 
 [dependencies.raft]
 git = "https://github.com/w41ter/raft-rs.git"

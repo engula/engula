@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod health;
-mod metrics;
-mod service;
+use tonic::codegen::*;
 
-pub use self::service::AdminService;
-use self::service::Router;
+pub(super) struct HealthHandle;
 
-pub fn make_admin_service() -> AdminService {
-    let router = Router::empty()
-        .route("/metrics", self::metrics::MetricsHandle)
-        .route("/health", self::health::HealthHandle);
-    let api = Router::nest("/admin", router);
-    AdminService::new(api)
+#[crate::async_trait]
+impl super::service::HttpHandle for HealthHandle {
+    async fn call(&self) -> crate::Result<http::Response<String>> {
+        Ok(http::Response::builder()
+            .status(http::StatusCode::OK)
+            .body("Ok\n".to_owned())
+            .unwrap())
+    }
 }
