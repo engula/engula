@@ -153,7 +153,7 @@ impl SnapManager {
                     .or_insert_with(|| ReplicaSnapManager::new(replica_id, replica_dir.clone()));
                 replica_mgr.next_snapshot_index =
                     std::cmp::max(replica_mgr.next_snapshot_index, index as usize);
-                replica_mgr.snapshots.push(info);
+                replica_mgr.push(info);
                 num_snaps += 1;
             }
         }
@@ -203,7 +203,7 @@ impl SnapManager {
                     dir_name.display()
                 );
 
-                replica.snapshots.push(SnapshotInfo {
+                replica.push(SnapshotInfo {
                     snapshot_id: snapshot_id.clone(),
                     base_dir: replica.base_dir.join(name.as_ref()),
                     meta: meta.clone(),
@@ -279,6 +279,14 @@ impl ReplicaSnapManager {
             next_snapshot_index: 0,
             snapshots: vec![],
         }
+    }
+
+    fn push(&mut self, info: SnapshotInfo) {
+        let index = self
+            .snapshots
+            .binary_search_by(|i| i.snapshot_id.cmp(&info.snapshot_id))
+            .into_ok_or_err();
+        self.snapshots.insert(index, info);
     }
 
     fn next_snapshot_dir(&mut self) -> PathBuf {
@@ -358,6 +366,11 @@ fn list_numeric_path(root: &Path) -> Result<Vec<(u64, PathBuf)>> {
             values.push((index, path));
         }
     }
+
+    // The order in which filenames are read by successive calls to `readdir()` depends on the
+    // filesystem implementation.
+    values.sort_unstable();
+
     Ok(values)
 }
 
@@ -459,6 +472,7 @@ mod tests {
             let snap = snap_manager.latest_snap(replica_id_1);
             assert!(snap.is_some());
             let snap = snap.unwrap();
+            info!("the latest snapshot id is {:?}", snap.snapshot_id);
             assert_eq!(snap.snapshot_id, snap_id_3);
 
             assert!(snap_manager.latest_snap(replica_id_2).is_none());
@@ -533,6 +547,33 @@ mod tests {
             assert!(snap_manager.lock_snap(replica_id, &snap_id_1).is_none());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_2).is_none());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_3).is_some());
+        });
+    }
+
+    #[test]
+    fn ordered_install() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("snap-install-order").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id: u64 = 1;
+            let snap_mgr = SnapManager::new(root_dir.path().to_owned());
+
+            let snap_dir_1 = snap_mgr.create(replica_id);
+            let snap_dir_2 = snap_mgr.create(replica_id);
+            let snap_meta = SnapshotMeta {
+                apply_state: Some(ApplyState::default()),
+                group_desc: Some(GroupDesc::default()),
+                files: vec![],
+            };
+
+            // Install snap in reversed orders.
+            let expected_id = snap_mgr.install(replica_id, &snap_dir_2, &snap_meta);
+            snap_mgr.install(replica_id, &snap_dir_1, &snap_meta);
+
+            assert!(matches!(snap_mgr.latest_snap(replica_id),
+                Some(info) if info.snapshot_id == expected_id));
         });
     }
 }
