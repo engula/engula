@@ -26,6 +26,7 @@ use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::{replica::ExecCtx, Replica},
     raftgroup::{RaftGroupState, RaftNodeFacade},
+    runtime::{sync::WaitGroup, Executor, TaskPriority},
     serverpb::v1::*,
     Result,
 };
@@ -363,7 +364,16 @@ impl ScheduleContext {
     }
 }
 
-pub async fn scheduler_main(router: Router, replica: Arc<Replica>) {
+pub fn setup(executor: &Executor, router: Router, replica: Arc<Replica>, wait_group: WaitGroup) {
+    let group_id = replica.replica_info().group_id;
+    let tag = &group_id.to_le_bytes();
+    executor.spawn(Some(tag), TaskPriority::Low, async move {
+        scheduler_main(router, replica).await;
+        drop(wait_group);
+    });
+}
+
+async fn scheduler_main(router: Router, replica: Arc<Replica>) {
     let mut scheduler = Scheduler {
         ctx: ScheduleContext::new(replica, router),
         cure_group_task: None,

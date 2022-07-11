@@ -64,8 +64,8 @@ pub enum Request {
     Unreachable {
         target_id: u64,
     },
-    Start,
     State(oneshot::Sender<RaftGroupState>),
+    Start,
 }
 
 pub struct PeerState {
@@ -190,15 +190,21 @@ where
 {
     pub async fn open(
         group_id: u64,
-        desc: ReplicaDesc,
+        replica_id: u64,
+        node_id: u64,
         state_machine: M,
         raft_mgr: &RaftManager,
         observer: Box<dyn StateObserver>,
     ) -> Result<Self> {
+        let desc = ReplicaDesc {
+            id: replica_id,
+            node_id,
+            ..Default::default()
+        };
         let mut replica_cache = ReplicaCache::default();
         replica_cache.insert(desc.clone());
         replica_cache.batch_insert(&state_machine.descriptor().replicas);
-        let raft_node = RaftNode::new(group_id, desc.id, raft_mgr, state_machine).await?;
+        let raft_node = RaftNode::new(group_id, replica_id, raft_mgr, state_machine).await?;
 
         // TODO(walter) config channel size.
         let (mut request_sender, request_receiver) = mpsc::channel(10240);
@@ -287,7 +293,7 @@ where
             }
         }
 
-        todo!("handle exit");
+        Ok(())
     }
 
     fn handle_request(&mut self, request: Request) -> Result<()> {

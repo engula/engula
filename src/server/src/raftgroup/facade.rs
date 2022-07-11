@@ -108,6 +108,10 @@ impl RaftNodeFacade {
             .unwrap_or_default()
     }
 
+    pub fn terminate(&mut self) {
+        self.request_sender.close_channel();
+    }
+
     fn send(&mut self, req: Request) -> Result<()> {
         use crate::Error;
 

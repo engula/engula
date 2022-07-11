@@ -20,7 +20,12 @@ use futures::{channel::mpsc, StreamExt};
 use tracing::{debug, error, info, warn};
 
 use super::{ForwardCtx, GroupClient};
-use crate::{node::Replica, runtime::Executor, serverpb::v1::*, Error, Result};
+use crate::{
+    node::Replica,
+    runtime::{sync::WaitGroup, Executor},
+    serverpb::v1::*,
+    Error, Result,
+};
 
 struct MigrationCoordinator {
     replica_id: u64,
@@ -58,6 +63,7 @@ impl MigrateController {
         &self,
         replica: Arc<Replica>,
         mut receiver: mpsc::UnboundedReceiver<MigrationState>,
+        wait_group: WaitGroup,
     ) {
         let info = replica.replica_info();
         let replica_id = info.replica_id;
@@ -96,6 +102,7 @@ impl MigrateController {
                 group = group_id,
                 "migration state watcher is stopped",
             );
+            drop(wait_group);
         });
     }
 
