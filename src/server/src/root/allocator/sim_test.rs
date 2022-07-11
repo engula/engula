@@ -18,16 +18,12 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Mutex,
     },
-    time::Duration,
 };
 
 use engula_api::server::v1::*;
 
 use super::*;
-use crate::{
-    bootstrap::REPLICA_PER_GROUP,
-    runtime::{time, ExecutorOwner},
-};
+use crate::{bootstrap::REPLICA_PER_GROUP, runtime::ExecutorOwner};
 
 #[test]
 fn sim_boostrap_join_node_balance() {
@@ -386,6 +382,7 @@ fn sim_boostrap_join_node_balance() {
         assert!(sact.is_empty());
         p.display();
 
+        println!("10. try balance leader between nodes");
         loop {
             let lact = a.compute_leader_action().await.unwrap();
             if lact.is_empty() {
@@ -403,9 +400,8 @@ fn sim_boostrap_join_node_balance() {
                     }
                 }
             }
-            p.display();
-            time::sleep(Duration::from_secs(2)).await;
         }
+        p.display();
 
         println!("done");
     });
