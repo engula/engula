@@ -310,7 +310,7 @@ impl Root {
             .await?
             .ok_or(crate::Error::GroupNotFound(group.id))?;
 
-        if replica_state.role == RaftRole::Leader.into() {
+        if replica_state.role == RaftRole::Leader as i32 {
             if let Some(target_replica) = group.replicas.iter().find(|e| e.id != remove_replica) {
                 info!(
                     "transfer group {} leader from {} to {}",
@@ -361,11 +361,11 @@ impl Root {
 
         let mut group_leader = None;
         for replica in &group.replicas {
-            if replica.role != ReplicaRole::Voter.into() {
+            if replica.role != ReplicaRole::Voter as i32 {
                 continue;
             }
             if let Some(rs) = schema.get_replica_state(group_id, replica.id).await? {
-                if rs.role == RaftRole::Leader.into() {
+                if rs.role == RaftRole::Leader as i32 {
                     group_leader = Some(replica);
                     break;
                 }

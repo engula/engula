@@ -63,7 +63,7 @@ impl LeaseState {
 
     #[inline]
     pub fn is_raft_leader(&self) -> bool {
-        self.replica_state.role == RaftRole::Leader.into()
+        self.replica_state.role == RaftRole::Leader as i32
     }
 
     /// At least one log for the current term has been applied?
@@ -163,7 +163,7 @@ impl LeaseStateObserver {
     fn update_descriptor(&self, descriptor: GroupDesc) -> bool {
         let mut lease_state = self.lease_state.lock().unwrap();
         lease_state.descriptor = descriptor;
-        lease_state.replica_state.role == RaftRole::Leader.into()
+        lease_state.replica_state.role == RaftRole::Leader as i32
     }
 }
 

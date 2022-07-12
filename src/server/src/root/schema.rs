@@ -173,11 +173,11 @@ impl Schema {
 
             let mut group_leader = None;
             for replica in &group.replicas {
-                if replica.role != ReplicaRole::Voter.into() {
+                if replica.role != ReplicaRole::Voter as i32 {
                     continue;
                 }
                 if let Some(rs) = self.get_replica_state(group_id, replica.id).await? {
-                    if rs.role == RaftRole::Leader.into() {
+                    if rs.role == RaftRole::Leader as i32 {
                         group_leader = Some(replica);
                         break;
                     }
@@ -268,13 +268,12 @@ impl Schema {
     }
 
     pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
-        let vals = self.list(&SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_COLLECTION_COLLECTION_ID).await?;
         let mut collections = Vec::new();
         for val in vals {
-            collections.push(
-                CollectionDesc::decode(&*val)
-                    .map_err(|_| Error::InvalidData("collection desc".into()))?,
-            );
+            let c = CollectionDesc::decode(&*val)
+                .map_err(|_| Error::InvalidData("collection desc".into()))?;
+            collections.push(c);
         }
         Ok(collections)
     }
@@ -404,7 +403,7 @@ impl Schema {
             match states.entry(state.group_id) {
                 Entry::Occupied(mut ent) => {
                     let group = ent.get_mut();
-                    if state.role == RaftRole::Leader.into() {
+                    if state.role == RaftRole::Leader as i32 {
                         (*group).leader_id = Some(state.replica_id);
                     } else if (*group).leader_id == Some(state.replica_id) {
                         (*group).leader_id = None;
@@ -415,7 +414,7 @@ impl Schema {
                     (*group).replicas.push(state);
                 }
                 Entry::Vacant(ent) => {
-                    let leader_id = if state.role == RaftRole::Leader.into() {
+                    let leader_id = if state.role == RaftRole::Leader as i32 {
                         Some(state.replica_id)
                     } else {
                         None
