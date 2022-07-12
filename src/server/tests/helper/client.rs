@@ -286,15 +286,31 @@ impl ClusterClient {
         GroupClient::new(group_id, self.nodes.clone())
     }
 
+    pub async fn group_members(&self, group_id: u64) -> Vec<(u64, i32)> {
+        if let Ok(state) = self.router.find_group(group_id) {
+            let mut current = state
+                .replicas
+                .iter()
+                .map(|(k, v)| (*k, v.role))
+                .collect::<Vec<_>>();
+            current.sort_unstable();
+            current
+        } else {
+            vec![]
+        }
+    }
+
     pub async fn assert_group_members(&self, group_id: u64, mut replicas: Vec<u64>) {
         replicas.sort_unstable();
         for _ in 0..10000 {
-            if let Ok(state) = self.router.find_group(group_id) {
-                let mut current = state.replicas.keys().cloned().collect::<Vec<_>>();
-                current.sort_unstable();
-                if current == replicas {
-                    return;
-                }
+            let members = self.group_members(group_id).await;
+            let members = members
+                .into_iter()
+                .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
+                .map(|(k, _)| k)
+                .collect::<Vec<u64>>();
+            if members == replicas {
+                return;
             }
 
             tokio::time::sleep(Duration::from_millis(10)).await;

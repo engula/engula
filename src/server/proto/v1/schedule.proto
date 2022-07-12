@@ -22,12 +22,12 @@ import "v1/metadata.proto";
 
 message ScheduleTask {
   oneof value {
-    CureGroupTask cure_group = 1;
+    /// cure_group will allocates replicas from root, and replace the lost replicas.
+    ChangeConfigTask cure_group = 1;
   }
 }
 
-/// CureGroupTask will allocates replicas from root, and replace the lost replicas.
-message CureGroupTask {
+message ChangeConfigTask {
   TaskStep current = 1;
 
   CreateReplicaStep create_replica = 2;

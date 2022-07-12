@@ -20,7 +20,7 @@ use std::{
 
 use engula_api::server::v1::{group_request_union::Request, *};
 use engula_client::Router;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     bootstrap::ROOT_GROUP_ID,
@@ -28,19 +28,21 @@ use crate::{
     raftgroup::{RaftGroupState, RaftNodeFacade},
     runtime::{sync::WaitGroup, Executor, TaskPriority},
     serverpb::v1::*,
-    Result,
 };
 
 /// The task scheduler of an replica.
 pub struct Scheduler {
     ctx: ScheduleContext,
 
-    cure_group_task: Option<CureGroupTask>,
+    // A group only can have one change config task.
+    change_config_task: Option<ChangeConfigTask>,
 }
 
 struct ScheduleContext {
     replica_id: u64,
     group_id: u64,
+    required_replicas: usize,
+
     replica: Arc<Replica>,
     raft_node: RaftNodeFacade,
     router: Router,
@@ -48,6 +50,9 @@ struct ScheduleContext {
     current_term: u64,
 
     lost_peers: HashMap<u64, Instant>,
+
+    /// The number of voters of current group, includes both `Voter` and `IncomingVoter`.
+    num_voters: usize,
 }
 
 impl Scheduler {
@@ -58,39 +63,76 @@ impl Scheduler {
             if term != current_term {
                 break;
             }
-            self.check_replica_state().await;
-
             let desc = self.ctx.replica.descriptor();
+            self.check_replica_state(&desc).await;
             self.advance_tasks(&desc).await;
         }
     }
 
-    async fn check_replica_state(&mut self) {
+    async fn check_replica_state(&mut self, desc: &GroupDesc) {
         if let Some(state) = self.ctx.raft_node.raft_group_state().await {
-            self.ctx.apply_raft_group_state(&state);
-            if self.cure_group_task.is_none() && self.ctx.is_group_sicked() {
-                self.setup_cure_group_task().await;
-            }
+            self.ctx.apply_raft_group_state(&state, desc);
+            self.check_config_change_state().await;
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    async fn check_config_change_state(&mut self) {
+        if self.change_config_task.is_none() {
+            if self.ctx.is_group_sicked() {
+                self.setup_curing_group_task().await;
+            } else if self.ctx.is_group_promotable() {
+                self.setup_promoting_group_task().await;
+            }
         }
     }
 
     async fn recover_pending_tasks(&mut self) {
         self.load_pending_tasks().await;
+        self.change_config_task = None;
     }
 
     async fn load_pending_tasks(&mut self) {
         // TODO(walter) load pending tasks from disk.
     }
 
-    async fn setup_cure_group_task(&mut self) {
+    async fn setup_promoting_group_task(&mut self) {
+        let acquire_replicas = self.ctx.num_missing_replicas();
+        if acquire_replicas == 0 {
+            return;
+        }
+
+        let replicas = match self.ctx.alloc_addition_replicas(acquire_replicas).await {
+            Ok(replicas) => replicas,
+            Err(e) => {
+                error!(
+                    replica = self.ctx.replica_id,
+                    group = self.ctx.group_id,
+                    "alloc addition replicas for promoting group: {e}",
+                );
+                return;
+            }
+        };
+
+        let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
+
+        info!(
+            group = self.ctx.group_id,
+            replica = self.ctx.replica_id,
+            "promote group by add {incoming_peers:?}"
+        );
+        self.change_config_task = Some(ChangeConfigTask::add_replicas(replicas));
+    }
+
+    async fn setup_curing_group_task(&mut self) {
         let outgoing_voters = self.ctx.lost_replicas();
         if outgoing_voters.is_empty() {
             return;
         }
 
         let replicas = match self
-            .alloc_addition_replicas(outgoing_voters.len() as u64)
+            .ctx
+            .alloc_addition_replicas(outgoing_voters.len())
             .await
         {
             Ok(replicas) => replicas,
@@ -98,73 +140,30 @@ impl Scheduler {
                 error!(
                     replica = self.ctx.replica_id,
                     group = self.ctx.group_id,
-                    "alloc addition replicas: {}",
-                    e
+                    "alloc addition replicas for curing group: {e}",
                 );
                 return;
             }
         };
 
-        let create_replica_step = CreateReplicaStep {
-            replicas: replicas.clone(),
-        };
-        let add_learner_step = AddLearnerStep {
-            replicas: replicas.clone(),
-        };
-        let replace_voter_step = ReplaceVoterStep {
-            incoming_voters: replicas,
-            outgoing_voters,
-        };
+        let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
+        let outgoing_peers = outgoing_voters.iter().map(|r| r.id).collect::<Vec<_>>();
 
-        let task = CureGroupTask {
-            current: TaskStep::Initialized as i32,
-            create_replica: Some(create_replica_step),
-            add_learner: Some(add_learner_step),
-            replace_voter: Some(replace_voter_step),
-        };
-        self.cure_group_task = Some(task);
+        info!(
+            group = self.ctx.group_id,
+            replica = self.ctx.replica_id,
+            "try cure group by replacing {outgoing_peers:?} with {incoming_peers:?}"
+        );
+
+        self.change_config_task = Some(ChangeConfigTask::replace_voters(replicas, outgoing_voters));
     }
 
     async fn advance_tasks(&mut self, desc: &GroupDesc) {
-        if let Some(task) = self.cure_group_task.as_mut() {
-            let task_finished = match self.ctx.advance_cure_group_task(task, desc).await {
-                Some(true) => self.ctx.execute_cure_group(task).await,
-                Some(false) => true,
-                None => false,
-            };
-            if task_finished {
-                info!(
-                    replica = self.ctx.replica_id,
-                    group = self.ctx.group_id,
-                    "replace lost replicas success"
-                );
-                self.cure_group_task = None;
+        if let Some(task) = self.change_config_task.as_mut() {
+            if self.ctx.advance_change_config_task(task, desc).await {
+                self.change_config_task = None;
             }
         }
-    }
-
-    async fn alloc_addition_replicas(&mut self, num_required: u64) -> Result<Vec<ReplicaDesc>> {
-        use engula_client::RootClient;
-
-        let root_group_state = self.ctx.router.find_group(ROOT_GROUP_ID)?;
-        let root_replicas = root_group_state.replicas.values().cloned();
-
-        let mut root_list = vec![];
-        for replica in root_replicas {
-            root_list.push(self.ctx.router.find_node_addr(replica.id)?);
-        }
-
-        let root_client = RootClient::connect(root_list).await?;
-        let resp = root_client
-            .alloc_replica(AllocReplicaRequest {
-                group_id: self.ctx.group_id,
-                epoch: self.ctx.replica.epoch(),
-                current_term: self.ctx.current_term,
-                leader_id: self.ctx.replica_id,
-                num_required,
-            })
-            .await?;
-        Ok(resp.replicas)
     }
 }
 
@@ -180,10 +179,13 @@ impl ScheduleContext {
             router,
             current_term: 0,
             lost_peers: HashMap::default(),
+            num_voters: 0,
+            // FIXME(walter) configurable replica number.
+            required_replicas: 3,
         }
     }
 
-    fn apply_raft_group_state(&mut self, state: &RaftGroupState) {
+    fn apply_raft_group_state(&mut self, state: &RaftGroupState, desc: &GroupDesc) {
         let lost_peers = state
             .peers
             .iter()
@@ -194,10 +196,27 @@ impl ScheduleContext {
         for id in lost_peers {
             self.lost_peers.entry(id).or_insert_with(Instant::now);
         }
+
+        self.num_voters = desc
+            .replicas
+            .iter()
+            .filter(|r| {
+                r.role == ReplicaRole::Voter.into() || r.role == ReplicaRole::IncomingVoter.into()
+            })
+            .count();
     }
 
     fn is_group_sicked(&self) -> bool {
         !self.lost_peers.is_empty()
+    }
+
+    fn is_group_promotable(&self) -> bool {
+        self.num_voters < self.required_replicas
+            && self.required_replicas <= self.router.total_nodes()
+    }
+
+    fn num_missing_replicas(&self) -> usize {
+        self.required_replicas.saturating_sub(self.num_voters)
     }
 
     fn lost_replicas(&self) -> Vec<ReplicaDesc> {
@@ -211,156 +230,153 @@ impl ScheduleContext {
         replicas
     }
 
-    #[allow(dead_code)]
-    async fn dispatch(&self, task: &mut ScheduleTask) -> bool {
-        use schedule_task::Value;
-        match task
-            .value
-            .as_mut()
-            .expect("ScheduleTask::value is not None")
-        {
-            Value::CureGroup(task) => self.execute_cure_group(task).await,
+    async fn advance_change_config_task(
+        &self,
+        task: &mut ChangeConfigTask,
+        desc: &GroupDesc,
+    ) -> bool {
+        if task.next_step(desc).is_some() && self.change_config_next_step(task).await {
+            info!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "change config task success"
+            );
+            return true;
         }
+        false
     }
 
-    async fn advance_cure_group_task(
-        &self,
-        task: &mut CureGroupTask,
-        desc: &GroupDesc,
-    ) -> Option<bool> {
+    async fn change_config_next_step(&self, task: &mut ChangeConfigTask) -> bool {
         match TaskStep::from_i32(task.current).unwrap() {
             TaskStep::Initialized => {
-                task.current = TaskStep::CreateReplica as i32;
-                return Some(true);
-            }
-            TaskStep::CreateReplica => unreachable!(),
-            TaskStep::AddLearner => {
-                let mut target_learners = task
-                    .add_learner
-                    .as_ref()
-                    .unwrap()
-                    .replicas
-                    .iter()
-                    .map(|r| r.id)
-                    .collect::<HashSet<_>>();
-                for replica in &desc.replicas {
-                    if replica.role == ReplicaRole::Learner as i32 {
-                        target_learners.remove(&replica.id);
-                    }
+                if self
+                    .execute_create_replica(task.create_replica.as_mut().unwrap())
+                    .await
+                {
+                    task.current = TaskStep::CreateReplica as i32;
                 }
-                if target_learners.is_empty() {
-                    // TODO(walter) check applied index.
+            }
+            TaskStep::CreateReplica => {
+                if self
+                    .execute_add_learner(task.add_learner.as_mut().unwrap())
+                    .await
+                {
+                    task.current = TaskStep::AddLearner as i32;
+                }
+            }
+            TaskStep::AddLearner => {
+                if self
+                    .execute_replace_voter(task.replace_voter.as_mut().unwrap())
+                    .await
+                {
                     task.current = TaskStep::ReplaceVoter as i32;
-                    return Some(true);
                 }
             }
             TaskStep::ReplaceVoter => {
-                let mut incoming_voters = task
-                    .replace_voter
-                    .as_ref()
-                    .unwrap()
-                    .incoming_voters
-                    .iter()
-                    .map(|r| r.id)
-                    .collect::<HashSet<_>>();
-                for replica in &desc.replicas {
-                    if replica.role == ReplicaRole::Voter as i32 {
-                        incoming_voters.remove(&replica.id);
-                    }
-                }
-                if incoming_voters.is_empty() {
-                    // Task is finished.
-                    return Some(false);
-                }
+                return true;
             }
         }
-        None
-    }
-
-    async fn execute_cure_group(&self, task: &mut CureGroupTask) -> bool {
-        loop {
-            match TaskStep::from_i32(task.current).unwrap() {
-                TaskStep::Initialized => {
-                    task.current = TaskStep::CreateReplica as i32;
-                }
-                TaskStep::CreateReplica => {
-                    if self
-                        .execute_create_replica(task.create_replica.as_mut().unwrap())
-                        .await
-                    {
-                        task.current = TaskStep::AddLearner as i32;
-                        continue;
-                    }
-                }
-                TaskStep::AddLearner => {
-                    self.execute_add_learner(task.add_learner.as_mut().unwrap())
-                        .await;
-                }
-                TaskStep::ReplaceVoter => {
-                    self.execute_replace_voter(task.replace_voter.as_mut().unwrap())
-                        .await;
-                    return true;
-                }
-            };
-            return false;
-        }
+        false
     }
 
     async fn execute_create_replica(&self, step: &mut CreateReplicaStep) -> bool {
-        use engula_client::NodeClient;
-
         for r in &step.replicas {
-            if let Ok(addr) = self.router.find_node_addr(r.node_id) {
-                let client = NodeClient::connect(addr).await.unwrap();
-                let desc = GroupDesc {
-                    id: self.group_id,
-                    ..Default::default()
-                };
-                client.create_replica(r.id, desc).await.unwrap();
-                continue;
+            if let Err(e) = self.create_replica(r).await {
+                warn!(
+                    group = self.group_id,
+                    replica = self.replica_id,
+                    "create replica {r:?}: {e}"
+                );
+                return false;
             }
-            todo!("retry later");
         }
 
         // step to next step.
         true
     }
 
-    async fn execute_add_learner(&self, step: &AddLearnerStep) {
-        let exec_ctx = ExecCtx {
-            epoch: self.replica.epoch(),
-            ..Default::default()
-        };
-        let changes = ChangeReplicas {
-            changes: step.replicas.iter().map(replica_as_learner).collect(),
-        };
-        let req = ChangeReplicasRequest {
-            change_replicas: Some(changes),
-        };
-        self.replica
-            .execute(exec_ctx, &Request::ChangeReplicas(req))
-            .await
-            .unwrap();
+    async fn execute_add_learner(&self, step: &AddLearnerStep) -> bool {
+        let exec_ctx = ExecCtx::with_epoch(self.replica.epoch());
+        let req = Request::ChangeReplicas(step.into());
+        if let Err(e) = self.replica.execute(exec_ctx, &req).await {
+            warn!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "add learner step: {e}, retry this step later"
+            );
+            false
+        } else {
+            info!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "add learner step is executed"
+            );
+            true
+        }
     }
 
-    async fn execute_replace_voter(&self, step: &ReplaceVoterStep) {
-        let exec_ctx = ExecCtx {
-            epoch: self.replica.epoch(),
+    async fn execute_replace_voter(&self, step: &ReplaceVoterStep) -> bool {
+        let exec_ctx = ExecCtx::with_epoch(self.replica.epoch());
+        let req = Request::ChangeReplicas(step.into());
+        if let Err(e) = self.replica.execute(exec_ctx, &req).await {
+            warn!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "replace voters step: {e}, retry this step later"
+            );
+            false
+        } else {
+            info!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "replace voters step is executed"
+            );
+            true
+        }
+    }
+
+    /// Alloc addition replicas from root.
+    async fn alloc_addition_replicas(
+        &mut self,
+        num_required: usize,
+    ) -> std::result::Result<Vec<ReplicaDesc>, engula_client::Error> {
+        use engula_client::RootClient;
+
+        let root_group_state = self.router.find_group(ROOT_GROUP_ID)?;
+        let root_replicas = root_group_state.replicas.values().cloned();
+
+        let mut root_list = vec![];
+        for replica in root_replicas {
+            root_list.push(self.router.find_node_addr(replica.node_id)?);
+        }
+
+        let root_client = RootClient::connect(root_list).await?;
+        let resp = root_client
+            .alloc_replica(AllocReplicaRequest {
+                group_id: self.group_id,
+                epoch: self.replica.epoch(),
+                current_term: self.current_term,
+                leader_id: self.replica_id,
+                num_required: num_required as u64,
+            })
+            .await?;
+        Ok(resp.replicas)
+    }
+
+    async fn create_replica(
+        &self,
+        r: &ReplicaDesc,
+    ) -> std::result::Result<(), engula_client::Error> {
+        use engula_client::NodeClient;
+
+        let addr = self.router.find_node_addr(r.node_id)?;
+        let client = NodeClient::connect(addr).await?;
+        let desc = GroupDesc {
+            id: self.group_id,
             ..Default::default()
         };
-        let mut changes = step
-            .incoming_voters
-            .iter()
-            .map(replica_as_incoming_voter)
-            .collect::<Vec<_>>();
-        changes.extend(step.outgoing_voters.iter().map(replica_as_outgoing_voter));
-        let req = ChangeReplicasRequest {
-            change_replicas: Some(ChangeReplicas { changes }),
-        };
-        self.replica
-            .execute(exec_ctx, &Request::ChangeReplicas(req))
-            .await
-            .unwrap();
+        client.create_replica(r.id, desc).await?;
+        Ok(())
     }
 }
 
@@ -376,10 +392,139 @@ pub fn setup(executor: &Executor, router: Router, replica: Arc<Replica>, wait_gr
 async fn scheduler_main(router: Router, replica: Arc<Replica>) {
     let mut scheduler = Scheduler {
         ctx: ScheduleContext::new(replica, router),
-        cure_group_task: None,
+        change_config_task: None,
     };
     while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader(false).await {
         scheduler.run(current_term).await;
+    }
+}
+
+impl From<&AddLearnerStep> for ChangeReplicasRequest {
+    fn from(step: &AddLearnerStep) -> Self {
+        let changes = ChangeReplicas {
+            changes: step.replicas.iter().map(replica_as_learner).collect(),
+        };
+        ChangeReplicasRequest {
+            change_replicas: Some(changes),
+        }
+    }
+}
+
+impl From<&ReplaceVoterStep> for ChangeReplicasRequest {
+    fn from(step: &ReplaceVoterStep) -> Self {
+        let mut changes = step
+            .incoming_voters
+            .iter()
+            .map(replica_as_incoming_voter)
+            .collect::<Vec<_>>();
+        changes.extend(step.outgoing_voters.iter().map(replica_as_outgoing_voter));
+        ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas { changes }),
+        }
+    }
+}
+
+impl ChangeConfigTask {
+    fn add_replicas(incoming_voters: Vec<ReplicaDesc>) -> Self {
+        let create_replica_step = CreateReplicaStep {
+            replicas: incoming_voters.clone(),
+        };
+        let add_learner_step = AddLearnerStep {
+            replicas: incoming_voters.clone(),
+        };
+        let replace_voter_step = ReplaceVoterStep {
+            incoming_voters,
+            outgoing_voters: vec![],
+        };
+
+        ChangeConfigTask {
+            current: TaskStep::Initialized as i32,
+            create_replica: Some(create_replica_step),
+            add_learner: Some(add_learner_step),
+            replace_voter: Some(replace_voter_step),
+        }
+    }
+
+    fn replace_voters(
+        incoming_voters: Vec<ReplicaDesc>,
+        outgoing_voters: Vec<ReplicaDesc>,
+    ) -> Self {
+        let create_replica_step = CreateReplicaStep {
+            replicas: incoming_voters.clone(),
+        };
+        let add_learner_step = AddLearnerStep {
+            replicas: incoming_voters.clone(),
+        };
+        let replace_voter_step = ReplaceVoterStep {
+            incoming_voters,
+            outgoing_voters,
+        };
+
+        ChangeConfigTask {
+            current: TaskStep::Initialized as i32,
+            create_replica: Some(create_replica_step),
+            add_learner: Some(add_learner_step),
+            replace_voter: Some(replace_voter_step),
+        }
+    }
+
+    /// Check whether can go to the next step?
+    fn next_step(&self, desc: &GroupDesc) -> Option<()> {
+        match TaskStep::from_i32(self.current).unwrap() {
+            TaskStep::Initialized | TaskStep::CreateReplica => {
+                return Some(());
+            }
+            TaskStep::AddLearner => {
+                if self
+                    .add_learner
+                    .as_ref()
+                    .expect("For TaskStep::AddLearner, add_learner is not None")
+                    .is_finished(desc)
+                {
+                    // TODO(walter) check applied index.
+                    return Some(());
+                }
+            }
+            TaskStep::ReplaceVoter => {
+                if self
+                    .replace_voter
+                    .as_ref()
+                    .expect("For TaskStep::ReplaceVoter, replace_voter is not None")
+                    .is_finished(desc)
+                {
+                    return Some(());
+                }
+            }
+        }
+        None
+    }
+}
+
+impl AddLearnerStep {
+    fn is_finished(&self, desc: &GroupDesc) -> bool {
+        let mut learners = self.replicas.iter().map(|r| r.id).collect::<HashSet<_>>();
+        for replica in &desc.replicas {
+            if replica.role == ReplicaRole::Learner as i32 {
+                learners.remove(&replica.id);
+            }
+        }
+        learners.is_empty()
+    }
+}
+
+impl ReplaceVoterStep {
+    fn is_finished(&self, desc: &GroupDesc) -> bool {
+        let mut incoming_voters = self
+            .incoming_voters
+            .iter()
+            .map(|r| r.id)
+            .collect::<HashSet<_>>();
+        for replica in &desc.replicas {
+            if replica.role == ReplicaRole::Voter as i32 {
+                incoming_voters.remove(&replica.id);
+            }
+        }
+        incoming_voters.is_empty()
     }
 }
 
