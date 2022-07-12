@@ -106,8 +106,7 @@ impl PartialFile {
         use std::fs::OpenOptions;
 
         debug!(
-            "replica {} receive snapshot file {}, size {}, crc32 {}",
-            replica_id,
+            "replica {replica_id} receive snapshot file {}, size {}, crc32 {}",
             path.display(),
             file_meta.size,
             file_meta.crc32
@@ -171,7 +170,7 @@ pub fn dispatch_downloading_snap_task(
                 sender.send(request).await.unwrap_or_default();
             }
             Err(err) => {
-                error!("replica {} download snapshot: {}", replica_id, err);
+                error!("replica {replica_id} download snapshot: {err}");
                 let request = Request::RejectSnapshot { msg };
                 sender.send(request).await.unwrap_or_default();
             }
@@ -194,7 +193,7 @@ async fn download_snap(
     save_snapshot(&snap_mgr, replica_id, chunk_stream).await
 }
 
-async fn save_snapshot<S>(
+pub(super) async fn save_snapshot<S>(
     snap_mgr: &SnapManager,
     replica_id: u64,
     mut chunk_stream: S,
@@ -204,8 +203,7 @@ where
 {
     let base_dir = snap_mgr.create(replica_id);
     info!(
-        "replica {} save incoming snapshot chunk stream into {}",
-        replica_id,
+        "replica {replica_id} save incoming snapshot chunk stream into {}",
         base_dir.display()
     );
 
@@ -217,82 +215,5 @@ where
     }
 
     let snap_meta = snap_builder.finish().await?;
-    snap_mgr.install(replica_id, &base_dir, &snap_meta);
-
-    Ok(base_dir.as_os_str().to_owned().into_vec())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{path::Path, thread};
-
-    use engula_api::server::v1::GroupDesc;
-    use snap::SnapManager;
-    use tempdir::TempDir;
-    use tracing::info;
-
-    use crate::{
-        raftgroup::{snap, SnapshotBuilder},
-        runtime::ExecutorOwner,
-        serverpb::v1::ApplyState,
-        Result,
-    };
-
-    struct SimpleSnapshotBuilder {
-        content: Vec<u8>,
-    }
-
-    #[crate::async_trait]
-    impl SnapshotBuilder for SimpleSnapshotBuilder {
-        async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
-            info!("create snapshot at: {}", base_dir.display());
-            if let Some(parent) = base_dir.parent() {
-                std::fs::create_dir_all(&parent)?;
-            }
-            std::fs::write(base_dir, &self.content)?;
-            info!("write snapshot content");
-            Ok((ApplyState::default(), GroupDesc::default()))
-        }
-    }
-
-    #[ctor::ctor]
-    fn init() {
-        tracing_subscriber::fmt::init();
-    }
-
-    #[test]
-    fn send_and_save_snapshot() {
-        thread::spawn(move || {
-            let owner = ExecutorOwner::new(1);
-            let executor = owner.executor();
-            owner.executor().block_on(async move {
-                let tmp_dir = TempDir::new("download-snapshot").unwrap().into_path();
-                std::fs::create_dir_all(&tmp_dir).unwrap();
-
-                let replica_id: u64 = 1;
-                let snap_manager = SnapManager::recovery(&executor, &tmp_dir).unwrap();
-
-                // Prepare snapshot
-                let builder: Box<dyn SnapshotBuilder> = Box::new(SimpleSnapshotBuilder {
-                    content: vec![1, 2, 3, 4, 5, 6, 7],
-                });
-                let snapshot_id = snap::create::create_snapshot(replica_id, &snap_manager, builder)
-                    .await
-                    .unwrap();
-
-                // Send snapshot on leader side.
-                let snapshot_chunk_stream =
-                    snap::send::send_snapshot(&snap_manager, replica_id, snapshot_id)
-                        .await
-                        .unwrap();
-
-                // Save snapshot on follower side.
-                snap::download::save_snapshot(&snap_manager, replica_id + 1, snapshot_chunk_stream)
-                    .await
-                    .unwrap();
-            });
-        })
-        .join()
-        .unwrap();
-    }
+    Ok(snap_mgr.install(replica_id, &base_dir, &snap_meta))
 }
