@@ -41,6 +41,35 @@ use crate::{
     Result,
 };
 
+#[derive(Debug)]
+pub struct RaftConfig {
+    /// The intervals of tick, in millis.
+    ///
+    /// Default: 500ms.
+    pub tick_interval_ms: u64,
+
+    /// The size of inflights requests.
+    ///
+    /// Default: 102400
+    pub max_inflight_requests: u64,
+
+    /// Before a follower begin election, it must wait a randomly election ticks and does not
+    /// receives any messages from leader.
+    ///
+    /// Default: 3.
+    pub election_tick: usize,
+
+    /// Limit the entries batched in an append message(in size). 0 means one entry per message.
+    ///
+    /// Default: 64KB
+    pub max_size_per_msg: u64,
+
+    /// Limit the number of inflights messages which send to one peer.
+    ///
+    /// Default: 10K
+    pub max_inflights_msgs: usize,
+}
+
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
 #[derive(Debug)]
 pub enum ReadPolicy {
@@ -128,6 +157,18 @@ impl RaftManager {
                 drop(wait_group);
             });
         Ok(facade)
+    }
+}
+
+impl Default for RaftConfig {
+    fn default() -> Self {
+        RaftConfig {
+            tick_interval_ms: 500,
+            max_inflight_requests: 102400,
+            election_tick: 3,
+            max_size_per_msg: 64 * 1024 * 1024,
+            max_inflights_msgs: 10 * 1000,
+        }
     }
 }
 

@@ -21,6 +21,7 @@ use std::{
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
 use engula_client::{RootClient, Router};
+use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -43,6 +44,14 @@ pub const INITIAL_EPOCH: u64 = 0;
 lazy_static::lazy_static! {
     pub static ref SHARD_MIN: Vec<u8> = vec![];
     pub static ref SHARD_MAX: Vec<u8> = vec![];
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BootConfig {
+    root_dir: PathBuf,
+    addr: String,
+    init: bool,
+    join_list: Vec<String>,
 }
 
 /// The main entrance of engula server.

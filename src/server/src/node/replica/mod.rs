@@ -38,6 +38,14 @@ use crate::{
     Error, Result,
 };
 
+#[derive(Debug)]
+pub struct ReplicaConfig {
+    /// The limit size of each snapshot files.
+    ///
+    /// Default: 64MB.
+    pub snap_file_size: usize,
+}
+
 pub struct ReplicaInfo {
     pub replica_id: u64,
     pub group_id: u64,
@@ -400,6 +408,14 @@ impl ExecCtx {
             .and_then(|m| m.shard_desc.as_ref())
             .map(|d| d.id == shard_id)
             .unwrap_or_default()
+    }
+}
+
+impl Default for ReplicaConfig {
+    fn default() -> Self {
+        ReplicaConfig {
+            snap_file_size: 64 * 1024 * 1024 * 1024,
+        }
     }
 }
 

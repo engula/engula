@@ -35,15 +35,32 @@ pub use self::{
 use self::{
     job::StateChannel,
     migrate::{MigrateController, ShardChunkStream},
+    replica::ReplicaConfig,
 };
 use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
+    raftgroup::{AddressResolver, RaftConfig, RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
     Error, Result,
 };
+
+#[derive(Debug)]
+pub struct NodeConfig {
+    /// The limit bytes of each shard chunk during migration.
+    ///
+    /// Default: 64KB.
+    pub shard_chunk_size: u64,
+
+    /// The limit number of keys for gc shard after migration.
+    ///
+    /// Default: 256.
+    pub shard_gc_keys: u64,
+
+    pub raft: Arc<RaftConfig>,
+    pub replica: Arc<ReplicaConfig>,
+}
 
 struct ReplicaContext {
     info: Arc<ReplicaInfo>,
@@ -564,6 +581,17 @@ impl NodeState {
     #[inline]
     fn is_bootstrapped(&self) -> bool {
         self.ident.is_some()
+    }
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        NodeConfig {
+            shard_chunk_size: 64 * 1024 * 1024,
+            shard_gc_keys: 256,
+            raft: Arc::default(),
+            replica: Arc::default(),
+        }
     }
 }
 
