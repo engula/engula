@@ -252,10 +252,10 @@ impl Root {
                             "shards": g.shards.iter().map(|s| {
                                 let part = match s.partition.as_ref().unwrap() {
                                     shard_desc::Partition::Hash(shard_desc::HashPartition {slot_id, slots}) => {
-                                        format!("hash: {} of {}", slot_id, slots)
+                                        format!("hash: {slot_id} of {slots}")
                                     },
                                     shard_desc::Partition::Range(shard_desc::RangePartition {start, end}) => {
-                                        format!("range: {:?} to {:?}", start, end)
+                                        format!("range: {start:?} to {end:?}")
                                     },
                                 };
                                 json!({
@@ -273,7 +273,7 @@ impl Root {
                     "collections": collections.iter().filter(|c|c.db == d.id).map(|c| {
                         let mode = match c.partition.as_ref().unwrap() {
                             co_desc::Partition::Hash(co_desc::HashPartition { slots }) => {
-                                format!("hash({})", slots)
+                                format!("hash({slots})")
                             },
                             co_desc::Partition::Range(co_desc::RangePartition {}) => {
                                 "range".to_owned()
