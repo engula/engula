@@ -135,8 +135,11 @@ impl<T: AllocSource> ShardCountPolicy<T> {
     }
 
     fn current_user_groups(&self) -> Vec<GroupDesc> {
-        let mut groups = self.alloc_source.groups();
-        groups.retain(|g| g.id != ROOT_GROUP_ID);
+        let groups = self.alloc_source.groups();
         groups
+            .values()
+            .filter(|g| g.id != ROOT_GROUP_ID)
+            .map(ToOwned::to_owned)
+            .collect()
     }
 }

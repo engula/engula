@@ -16,13 +16,17 @@ use std::sync::Arc;
 
 use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
 
-use self::{policy_replica_cnt::ReplicaCountPolicy, policy_shard_cnt::ShardCountPolicy};
+use self::{
+    policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
+    policy_shard_cnt::ShardCountPolicy,
+};
 use super::RootShared;
 use crate::Result;
 
 #[cfg(test)]
 mod sim_test;
 
+mod policy_leader_cnt;
 mod policy_replica_cnt;
 mod policy_shard_cnt;
 mod source;
@@ -47,7 +51,21 @@ pub enum ShardAction {
     Migrate(ReallocateShard),
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
+pub enum LeaderAction {
+    Noop,
+    Shed(TransferLeader),
+}
+
+#[derive(Debug)]
+pub struct TransferLeader {
+    pub group: u64,
+    pub src_node: u64,
+    pub src_replica: u64,
+    pub target_node: u64,
+    pub target_replica: u64,
+}
+
 pub struct ReallocateReplica {
     pub group: u64,
     pub source_node: u64,
@@ -55,11 +73,17 @@ pub struct ReallocateReplica {
     pub target_node: NodeDesc,
 }
 
-#[allow(dead_code)]
 pub struct ReallocateShard {
     pub shard: u64,
     pub source_group: u64,
     pub target_group: u64,
+}
+
+#[derive(PartialEq, Eq)]
+enum BalanceStatus {
+    Overfull,
+    Balanced,
+    Underfull,
 }
 
 #[derive(Clone)]
@@ -109,10 +133,6 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaAction>> {
         self.alloc_source.refresh_all().await?;
 
-        // if self.alloc_source.nodes().len() < self.replicas_per_group {
-        //     return Ok(Vec::new());
-        // }
-
         // TODO: try qps rebalance.
 
         // try replica-count rebalance.
@@ -156,6 +176,15 @@ impl<T: AllocSource> Allocator<T> {
         self.alloc_source.refresh_all().await?;
 
         ShardCountPolicy::with(self.alloc_source.to_owned()).allocate_shard(n)
+    }
+
+    pub async fn compute_leader_action(&self) -> Result<Vec<LeaderAction>> {
+        self.alloc_source.refresh_all().await?;
+        match LeaderCountPolicy::with(self.alloc_source.to_owned()).compute_balance()? {
+            LeaderAction::Noop => {}
+            e @ LeaderAction::Shed { .. } => return Ok(vec![e]),
+        }
+        Ok(Vec::new())
     }
 }
 

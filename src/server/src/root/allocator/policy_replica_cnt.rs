@@ -23,13 +23,6 @@ pub struct ReplicaCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
 }
 
-#[derive(PartialEq, Eq)]
-enum BalanceStatus {
-    Overfull,
-    Balanced,
-    Underfull,
-}
-
 impl<T: AllocSource> ReplicaCountPolicy<T> {
     pub fn with(alloc_source: Arc<T>) -> Self {
         Self { alloc_source }

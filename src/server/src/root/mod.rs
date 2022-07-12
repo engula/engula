@@ -181,7 +181,7 @@ impl Root {
                 break;
             }
 
-            if let Err(err) = self.reconcile_group().await {
+            if let Err(err) = self.reconcile().await {
                 warn!("reconcile group fatal: {}", err);
                 break;
             }
