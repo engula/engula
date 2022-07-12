@@ -516,7 +516,7 @@ impl MockInfoProvider {
         let groups = self.groups();
         let mut node_leader = HashMap::new();
         for r in &rs {
-            if r.role != RaftRole::Leader.into() {
+            if r.role != RaftRole::Leader as i32 {
                 continue;
             }
             let group = groups.get(&r.group_id).unwrap();
@@ -645,7 +645,7 @@ impl MockInfoProvider {
         let state = self.replicas.lock().unwrap();
         let mut node_leaders: HashMap<u64, Vec<u64>> = HashMap::new();
         let rs = state.values();
-        for r in rs.filter(|s| s.role == RaftRole::Leader.into()) {
+        for r in rs.filter(|s| s.role == RaftRole::Leader as i32) {
             let n = groups
                 .descs
                 .get(&r.group_id)

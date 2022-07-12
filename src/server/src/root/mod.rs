@@ -198,6 +198,67 @@ impl Root {
 
         Ok(())
     }
+
+    pub async fn info(&self) -> Result<String> {
+        use serde_json::*;
+
+        let schema = self.schema()?;
+        let nodes = schema.list_node().await?;
+        let groups = schema.list_group().await?;
+        let replicas = groups
+            .iter()
+            .flat_map(|g| g.replicas.iter().map(|r| (r, g.id)).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let states = schema.list_replica_state().await?;
+
+        let info = json!(
+            {
+                "nodes": nodes.iter().map(|n| {
+                    json!(
+                        {
+                            "id": n.id,
+                            "addr": n.addr.to_owned(),
+                            "replicas": replicas.iter().filter(|(r, _)| r.node_id == n.id)
+                                .map(|(r, g)| {
+                                    json!(
+                                        {
+                                            "id": r.id,
+                                            "group": g,
+                                            "replica_role": r.role,
+                                            "raft_role": states.iter().find(|s|s.replica_id == r.id).map(|s|s.role).unwrap_or(-1),
+                                        }
+                                    )
+                                }).collect::<Vec<_>>(),
+                        }
+                    )
+                }).collect::<Vec<_>>(),
+                "groups": groups.iter().map(|g| {
+                    json!(
+                        {
+                            "id": g.id,
+                            "epoch": g.epoch,
+                            "replicas": g.replicas.iter().map(|r| {
+                                let s = states.iter().find(|s|s.replica_id == r.id);
+                                json!({
+                                    "id": r.id,
+                                    "node": r.node_id,
+                                    "replica_role": r.role,
+                                    "raft_role": s.map(|s|s.role).unwrap_or(-1),
+                                    "term": s.map(|s|s.term).unwrap_or(0),
+                                })
+                            }).collect::<Vec<_>>(),
+                            "shards": g.shards.iter().map(|s| json!({
+                                "id": s.id,
+                                "collection": s.collection_id,
+                            })).collect::<Vec<_>>(),
+                        }
+                    )
+                }).collect::<Vec<_>>(),
+            }
+        );
+
+        Ok(serde_json::to_string(&info).unwrap())
+    }
 }
 
 impl Root {
