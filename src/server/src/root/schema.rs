@@ -268,13 +268,12 @@ impl Schema {
     }
 
     pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
-        let vals = self.list(&SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let vals = self.list(&SYSTEM_COLLECTION_COLLECTION_ID).await?;
         let mut collections = Vec::new();
         for val in vals {
-            collections.push(
-                CollectionDesc::decode(&*val)
-                    .map_err(|_| Error::InvalidData("collection desc".into()))?,
-            );
+            let c = CollectionDesc::decode(&*val)
+                .map_err(|_| Error::InvalidData("collection desc".into()))?;
+            collections.push(c);
         }
         Ok(collections)
     }

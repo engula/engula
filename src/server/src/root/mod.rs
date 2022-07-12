@@ -210,6 +210,8 @@ impl Root {
             .flat_map(|g| g.replicas.iter().map(|r| (r, g.id)).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         let states = schema.list_replica_state().await?;
+        let dbs = schema.list_database().await?;
+        let collections = schema.list_collection().await?;
 
         let info = json!(
             {
@@ -254,6 +256,11 @@ impl Root {
                         }
                     )
                 }).collect::<Vec<_>>(),
+                "databases": dbs.iter().map(|d| json!({
+                    "id": d.id,
+                    "name": d.name,
+                    "collections": collections.iter().filter(|c|c.db == d.id).map(|c| json!({"id": c.id, "name": c.name})).collect::<Vec<_>>(),
+                })).collect::<Vec<_>>(),
             }
         );
 
