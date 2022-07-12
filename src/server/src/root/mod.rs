@@ -249,17 +249,38 @@ impl Root {
                                     "term": s.map(|s|s.term).unwrap_or(0),
                                 })
                             }).collect::<Vec<_>>(),
-                            "shards": g.shards.iter().map(|s| json!({
-                                "id": s.id,
-                                "collection": s.collection_id,
-                            })).collect::<Vec<_>>(),
+                            "shards": g.shards.iter().map(|s| {
+                                let part = match s.partition.as_ref().unwrap() {
+                                    shard_desc::Partition::Hash(shard_desc::HashPartition {slot_id, slots}) => {
+                                        format!("hash: {} of {}", slot_id, slots)
+                                    },
+                                    shard_desc::Partition::Range(shard_desc::RangePartition {start, end}) => {
+                                        format!("range: {:?} to {:?}", start, end)
+                                    },
+                                };
+                                json!({
+                                    "id": s.id,
+                                    "collection": s.collection_id,
+                                    "partition": part,
+                                })
+                            }).collect::<Vec<_>>(),
                         }
                     )
                 }).collect::<Vec<_>>(),
                 "databases": dbs.iter().map(|d| json!({
                     "id": d.id,
                     "name": d.name,
-                    "collections": collections.iter().filter(|c|c.db == d.id).map(|c| json!({"id": c.id, "name": c.name})).collect::<Vec<_>>(),
+                    "collections": collections.iter().filter(|c|c.db == d.id).map(|c| {
+                        let mode = match c.partition.as_ref().unwrap() {
+                            co_desc::Partition::Hash(co_desc::HashPartition { slots }) => {
+                                format!("hash({})", slots)
+                            },
+                            co_desc::Partition::Range(co_desc::RangePartition {}) => {
+                                "range".to_owned()
+                            },
+                        };
+                        json!({"id": c.id, "name": c.name, "mode": mode})
+                    }).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
             }
         );
