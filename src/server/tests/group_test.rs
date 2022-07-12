@@ -120,13 +120,12 @@ fn promote_to_cluster_from_single_node() {
         let root_group_id = 0;
         for _ in 0..10000 {
             let members = c.group_members(root_group_id).await;
-            let members = members
+            if members
                 .into_iter()
                 .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
-                .map(|(k, _)| k)
-                .collect::<Vec<u64>>();
-            if members.len() == 3 {
-                // tokio::time::sleep(Duration::from_secs(10)).await;
+                .count()
+                == 3
+            {
                 return;
             }
 
