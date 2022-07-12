@@ -111,6 +111,7 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     let listener = TcpListenerStream::new(listener);
 
     Server::builder()
+        .accept_http1(true) // Support http1 for admin service.
         .add_service(NodeServer::new(server.clone()))
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
