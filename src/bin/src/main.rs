@@ -68,7 +68,7 @@ impl StartCommand {
         };
 
         info!("{config:#?}");
-        
+
         let owner = ExecutorOwner::new(num_cpus::get());
         engula_server::run(config, owner.executor())
     }
@@ -92,7 +92,7 @@ fn load_config(
         .set_default("join_list", Vec::<String>::default())?;
 
     if let Some(conf) = cmd.conf.as_ref() {
-        builder = builder.add_source(File::with_name(&conf));
+        builder = builder.add_source(File::with_name(conf));
     }
 
     let c = builder
