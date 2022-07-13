@@ -182,12 +182,12 @@ impl Root {
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(schema.to_owned()).await {
-                warn!("send heartbeat fatal: {}", err);
+                warn!(err = ?err, "send heartbeat meet fatal");
                 break;
             }
 
             if let Err(err) = self.reconcile().await {
-                warn!("reconcile group fatal: {}", err);
+                warn!(err = ?err, "reconcile meet fatal");
                 break;
             }
 
@@ -569,7 +569,7 @@ impl Root {
     pub async fn alloc_replica(
         &self,
         group_id: u64,
-        num_required: u64,
+        requested_cnt: u64,
     ) -> Result<Vec<ReplicaDesc>> {
         let schema = self.schema()?;
         let existing_replicas = match schema.get_group(group_id).await? {
@@ -578,13 +578,17 @@ impl Root {
                 return Err(Error::GroupNotFound(group_id));
             }
         };
-        let node_desc = self
+        info!(
+            group = group_id,
+            "attemp allocate {requested_cnt} replicas for exist group"
+        );
+        let nodes = self
             .alloc
-            .allocate_group_replica(existing_replicas, num_required as usize)
+            .allocate_group_replica(existing_replicas, requested_cnt as usize)
             .await?;
 
-        let mut replicas = Vec::new();
-        for n in &node_desc {
+        let mut replicas = Vec::with_capacity(nodes.len());
+        for n in &nodes {
             let replica_id = schema.next_replica_id().await?;
             replicas.push(ReplicaDesc {
                 id: replica_id,
@@ -592,15 +596,28 @@ impl Root {
                 role: ReplicaRole::Voter.into(),
             });
         }
+        info!(
+            group = group_id,
+            "advise allocate new group replicas in nodes: {:?}",
+            replicas.iter().map(|r| r.node_id).collect::<Vec<_>>()
+        );
         Ok(replicas)
     }
 
     async fn create_groups(&self, cnt: usize) -> Result<()> {
-        for _ in 0..cnt {
+        info!("allocator attempt create {cnt} groups");
+        for i in 0..cnt {
             let nodes = self
                 .alloc
                 .allocate_group_replica(vec![], REPLICA_PER_GROUP as usize)
                 .await?;
+            info!(
+                "allocator attemp create #{i} new group's replicas in {:?}",
+                nodes
+                    .iter()
+                    .map(|n| format!("{}({})", n.addr.to_owned(), n.id))
+                    .collect::<Vec<_>>()
+            );
             self.create_group(nodes).await?;
         }
         Ok(())
@@ -628,7 +645,12 @@ impl Root {
         };
         for n in &nodes {
             let replica_id = node_to_replica.get(&n.id).unwrap();
-            Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await?
+            if let Err(err) =
+                Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await
+            {
+                error!(node_id = n.id, group = group_id, err = ?err, "create group error");
+                return Err(err);
+            }
         }
         // TODO(zojw): rety and cancel all logic.
         Ok(())
