@@ -20,7 +20,7 @@ use engula_api::server::v1::{
 };
 use engula_client::{NodeClient, RequestBatchBuilder};
 use tokio::time;
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 use super::{allocator::*, Root, Schema};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
@@ -36,10 +36,13 @@ impl Root {
         if true {
             let mut roots = schema.get_root_replicas().await?;
             roots.move_first(cur_node_id);
+            let roots: Vec<NodeDesc> = roots.into();
+            trace!(
+                root = ?roots.iter().map(|n| n.id).collect::<Vec<_>>(),
+                "sync root info with heartbeat"
+            );
             piggybacks.push(PiggybackRequest {
-                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest {
-                    roots: roots.into(),
-                })),
+                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest { roots })),
             });
             piggybacks.push(PiggybackRequest {
                 info: Some(piggyback_request::Info::CollectGroupDetail(
@@ -53,9 +56,8 @@ impl Root {
             });
         }
 
-        // TODO: collect stats and group detail.
-
         for n in nodes {
+            trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
             match Self::try_send_heartbeat(&n.addr, &piggybacks).await {
                 Ok(res) => {
                     for resp in res.piggybacks {
@@ -71,7 +73,7 @@ impl Root {
                     }
                 }
                 Err(err) => {
-                    warn!("heartbeat to node {} address {}: {}", n.id, n.addr, err);
+                    warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
             }
         }
@@ -100,11 +102,21 @@ impl Root {
     ) -> Result<()> {
         if let Some(ns) = resp.node_stats {
             if let Some(mut node) = schema.get_node(node_id).await? {
+                let new_group_count = ns.group_count as u64;
+                let new_leader_count = ns.leader_count as u64;
                 let mut cap = node.capacity.take().unwrap();
-                cap.replica_count = ns.group_count as u64;
-                cap.leader_count = ns.leader_count as u64;
-                node.capacity = Some(cap);
-                schema.update_node(node).await?;
+                if new_group_count != cap.replica_count || new_leader_count != cap.leader_count {
+                    cap.replica_count = new_group_count;
+                    cap.leader_count = new_leader_count;
+                    info!(
+                        node = node_id,
+                        replica_count = cap.replica_count,
+                        leader_count = cap.leader_count,
+                        "update node stats by heartbeat response",
+                    );
+                    node.capacity = Some(cap);
+                    schema.update_node(node).await?;
+                }
             }
         }
         Ok(())
@@ -123,6 +135,11 @@ impl Root {
                     continue;
                 }
             }
+            info!(
+                group = desc.id,
+                desc = ?desc,
+                "attempt update group desc by heartbeat"
+            );
             schema
                 .update_group_replica(Some(desc.to_owned()), None)
                 .await?;
@@ -141,6 +158,12 @@ impl Root {
                     continue;
                 }
             }
+            info!(
+                group = state.group_id,
+                replica = state.replica_id,
+                state = ?state,
+                "attempt update replica state desc by heartbeat"
+            );
             schema
                 .update_group_replica(None, Some(state.to_owned()))
                 .await?;

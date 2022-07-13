@@ -544,11 +544,22 @@ impl Root {
                 .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
                 .await?;
             if let Some(desc) = u.group_desc {
+                info!(
+                    group = desc.id,
+                    desc = ?desc,
+                    "update group desc by node report"
+                );
                 update_events.push(UpdateEvent {
                     event: Some(update_event::Event::Group(desc)),
                 })
             }
             if let Some(state) = u.replica_state {
+                info!(
+                    group = state.group_id,
+                    replica = state.replica_id,
+                    state = ?state,
+                    "update replica state desc by node report"
+                );
                 changed_group_states.push(state.group_id);
             }
         }
