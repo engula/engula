@@ -201,7 +201,7 @@ impl ScheduleContext {
             .replicas
             .iter()
             .filter(|r| {
-                r.role == ReplicaRole::Voter.into() || r.role == ReplicaRole::IncomingVoter.into()
+                r.role == ReplicaRole::Voter as i32 || r.role == ReplicaRole::IncomingVoter as i32
             })
             .count();
     }
