@@ -47,7 +47,7 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeConfig {
     /// The limit bytes of each shard chunk during migration.
     ///

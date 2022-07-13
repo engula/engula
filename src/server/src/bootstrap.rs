@@ -67,7 +67,7 @@ pub fn run(config: Config, executor: Executor) -> Result<()> {
 
         let ident = bootstrap_or_join_cluster(&config, &node).await?;
         node.bootstrap(&ident).await?;
-        let root = Root::new(executor.clone(), &ident, config.addr.clone());
+        let root = Root::new(executor.clone(), &ident, config.clone());
         root.bootstrap(&node).await?;
 
         let server = Server {

@@ -120,7 +120,7 @@ impl SysAllocSource {
 
     fn set_nodes(&self, ns: Vec<NodeDesc>) {
         let mut nodes = self.nodes.lock().unwrap();
-        _ = std::mem::replace(&mut *nodes, ns);
+        let _ = std::mem::replace(&mut *nodes, ns);
     }
 
     async fn reload_groups(&self) -> Result<()> {
@@ -146,7 +146,7 @@ impl SysAllocSource {
             }
         }
         let descs = gs.into_iter().map(|g| (g.id, g)).collect();
-        _ = std::mem::replace(
+        let _ = std::mem::replace(
             &mut *groups,
             GroupInfo {
                 descs,
@@ -169,11 +169,11 @@ impl SysAllocSource {
             .into_iter()
             .map(|r| (r.replica_id, r))
             .collect::<HashMap<u64, ReplicaState>>();
-        _ = std::mem::replace(
+        let _ = std::mem::replace(
             &mut *replicas,
             ReplicaInfo {
                 replicas: id_to_state,
             },
-        )
+        );
     }
 }

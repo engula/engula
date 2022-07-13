@@ -13,7 +13,7 @@
 // limitations under the License.
 use std::{collections::HashMap, thread};
 
-use engula_server::{runtime::ExecutorOwner, Config, NodeConfig, RaftConfig};
+use engula_server::{runtime::ExecutorOwner, AllocatorConfig, Config, NodeConfig, RaftConfig};
 use tempdir::TempDir;
 
 use super::client::node_client_with_retry;
@@ -22,21 +22,46 @@ use crate::helper::socket::next_avail_port;
 #[allow(dead_code)]
 pub struct TestContext {
     root_dir: TempDir,
+    alloc_cfg: AllocatorConfig,
 }
 
 #[allow(dead_code)]
 impl TestContext {
     pub fn new(prefix: &str) -> Self {
         let root_dir = TempDir::new(prefix).unwrap();
-        TestContext { root_dir }
+        TestContext {
+            root_dir,
+            alloc_cfg: AllocatorConfig::default(),
+        }
     }
 
     pub fn next_listen_address(&self) -> String {
         format!("127.0.0.1:{}", next_avail_port())
     }
 
+    pub fn disable_replica_balance(&mut self) {
+        self.alloc_cfg.enable_replica_balance = false;
+        self.alloc_cfg.enable_replica_balance = false;
+    }
+
+    pub fn disable_shard_balance(&mut self) {
+        self.alloc_cfg.enable_shard_balance = false;
+    }
+
     #[allow(dead_code)]
     pub fn spawn_server(&self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
+        self.spawn_server_with_cfg(idx, addr, init, join_list, self.alloc_cfg.clone());
+    }
+
+    #[allow(dead_code)]
+    pub fn spawn_server_with_cfg(
+        &self,
+        idx: usize,
+        addr: &str,
+        init: bool,
+        join_list: Vec<String>,
+        cfg: AllocatorConfig,
+    ) {
         let addr = addr.to_owned();
         let name = idx.to_string();
         let root_dir = self.root_dir.path().join(name);
@@ -50,6 +75,7 @@ impl TestContext {
                 tick_interval_ms: 5,
                 ..Default::default()
             },
+            allocator: cfg,
         };
         thread::spawn(move || {
             let owner = ExecutorOwner::new(1);

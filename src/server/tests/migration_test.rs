@@ -62,7 +62,8 @@ async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops
 #[test]
 fn single_replica_empty_shard_migration() {
     block_on_current(async {
-        let ctx = TestContext::new("single-replica-empty-shard-migration");
+        let mut ctx = TestContext::new("single-replica-empty-shard-migration");
+        ctx.disable_shard_balance();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -135,7 +136,8 @@ fn single_replica_empty_shard_migration() {
 #[test]
 fn single_replica_migration() {
     block_on_current(async {
-        let ctx = TestContext::new("single-replica-migration");
+        let mut ctx = TestContext::new("single-replica-migration");
+        ctx.disable_shard_balance();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -238,7 +240,8 @@ async fn create_group(
 #[test]
 fn basic_migration() {
     block_on_current(async {
-        let ctx = TestContext::new("basic-migration");
+        let mut ctx = TestContext::new("basic-migration");
+        ctx.disable_shard_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;

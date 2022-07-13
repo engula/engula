@@ -39,7 +39,7 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReplicaConfig {
     /// The limit size of each snapshot files.
     ///

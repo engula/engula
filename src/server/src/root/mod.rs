@@ -36,14 +36,17 @@ use engula_client::NodeClient;
 use tracing::{info, warn};
 
 pub(crate) use self::schema::*;
-pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
+pub use self::{
+    allocator::AllocatorConfig,
+    watch::{WatchHub, Watcher, WatcherInitializer},
+};
 use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
 use crate::{
     bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
     serverpb::v1::NodeIdent,
-    Error, Result,
+    Config, Error, Result,
 };
 
 #[derive(Clone)]
@@ -74,7 +77,8 @@ struct RootCore {
 }
 
 impl Root {
-    pub fn new(executor: Executor, node_ident: &NodeIdent, local_addr: String) -> Self {
+    pub fn new(executor: Executor, node_ident: &NodeIdent, cfg: Config) -> Self {
+        let local_addr = cfg.addr.clone();
         let shared = Arc::new(RootShared {
             executor,
             local_addr,
@@ -83,7 +87,7 @@ impl Root {
             watcher_hub: Default::default(),
         });
         let info = Arc::new(SysAllocSource::new(shared.clone()));
-        let alloc = allocator::Allocator::new(info, REPLICA_PER_GROUP);
+        let alloc = allocator::Allocator::new(info, cfg.allocator);
         Self { alloc, shared }
     }
 
@@ -602,7 +606,7 @@ impl Root {
 #[cfg(test)]
 mod root_test {
 
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
     use engula_api::{
         server::v1::watch_response::{update_event, UpdateEvent},
@@ -612,16 +616,27 @@ mod root_test {
     use futures::StreamExt;
     use tempdir::TempDir;
 
+    use super::Config;
     use crate::{
         bootstrap::bootstrap_cluster,
         node::{Node, StateEngine},
         root::Root,
         runtime::{Executor, ExecutorOwner},
         serverpb::v1::NodeIdent,
+        AllocatorConfig, NodeConfig, RaftConfig,
     };
 
     fn create_root(executor: Executor, node_ident: &NodeIdent) -> Root {
-        Root::new(executor, node_ident, "0.0.0.0:8888".into())
+        let cfg = Config {
+            root_dir: PathBuf::default(),
+            addr: "0.0.0.0:8888".into(),
+            init: false,
+            join_list: vec![],
+            node: NodeConfig::default(),
+            raft: RaftConfig::default(),
+            allocator: AllocatorConfig::default(),
+        };
+        Root::new(executor, node_ident, cfg)
     }
 
     fn create_node(executor: Executor) -> Node {

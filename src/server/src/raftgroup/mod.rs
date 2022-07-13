@@ -42,7 +42,7 @@ use crate::{
     Result,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RaftConfig {
     /// The intervals of tick, in millis.
     ///

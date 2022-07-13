@@ -15,13 +15,14 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
+use serde::{Deserialize, Serialize};
 
 use self::{
     policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
     policy_shard_cnt::ShardCountPolicy,
 };
 use super::RootShared;
-use crate::Result;
+use crate::{bootstrap::REPLICA_PER_GROUP, Result};
 
 #[cfg(test)]
 mod sim_test;
@@ -86,25 +87,49 @@ enum BalanceStatus {
     Underfull,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AllocatorConfig {
+    pub replicas_per_group: usize,
+    pub enable_group_balance: bool,
+    pub enable_replica_balance: bool,
+    pub enable_shard_balance: bool,
+    pub enable_leader_balance: bool,
+}
+
+impl Default for AllocatorConfig {
+    fn default() -> Self {
+        Self {
+            replicas_per_group: REPLICA_PER_GROUP,
+            enable_group_balance: true,
+            enable_replica_balance: true,
+            enable_shard_balance: true,
+            enable_leader_balance: true,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Allocator<T: AllocSource> {
-    replicas_per_group: usize,
     alloc_source: Arc<T>,
+    config: AllocatorConfig,
 }
 
 impl<T: AllocSource> Allocator<T> {
-    pub fn new(alloc_source: Arc<T>, replicas_per_group: usize) -> Self {
+    pub fn new(alloc_source: Arc<T>, config: AllocatorConfig) -> Self {
         Self {
             alloc_source,
-            replicas_per_group,
+            config,
         }
     }
-
     /// Compute group change action.
     pub async fn compute_group_action(&self) -> Result<GroupAction> {
+        if !self.config.enable_group_balance {
+            return Ok(GroupAction::Noop);
+        }
+
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() < self.replicas_per_group {
+        if self.alloc_source.nodes().len() < self.config.replicas_per_group {
             // group alloctor start work after node_count > replicas_per_group.
             return Ok(GroupAction::Noop);
         }
@@ -131,6 +156,10 @@ impl<T: AllocSource> Allocator<T> {
 
     /// Compute replica change action.
     pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaAction>> {
+        if !self.config.enable_replica_balance {
+            return Ok(vec![]);
+        }
+
         self.alloc_source.refresh_all().await?;
 
         // TODO: try qps rebalance.
@@ -145,9 +174,13 @@ impl<T: AllocSource> Allocator<T> {
     }
 
     pub async fn compute_shard_action(&self) -> Result<Vec<ShardAction>> {
+        if !self.config.enable_shard_balance {
+            return Ok(vec![]);
+        }
+
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() < self.replicas_per_group {
+        if self.alloc_source.nodes().len() < self.config.replicas_per_group {
             return Ok(Vec::new());
         }
 
@@ -179,6 +212,9 @@ impl<T: AllocSource> Allocator<T> {
     }
 
     pub async fn compute_leader_action(&self) -> Result<Vec<LeaderAction>> {
+        if !self.config.enable_leader_balance {
+            return Ok(vec![]);
+        }
         self.alloc_source.refresh_all().await?;
         match LeaderCountPolicy::with(self.alloc_source.to_owned()).compute_balance()? {
             LeaderAction::Noop => {}
@@ -210,7 +246,7 @@ impl<T: AllocSource> Allocator<T> {
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().cpu_nums)
             .fold(0_f64, |acc, x| acc + x);
-        (total_cpus / self.replicas_per_group as f64).ceil() as usize
+        (total_cpus / self.config.replicas_per_group as f64).ceil() as usize
     }
 
     fn current_groups(&self) -> usize {

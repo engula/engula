@@ -36,10 +36,11 @@ pub use crate::{
     error::{Error, Result},
     node::NodeConfig,
     raftgroup::RaftConfig,
+    root::AllocatorConfig,
     service::Server,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     /// The root dir of engula server.
     pub root_dir: PathBuf,
@@ -55,6 +56,9 @@ pub struct Config {
 
     #[serde(default)]
     pub raft: RaftConfig,
+
+    #[serde(default)]
+    pub allocator: AllocatorConfig,
 }
 
 #[cfg(test)]
