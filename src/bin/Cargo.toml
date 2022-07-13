@@ -13,5 +13,7 @@ description = "A distributed key-value store."
 engula-server = { path = "../server", version = "0.4.0" }
 
 clap = { version = "3.1.18", features = ["derive"] }
+config = { version = "0.13.1", features = ["toml"] }
 num_cpus = "1.13.1"
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }

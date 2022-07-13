@@ -88,14 +88,17 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
             .iter()
             .filter(|(r, g)| *g != ROOT_GROUP_ID || r.role == ReplicaRole::Voter as i32)
         {
-            let replica_state = self.alloc_source.replica_state(&replica.id).unwrap();
-            // .ok_or(crate::Error::GroupNotFound(*group_id))?;
+            let replica_state = self
+                .alloc_source
+                .replica_state(&replica.id)
+                .ok_or(crate::Error::GroupNotFound(*group_id))?;
             if replica_state.role != RaftRole::Leader as i32 {
                 continue;
             }
 
-            let group = groups.get(group_id).unwrap();
-            // .ok_or(crate::Error::GroupNotFound(*group_id))?;
+            let group = groups
+                .get(group_id)
+                .ok_or(crate::Error::GroupNotFound(*group_id))?;
             let exist_replica_in_nodes = group
                 .replicas
                 .iter()

@@ -24,7 +24,10 @@ use tracing::{error, info, warn};
 
 use crate::{
     bootstrap::ROOT_GROUP_ID,
-    node::{replica::ExecCtx, Replica},
+    node::{
+        replica::{ExecCtx, ReplicaConfig},
+        Replica,
+    },
     raftgroup::{RaftGroupState, RaftNodeFacade},
     runtime::{sync::WaitGroup, Executor, TaskPriority},
     serverpb::v1::*,
@@ -32,6 +35,9 @@ use crate::{
 
 /// The task scheduler of an replica.
 pub struct Scheduler {
+    #[allow(unused)]
+    cfg: ReplicaConfig,
+
     ctx: ScheduleContext,
 
     // A group only can have one change config task.
@@ -380,17 +386,24 @@ impl ScheduleContext {
     }
 }
 
-pub fn setup(executor: &Executor, router: Router, replica: Arc<Replica>, wait_group: WaitGroup) {
+pub fn setup(
+    cfg: ReplicaConfig,
+    executor: &Executor,
+    router: Router,
+    replica: Arc<Replica>,
+    wait_group: WaitGroup,
+) {
     let group_id = replica.replica_info().group_id;
     let tag = &group_id.to_le_bytes();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
-        scheduler_main(router, replica).await;
+        scheduler_main(cfg, router, replica).await;
         drop(wait_group);
     });
 }
 
-async fn scheduler_main(router: Router, replica: Arc<Replica>) {
+async fn scheduler_main(cfg: ReplicaConfig, router: Router, replica: Arc<Replica>) {
     let mut scheduler = Scheduler {
+        cfg,
         ctx: ScheduleContext::new(replica, router),
         change_config_task: None,
     };

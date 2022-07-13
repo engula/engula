@@ -24,10 +24,12 @@ use crate::{
     node::Replica,
     runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
-    Error, Result,
+    Error, NodeConfig, Result,
 };
 
 struct MigrationCoordinator {
+    cfg: NodeConfig,
+
     replica_id: u64,
     group_id: u64,
 
@@ -43,14 +45,19 @@ pub struct MigrateController {
 }
 
 struct MigrateControllerShared {
+    cfg: NodeConfig,
     executor: Executor,
     router: Router,
 }
 
 impl MigrateController {
-    pub fn new(executor: Executor, router: Router) -> Self {
+    pub fn new(cfg: NodeConfig, executor: Executor, router: Router) -> Self {
         MigrateController {
-            shared: Arc::new(MigrateControllerShared { executor, router }),
+            shared: Arc::new(MigrateControllerShared {
+                cfg,
+                executor,
+                router,
+            }),
         }
     }
 
@@ -88,6 +95,7 @@ impl MigrateController {
                     };
                     let client = GroupClient::new(target_group_id, ctrl.shared.router.clone());
                     coord = Some(MigrationCoordinator {
+                        cfg: ctrl.shared.cfg.clone(),
                         replica_id,
                         group_id,
                         replica: replica.clone(),
@@ -266,6 +274,7 @@ impl MigrationCoordinator {
 
         let group_engine = self.replica.group_engine();
         if let Err(e) = remove_shard(
+            &self.cfg,
             self.replica.as_ref(),
             group_engine,
             self.desc.get_shard_id(),

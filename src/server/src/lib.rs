@@ -26,13 +26,40 @@ pub mod runtime;
 pub mod serverpb;
 mod service;
 
-pub use tonic::async_trait;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use tonic::async_trait;
 
 pub use crate::{
-    bootstrap::{run, Config},
+    bootstrap::run,
     error::{Error, Result},
+    node::NodeConfig,
+    raftgroup::RaftConfig,
+    root::AllocatorConfig,
     service::Server,
 };
+
+#[derive(Default, Clone, Debug, Deserialize, Serialize)]
+pub struct Config {
+    /// The root dir of engula server.
+    pub root_dir: PathBuf,
+
+    pub addr: String,
+
+    pub init: bool,
+
+    pub join_list: Vec<String>,
+
+    #[serde(default)]
+    pub node: NodeConfig,
+
+    #[serde(default)]
+    pub raft: RaftConfig,
+
+    #[serde(default)]
+    pub allocator: AllocatorConfig,
+}
 
 #[cfg(test)]
 mod tests {

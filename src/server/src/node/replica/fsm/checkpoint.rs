@@ -16,19 +16,20 @@ use std::path::Path;
 use engula_api::server::v1::GroupDesc;
 
 use crate::{
-    node::{engine::RawIterator, GroupEngine},
+    node::{engine::RawIterator, replica::ReplicaConfig, GroupEngine},
     raftgroup::SnapshotBuilder,
     serverpb::v1::ApplyState,
     Error, Result,
 };
 
 pub struct GroupSnapshotBuilder {
+    cfg: ReplicaConfig,
     engine: GroupEngine,
 }
 
 impl GroupSnapshotBuilder {
-    pub fn new(engine: GroupEngine) -> Self {
-        GroupSnapshotBuilder { engine }
+    pub fn new(cfg: ReplicaConfig, engine: GroupEngine) -> Self {
+        GroupSnapshotBuilder { cfg, engine }
     }
 }
 
@@ -37,7 +38,7 @@ impl SnapshotBuilder for GroupSnapshotBuilder {
     async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
         let mut iter = self.engine.raw_iter()?;
         for i in 0.. {
-            if write_partial_to_file(&mut iter, base_dir, i)
+            if write_partial_to_file(&self.cfg, &mut iter, base_dir, i)
                 .await?
                 .is_none()
             {
@@ -54,6 +55,7 @@ impl SnapshotBuilder for GroupSnapshotBuilder {
 
 /// Write partial of the iterator's data to the file, return `None` if all data is written.
 async fn write_partial_to_file(
+    cfg: &ReplicaConfig,
     iter: &mut RawIterator<'_>,
     base_dir: &Path,
     file_no: usize,
@@ -67,7 +69,7 @@ async fn write_partial_to_file(
     let mut index = 0;
     for (key, value) in iter.by_ref() {
         writer.put(key, value)?;
-        if writer.file_size() > 64 * 1024 * 1024 {
+        if writer.file_size() >= cfg.snap_file_size {
             writer.finish()?;
             return Ok(Some(()));
         }

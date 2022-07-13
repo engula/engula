@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-    vec,
-};
+use std::{path::Path, sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
 use engula_client::{RootClient, Router};
@@ -25,10 +20,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     node::{engine::StateEngine, resolver::AddressResolver, Node},
-    root::{AllocatorConfig, Root, Schema},
-    runtime::Executor,
+    root::{Root, Schema},
+    runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
-    Error, Result, Server,
+    Config, Error, Result, Server,
 };
 
 pub const REPLICA_PER_GROUP: usize = 3;
@@ -45,68 +40,48 @@ lazy_static::lazy_static! {
     pub static ref SHARD_MAX: Vec<u8> = vec![];
 }
 
-#[derive(Default, Clone)]
-pub struct Config {
-    pub allocator: AllocatorConfig,
-}
-
 /// The main entrance of engula server.
-pub fn run(
-    executor: Executor,
-    path: PathBuf,
-    addr: String,
-    init: bool,
-    join_list: Vec<String>,
-    cfg: Config,
-) -> Result<()> {
-    let db_path = path.join("db");
-    let log_path = path.join("log");
+pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
+    let db_path = config.root_dir.join("db");
+    let log_path = config.root_dir.join("log");
     let raw_db = Arc::new(open_engine(db_path)?);
     let state_engine = StateEngine::new(raw_db.clone())?;
 
-    let router = create_router(&executor, init, addr.clone(), join_list.clone());
-    let address_resolver = Arc::new(AddressResolver::new(router.clone()));
+    executor.block_on(async {
+        let root_list = if config.init {
+            vec![config.addr.clone()]
+        } else {
+            config.join_list.clone()
+        };
+        let router = Router::new(root_list).await;
+        let address_resolver = Arc::new(AddressResolver::new(router.clone()));
 
-    let node = Node::new(
-        log_path,
-        raw_db,
-        state_engine,
-        executor.clone(),
-        address_resolver.clone(),
-        router,
-    )?;
+        let node = Node::new(
+            config.clone(),
+            log_path,
+            raw_db,
+            state_engine,
+            executor.clone(),
+            address_resolver.clone(),
+            router,
+        )?;
 
-    let (_node_id, root) = executor.block_on(async {
-        let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
+        let ident = bootstrap_or_join_cluster(&config, &node).await?;
         node.bootstrap(&ident).await?;
-        let mut root = Root::new(executor.clone(), &ident, addr.to_owned(), cfg);
+        let root = Root::new(executor.clone(), &ident, config.clone());
         root.bootstrap(&node).await?;
-        Ok::<(u64, Root), Error>((ident.node_id, root))
-    })?;
 
-    let server = Server {
-        node: Arc::new(node),
-        root,
-        address_resolver,
-    };
-    let handle = executor.spawn(None, crate::runtime::TaskPriority::High, async move {
-        bootstrap_services(&addr, server).await
-    });
-
-    executor.block_on(handle)
-}
-
-fn create_router(
-    executor: &Executor,
-    init: bool,
-    local_addr: String,
-    join_list: Vec<String>,
-) -> Router {
-    executor.block_on(async { Router::new(if init { vec![local_addr] } else { join_list }).await })
+        let server = Server {
+            node: Arc::new(node),
+            root,
+            address_resolver,
+        };
+        bootstrap_services(&config.addr, server, shutdown).await
+    })
 }
 
 /// Listen and serve incoming rpc requests.
-async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
+async fn bootstrap_services(addr: &str, server: Server, shutdown: Shutdown) -> Result<()> {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
@@ -116,14 +91,18 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let listener = TcpListenerStream::new(listener);
 
-    Server::builder()
+    let server = Server::builder()
         .accept_http1(true) // Support http1 for admin service.
         .add_service(NodeServer::new(server.clone()))
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
         .add_service(make_admin_service(server.clone()))
-        .serve_with_incoming(listener)
-        .await?;
+        .serve_with_incoming(listener);
+
+    crate::runtime::select! {
+        res = server => { res? }
+        _ = shutdown => {}
+    }
 
     Ok(())
 }
@@ -154,12 +133,7 @@ pub(crate) fn open_engine<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
     }
 }
 
-async fn bootstrap_or_join_cluster(
-    node: &Node,
-    addr: &str,
-    init: bool,
-    join_list: Vec<String>,
-) -> Result<NodeIdent> {
+async fn bootstrap_or_join_cluster(config: &Config, node: &Node) -> Result<NodeIdent> {
     let state_engine = node.state_engine();
     if let Some(node_ident) = state_engine.read_ident().await? {
         info!(
@@ -170,10 +144,10 @@ async fn bootstrap_or_join_cluster(
         return Ok(node_ident);
     }
 
-    Ok(if init {
-        bootstrap_cluster(node, addr).await?
+    Ok(if config.init {
+        bootstrap_cluster(node, &config.addr).await?
     } else {
-        try_join_cluster(node, addr, join_list).await?
+        try_join_cluster(node, &config.addr, config.join_list.clone()).await?
     })
 }
 

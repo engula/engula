@@ -77,12 +77,8 @@ struct RootCore {
 }
 
 impl Root {
-    pub fn new(
-        executor: Executor,
-        node_ident: &NodeIdent,
-        local_addr: String,
-        cfg: Config,
-    ) -> Self {
+    pub fn new(executor: Executor, node_ident: &NodeIdent, cfg: Config) -> Self {
+        let local_addr = cfg.addr.clone();
         let shared = Arc::new(RootShared {
             executor,
             local_addr,
@@ -103,7 +99,7 @@ impl Root {
         self.shared.node_ident.node_id
     }
 
-    pub async fn bootstrap(&mut self, node: &Node) -> Result<()> {
+    pub async fn bootstrap(&self, node: &Node) -> Result<()> {
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
@@ -539,7 +535,7 @@ impl Root {
         let existing_replicas = match schema.get_group(group_id).await? {
             Some(desc) => desc.replicas,
             None => {
-                todo!()
+                return Err(Error::GroupNotFound(group_id));
             }
         };
         let node_desc = self
@@ -610,7 +606,7 @@ impl Root {
 #[cfg(test)]
 mod root_test {
 
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
     use engula_api::{
         server::v1::watch_response::{update_event, UpdateEvent},
@@ -627,15 +623,20 @@ mod root_test {
         root::Root,
         runtime::{Executor, ExecutorOwner},
         serverpb::v1::NodeIdent,
+        AllocatorConfig, NodeConfig, RaftConfig,
     };
 
     fn create_root(executor: Executor, node_ident: &NodeIdent) -> Root {
-        Root::new(
-            executor,
-            node_ident,
-            "0.0.0.0:8888".into(),
-            Config::default(),
-        )
+        let cfg = Config {
+            root_dir: PathBuf::default(),
+            addr: "0.0.0.0:8888".into(),
+            init: false,
+            join_list: vec![],
+            node: NodeConfig::default(),
+            raft: RaftConfig::default(),
+            allocator: AllocatorConfig::default(),
+        };
+        Root::new(executor, node_ident, cfg)
     }
 
     fn create_node(executor: Executor) -> Node {
@@ -651,6 +652,7 @@ mod root_test {
         let router = executor.block_on(async { Router::new(vec!["".to_owned()]).await });
         let address_resolver = Arc::new(AddressResolver::new(router.clone()));
         Node::new(
+            Config::default(),
             log_dir,
             db,
             state_engine,
@@ -671,7 +673,7 @@ mod root_test {
             node_id: 1,
         };
         let node = create_node(executor.to_owned());
-        let mut root = create_root(executor.to_owned(), &ident);
+        let root = create_root(executor.to_owned(), &ident);
 
         executor.block_on(async {
             bootstrap_cluster(&node, "0.0.0.0:8888").await.unwrap();

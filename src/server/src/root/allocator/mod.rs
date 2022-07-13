@@ -15,6 +15,7 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
+use serde::{Deserialize, Serialize};
 
 use self::{
     policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
@@ -86,7 +87,7 @@ enum BalanceStatus {
     Underfull,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AllocatorConfig {
     pub replicas_per_group: usize,
     pub enable_group_balance: bool,

@@ -1,0 +1,25 @@
+root_dir = "/tmp/engula"
+addr = "127.0.0.1:21805"
+init = false
+join_list = []
+
+[node]
+shard_chunk_size = 67108864
+shard_gc_keys = 256
+
+[node.replica]
+snap_file_size = 68719476736
+
+[raft]
+tick_interval_ms = 500
+max_inflight_requests = 102400
+election_tick = 3
+max_size_per_msg = 67108864
+max_inflight_msgs = 10000
+
+[allocator]
+replicas_per_group = 3
+enable_group_balance = true
+enable_replica_balance = true
+enable_shard_balance = true
+enable_leader_balance = true

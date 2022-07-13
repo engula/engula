@@ -13,17 +13,18 @@
 // limitations under the License.
 use crate::{
     node::{engine::SnapshotMode, GroupEngine, Replica},
-    Result,
+    NodeConfig, Result,
 };
 
 pub async fn remove_shard(
+    cfg: &NodeConfig,
     replica: &Replica,
     group_engine: GroupEngine,
     shard_id: u64,
 ) -> Result<()> {
     let mut latest_key: Option<Vec<u8>> = None;
     loop {
-        let chunk = collect_chunks(&group_engine, shard_id, latest_key.as_deref()).await?;
+        let chunk = collect_chunks(cfg, &group_engine, shard_id, latest_key.as_deref()).await?;
         if chunk.is_empty() {
             break;
         }
@@ -34,16 +35,17 @@ pub async fn remove_shard(
 }
 
 async fn collect_chunks(
+    cfg: &NodeConfig,
     group_engine: &GroupEngine,
     shard_id: u64,
     start_key: Option<&[u8]>,
 ) -> Result<Vec<(Vec<u8>, u64)>> {
     let snapshot_mode = SnapshotMode::Start { start_key };
     let mut snapshot = group_engine.snapshot(shard_id, snapshot_mode)?;
-    let mut buf = Vec::with_capacity(256);
+    let mut buf = Vec::with_capacity(cfg.shard_gc_keys);
     for mvcc_iter in snapshot.iter() {
         buf.extend(mvcc_iter.map(|e| (e.user_key().to_owned(), e.version())));
-        if buf.len() >= 256 {
+        if buf.len() >= cfg.shard_gc_keys {
             break;
         }
     }

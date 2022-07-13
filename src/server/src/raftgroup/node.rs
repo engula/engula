@@ -78,15 +78,17 @@ where
         state_machine: M,
     ) -> Result<Self> {
         let applied = state_machine.flushed_index();
+        let cfg = &mgr.cfg;
         let config = Config {
             id: replica_id,
-            election_tick: 3,
+            election_tick: cfg.election_tick,
             heartbeat_tick: 1,
             applied,
             pre_vote: true,
             batch_append: true,
             check_quorum: true,
-            max_size_per_msg: u16::MAX as _,
+            max_size_per_msg: cfg.max_size_per_msg,
+            max_inflight_msgs: cfg.max_inflight_msgs,
             ..Default::default()
         };
 

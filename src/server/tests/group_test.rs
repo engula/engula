@@ -18,7 +18,6 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::server::v1::*;
-use engula_server::Config;
 use helper::context::TestContext;
 use tracing::info;
 
@@ -33,8 +32,9 @@ fn init() {
 #[test]
 fn add_replica() {
     block_on_current(async {
-        let ctx = TestContext::new("add-replica");
-        let nodes = ctx.bootstrap_servers(2, disable_replica_balance()).await;
+        let mut ctx = TestContext::new("add-replica");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
 
         let group_id = 0;
@@ -60,8 +60,9 @@ fn add_replica() {
 #[test]
 fn create_group_with_multi_replicas() {
     block_on_current(async {
-        let ctx = TestContext::new("create-group-with-multi-replicas");
-        let nodes = ctx.bootstrap_servers(4, disable_replica_balance()).await;
+        let mut ctx = TestContext::new("create-group-with-multi-replicas");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
 
         let group_id = 100000000;
@@ -114,8 +115,9 @@ fn create_group_with_multi_replicas() {
 #[test]
 fn promote_to_cluster_from_single_node() {
     block_on_current(async {
-        let ctx = TestContext::new("promote-to-cluster");
-        let nodes = ctx.bootstrap_servers(3, disable_replica_balance()).await;
+        let mut ctx = TestContext::new("promote-to-cluster");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
 
         let root_group_id = 0;
@@ -134,11 +136,4 @@ fn promote_to_cluster_from_single_node() {
         }
         panic!("could not promote root group to cluster");
     });
-}
-
-fn disable_replica_balance() -> Config {
-    let mut cfg = Config::default();
-    cfg.allocator.enable_replica_balance = false;
-    cfg.allocator.enable_replica_balance = false;
-    cfg
 }
