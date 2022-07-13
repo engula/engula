@@ -19,6 +19,7 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::{server::v1::*, v1::PutRequest};
+use engula_server::Config;
 use tracing::info;
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::block_on_current};
@@ -63,7 +64,7 @@ async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops
 fn single_replica_empty_shard_migration() {
     block_on_current(async {
         let ctx = TestContext::new("single-replica-empty-shard-migration");
-        let nodes = ctx.bootstrap_servers(2).await;
+        let nodes = ctx.bootstrap_servers(2, disable_shard_balance()).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
@@ -136,7 +137,7 @@ fn single_replica_empty_shard_migration() {
 fn single_replica_migration() {
     block_on_current(async {
         let ctx = TestContext::new("single-replica-migration");
-        let nodes = ctx.bootstrap_servers(2).await;
+        let nodes = ctx.bootstrap_servers(2, disable_shard_balance()).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
@@ -239,7 +240,7 @@ async fn create_group(
 fn basic_migration() {
     block_on_current(async {
         let ctx = TestContext::new("basic-migration");
-        let nodes = ctx.bootstrap_servers(3).await;
+        let nodes = ctx.bootstrap_servers(3, disable_shard_balance()).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
         let node_2_id = 1;
@@ -303,4 +304,10 @@ fn basic_migration() {
 
         tokio::time::sleep(Duration::from_secs(3)).await;
     });
+}
+
+fn disable_shard_balance() -> Config {
+    let mut cfg = Config::default();
+    cfg.allocator.enable_shard_balance = false;
+    cfg
 }

@@ -25,7 +25,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     node::{engine::StateEngine, resolver::AddressResolver, Node},
-    root::{Root, Schema},
+    root::{AllocatorConfig, Root, Schema},
     runtime::Executor,
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
     Error, Result, Server,
@@ -45,6 +45,11 @@ lazy_static::lazy_static! {
     pub static ref SHARD_MAX: Vec<u8> = vec![];
 }
 
+#[derive(Default, Clone)]
+pub struct Config {
+    pub allocator: AllocatorConfig,
+}
+
 /// The main entrance of engula server.
 pub fn run(
     executor: Executor,
@@ -52,6 +57,7 @@ pub fn run(
     addr: String,
     init: bool,
     join_list: Vec<String>,
+    cfg: Config,
 ) -> Result<()> {
     let db_path = path.join("db");
     let log_path = path.join("log");
@@ -73,7 +79,7 @@ pub fn run(
     let (_node_id, root) = executor.block_on(async {
         let ident = bootstrap_or_join_cluster(&node, &addr, init, join_list).await?;
         node.bootstrap(&ident).await?;
-        let mut root = Root::new(executor.clone(), &ident, addr.to_owned());
+        let mut root = Root::new(executor.clone(), &ident, addr.to_owned(), cfg);
         root.bootstrap(&node).await?;
         Ok::<(u64, Root), Error>((ident.node_id, root))
     })?;
