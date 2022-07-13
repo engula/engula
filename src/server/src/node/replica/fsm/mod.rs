@@ -91,13 +91,16 @@ impl GroupStateMachine {
         term: u64,
         change_replicas: ChangeReplicas,
     ) -> Result<()> {
+        let local_id = self.info.replica_id;
         let mut wb = WriteBatch::default();
         let mut desc = self.group_engine.descriptor();
         match ChangeReplicaKind::new(&change_replicas) {
-            ChangeReplicaKind::LeaveJoint => apply_leave_joint(&mut desc),
-            ChangeReplicaKind::EnterJoint => apply_enter_joint(&mut desc, &change_replicas.changes),
+            ChangeReplicaKind::LeaveJoint => apply_leave_joint(local_id, &mut desc),
+            ChangeReplicaKind::EnterJoint => {
+                apply_enter_joint(local_id, &mut desc, &change_replicas.changes)
+            }
             ChangeReplicaKind::Simple => {
-                apply_simple_change(&mut desc, &change_replicas.changes[0])
+                apply_simple_change(local_id, &mut desc, &change_replicas.changes[0])
             }
         }
         desc.epoch += 1;
@@ -342,24 +345,29 @@ impl ChangeReplicaKind {
     }
 }
 
-fn apply_leave_joint(desc: &mut GroupDesc) {
+fn apply_leave_joint(local_id: u64, desc: &mut GroupDesc) {
+    let group_id = desc.id;
     for replica in &mut desc.replicas {
+        let replica_id = replica.id;
         let new_role = match ReplicaRole::from_i32(replica.role) {
-            Some(ReplicaRole::IncomingVoter) => ReplicaRole::Voter.into(),
-            Some(ReplicaRole::DemotingVoter) => ReplicaRole::Learner.into(),
-            _ => replica.role,
+            Some(ReplicaRole::IncomingVoter) => ReplicaRole::Voter,
+            Some(ReplicaRole::DemotingVoter) => ReplicaRole::Learner,
+            _ => continue,
         };
-        replica.role = new_role;
+        info!("group {group_id} replica {local_id} add {new_role:?} {replica_id} in leave joint");
+        replica.role = new_role.into();
     }
 }
 
-fn apply_simple_change(desc: &mut GroupDesc, change: &ChangeReplica) {
+fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeReplica) {
+    let group_id = desc.id;
     let replica_id = change.replica_id;
     let node_id = change.node_id;
     let exist = find_replica_mut(desc, replica_id);
     check_not_in_joint_state(&exist);
     match ChangeReplicaType::from_i32(change.change_type) {
         Some(ChangeReplicaType::Add) => {
+            info!("group {group_id} replica {local_id} add Voter {replica_id}");
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Voter.into();
             } else {
@@ -371,17 +379,19 @@ fn apply_simple_change(desc: &mut GroupDesc, change: &ChangeReplica) {
             }
         }
         Some(ChangeReplicaType::AddLearner) => {
+            info!("group {group_id} replica {local_id} add Learner {replica_id}");
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Learner.into();
             } else {
                 desc.replicas.push(ReplicaDesc {
                     id: replica_id,
                     node_id,
-                    role: ReplicaRole::Voter.into(),
+                    role: ReplicaRole::Learner.into(),
                 });
             }
         }
         Some(ChangeReplicaType::Remove) => {
+            info!("group {group_id} replica {local_id} remove Voter {replica_id}");
             desc.replicas.drain_filter(|rep| rep.id == replica_id);
         }
         None => {
@@ -390,9 +400,32 @@ fn apply_simple_change(desc: &mut GroupDesc, change: &ChangeReplica) {
     }
 }
 
-fn apply_enter_joint(desc: &mut GroupDesc, changes: &[ChangeReplica]) {
+fn apply_enter_joint(local_id: u64, desc: &mut GroupDesc, changes: &[ChangeReplica]) {
+    let group_id = desc.id;
     for change in changes {
-        apply_simple_change(desc, change);
+        let replica_id = change.replica_id;
+        let node_id = change.node_id;
+        let exist = find_replica_mut(desc, replica_id);
+        check_not_in_joint_state(&exist);
+        let role = match ChangeReplicaType::from_i32(change.change_type) {
+            Some(ChangeReplicaType::Add) => ReplicaRole::IncomingVoter,
+            Some(ChangeReplicaType::AddLearner) => ReplicaRole::Learner,
+            Some(ChangeReplicaType::Remove) => ReplicaRole::DemotingVoter,
+            None => {
+                panic!("such change replica operation isn't supported")
+            }
+        };
+
+        info!("group {group_id} replica {local_id} add {role:?} {replica_id} in enter joint");
+        if let Some(replica) = exist {
+            replica.role = role.into();
+        } else {
+            desc.replicas.push(ReplicaDesc {
+                id: replica_id,
+                node_id,
+                role: role.into(),
+            });
+        }
     }
 }
 

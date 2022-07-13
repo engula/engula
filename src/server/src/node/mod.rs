@@ -167,6 +167,12 @@ impl Node {
     ///
     /// NOTE: This function is idempotent.
     pub async fn create_replica(&self, replica_id: u64, group: GroupDesc) -> Result<()> {
+        info!(
+            "create replica {replica_id} group {} with {} members",
+            group.id,
+            group.replicas.len()
+        );
+
         let mut node_state = self.node_state.lock().await;
         if node_state.replicas.contains_key(&replica_id) {
             debug!(replica = replica_id, "replica already exists");

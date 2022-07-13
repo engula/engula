@@ -15,6 +15,8 @@
 
 mod helper;
 
+use std::time::Duration;
+
 use engula_api::server::v1::*;
 use helper::context::TestContext;
 use tracing::info;
@@ -104,5 +106,31 @@ fn create_group_with_multi_replicas() {
         let mut group_client = c.group(group_id);
         group_client.add_replica(103, 3).await.unwrap();
         c.assert_group_contains_member(group_id, 103).await;
+    });
+}
+
+/// The root group can be promoted to cluster mode as long as enough nodes are added to the cluster.
+#[test]
+fn promote_to_cluster_from_single_node() {
+    block_on_current(async {
+        let ctx = TestContext::new("promote-to-cluster");
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+
+        let root_group_id = 0;
+        for _ in 0..10000 {
+            let members = c.group_members(root_group_id).await;
+            if members
+                .into_iter()
+                .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
+                .count()
+                == 3
+            {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("could not promote root group to cluster");
     });
 }

@@ -140,6 +140,10 @@ impl Router {
         let addr = state.node_id_lookup.get(&id).cloned();
         addr.ok_or_else(|| crate::Error::NotFound(format!("node_addr (node_id={:?})", id)))
     }
+
+    pub fn total_nodes(&self) -> usize {
+        self.state.lock().unwrap().node_id_lookup.len()
+    }
 }
 
 async fn state_main(state: Arc<Mutex<State>>, addrs: Vec<String>) {

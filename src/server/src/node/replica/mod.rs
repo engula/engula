@@ -379,6 +379,13 @@ impl ReplicaInfo {
 }
 
 impl ExecCtx {
+    pub fn with_epoch(epoch: u64) -> Self {
+        ExecCtx {
+            epoch,
+            ..Default::default()
+        }
+    }
+
     pub fn forward(shard_id: u64) -> Self {
         ExecCtx {
             forward_shard_id: Some(shard_id),
