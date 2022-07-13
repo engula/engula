@@ -25,6 +25,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use engula_api::server::v1::*;
 use engula_client::Router;
 use futures::{channel::mpsc, lock::Mutex};
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 pub use self::{
@@ -40,13 +41,13 @@ use self::{
 use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{AddressResolver, RaftConfig, RaftManager, RaftNodeFacade, TransportManager},
+    raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
     Error, Result,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct NodeConfig {
     /// The limit bytes of each shard chunk during migration.
     ///
@@ -58,8 +59,7 @@ pub struct NodeConfig {
     /// Default: 256.
     pub shard_gc_keys: u64,
 
-    pub raft: Arc<RaftConfig>,
-    pub replica: Arc<ReplicaConfig>,
+    pub replica: ReplicaConfig,
 }
 
 struct ReplicaContext {
@@ -589,8 +589,7 @@ impl Default for NodeConfig {
         NodeConfig {
             shard_chunk_size: 64 * 1024 * 1024,
             shard_gc_keys: 256,
-            raft: Arc::default(),
-            replica: Arc::default(),
+            replica: ReplicaConfig::default(),
         }
     }
 }

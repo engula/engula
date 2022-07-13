@@ -28,6 +28,7 @@ use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
+use serde::{Deserialize, Serialize};
 
 pub use self::state::{LeaseState, LeaseStateObserver};
 use super::engine::GroupEngine;
@@ -38,7 +39,7 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ReplicaConfig {
     /// The limit size of each snapshot files.
     ///

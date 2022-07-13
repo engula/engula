@@ -26,6 +26,7 @@ use engula_api::server::v1::*;
 use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
+use serde::{Deserialize, Serialize};
 
 use self::worker::RaftWorker;
 pub use self::{
@@ -41,7 +42,7 @@ use crate::{
     Result,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RaftConfig {
     /// The intervals of tick, in millis.
     ///

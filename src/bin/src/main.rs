@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
-use engula_server::Result;
+use engula_server::{Error, Result};
+use tracing::info;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -45,22 +44,33 @@ impl SubCommand {
 
 #[derive(Parser)]
 struct StartCommand {
-    #[clap(long, default_value = "127.0.0.1:21805")]
-    addr: String,
     #[clap(long)]
     init: bool,
     #[clap(long)]
-    join: Vec<String>,
-    #[clap(long, parse(from_os_str))]
-    db: PathBuf,
+    join: Option<Vec<String>>,
+    #[clap(long)]
+    conf: Option<String>,
+    #[clap(long)]
+    addr: Option<String>,
+    #[clap(long)]
+    db: Option<String>,
 }
 
 impl StartCommand {
     fn run(self) -> Result<()> {
         use engula_server::runtime::ExecutorOwner;
 
+        let config = match load_config(&self) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(Error::InvalidArgument(format!("Config: {e}")));
+            }
+        };
+
+        info!("{config:#?}");
+        
         let owner = ExecutorOwner::new(num_cpus::get());
-        engula_server::run(owner.executor(), self.db, self.addr, self.init, self.join)
+        engula_server::run(config, owner.executor())
     }
 }
 
@@ -69,4 +79,29 @@ fn main() -> Result<()> {
 
     let cmd = Command::parse();
     cmd.run()
+}
+
+fn load_config(
+    cmd: &StartCommand,
+) -> std::result::Result<engula_server::Config, config::ConfigError> {
+    use config::{Config, Environment, File};
+
+    let mut builder = Config::builder()
+        .set_default("addr", "127.0.0.1:21805")?
+        .set_default("init", false)?
+        .set_default("join_list", Vec::<String>::default())?;
+
+    if let Some(conf) = cmd.conf.as_ref() {
+        builder = builder.add_source(File::with_name(&conf));
+    }
+
+    let c = builder
+        .add_source(Environment::with_prefix("engula"))
+        .set_override_option("addr", cmd.addr.clone())?
+        .set_override_option("root_dir", cmd.db.clone())?
+        .set_override_option("join_list", cmd.join.clone())?
+        .set_override("init", cmd.init)?
+        .build()?;
+
+    c.try_deserialize()
 }

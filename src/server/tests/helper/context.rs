@@ -13,7 +13,7 @@
 // limitations under the License.
 use std::{collections::HashMap, thread};
 
-use engula_server::runtime::ExecutorOwner;
+use engula_server::{runtime::ExecutorOwner, Config, NodeConfig, RaftConfig};
 use tempdir::TempDir;
 
 use super::client::node_client_with_retry;
@@ -39,10 +39,21 @@ impl TestContext {
     pub fn spawn_server(&self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
         let addr = addr.to_owned();
         let name = idx.to_string();
-        let tmp_dir = self.root_dir.path().join(name);
+        let root_dir = self.root_dir.path().join(name);
+        let cfg = Config {
+            root_dir,
+            addr,
+            init,
+            join_list,
+            node: NodeConfig::default(),
+            raft: RaftConfig {
+                tick_interval_ms: 5,
+                ..Default::default()
+            },
+        };
         thread::spawn(move || {
             let owner = ExecutorOwner::new(1);
-            engula_server::run(owner.executor(), tmp_dir, addr, init, join_list).unwrap()
+            engula_server::run(cfg, owner.executor()).unwrap()
         });
     }
 

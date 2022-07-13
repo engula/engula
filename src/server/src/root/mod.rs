@@ -95,7 +95,7 @@ impl Root {
         self.shared.node_ident.node_id
     }
 
-    pub async fn bootstrap(&mut self, node: &Node) -> Result<()> {
+    pub async fn bootstrap(&self, node: &Node) -> Result<()> {
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
@@ -657,7 +657,7 @@ mod root_test {
             node_id: 1,
         };
         let node = create_node(executor.to_owned());
-        let mut root = create_root(executor.to_owned(), &ident);
+        let root = create_root(executor.to_owned(), &ident);
 
         executor.block_on(async {
             bootstrap_cluster(&node, "0.0.0.0:8888").await.unwrap();
