@@ -15,6 +15,7 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
+use tracing::trace;
 
 use super::*;
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
@@ -53,6 +54,11 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         let candidate_nodes = self.alloc_source.nodes();
 
         let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
+        trace!(
+            scored_nodes = ?ranked_candidates.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().replica_count, s)).collect::<Vec<_>>(),
+            mean = mean_cnt,
+            "node ranked by replica count",
+        );
         for (src_node, status) in &ranked_candidates {
             if *status != BalanceStatus::Overfull {
                 break;

@@ -80,7 +80,7 @@ pub struct ReallocateShard {
     pub target_group: u64,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum BalanceStatus {
     Overfull,
     Balanced,

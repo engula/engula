@@ -15,6 +15,7 @@
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use engula_api::server::v1::{NodeDesc, RaftRole, ReplicaDesc, ReplicaRole};
+use tracing::trace;
 
 use super::{AllocSource, BalanceStatus, LeaderAction, TransferLeader};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
@@ -43,6 +44,11 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         let mean = self.mean_leader_count();
         let candidate_nodes = self.alloc_source.nodes();
         let ranked_nodes = Self::rank_nodes_for_leader(candidate_nodes, mean);
+        trace!(
+            scored_nodes = ?ranked_nodes.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().leader_count, s)).collect::<Vec<_>>(),
+            mean = mean,
+            "node ranked by leader count",
+        );
         for (n, _) in ranked_nodes
             .iter()
             .filter(|(_, s)| *s == BalanceStatus::Overfull)

@@ -530,6 +530,7 @@ impl Root {
         let cluster_id = schema.cluster_id().await?.unwrap();
         let mut roots = schema.get_root_replicas().await?;
         roots.move_first(node.id);
+        info!(node = node.id, addr = ?node.addr, "new node join cluster");
         Ok((cluster_id, node, roots))
     }
 
