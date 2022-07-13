@@ -51,7 +51,6 @@ impl TestContext {
 
     pub fn disable_replica_balance(&mut self) {
         self.alloc_cfg.enable_replica_balance = false;
-        self.alloc_cfg.enable_replica_balance = false;
     }
 
     pub fn disable_leader_balance(&mut self) {
