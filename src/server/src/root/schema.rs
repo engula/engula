@@ -593,7 +593,7 @@ impl ReplicaNodes {
 
 // bootstrap schema.
 impl Schema {
-    pub async fn try_bootstrap(&mut self, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
+    pub async fn try_bootstrap_root(&mut self, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
         if let Some(exist_cluster_id) = self.cluster_id().await? {
             if exist_cluster_id != cluster_id {
                 return Err(Error::ClusterNotMatch);
@@ -601,10 +601,7 @@ impl Schema {
             return Ok(());
         }
 
-        info!(
-            "init system collections, cluster id {}",
-            String::from_utf8_lossy(&cluster_id)
-        );
+        info!(cluster = ?String::from_utf8_lossy(&cluster_id), "start boostrap root");
 
         let mut batch = PutBatchBuilder::default();
 
@@ -612,7 +609,12 @@ impl Schema {
 
         let (shards, next_shard_id) = Schema::init_shards();
 
-        Self::init_meta_collection(&mut batch, next_collection_id, next_shard_id, cluster_id);
+        Self::init_meta_collection(
+            &mut batch,
+            next_collection_id,
+            next_shard_id,
+            cluster_id.to_owned(),
+        );
 
         batch.put_database(DatabaseDesc {
             id: SYSTEM_DATABASE_ID.to_owned(),
@@ -668,6 +670,8 @@ impl Schema {
         });
 
         self.batch_write(batch.build()).await?;
+
+        info!(cluster = ?String::from_utf8_lossy(&cluster_id), "boostrap root successfully");
 
         Ok(())
     }

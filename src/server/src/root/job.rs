@@ -135,14 +135,14 @@ impl Root {
                     continue;
                 }
             }
-            info!(
-                group = desc.id,
-                desc = ?desc,
-                "attempt update group desc by heartbeat"
-            );
             schema
                 .update_group_replica(Some(desc.to_owned()), None)
                 .await?;
+            info!(
+                group = desc.id,
+                desc = ?desc,
+                "update group_desc from heartbeat response"
+            );
             update_events.push(UpdateEvent {
                 event: Some(update_event::Event::Group(desc.to_owned())),
             })
@@ -158,15 +158,15 @@ impl Root {
                     continue;
                 }
             }
+            schema
+                .update_group_replica(None, Some(state.to_owned()))
+                .await?;
             info!(
                 group = state.group_id,
                 replica = state.replica_id,
                 state = ?state,
-                "attempt update replica state desc by heartbeat"
+                "attempt update replica_state from heartbeat response"
             );
-            schema
-                .update_group_replica(None, Some(state.to_owned()))
-                .await?;
             changed_group_states.insert(state.group_id);
         }
 

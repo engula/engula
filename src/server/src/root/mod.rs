@@ -164,9 +164,13 @@ impl Root {
         // Only when the program is initialized is it checked for bootstrap, after which the
         // leadership change does not need to check for whether bootstrap or not.
         if !*bootstrapped {
-            schema
-                .try_bootstrap(local_addr, self.shared.node_ident.cluster_id.clone())
-                .await?;
+            if let Err(err) = schema
+                .try_bootstrap_root(local_addr, self.shared.node_ident.cluster_id.clone())
+                .await
+            {
+                error!(err = ?err, "boostrap error");
+                panic!("boostrap cluster failure")
+            }
             *bootstrapped = true;
         }
 
@@ -547,7 +551,7 @@ impl Root {
                 info!(
                     group = desc.id,
                     desc = ?desc,
-                    "update group desc by node report"
+                    "update group_desc from node report"
                 );
                 update_events.push(UpdateEvent {
                     event: Some(update_event::Event::Group(desc)),
@@ -558,7 +562,7 @@ impl Root {
                     group = state.group_id,
                     replica = state.replica_id,
                     state = ?state,
-                    "update replica state desc by node report"
+                    "update replica_state from node report"
                 );
                 changed_group_states.push(state.group_id);
             }
