@@ -206,8 +206,8 @@ where
         replica_cache.batch_insert(&state_machine.descriptor().replicas);
         let raft_node = RaftNode::new(group_id, replica_id, raft_mgr, state_machine).await?;
 
-        // TODO(walter) config channel size.
-        let (mut request_sender, request_receiver) = mpsc::channel(10240);
+        let (mut request_sender, request_receiver) =
+            mpsc::channel(raft_mgr.cfg.max_inflight_requests);
         request_sender.send(Request::Start).await.unwrap();
 
         Ok(RaftWorker {
@@ -233,13 +233,13 @@ where
     }
 
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(mut self, tick_interval_ms: u64) -> Result<()> {
         debug!(
             "raft worker of replica {} group {} start running",
             self.desc.id, self.group_id
         );
         // WARNING: the underlying instant isn't steady.
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let mut interval = tokio::time::interval(Duration::from_millis(tick_interval_ms));
         loop {
             if !self.raft_node.has_ready() {
                 futures::select_biased! {

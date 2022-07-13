@@ -29,7 +29,7 @@ fn init() {
 
 #[test]
 fn bootstrap_cluster() -> Result<()> {
-    let ctx = TestContext::new("bootstrap-cluster");
+    let mut ctx = TestContext::new("bootstrap-cluster");
     let node_1_addr = ctx.next_listen_address();
     ctx.spawn_server(1, &node_1_addr, true, vec![]);
 
@@ -43,7 +43,7 @@ fn bootstrap_cluster() -> Result<()> {
 
 #[test]
 fn join_node() -> Result<()> {
-    let ctx = TestContext::new("join-node");
+    let mut ctx = TestContext::new("join-node");
     let node_1_addr = ctx.next_listen_address();
     ctx.spawn_server(1, &node_1_addr, true, vec![]);
 

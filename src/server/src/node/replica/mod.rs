@@ -44,7 +44,7 @@ pub struct ReplicaConfig {
     /// The limit size of each snapshot files.
     ///
     /// Default: 64MB.
-    pub snap_file_size: usize,
+    pub snap_file_size: u64,
 }
 
 pub struct ReplicaInfo {

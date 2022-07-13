@@ -52,7 +52,7 @@ pub struct RaftConfig {
     /// The size of inflights requests.
     ///
     /// Default: 102400
-    pub max_inflight_requests: u64,
+    pub max_inflight_requests: usize,
 
     /// Before a follower begin election, it must wait a randomly election ticks and does not
     /// receives any messages from leader.
@@ -68,7 +68,7 @@ pub struct RaftConfig {
     /// Limit the number of inflights messages which send to one peer.
     ///
     /// Default: 10K
-    pub max_inflights_msgs: usize,
+    pub max_inflight_msgs: usize,
 }
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
@@ -85,6 +85,7 @@ pub enum ReadPolicy {
 
 #[derive(Clone)]
 pub struct RaftManager {
+    pub cfg: RaftConfig,
     executor: Executor,
     engine: Arc<raft_engine::Engine>,
     transport_mgr: TransportManager,
@@ -93,6 +94,7 @@ pub struct RaftManager {
 
 impl RaftManager {
     pub fn open<P: AsRef<Path>>(
+        cfg: RaftConfig,
         path: P,
         executor: Executor,
         transport_mgr: TransportManager,
@@ -102,13 +104,14 @@ impl RaftManager {
         let snap_dir = path.as_ref().join("snap");
         create_dir_all_if_not_exists(&engine_dir)?;
         create_dir_all_if_not_exists(&snap_dir)?;
-        let cfg = Config {
+        let engine_cfg = Config {
             dir: engine_dir.to_str().unwrap().to_owned(),
             ..Default::default()
         };
-        let engine = Arc::new(Engine::open(cfg)?);
+        let engine = Arc::new(Engine::open(engine_cfg)?);
         let snap_mgr = SnapManager::recovery(&executor, snap_dir)?;
         Ok(RaftManager {
+            cfg,
             executor,
             engine,
             transport_mgr,
@@ -145,16 +148,16 @@ impl RaftManager {
         observer: Box<dyn StateObserver>,
         wait_group: WaitGroup,
     ) -> Result<RaftNodeFacade> {
-        // TODO(walter) config channel size.
         let worker =
             RaftWorker::open(group_id, replica_id, node_id, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
 
+        let tick_interval_ms = self.cfg.tick_interval_ms;
         let tag = &group_id.to_le_bytes();
         self.executor
             .spawn(Some(tag), TaskPriority::High, async move {
                 // TODO(walter) handle result.
-                worker.run().await.unwrap();
+                worker.run(tick_interval_ms).await.unwrap();
                 drop(wait_group);
             });
         Ok(facade)
@@ -168,7 +171,7 @@ impl Default for RaftConfig {
             max_inflight_requests: 102400,
             election_tick: 3,
             max_size_per_msg: 64 * 1024 * 1024,
-            max_inflights_msgs: 10 * 1000,
+            max_inflight_msgs: 10 * 1000,
         }
     }
 }

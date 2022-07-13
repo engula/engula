@@ -44,7 +44,7 @@ use crate::{
     raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
-    Error, Result,
+    Config, Error, Result,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,12 +52,12 @@ pub struct NodeConfig {
     /// The limit bytes of each shard chunk during migration.
     ///
     /// Default: 64KB.
-    pub shard_chunk_size: u64,
+    pub shard_chunk_size: usize,
 
     /// The limit number of keys for gc shard after migration.
     ///
     /// Default: 256.
-    pub shard_gc_keys: u64,
+    pub shard_gc_keys: usize,
 
     pub replica: ReplicaConfig,
 }
@@ -85,6 +85,7 @@ where
     Self: Send + Sync,
 {
     raw_db: Arc<rocksdb::DB>,
+    cfg: NodeConfig,
     executor: Executor,
     state_engine: StateEngine,
     raft_route_table: RaftRouteTable,
@@ -100,6 +101,7 @@ where
 
 impl Node {
     pub fn new(
+        cfg: Config,
         log_path: PathBuf,
         raw_db: Arc<rocksdb::DB>,
         state_engine: StateEngine,
@@ -113,9 +115,10 @@ impl Node {
             address_resolver.clone(),
             raft_route_table.clone(),
         );
-        let raft_mgr = RaftManager::open(log_path, executor.clone(), trans_mgr)?;
-        let migrate_ctrl = MigrateController::new(executor.clone(), router);
+        let raft_mgr = RaftManager::open(cfg.raft.clone(), log_path, executor.clone(), trans_mgr)?;
+        let migrate_ctrl = MigrateController::new(cfg.node.clone(), executor.clone(), router);
         Ok(Node {
+            cfg: cfg.node,
             raw_db,
             executor,
             state_engine,
@@ -309,6 +312,7 @@ impl Node {
             sender,
         )));
         let raft_node = start_raft_group(
+            &self.cfg,
             &self.raft_mgr,
             info.clone(),
             lease_state.clone(),
@@ -328,6 +332,7 @@ impl Node {
         self.migrate_ctrl
             .watch_state_changes(replica.clone(), receiver, wait_group.clone());
         job::setup_scheduler(
+            self.cfg.replica.clone(),
             &self.executor,
             self.migrate_ctrl.router(),
             replica.clone(),
@@ -385,6 +390,7 @@ impl Node {
         };
         Ok(ShardChunkStream::new(
             request.shard_id,
+            self.cfg.shard_chunk_size,
             request.last_key,
             replica,
         ))
@@ -604,6 +610,7 @@ async fn open_group_engine(raw_db: Arc<rocksdb::DB>, group_id: u64) -> Result<Gr
 }
 
 async fn start_raft_group(
+    cfg: &NodeConfig,
     raft_mgr: &RaftManager,
     info: Arc<ReplicaInfo>,
     lease_state: Arc<std::sync::Mutex<LeaseState>>,
@@ -617,7 +624,12 @@ async fn start_raft_group(
         lease_state.clone(),
         channel,
     ));
-    let fsm = GroupStateMachine::new(info.clone(), group_engine.clone(), state_observer.clone());
+    let fsm = GroupStateMachine::new(
+        cfg.replica.clone(),
+        info.clone(),
+        group_engine.clone(),
+        state_observer.clone(),
+    );
     raft_mgr
         .start_raft_group(
             group_id,
@@ -654,6 +666,7 @@ mod tests {
         let address_resolver =
             Arc::new(crate::node::resolver::AddressResolver::new(router.clone()));
         Node::new(
+            Config::default(),
             log_dir,
             db,
             state_engine,

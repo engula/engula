@@ -22,7 +22,7 @@ use engula_api::server::v1::{
 };
 use tracing::{info, trace, warn};
 
-use super::ReplicaInfo;
+use super::{ReplicaConfig, ReplicaInfo};
 use crate::{
     node::engine::{GroupEngine, WriteBatch},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
@@ -53,6 +53,7 @@ pub struct GroupStateMachine
 where
     Self: Send,
 {
+    cfg: ReplicaConfig,
     info: Arc<ReplicaInfo>,
 
     group_engine: GroupEngine,
@@ -66,6 +67,7 @@ where
 
 impl GroupStateMachine {
     pub fn new(
+        cfg: ReplicaConfig,
         info: Arc<ReplicaInfo>,
         group_engine: GroupEngine,
         observer: Box<dyn StateMachineObserver>,
@@ -74,6 +76,7 @@ impl GroupStateMachine {
             .flushed_apply_state()
             .expect("access flushed index");
         GroupStateMachine {
+            cfg,
             info,
             group_engine,
             observer,
@@ -316,6 +319,7 @@ impl StateMachine for GroupStateMachine {
 
     fn snapshot_builder(&self) -> Box<dyn SnapshotBuilder> {
         Box::new(checkpoint::GroupSnapshotBuilder::new(
+            self.cfg.clone(),
             self.group_engine.clone(),
         ))
     }

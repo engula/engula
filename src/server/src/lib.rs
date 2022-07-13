@@ -40,7 +40,7 @@ pub use crate::{
     service::Server,
 };
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Default, Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     /// The root dir of engula server.
     pub root_dir: PathBuf,

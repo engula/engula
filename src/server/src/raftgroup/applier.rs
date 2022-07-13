@@ -81,7 +81,12 @@ impl<M: StateMachine> Applier<M> {
         // FIXME(walter) invoke with NotLeader if the proposal index is go back.
         // ensure the proposals are monotonic.
         if let Some(last_ctx) = self.proposal_queue.back() {
-            assert!(last_ctx.index < ctx.index);
+            if last_ctx.index >= ctx.index {
+                panic!(
+                    "last ctx index {}, current idx {}",
+                    last_ctx.index, ctx.index
+                );
+            }
         }
         self.proposal_queue.push_back(ctx);
     }

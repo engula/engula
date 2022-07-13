@@ -535,7 +535,7 @@ impl Root {
         let existing_replicas = match schema.get_group(group_id).await? {
             Some(desc) => desc.replicas,
             None => {
-                todo!()
+                return Err(Error::GroupNotFound(group_id));
             }
         };
         let node_desc = self
@@ -652,6 +652,7 @@ mod root_test {
         let router = executor.block_on(async { Router::new(vec!["".to_owned()]).await });
         let address_resolver = Arc::new(AddressResolver::new(router.clone()));
         Node::new(
+            Config::default(),
             log_dir,
             db,
             state_engine,

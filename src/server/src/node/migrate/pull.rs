@@ -43,14 +43,16 @@ pub async fn pull_shard(
 
 pub struct ShardChunkStream {
     shard_id: u64,
+    chunk_size: usize,
     last_key: Vec<u8>,
     replica: Arc<Replica>,
 }
 
 impl ShardChunkStream {
-    pub fn new(shard_id: u64, last_key: Vec<u8>, replica: Arc<Replica>) -> Self {
+    pub fn new(shard_id: u64, chunk_size: usize, last_key: Vec<u8>, replica: Arc<Replica>) -> Self {
         ShardChunkStream {
             shard_id,
+            chunk_size,
             last_key,
             replica,
         }
@@ -59,7 +61,7 @@ impl ShardChunkStream {
     async fn next_shard_chunk(&mut self) -> Result<Option<ShardChunk>> {
         let shard_chunk = self
             .replica
-            .fetch_shard_chunk(self.shard_id, &self.last_key)
+            .fetch_shard_chunk(self.shard_id, &self.last_key, self.chunk_size)
             .await?;
         if shard_chunk.data.is_empty() {
             Ok(None)

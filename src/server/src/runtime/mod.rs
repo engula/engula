@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+mod shutdown;
 pub mod sync;
 pub mod time;
 
@@ -19,6 +20,10 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+
+pub use tokio::select;
+
+pub use self::shutdown::{Shutdown, ShutdownNotifier};
 
 #[derive(Debug)]
 pub enum TaskPriority {

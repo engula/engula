@@ -13,7 +13,10 @@
 // limitations under the License.
 use std::{collections::HashMap, thread};
 
-use engula_server::{runtime::ExecutorOwner, AllocatorConfig, Config, NodeConfig, RaftConfig};
+use engula_server::{
+    runtime::{ExecutorOwner, ShutdownNotifier},
+    AllocatorConfig, Config, NodeConfig, RaftConfig,
+};
 use tempdir::TempDir;
 
 use super::client::node_client_with_retry;
@@ -23,6 +26,10 @@ use crate::helper::socket::next_avail_port;
 pub struct TestContext {
     root_dir: TempDir,
     alloc_cfg: AllocatorConfig,
+    disable_group_promoting: bool,
+
+    notifier: ShutdownNotifier,
+    handles: Vec<std::thread::JoinHandle<()>>,
 }
 
 #[allow(dead_code)]
@@ -31,7 +38,10 @@ impl TestContext {
         let root_dir = TempDir::new(prefix).unwrap();
         TestContext {
             root_dir,
+            disable_group_promoting: false,
             alloc_cfg: AllocatorConfig::default(),
+            notifier: ShutdownNotifier::new(),
+            handles: vec![],
         }
     }
 
@@ -44,18 +54,28 @@ impl TestContext {
         self.alloc_cfg.enable_replica_balance = false;
     }
 
+    pub fn disable_leader_balance(&mut self) {
+        self.alloc_cfg.enable_leader_balance = false;
+    }
+
     pub fn disable_shard_balance(&mut self) {
         self.alloc_cfg.enable_shard_balance = false;
     }
 
+    pub fn disable_all_balance(&mut self) {
+        self.disable_replica_balance();
+        self.disable_leader_balance();
+        self.disable_shard_balance();
+    }
+
     #[allow(dead_code)]
-    pub fn spawn_server(&self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
+    pub fn spawn_server(&mut self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
         self.spawn_server_with_cfg(idx, addr, init, join_list, self.alloc_cfg.clone());
     }
 
     #[allow(dead_code)]
     pub fn spawn_server_with_cfg(
-        &self,
+        &mut self,
         idx: usize,
         addr: &str,
         init: bool,
@@ -72,20 +92,22 @@ impl TestContext {
             join_list,
             node: NodeConfig::default(),
             raft: RaftConfig {
-                tick_interval_ms: 5,
+                tick_interval_ms: 500,
                 ..Default::default()
             },
             allocator: cfg,
         };
-        thread::spawn(move || {
+        let shutdown = self.notifier.subscribe();
+        let handle = thread::spawn(move || {
             let owner = ExecutorOwner::new(1);
-            engula_server::run(cfg, owner.executor()).unwrap()
+            engula_server::run(cfg, owner.executor(), shutdown).unwrap();
         });
+        self.handles.push(handle);
     }
 
     /// Create a set of servers and bootstrap all of them.
     #[allow(dead_code)]
-    pub async fn bootstrap_servers(&self, num_server: usize) -> HashMap<u64, String> {
+    pub async fn bootstrap_servers(&mut self, num_server: usize) -> HashMap<u64, String> {
         let mut nodes = HashMap::new();
         let mut root_addr = String::default();
         for i in 0..num_server {
@@ -103,5 +125,16 @@ impl TestContext {
             nodes.insert(node_id, next_addr);
         }
         nodes
+    }
+}
+
+impl Drop for TestContext {
+    fn drop(&mut self) {
+        let _ = std::mem::take(&mut self.notifier);
+        // FIXME(walter) support graceful shutdown.
+        // for handle in std::mem::take(&mut self.handles) {
+        //     handle.join().unwrap_or_default();
+        // }
+        let _ = std::mem::take(&mut self.handles);
     }
 }

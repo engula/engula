@@ -58,7 +58,7 @@ struct StartCommand {
 
 impl StartCommand {
     fn run(self) -> Result<()> {
-        use engula_server::runtime::ExecutorOwner;
+        use engula_server::runtime::{ExecutorOwner, ShutdownNotifier, TaskPriority};
 
         let config = match load_config(&self) {
             Ok(c) => c,
@@ -69,8 +69,14 @@ impl StartCommand {
 
         info!("{config:#?}");
 
+        let notifier = ShutdownNotifier::new();
+        let shutdown = notifier.subscribe();
         let owner = ExecutorOwner::new(num_cpus::get());
-        engula_server::run(config, owner.executor())
+        let executor = owner.executor();
+        executor.spawn(None, TaskPriority::Low, async move {
+            notifier.ctrl_c().await;
+        });
+        engula_server::run(config, executor, shutdown)
     }
 }
 

@@ -18,7 +18,6 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::server::v1::*;
-use engula_server::Config;
 use helper::context::TestContext;
 use tracing::info;
 
@@ -34,7 +33,7 @@ fn init() {
 fn add_replica() {
     block_on_current(async {
         let mut ctx = TestContext::new("add-replica");
-        ctx.disable_replica_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
 
@@ -62,7 +61,7 @@ fn add_replica() {
 fn create_group_with_multi_replicas() {
     block_on_current(async {
         let mut ctx = TestContext::new("create-group-with-multi-replicas");
-        ctx.disable_replica_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
 
@@ -117,7 +116,7 @@ fn create_group_with_multi_replicas() {
 fn promote_to_cluster_from_single_node() {
     block_on_current(async {
         let mut ctx = TestContext::new("promote-to-cluster");
-        ctx.disable_replica_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
 

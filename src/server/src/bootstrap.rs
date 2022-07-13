@@ -21,7 +21,7 @@ use tracing::{debug, info, warn};
 use crate::{
     node::{engine::StateEngine, resolver::AddressResolver, Node},
     root::{Root, Schema},
-    runtime::Executor,
+    runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
     Config, Error, Result, Server,
 };
@@ -41,7 +41,7 @@ lazy_static::lazy_static! {
 }
 
 /// The main entrance of engula server.
-pub fn run(config: Config, executor: Executor) -> Result<()> {
+pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     let db_path = config.root_dir.join("db");
     let log_path = config.root_dir.join("log");
     let raw_db = Arc::new(open_engine(db_path)?);
@@ -57,6 +57,7 @@ pub fn run(config: Config, executor: Executor) -> Result<()> {
         let address_resolver = Arc::new(AddressResolver::new(router.clone()));
 
         let node = Node::new(
+            config.clone(),
             log_path,
             raw_db,
             state_engine,
@@ -75,12 +76,12 @@ pub fn run(config: Config, executor: Executor) -> Result<()> {
             root,
             address_resolver,
         };
-        bootstrap_services(&config.addr, server).await
+        bootstrap_services(&config.addr, server, shutdown).await
     })
 }
 
 /// Listen and serve incoming rpc requests.
-async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
+async fn bootstrap_services(addr: &str, server: Server, shutdown: Shutdown) -> Result<()> {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
@@ -90,14 +91,18 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let listener = TcpListenerStream::new(listener);
 
-    Server::builder()
+    let server = Server::builder()
         .accept_http1(true) // Support http1 for admin service.
         .add_service(NodeServer::new(server.clone()))
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
         .add_service(make_admin_service(server.clone()))
-        .serve_with_incoming(listener)
-        .await?;
+        .serve_with_incoming(listener);
+
+    crate::runtime::select! {
+        res = server => { res? }
+        _ = shutdown => {}
+    }
 
     Ok(())
 }

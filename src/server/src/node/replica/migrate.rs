@@ -23,7 +23,12 @@ use crate::{
 };
 
 impl Replica {
-    pub async fn fetch_shard_chunk(&self, shard_id: u64, last_key: &[u8]) -> Result<ShardChunk> {
+    pub async fn fetch_shard_chunk(
+        &self,
+        shard_id: u64,
+        last_key: &[u8],
+        chunk_size: usize,
+    ) -> Result<ShardChunk> {
         let _acl_guard = self.take_read_acl_guard().await;
         self.check_migrating_request_early(shard_id)?;
 
@@ -58,11 +63,9 @@ impl Replica {
                     value,
                     version: super::eval::MIGRATING_KEY_VERSION,
                 });
-            }
-
-            // TODO(walter) magic value
-            if size > 64 * 1024 * 1024 {
-                break;
+                if size > chunk_size {
+                    break;
+                }
             }
         }
 
