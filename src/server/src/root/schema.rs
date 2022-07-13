@@ -29,7 +29,7 @@ use engula_api::{
 use engula_client::{NodeClient, RequestBatchBuilder};
 use prost::Message;
 use tokio::time;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::{job::is_retry_err, store::RootStore};
 use crate::{bootstrap::*, node::engine::LOCAL_COLLECTION_ID, Error, Result};
@@ -94,6 +94,10 @@ impl Schema {
     }
 
     pub async fn create_database(&self, desc: DatabaseDesc) -> Result<DatabaseDesc> {
+        if self.get_database(&desc.name).await?.is_some() {
+            return Err(Error::DatabaseExist(desc.name.to_owned()));
+        }
+
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_DATABASE_ID_KEY).await?;
         self.batch_write(
@@ -145,6 +149,10 @@ impl Schema {
     }
 
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
+        if self.get_collection(desc.db, &desc.name).await?.is_some() {
+            return Err(Error::CollectionExist(desc.name.to_owned()));
+        }
+
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
         self.batch_write(
@@ -183,9 +191,13 @@ impl Schema {
                     }
                 }
             }
-
             if group_leader.is_none() {
                 // TODO: retry
+                warn!(
+                    group = group_id,
+                    shard = desc.id,
+                    "no avaliable group leader, retry later"
+                );
                 time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
@@ -199,6 +211,14 @@ impl Schema {
                 Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc).await
             {
                 if is_retry_err(&err) {
+                    warn!(
+                        group = group_id,
+                        shard = desc.id,
+                        node = node_id,
+                        epoch = epoch,
+                        err = ?err,
+                        "create shard error, retry later"
+                    );
                     time::sleep(Duration::from_secs(1)).await;
                     wait_create.push(desc);
                     continue;
@@ -232,25 +252,20 @@ impl Schema {
 
     pub async fn get_collection(
         &self,
-        database: &str,
+        database: u64,
         collection: &str,
     ) -> Result<Option<CollectionDesc>> {
-        let db = self.get_database(database).await?;
-        if db.is_none() {
-            return Ok(None);
-        }
-        let database_id = db.unwrap().id;
         let val = self
             .get(
                 &SYSTEM_COLLECTION_COLLECTION_ID,
-                &collection_key(database_id, collection),
+                &collection_key(database, collection),
             )
             .await?;
         if val.is_none() {
             return Ok(None);
         }
         let desc = CollectionDesc::decode(&*val.unwrap()).map_err(|_| {
-            Error::InvalidData(format!("collection desc: {}, {}", database_id, collection))
+            Error::InvalidData(format!("collection desc: {}, {}", database, collection))
         })?;
         Ok(Some(desc))
     }

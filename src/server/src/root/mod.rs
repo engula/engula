@@ -33,7 +33,7 @@ use engula_api::{
     },
 };
 use engula_client::NodeClient;
-use tracing::{info, warn};
+use tracing::{error, info, trace, warn};
 
 pub(crate) use self::schema::*;
 pub use self::{
@@ -299,7 +299,7 @@ impl Root {
         let desc = self
             .schema()?
             .create_database(DatabaseDesc {
-                name,
+                name: name.to_owned(),
                 ..Default::default()
             })
             .await?;
@@ -308,6 +308,7 @@ impl Root {
                 event: Some(update_event::Event::Database(desc.to_owned())),
             }])
             .await;
+        trace!(database_id = desc.id, database = ?name, "create database");
         Ok(desc)
     }
 
@@ -318,6 +319,7 @@ impl Root {
                 event: Some(delete_event::Event::Database(id)),
             }])
             .await;
+        trace!(database = ?name, "delete database");
         Ok(())
     }
 
@@ -328,14 +330,15 @@ impl Root {
         partition: Option<co_req::Partition>,
     ) -> Result<CollectionDesc> {
         let schema = self.schema()?;
-        let db = schema.get_database(&database).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(database));
-        }
+        let db = schema
+            .get_database(&database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+
         let collection = schema
             .create_collection(CollectionDesc {
-                name,
-                db: db.unwrap().id,
+                name: name.to_owned(),
+                db: db.id,
                 partition: partition.map(|p| match p {
                     co_req::Partition::Hash(hash) => {
                         co_desc::Partition::Hash(co_desc::HashPartition { slots: hash.slots })
@@ -347,6 +350,7 @@ impl Root {
                 ..Default::default()
             })
             .await?;
+        trace!(database = ?database, collection = ?collection, collection_id = collection.id, "create collection");
 
         // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
         // handle hearbeat resp).
@@ -393,8 +397,21 @@ impl Root {
             }
         };
 
-        let candidate_groups = self.alloc.place_group_for_shard(partitions.len()).await?;
-        assert!(!candidate_groups.is_empty());
+        let request_shard_cnt = partitions.len();
+        let candidate_groups = match self.alloc.place_group_for_shard(request_shard_cnt).await {
+            Ok(candidates) => {
+                if candidates.is_empty() {
+                    error!(
+                        database = collection.db,
+                        collection = ?collection.name,
+                        "no avaliable group to alloc new shard, requested: {request_shard_cnt}",
+                    );
+                    return Err(Error::NoAvaliableGroup);
+                }
+                candidates
+            }
+            Err(err) => return Err(err),
+        };
 
         let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
         for (group_idx, partition) in partitions.into_iter().enumerate() {
@@ -418,7 +435,21 @@ impl Root {
         }
 
         for (group_id, descs) in group_shards {
-            schema.create_shards(group_id, descs).await?;
+            info!(
+                database = collection.db,
+                collection = ?collection.name,
+                "create shard {:?} in group {group_id}",
+                descs.iter().map(|d| d.id).collect::<Vec<_>>()
+            );
+            if let Err(err) = schema.create_shards(group_id, descs.to_owned()).await {
+                error!(
+                    database = collection.db,
+                    collection = ?collection.name,
+                    err = ?err,
+                    "create shard {:?} in group {group_id}",   descs.iter().map(|d| d.id).collect::<Vec<_>>(),
+                );
+                return Err(err);
+            }
         }
 
         Ok(())
@@ -426,7 +457,11 @@ impl Root {
 
     pub async fn delete_collection(&self, name: &str, database: &str) -> Result<()> {
         let schema = self.schema()?;
-        let collection = schema.get_collection(database, name).await?;
+        let db = self
+            .get_database(database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+        let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
             let id = collection.id;
             schema.delete_collection(collection).await?;
@@ -436,6 +471,7 @@ impl Root {
                 }])
                 .await;
         }
+        trace!(database = database, collection = name, "delete collection");
         Ok(())
     }
 
@@ -448,7 +484,11 @@ impl Root {
         name: &str,
         database: &str,
     ) -> Result<Option<CollectionDesc>> {
-        self.schema()?.get_collection(database, name).await
+        let db = self
+            .get_database(database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+        self.schema()?.get_collection(db.id, name).await
     }
 
     pub async fn watch(&self, cur_groups: HashMap<u64, u64>) -> Result<Watcher> {
