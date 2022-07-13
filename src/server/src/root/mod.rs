@@ -173,7 +173,8 @@ impl Root {
             });
         }
 
-        info!("step root service leader");
+        let node_id = self.shared.node_ident.node_id;
+        info!("node {node_id} step root service leader");
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(schema.to_owned()).await {
@@ -188,7 +189,7 @@ impl Root {
 
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
-        info!("current root node drop leader");
+        info!("node {node_id} current root node drop leader");
 
         // After that, RootCore needs to be set to None before returning.
         {
