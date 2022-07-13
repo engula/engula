@@ -56,13 +56,19 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
                         src_node,
                         target_node,
                     } => {
+                        // Because the leader of root group has a lot of work, for example, the
+                        // router is directly connected to the root group leader, so avoid balancing
+                        // the root group leader.
+                        if group == ROOT_GROUP_ID {
+                            continue;
+                        }
                         return Ok(LeaderAction::Shed(TransferLeader {
                             group,
                             src_node,
                             src_replica,
                             target_node,
                             target_replica,
-                        }))
+                        }));
                     }
                 }
             }
