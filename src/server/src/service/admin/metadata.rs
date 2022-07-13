@@ -12,23 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod health;
-mod metadata;
-mod metrics;
-mod service;
+use tonic::codegen::*;
 
-pub use self::service::AdminService;
-use self::service::Router;
-use crate::Server;
+use crate::root::Root;
 
-pub fn make_admin_service(server: Server) -> AdminService {
-    let router = Router::empty()
-        .route("/metrics", self::metrics::MetricsHandle)
-        .route(
-            "/metadata",
-            self::metadata::MetadataHandle::new(server.root),
-        )
-        .route("/health", self::health::HealthHandle);
-    let api = Router::nest("/admin", router);
-    AdminService::new(api)
+pub(super) struct MetadataHandle {
+    root: Root,
+}
+
+impl MetadataHandle {
+    pub fn new(root: Root) -> Self {
+        Self { root }
+    }
+}
+
+#[crate::async_trait]
+impl super::service::HttpHandle for MetadataHandle {
+    async fn call(&self) -> crate::Result<http::Response<String>> {
+        let info = self.root.info().await?;
+        Ok(http::Response::builder()
+            .status(http::StatusCode::OK)
+            .body(info)
+            .unwrap())
+    }
 }

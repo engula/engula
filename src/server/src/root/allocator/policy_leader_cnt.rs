@@ -80,11 +80,11 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         let groups = self.alloc_source.groups();
         for (replica, group_id) in node_replicas
             .iter()
-            .filter(|(r, g)| *g != ROOT_GROUP_ID || r.role == ReplicaRole::Voter.into())
+            .filter(|(r, g)| *g != ROOT_GROUP_ID || r.role == ReplicaRole::Voter as i32)
         {
             let replica_state = self.alloc_source.replica_state(&replica.id).unwrap();
             // .ok_or(crate::Error::GroupNotFound(*group_id))?;
-            if replica_state.role != RaftRole::Leader.into() {
+            if replica_state.role != RaftRole::Leader as i32 {
                 continue;
             }
 

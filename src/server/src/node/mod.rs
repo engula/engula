@@ -491,7 +491,7 @@ impl Node {
                     ns.orphan_replica_count += 1;
                 }
                 let replica_state = replica.replica_state();
-                if replica_state.role == RaftRole::Leader.into() {
+                if replica_state.role == RaftRole::Leader as i32 {
                     ns.leader_count += 1;
                     let gs = GroupStats {
                         group_id: info.group_id,
@@ -536,7 +536,7 @@ impl Node {
                 }
 
                 let state = replica.replica_state();
-                if state.role == RaftRole::Leader.into() {
+                if state.role == RaftRole::Leader as i32 {
                     descriptors.push(replica.descriptor());
                 }
                 states.push(state);

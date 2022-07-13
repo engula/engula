@@ -115,7 +115,7 @@ async fn bootstrap_services(addr: &str, server: Server) -> Result<()> {
         .add_service(NodeServer::new(server.clone()))
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
-        .add_service(make_admin_service())
+        .add_service(make_admin_service(server.clone()))
         .serve_with_incoming(listener)
         .await?;
 
