@@ -29,7 +29,7 @@ mod service;
 pub use tonic::async_trait;
 
 pub use crate::{
-    bootstrap::run,
+    bootstrap::{run, Config},
     error::{Error, Result},
     service::Server,
 };

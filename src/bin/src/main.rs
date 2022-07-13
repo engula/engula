@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use engula_server::Result;
+use engula_server::{Config, Result};
 
 #[derive(Parser)]
 #[clap(version)]
@@ -60,7 +60,14 @@ impl StartCommand {
         use engula_server::runtime::ExecutorOwner;
 
         let owner = ExecutorOwner::new(num_cpus::get());
-        engula_server::run(owner.executor(), self.db, self.addr, self.init, self.join)
+        engula_server::run(
+            owner.executor(),
+            self.db,
+            self.addr,
+            self.init,
+            self.join,
+            Config::default(),
+        )
     }
 }
 

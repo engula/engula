@@ -36,14 +36,17 @@ use engula_client::NodeClient;
 use tracing::{info, warn};
 
 pub(crate) use self::schema::*;
-pub use self::watch::{WatchHub, Watcher, WatcherInitializer};
+pub use self::{
+    allocator::AllocatorConfig,
+    watch::{WatchHub, Watcher, WatcherInitializer},
+};
 use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
 use crate::{
     bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{Executor, TaskPriority},
     serverpb::v1::NodeIdent,
-    Error, Result,
+    Config, Error, Result,
 };
 
 #[derive(Clone)]
@@ -74,7 +77,12 @@ struct RootCore {
 }
 
 impl Root {
-    pub fn new(executor: Executor, node_ident: &NodeIdent, local_addr: String) -> Self {
+    pub fn new(
+        executor: Executor,
+        node_ident: &NodeIdent,
+        local_addr: String,
+        cfg: Config,
+    ) -> Self {
         let shared = Arc::new(RootShared {
             executor,
             local_addr,
@@ -83,7 +91,7 @@ impl Root {
             watcher_hub: Default::default(),
         });
         let info = Arc::new(SysAllocSource::new(shared.clone()));
-        let alloc = allocator::Allocator::new(info, REPLICA_PER_GROUP);
+        let alloc = allocator::Allocator::new(info, cfg.allocator);
         Self { alloc, shared }
     }
 
@@ -612,6 +620,7 @@ mod root_test {
     use futures::StreamExt;
     use tempdir::TempDir;
 
+    use super::Config;
     use crate::{
         bootstrap::bootstrap_cluster,
         node::{Node, StateEngine},
@@ -621,7 +630,12 @@ mod root_test {
     };
 
     fn create_root(executor: Executor, node_ident: &NodeIdent) -> Root {
-        Root::new(executor, node_ident, "0.0.0.0:8888".into())
+        Root::new(
+            executor,
+            node_ident,
+            "0.0.0.0:8888".into(),
+            Config::default(),
+        )
     }
 
     fn create_node(executor: Executor) -> Node {

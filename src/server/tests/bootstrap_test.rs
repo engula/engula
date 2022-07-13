@@ -15,7 +15,7 @@
 
 mod helper;
 
-use engula_server::Result;
+use engula_server::{Config, Result};
 
 use crate::helper::{
     client::node_client_with_retry, context::*, init::setup_panic_hook, runtime::block_on_current,
@@ -31,7 +31,7 @@ fn init() {
 fn bootstrap_cluster() -> Result<()> {
     let ctx = TestContext::new("bootstrap-cluster");
     let node_1_addr = ctx.next_listen_address();
-    ctx.spawn_server(1, &node_1_addr, true, vec![]);
+    ctx.spawn_server(1, &node_1_addr, true, vec![], Config::default());
 
     block_on_current(async {
         node_client_with_retry(&node_1_addr).await;
@@ -45,10 +45,16 @@ fn bootstrap_cluster() -> Result<()> {
 fn join_node() -> Result<()> {
     let ctx = TestContext::new("join-node");
     let node_1_addr = ctx.next_listen_address();
-    ctx.spawn_server(1, &node_1_addr, true, vec![]);
+    ctx.spawn_server(1, &node_1_addr, true, vec![], Config::default());
 
     let node_2_addr = ctx.next_listen_address();
-    ctx.spawn_server(2, &node_2_addr, false, vec![node_1_addr.clone()]);
+    ctx.spawn_server(
+        2,
+        &node_2_addr,
+        false,
+        vec![node_1_addr.clone()],
+        Config::default(),
+    );
 
     block_on_current(async {
         node_client_with_retry(&node_1_addr).await;
