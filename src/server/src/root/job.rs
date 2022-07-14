@@ -23,7 +23,7 @@ use tokio::time;
 use tracing::{info, trace, warn};
 
 use super::{allocator::*, Root, Schema};
-use crate::{bootstrap::ROOT_GROUP_ID, Result, root::schema::ReplicaNodes};
+use crate::{bootstrap::ROOT_GROUP_ID, root::schema::ReplicaNodes, Result};
 
 impl Root {
     pub async fn send_heartbeat(&self, schema: Schema) -> Result<()> {
