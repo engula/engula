@@ -75,7 +75,7 @@ where
 {
     ident: Option<NodeIdent>,
     replicas: HashMap<u64, ReplicaContext>,
-    root: Vec<NodeDesc>,
+    root: RootDesc,
     channel: Option<StateChannel>,
 }
 
@@ -346,25 +346,26 @@ impl Node {
         })
     }
 
-    /// Get root addrs that known by node.
-    pub async fn get_root(&self) -> Vec<String> {
-        let nodes = self.node_state.lock().await.root.to_owned();
-        nodes.iter().map(|n| n.addr.to_owned()).collect()
+    /// Get root desc that known by node.
+    pub async fn get_root(&self) -> RootDesc {
+        // FIXME(walter) node_state might be locked by `create_replica`.
+        self.node_state.lock().await.root.clone()
     }
 
     // Update recent known root nodes.
-    pub async fn update_root(&self, roots: Vec<NodeDesc>) -> Result<()> {
-        self.state_engine().save_root_nodes(roots).await?;
+    pub async fn update_root(&self, root_desc: RootDesc) -> Result<()> {
+        // TODO(walter) reject staled update root request.
+        self.state_engine().save_root_desc(root_desc).await?;
         self.reload_root_from_engine().await
     }
 
     pub async fn reload_root_from_engine(&self) -> Result<()> {
-        let nodes = self
+        let root_desc = self
             .state_engine()
-            .load_root_nodes()
+            .load_root_desc()
             .await?
             .ok_or_else(|| Error::InvalidData("root not found".into()))?;
-        self.node_state.lock().await.root = nodes;
+        self.node_state.lock().await.root = root_desc;
         Ok(())
     }
 

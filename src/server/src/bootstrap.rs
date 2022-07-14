@@ -187,7 +187,7 @@ async fn try_join_cluster(
                     debug!("issue join request to root server success");
                     let node_ident =
                         save_node_ident(node.state_engine(), res.cluster_id, res.node_id).await;
-                    node.update_root(res.roots).await?;
+                    node.update_root(res.root.unwrap_or_default()).await?;
                     return node_ident;
                 }
                 Err(e) => {
@@ -284,7 +284,11 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
         addr: addr.to_owned(),
         ..Default::default()
     };
-    node.update_root(vec![root_node]).await?;
+    let root_desc = RootDesc {
+        epoch: INITIAL_EPOCH,
+        root_nodes: vec![root_node],
+    };
+    node.update_root(root_desc).await?;
 
     Ok(())
 }

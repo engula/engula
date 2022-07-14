@@ -14,13 +14,10 @@
 
 use std::sync::Arc;
 
-use engula_api::server::v1::NodeDesc;
+use engula_api::server::v1::*;
 use prost::Message;
 
-use crate::{
-    serverpb::v1::{NodeIdent, ReplicaLocalState, ReplicaMeta, RootDesc},
-    Result,
-};
+use crate::{serverpb::v1::*, Result};
 
 const STATE_CF_NAME: &str = "state";
 
@@ -90,11 +87,10 @@ impl StateEngine {
         Ok(())
     }
 
-    /// Save root nodes.
-    pub async fn save_root_nodes(&self, root_nodes: Vec<NodeDesc>) -> Result<()> {
+    /// Save root desc.
+    pub async fn save_root_desc(&self, root_desc: RootDesc) -> Result<()> {
         use rocksdb::{WriteBatch, WriteOptions};
 
-        let root_desc = RootDesc { root_nodes };
         let cf_handle = self
             .raw_db
             .cf_handle(STATE_CF_NAME)
@@ -109,17 +105,14 @@ impl StateEngine {
         Ok(())
     }
 
-    /// Load root nodes. `None` is returned if there no any root node records exists.
-    pub async fn load_root_nodes(&self) -> Result<Option<Vec<NodeDesc>>> {
+    /// Load root desc. `None` is returned if there no any root node records exists.
+    pub async fn load_root_desc(&self) -> Result<Option<RootDesc>> {
         let cf_handle = self
             .raw_db
             .cf_handle(STATE_CF_NAME)
             .expect("state column family");
         match self.raw_db.get_pinned_cf(&cf_handle, keys::root_desc())? {
-            Some(value) => {
-                let root_desc = RootDesc::decode(value.as_ref()).expect("valid root desc format");
-                Ok(Some(root_desc.root_nodes))
-            }
+            Some(value) => Ok(Some(RootDesc::decode(value.as_ref())?)),
             None => Ok(None),
         }
     }

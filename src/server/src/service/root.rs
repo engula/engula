@@ -49,13 +49,13 @@ impl root_server::Root for Server {
         let capacity = request
             .capacity
             .ok_or_else(|| Error::InvalidArgument("capacity is required".into()))?;
-        let (cluster_id, node, roots) = self
+        let (cluster_id, node, root) = self
             .wrap(self.root.join(request.addr, capacity).await)
             .await?;
         Ok::<Response<JoinNodeResponse>, Status>(Response::new(JoinNodeResponse {
             cluster_id,
             node_id: node.id,
-            roots: roots.into(),
+            root: Some(root),
         }))
     }
 

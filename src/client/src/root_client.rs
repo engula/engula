@@ -133,7 +133,13 @@ impl Client {
             Ok(res) => Ok(res),
             Err(status) => {
                 let err = not_root(Error::decode(status.details())).ok_or(status)?;
-                let candidates = err.root;
+                let candidates = err
+                    .root
+                    .unwrap_or_default()
+                    .root_nodes
+                    .into_iter()
+                    .map(|n| n.addr)
+                    .collect::<Vec<_>>();
                 *client = find_root_client(candidates.as_slice()).await?;
                 Ok(op(client.clone()).await?)
             }

@@ -28,6 +28,12 @@ message NodeCapacity {
   uint64 leader_count = 3;
 }
 
+message RootDesc {
+  /// The epoch of root group which indicates the freshness of root nodes.
+  uint64 epoch = 1;
+  repeated NodeDesc root_nodes = 2;
+}
+
 message ShardDesc {
   uint64 id = 1;
   uint64 collection_id = 2;
