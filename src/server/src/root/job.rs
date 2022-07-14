@@ -23,7 +23,7 @@ use tokio::time;
 use tracing::{info, trace, warn};
 
 use super::{allocator::*, Root, Schema};
-use crate::{bootstrap::ROOT_GROUP_ID, Result};
+use crate::{bootstrap::ROOT_GROUP_ID, Result, root::schema::ReplicaNodes};
 
 impl Root {
     pub async fn send_heartbeat(&self, schema: Schema) -> Result<()> {
@@ -34,15 +34,20 @@ impl Root {
 
         // TODO: no need piggyback root info everytime.
         if true {
-            let mut roots = schema.get_root_replicas().await?;
-            roots.move_first(cur_node_id);
-            let roots: Vec<NodeDesc> = roots.into();
+            let mut root = schema.get_root_desc().await?;
+            root.root_nodes = {
+                let mut nodes = ReplicaNodes(root.root_nodes);
+                nodes.move_first(cur_node_id);
+                nodes.0
+            };
             trace!(
-                root = ?roots.iter().map(|n| n.id).collect::<Vec<_>>(),
+                root = ?root.root_nodes.iter().map(|n| n.id).collect::<Vec<_>>(),
                 "sync root info with heartbeat"
             );
             piggybacks.push(PiggybackRequest {
-                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest { roots })),
+                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest {
+                    root: Some(root),
+                })),
             });
             piggybacks.push(PiggybackRequest {
                 info: Some(piggyback_request::Info::CollectGroupDetail(

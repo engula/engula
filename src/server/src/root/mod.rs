@@ -68,7 +68,7 @@ impl RootShared {
         let core = self.core.lock().unwrap();
         core.as_ref()
             .map(|c| c.schema.clone())
-            .ok_or_else(|| Error::NotRootLeader(vec![]))
+            .ok_or_else(|| Error::NotRootLeader(RootDesc::default()))
     }
 }
 
@@ -512,7 +512,7 @@ impl Root {
         &self,
         addr: String,
         capacity: NodeCapacity,
-    ) -> Result<(Vec<u8>, NodeDesc, ReplicaNodes)> {
+    ) -> Result<(Vec<u8>, NodeDesc, RootDesc)> {
         let schema = self.schema()?;
         let node = schema
             .add_node(NodeDesc {
@@ -528,10 +528,14 @@ impl Root {
             .await;
 
         let cluster_id = schema.cluster_id().await?.unwrap();
-        let mut roots = schema.get_root_replicas().await?;
-        roots.move_first(node.id);
+        let mut root = schema.get_root_desc().await?;
+        root.root_nodes = {
+            let mut nodes = ReplicaNodes(root.root_nodes);
+            nodes.move_first(node.id);
+            nodes.0
+        };
         info!(node = node.id, addr = ?node.addr, "new node join cluster");
-        Ok((cluster_id, node, roots))
+        Ok((cluster_id, node, root))
     }
 
     pub async fn report(&self, updates: Vec<GroupUpdates>) -> Result<()> {

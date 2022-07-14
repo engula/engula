@@ -445,13 +445,13 @@ impl Schema {
         Ok(states.into_iter().map(|(_, v)| v).collect())
     }
 
-    pub async fn get_root_replicas(&self) -> Result<ReplicaNodes> {
-        let root_desc = self
+    pub async fn get_root_desc(&self) -> Result<RootDesc> {
+        let group_desc = self
             .get_group(ROOT_GROUP_ID)
             .await?
             .ok_or(Error::GroupNotFound(ROOT_GROUP_ID))?;
         let mut nodes = HashMap::new();
-        for replica in &root_desc.replicas {
+        for replica in &group_desc.replicas {
             let node = replica.node_id;
             if nodes.contains_key(&node) {
                 continue;
@@ -462,7 +462,10 @@ impl Schema {
                 .ok_or_else(|| Error::InvalidData(format!("node {} data not found", node)))?;
             nodes.insert(node.id, node);
         }
-        Ok(ReplicaNodes(nodes.into_iter().map(|(_, v)| v).collect()))
+        Ok(RootDesc {
+            epoch: group_desc.epoch,
+            root_nodes: nodes.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+        })
     }
 
     pub async fn list_all_events(
@@ -573,7 +576,7 @@ impl Schema {
     }
 }
 
-pub struct ReplicaNodes(Vec<NodeDesc>);
+pub struct ReplicaNodes(pub Vec<NodeDesc>);
 
 impl From<ReplicaNodes> for Vec<NodeDesc> {
     fn from(r: ReplicaNodes) -> Self {

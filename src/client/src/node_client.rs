@@ -37,7 +37,11 @@ impl Client {
         let mut client = self.client.clone();
         let req = GetRootRequest::default();
         let res = client.get_root(req).await?;
-        Ok(res.into_inner().addrs)
+        Ok(res
+            .into_inner()
+            .root
+            .map(|r| r.root_nodes.into_iter().map(|n| n.addr).collect())
+            .unwrap_or_default())
     }
 
     // NOTE: This method is always called by the root group.

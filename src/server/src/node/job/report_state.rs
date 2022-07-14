@@ -79,8 +79,8 @@ async fn wait_state_updates(
 
 async fn load_roots(state_engine: &StateEngine) -> Vec<String> {
     loop {
-        if let Some(roots) = state_engine.load_root_nodes().await.unwrap() {
-            return roots.into_iter().map(|d| d.addr).collect();
+        if let Some(desc) = state_engine.load_root_desc().await.unwrap() {
+            return desc.root_nodes.into_iter().map(|d| d.addr).collect();
         }
         crate::runtime::time::sleep(Duration::from_millis(10)).await;
     }
@@ -91,8 +91,8 @@ async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
         for root in roots.iter() {
             match issue_report_request(root.to_owned(), &request).await {
                 Ok(()) => return,
-                Err(Error::NotRootLeader(recommends)) => {
-                    *roots = recommends;
+                Err(Error::NotRootLeader(root)) => {
+                    *roots = root.root_nodes.into_iter().map(|n| n.addr).collect();
                     continue 'OUTER;
                 }
                 Err(err) => {

@@ -131,7 +131,7 @@ message ShardPrefixListResponse { repeated bytes values = 1; }
 
 message GetRootRequest {}
 
-message GetRootResponse { repeated string addrs = 1; }
+message GetRootResponse { RootDesc root = 1; }
 
 message CreateReplicaRequest {
   uint64 replica_id = 1;
@@ -194,7 +194,9 @@ message HeartbeatRequest {
 
 message HeartbeatResponse {
   uint64 timestamp = 1;
-  repeated PiggybackResponse piggybacks = 2;
+  /// The epoch of root group which contained in node's `RootDesc`.
+  uint64 root_epoch = 2;
+  repeated PiggybackResponse piggybacks = 3;
 }
 
 message PiggybackRequest {
@@ -213,7 +215,7 @@ message PiggybackResponse {
   }
 }
 
-message SyncRootRequest { repeated NodeDesc roots = 1; }
+message SyncRootRequest { RootDesc root = 1; }
 
 message SyncRootResponse {}
 

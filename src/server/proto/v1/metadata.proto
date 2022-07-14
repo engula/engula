@@ -40,10 +40,6 @@ message NodeIdent {
   uint64 node_id = 2;
 }
 
-message RootDesc {
-  repeated engula.server.v1.NodeDesc root_nodes = 1;
-}
-
 enum ReplicaLocalState {
   /// With membership, but couldn't supply service.  It is used in group creation.
   INITIAL = 0;

@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use engula_api::server::v1::{GroupDesc, ReplicaDesc};
+use engula_api::server::v1::{GroupDesc, ReplicaDesc, RootDesc};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -82,7 +82,7 @@ pub enum Error {
     GroupNotFound(u64),
 
     #[error("not root leader")]
-    NotRootLeader(Vec<String>),
+    NotRootLeader(RootDesc),
 
     #[error("not leader of group {0}")]
     NotLeader(u64, Option<ReplicaDesc>),
@@ -116,10 +116,10 @@ impl From<Error> for tonic::Status {
                     .encode_to_vec()
                     .into(),
             ),
-            Error::NotRootLeader(roots) => Status::with_details(
+            Error::NotRootLeader(root) => Status::with_details(
                 Code::Unknown,
                 "not root",
-                v1::Error::not_root_leader(roots).encode_to_vec().into(),
+                v1::Error::not_root_leader(root).encode_to_vec().into(),
             ),
             Error::EpochNotMatch(desc) => Status::with_details(
                 Code::Unknown,
@@ -228,7 +228,7 @@ impl From<engula_api::server::v1::Error> for Error {
         match detail.detail.as_ref().and_then(|u| u.value.clone()) {
             Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
             Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
-            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root),
+            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default()),
             Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
             Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
             _ => Error::InvalidData(msg),

@@ -62,8 +62,8 @@ impl node_server::Node for Server {
         &self,
         _request: Request<GetRootRequest>,
     ) -> Result<Response<GetRootResponse>, Status> {
-        let addrs = self.node.get_root().await;
-        Ok(Response::new(GetRootResponse { addrs }))
+        let root = self.node.get_root().await;
+        Ok(Response::new(GetRootResponse { root: Some(root) }))
     }
 
     async fn create_replica(
@@ -118,8 +118,10 @@ impl node_server::Node for Server {
             piggybacks_resps.push(PiggybackResponse { info: Some(info) });
         }
 
+        let root = self.node.get_root().await;
         Ok(Response::new(HeartbeatResponse {
             timestamp: request.timestamp,
+            root_epoch: root.epoch,
             piggybacks: piggybacks_resps,
         }))
     }
@@ -154,7 +156,9 @@ impl node_server::Node for Server {
 
 impl Server {
     async fn update_root(&self, req: SyncRootRequest) -> crate::Result<SyncRootResponse> {
-        self.node.update_root(req.roots).await?;
+        if let Some(root) = req.root {
+            self.node.update_root(root).await?;
+        }
         Ok(SyncRootResponse {})
     }
 }
