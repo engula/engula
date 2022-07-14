@@ -172,7 +172,6 @@ impl Collection {
     }
 
     pub async fn delete_inner(&self, key: &[u8]) -> Result<(), crate::Error> {
-        //let mut inner = self.client.inner.lock().await;
         let router = self.client.inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group_by_shard(shard.id)?;
