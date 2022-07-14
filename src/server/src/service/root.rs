@@ -194,10 +194,20 @@ impl Server {
     }
 
     async fn wrap<T>(&self, result: Result<T>) -> Result<T> {
-        if let Err(Error::NotRootLeader(_)) = result {
-            let roots = self.node.get_root().await;
-            return Err(Error::NotRootLeader(roots));
+        match result {
+            Err(Error::NotRootLeader(_) | Error::NotLeader(_, _) | Error::GroupNotFound(_)) => {
+                let roots = self.node.get_root().await;
+                Err(Error::NotRootLeader(roots))
+            }
+            Err(
+                e @ (Error::Forward(_)
+                | Error::EpochNotMatch(_)
+                | Error::ServiceIsBusy(_)
+                | Error::GroupNotReady(_)),
+            ) => {
+                panic!("root should not returns {e:?}");
+            }
+            _ => result,
         }
-        result
     }
 }
