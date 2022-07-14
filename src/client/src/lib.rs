@@ -15,6 +15,7 @@
 #![feature(map_try_insert)]
 
 mod app_client;
+mod conn_manager;
 mod error;
 mod node_client;
 mod retry;
