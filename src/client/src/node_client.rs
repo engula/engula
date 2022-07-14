@@ -21,6 +21,12 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn new(channel: Channel) -> Self {
+        Client {
+            client: node_client::NodeClient::new(channel),
+        }
+    }
+
     pub async fn connect(addr: String) -> Result<Self, tonic::transport::Error> {
         let addr = format!("http://{}", addr);
         let client = node_client::NodeClient::connect(addr).await?;
