@@ -20,7 +20,7 @@ use engula_api::server::v1::{
 };
 use engula_client::{NodeClient, RequestBatchBuilder};
 use tokio::time;
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 use super::{allocator::*, Root, Schema};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
@@ -36,10 +36,13 @@ impl Root {
         if true {
             let mut roots = schema.get_root_replicas().await?;
             roots.move_first(cur_node_id);
+            let roots: Vec<NodeDesc> = roots.into();
+            trace!(
+                root = ?roots.iter().map(|n| n.id).collect::<Vec<_>>(),
+                "sync root info with heartbeat"
+            );
             piggybacks.push(PiggybackRequest {
-                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest {
-                    roots: roots.into(),
-                })),
+                info: Some(piggyback_request::Info::SyncRoot(SyncRootRequest { roots })),
             });
             piggybacks.push(PiggybackRequest {
                 info: Some(piggyback_request::Info::CollectGroupDetail(
@@ -53,9 +56,8 @@ impl Root {
             });
         }
 
-        // TODO: collect stats and group detail.
-
         for n in nodes {
+            trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
             match Self::try_send_heartbeat(&n.addr, &piggybacks).await {
                 Ok(res) => {
                     for resp in res.piggybacks {
@@ -71,7 +73,7 @@ impl Root {
                     }
                 }
                 Err(err) => {
-                    warn!("heartbeat to node {} address {}: {}", n.id, n.addr, err);
+                    warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
             }
         }
@@ -100,11 +102,21 @@ impl Root {
     ) -> Result<()> {
         if let Some(ns) = resp.node_stats {
             if let Some(mut node) = schema.get_node(node_id).await? {
+                let new_group_count = ns.group_count as u64;
+                let new_leader_count = ns.leader_count as u64;
                 let mut cap = node.capacity.take().unwrap();
-                cap.replica_count = ns.group_count as u64;
-                cap.leader_count = ns.leader_count as u64;
-                node.capacity = Some(cap);
-                schema.update_node(node).await?;
+                if new_group_count != cap.replica_count || new_leader_count != cap.leader_count {
+                    cap.replica_count = new_group_count;
+                    cap.leader_count = new_leader_count;
+                    info!(
+                        node = node_id,
+                        replica_count = cap.replica_count,
+                        leader_count = cap.leader_count,
+                        "update node stats by heartbeat response",
+                    );
+                    node.capacity = Some(cap);
+                    schema.update_node(node).await?;
+                }
             }
         }
         Ok(())
@@ -126,6 +138,11 @@ impl Root {
             schema
                 .update_group_replica(Some(desc.to_owned()), None)
                 .await?;
+            info!(
+                group = desc.id,
+                desc = ?desc,
+                "update group_desc from heartbeat response"
+            );
             update_events.push(UpdateEvent {
                 event: Some(update_event::Event::Group(desc.to_owned())),
             })
@@ -144,6 +161,12 @@ impl Root {
             schema
                 .update_group_replica(None, Some(state.to_owned()))
                 .await?;
+            info!(
+                group = state.group_id,
+                replica = state.replica_id,
+                state = ?state,
+                "attempt update replica_state from heartbeat response"
+            );
             changed_group_states.insert(state.group_id);
         }
 
@@ -215,11 +238,25 @@ impl Root {
     async fn reallocate_replica(&self, action: ReallocateReplica) -> Result<()> {
         let schema = self.schema()?;
 
+        info!(
+            group = action.group,
+            replica = action.source_replica,
+            "attempt reallocate replica from {} to {}",
+            action.source_node,
+            action.target_node.id,
+        );
+
         loop {
             if let Err(err) =
                 Self::try_add_replica(schema.to_owned(), action.group, action.target_node.id).await
             {
                 if is_retry_err(&err) {
+                    warn!(
+                        group = action.group,
+                        node = action.target_node.id,
+                        err = ?err,
+                        "add replica error, retry later"
+                    );
                     time::sleep(Duration::from_secs(1)).await;
                     continue;
                 } else {
@@ -230,15 +267,18 @@ impl Root {
         }
 
         loop {
-            if let Err(err) = Self::try_remove_replica(
-                schema.to_owned(),
-                action.group,
-                action.source_replica,
-                action.source_node,
-            )
-            .await
+            if let Err(err) =
+                Self::try_remove_replica(schema.to_owned(), action.group, action.source_replica)
+                    .await
             {
                 if is_retry_err(&err) {
+                    warn!(
+                        group = action.group,
+                        replica = action.source_replica,
+                        node = action.source_node,
+                        err = ?err,
+                        "remove replica error, retry later"
+                    );
                     time::sleep(Duration::from_secs(1)).await;
                     continue;
                 } else {
@@ -290,10 +330,6 @@ impl Root {
             }
         }
 
-        info!(
-            "add replica: {} to group: {} in node: {}",
-            new_replica, group.id, target_node_id
-        );
         Ok(())
     }
 
@@ -301,7 +337,6 @@ impl Root {
         schema: Arc<Schema>,
         group_id: u64,
         remove_replica: u64,
-        source_node_id: u64,
     ) -> Result<()> {
         let (group, req_node) = Self::get_group_leader(schema.to_owned(), group_id).await?;
 
@@ -313,8 +348,11 @@ impl Root {
         if replica_state.role == RaftRole::Leader as i32 {
             if let Some(target_replica) = group.replicas.iter().find(|e| e.id != remove_replica) {
                 info!(
-                    "transfer group {} leader from {} to {}",
-                    group.id, remove_replica, target_replica.id
+                    group = group.id,
+                    replica = remove_replica,
+                    "attemp remove leader replica, so transfer leader to {} in node {}",
+                    target_replica.id,
+                    target_replica.node_id,
                 );
                 let client = NodeClient::connect(req_node.addr.to_owned()).await?;
                 let batch = RequestBatchBuilder::new(req_node.id).transfer_leader(
@@ -346,10 +384,6 @@ impl Root {
             }
         }
 
-        info!(
-            "remove replica: {} to group: {} from node: {}",
-            remove_replica, group.id, source_node_id,
-        );
         Ok(())
     }
 
@@ -385,6 +419,11 @@ impl Root {
     async fn reallocate_shard(&self, action: ReallocateShard) -> Result<()> {
         let schema = self.schema()?;
 
+        info!(
+            shard = action.shard,
+            "attempt reallocate shard from {} to {}", action.source_group, action.target_group,
+        );
+
         loop {
             if let Err(err) = Self::try_migrate_shard(
                 schema.to_owned(),
@@ -395,6 +434,13 @@ impl Root {
             .await
             {
                 if is_retry_err(&err) {
+                    warn!(
+                        shard = action.shard,
+                        src_group = action.source_group,
+                        dest_group = action.target_group,
+                        err = ?err,
+                        "migrate shard error, retry later",
+                    );
                     time::sleep(Duration::from_secs(1)).await;
                     continue;
                 } else {
@@ -443,9 +489,28 @@ impl Root {
 
     async fn transfer_leader(&self, action: &TransferLeader) -> Result<()> {
         let schema = self.schema()?;
+
+        info!(
+            group = action.group,
+            src_replica = action.src_replica,
+            src_node = action.src_node,
+            dest_replica = action.target_replica,
+            dest_node = action.target_node,
+            "attempt transfer leader",
+        );
+
         loop {
             if let Err(err) = Self::try_transfer_leader(schema.to_owned(), action).await {
                 if is_retry_err(&err) {
+                    warn!(
+                        group = action.group,
+                        src_replica = action.src_replica,
+                        src_node = action.src_node,
+                        dest_replica = action.target_replica,
+                        dest_node = action.target_node,
+                        err = ?err,
+                        "transfer leader meet error, retry later",
+                    );
                     time::sleep(Duration::from_secs(1)).await;
                     continue;
                 } else {
@@ -454,14 +519,6 @@ impl Root {
             }
             break;
         }
-        info!(
-            "transfer group {} leader from {}({}) to {}({})",
-            action.group,
-            action.src_node,
-            action.src_replica,
-            action.target_node,
-            action.target_replica,
-        );
         Ok(())
     }
 

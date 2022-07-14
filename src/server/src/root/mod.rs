@@ -33,7 +33,7 @@ use engula_api::{
     },
 };
 use engula_client::NodeClient;
-use tracing::{info, warn};
+use tracing::{error, info, trace, warn};
 
 pub(crate) use self::schema::*;
 pub use self::{
@@ -164,9 +164,13 @@ impl Root {
         // Only when the program is initialized is it checked for bootstrap, after which the
         // leadership change does not need to check for whether bootstrap or not.
         if !*bootstrapped {
-            schema
-                .try_bootstrap(local_addr, self.shared.node_ident.cluster_id.clone())
-                .await?;
+            if let Err(err) = schema
+                .try_bootstrap_root(local_addr, self.shared.node_ident.cluster_id.clone())
+                .await
+            {
+                error!(err = ?err, "boostrap error");
+                panic!("boostrap cluster failure")
+            }
             *bootstrapped = true;
         }
 
@@ -182,12 +186,12 @@ impl Root {
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(schema.to_owned()).await {
-                warn!("send heartbeat fatal: {}", err);
+                warn!(err = ?err, "send heartbeat meet fatal");
                 break;
             }
 
             if let Err(err) = self.reconcile().await {
-                warn!("reconcile group fatal: {}", err);
+                warn!(err = ?err, "reconcile meet fatal");
                 break;
             }
 
@@ -299,7 +303,7 @@ impl Root {
         let desc = self
             .schema()?
             .create_database(DatabaseDesc {
-                name,
+                name: name.to_owned(),
                 ..Default::default()
             })
             .await?;
@@ -308,6 +312,7 @@ impl Root {
                 event: Some(update_event::Event::Database(desc.to_owned())),
             }])
             .await;
+        trace!(database_id = desc.id, database = ?name, "create database");
         Ok(desc)
     }
 
@@ -318,6 +323,7 @@ impl Root {
                 event: Some(delete_event::Event::Database(id)),
             }])
             .await;
+        trace!(database = ?name, "delete database");
         Ok(())
     }
 
@@ -328,14 +334,15 @@ impl Root {
         partition: Option<co_req::Partition>,
     ) -> Result<CollectionDesc> {
         let schema = self.schema()?;
-        let db = schema.get_database(&database).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(database));
-        }
+        let db = schema
+            .get_database(&database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+
         let collection = schema
             .create_collection(CollectionDesc {
-                name,
-                db: db.unwrap().id,
+                name: name.to_owned(),
+                db: db.id,
                 partition: partition.map(|p| match p {
                     co_req::Partition::Hash(hash) => {
                         co_desc::Partition::Hash(co_desc::HashPartition { slots: hash.slots })
@@ -347,6 +354,7 @@ impl Root {
                 ..Default::default()
             })
             .await?;
+        trace!(database = ?database, collection = ?collection, collection_id = collection.id, "create collection");
 
         // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
         // handle hearbeat resp).
@@ -393,8 +401,21 @@ impl Root {
             }
         };
 
-        let candidate_groups = self.alloc.place_group_for_shard(partitions.len()).await?;
-        assert!(!candidate_groups.is_empty());
+        let request_shard_cnt = partitions.len();
+        let candidate_groups = match self.alloc.place_group_for_shard(request_shard_cnt).await {
+            Ok(candidates) => {
+                if candidates.is_empty() {
+                    error!(
+                        database = collection.db,
+                        collection = ?collection.name,
+                        "no avaliable group to alloc new shard, requested: {request_shard_cnt}",
+                    );
+                    return Err(Error::NoAvaliableGroup);
+                }
+                candidates
+            }
+            Err(err) => return Err(err),
+        };
 
         let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
         for (group_idx, partition) in partitions.into_iter().enumerate() {
@@ -418,7 +439,21 @@ impl Root {
         }
 
         for (group_id, descs) in group_shards {
-            schema.create_shards(group_id, descs).await?;
+            info!(
+                database = collection.db,
+                collection = ?collection.name,
+                "create shard {:?} in group {group_id}",
+                descs.iter().map(|d| d.id).collect::<Vec<_>>()
+            );
+            if let Err(err) = schema.create_shards(group_id, descs.to_owned()).await {
+                error!(
+                    database = collection.db,
+                    collection = ?collection.name,
+                    err = ?err,
+                    "create shard {:?} in group {group_id}",   descs.iter().map(|d| d.id).collect::<Vec<_>>(),
+                );
+                return Err(err);
+            }
         }
 
         Ok(())
@@ -426,7 +461,11 @@ impl Root {
 
     pub async fn delete_collection(&self, name: &str, database: &str) -> Result<()> {
         let schema = self.schema()?;
-        let collection = schema.get_collection(database, name).await?;
+        let db = self
+            .get_database(database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+        let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
             let id = collection.id;
             schema.delete_collection(collection).await?;
@@ -436,6 +475,7 @@ impl Root {
                 }])
                 .await;
         }
+        trace!(database = database, collection = name, "delete collection");
         Ok(())
     }
 
@@ -448,7 +488,11 @@ impl Root {
         name: &str,
         database: &str,
     ) -> Result<Option<CollectionDesc>> {
-        self.schema()?.get_collection(database, name).await
+        let db = self
+            .get_database(database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+        self.schema()?.get_collection(db.id, name).await
     }
 
     pub async fn watch(&self, cur_groups: HashMap<u64, u64>) -> Result<Watcher> {
@@ -486,6 +530,7 @@ impl Root {
         let cluster_id = schema.cluster_id().await?.unwrap();
         let mut roots = schema.get_root_replicas().await?;
         roots.move_first(node.id);
+        info!(node = node.id, addr = ?node.addr, "new node join cluster");
         Ok((cluster_id, node, roots))
     }
 
@@ -504,11 +549,22 @@ impl Root {
                 .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
                 .await?;
             if let Some(desc) = u.group_desc {
+                info!(
+                    group = desc.id,
+                    desc = ?desc,
+                    "update group_desc from node report"
+                );
                 update_events.push(UpdateEvent {
                     event: Some(update_event::Event::Group(desc)),
                 })
             }
             if let Some(state) = u.replica_state {
+                info!(
+                    group = state.group_id,
+                    replica = state.replica_id,
+                    state = ?state,
+                    "update replica_state from node report"
+                );
                 changed_group_states.push(state.group_id);
             }
         }
@@ -529,7 +585,7 @@ impl Root {
     pub async fn alloc_replica(
         &self,
         group_id: u64,
-        num_required: u64,
+        requested_cnt: u64,
     ) -> Result<Vec<ReplicaDesc>> {
         let schema = self.schema()?;
         let existing_replicas = match schema.get_group(group_id).await? {
@@ -538,13 +594,17 @@ impl Root {
                 return Err(Error::GroupNotFound(group_id));
             }
         };
-        let node_desc = self
+        info!(
+            group = group_id,
+            "attemp allocate {requested_cnt} replicas for exist group"
+        );
+        let nodes = self
             .alloc
-            .allocate_group_replica(existing_replicas, num_required as usize)
+            .allocate_group_replica(existing_replicas, requested_cnt as usize)
             .await?;
 
-        let mut replicas = Vec::new();
-        for n in &node_desc {
+        let mut replicas = Vec::with_capacity(nodes.len());
+        for n in &nodes {
             let replica_id = schema.next_replica_id().await?;
             replicas.push(ReplicaDesc {
                 id: replica_id,
@@ -552,15 +612,28 @@ impl Root {
                 role: ReplicaRole::Voter.into(),
             });
         }
+        info!(
+            group = group_id,
+            "advise allocate new group replicas in nodes: {:?}",
+            replicas.iter().map(|r| r.node_id).collect::<Vec<_>>()
+        );
         Ok(replicas)
     }
 
     async fn create_groups(&self, cnt: usize) -> Result<()> {
-        for _ in 0..cnt {
+        info!("allocator attempt create {cnt} groups");
+        for i in 0..cnt {
             let nodes = self
                 .alloc
                 .allocate_group_replica(vec![], REPLICA_PER_GROUP as usize)
                 .await?;
+            info!(
+                "allocator attemp create #{i} new group's replicas in {:?}",
+                nodes
+                    .iter()
+                    .map(|n| format!("{}({})", n.addr.to_owned(), n.id))
+                    .collect::<Vec<_>>()
+            );
             self.create_group(nodes).await?;
         }
         Ok(())
@@ -588,7 +661,12 @@ impl Root {
         };
         for n in &nodes {
             let replica_id = node_to_replica.get(&n.id).unwrap();
-            Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await?
+            if let Err(err) =
+                Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await
+            {
+                error!(node_id = n.id, group = group_id, err = ?err, "create group error");
+                return Err(err);
+            }
         }
         // TODO(zojw): rety and cancel all logic.
         Ok(())

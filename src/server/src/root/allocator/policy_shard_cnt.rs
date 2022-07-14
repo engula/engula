@@ -15,16 +15,10 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use engula_api::server::v1::{GroupDesc, ShardDesc};
+use tracing::trace;
 
 use super::{AllocSource, ReallocateShard, ShardAction};
-use crate::{bootstrap::ROOT_GROUP_ID, Result};
-
-#[derive(PartialEq, Eq)]
-enum BalanceStatus {
-    Overfull,
-    Balanced,
-    Underfull,
-}
+use crate::{bootstrap::ROOT_GROUP_ID, root::allocator::BalanceStatus, Result};
 
 pub struct ShardCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
@@ -49,6 +43,11 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         let candicate_groups = self.current_user_groups();
 
         let ranked_candicates = Self::rank_group_for_balance(candicate_groups, mean_cnt);
+        trace!(
+            scored_nodes = ?ranked_candicates.iter().map(|(g, s)| format!("{}-{}({:?})", g.id, g.shards.len(), s)).collect::<Vec<_>>(),
+            mean = mean_cnt,
+            "group ranked by shard count",
+        );
         for (src_group, status) in &ranked_candicates {
             if *status != BalanceStatus::Overfull {
                 break;
