@@ -197,7 +197,7 @@ impl Server {
         match result {
             Err(Error::NotRootLeader(_) | Error::NotLeader(_, _) | Error::GroupNotFound(_)) => {
                 let roots = self.node.get_root().await;
-                return Err(Error::NotRootLeader(roots));
+               Err(Error::NotRootLeader(roots))
             }
             Err(
                 e @ (Error::Forward(_)
