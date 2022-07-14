@@ -102,7 +102,7 @@ async fn bootstrap_services(addr: &str, server: Server, shutdown: Shutdown) -> R
     crate::runtime::select! {
         res = server => { res? }
         _ = shutdown => {}
-    }
+    };
 
     Ok(())
 }

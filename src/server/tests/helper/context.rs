@@ -130,10 +130,8 @@ impl TestContext {
 impl Drop for TestContext {
     fn drop(&mut self) {
         let _ = std::mem::take(&mut self.notifier);
-        // FIXME(walter) support graceful shutdown.
-        // for handle in std::mem::take(&mut self.handles) {
-        //     handle.join().unwrap_or_default();
-        // }
-        let _ = std::mem::take(&mut self.handles);
+        for handle in std::mem::take(&mut self.handles) {
+            handle.join().unwrap_or_default();
+        }
     }
 }

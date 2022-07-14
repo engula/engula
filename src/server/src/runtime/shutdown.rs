@@ -13,29 +13,29 @@
 // limitations under the License.
 
 use std::{
+    collections::HashMap,
     future::Future,
     pin::Pin,
-    task::{Context, Poll},
+    sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
 };
 
-use futures::pin_mut;
-use tokio::sync::broadcast;
-
 pub struct ShutdownNotifier {
-    sender: broadcast::Sender<()>,
+    core: Arc<Mutex<Core>>,
 }
 
 pub struct Shutdown {
-    notify: broadcast::Receiver<()>,
+    core: Arc<Mutex<Core>>,
+}
+
+struct Core {
+    closed: bool,
+    wakers: HashMap<usize, Waker>,
 }
 
 impl Shutdown {
-    fn new(notify: broadcast::Receiver<()>) -> Shutdown {
-        Shutdown { notify }
-    }
-
-    pub async fn recv(&mut self) {
-        let _ = self.notify.recv().await;
+    fn new(core: Arc<Mutex<Core>>) -> Shutdown {
+        Shutdown { core }
     }
 }
 
@@ -43,9 +43,15 @@ impl Future for Shutdown {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let fut = self.get_mut().recv();
-        pin_mut!(fut);
-        fut.poll(cx)
+        let shut = self.get_mut();
+        let mut core = shut.core.lock().unwrap();
+        if core.closed {
+            Poll::Ready(())
+        } else {
+            let id = shut as *const Shutdown as usize;
+            core.wakers.insert(id, cx.waker().clone());
+            Poll::Pending
+        }
     }
 }
 
@@ -61,13 +67,81 @@ impl ShutdownNotifier {
     }
 
     pub fn subscribe(&self) -> Shutdown {
-        Shutdown::new(self.sender.subscribe())
+        Shutdown::new(self.core.clone())
     }
 }
 
 impl Default for ShutdownNotifier {
     fn default() -> Self {
-        let (tx, _) = broadcast::channel(1);
-        ShutdownNotifier { sender: tx }
+        ShutdownNotifier {
+            core: Arc::new(Mutex::new(Core {
+                closed: false,
+                wakers: HashMap::default(),
+            })),
+        }
+    }
+}
+
+impl Drop for ShutdownNotifier {
+    fn drop(&mut self) {
+        let mut core = self.core.lock().unwrap();
+        core.closed = true;
+        for (_, waker) in std::mem::take(&mut core.wakers) {
+            waker.wake();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::channel::oneshot;
+
+    use super::*;
+    use crate::runtime::*;
+
+    #[test]
+    fn shutdown() {
+        let notifier = ShutdownNotifier::new();
+        let shutdown_1 = notifier.subscribe();
+        let handle_1 = std::thread::spawn(|| {
+            let owner = ExecutorOwner::new(1);
+            owner.executor().block_on(async move {
+                shutdown_1.await;
+            });
+        });
+
+        let shutdown_2 = notifier.subscribe();
+        let handle_2 = std::thread::spawn(|| {
+            let owner = ExecutorOwner::new(1);
+            owner.executor().block_on(async move {
+                shutdown_2.await;
+            });
+        });
+
+        drop(notifier);
+
+        handle_1.join().unwrap_or_default();
+        handle_2.join().unwrap_or_default();
+    }
+
+    #[test]
+    fn shutdown_with_select() {
+        let notifier = ShutdownNotifier::new();
+        let (tx, rx) = oneshot::channel::<()>();
+        let shutdown_1 = notifier.subscribe();
+        let handle_1 = std::thread::spawn(|| {
+            let owner = ExecutorOwner::new(1);
+            owner.executor().block_on(async move {
+                select! {
+                    _ = rx => {}
+                    _ = shutdown_1 => {}
+                };
+            });
+        });
+
+        drop(notifier);
+
+        handle_1.join().unwrap_or_default();
+        let _ = tx;
     }
 }
