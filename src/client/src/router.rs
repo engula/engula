@@ -23,7 +23,7 @@ use tokio_stream::StreamExt;
 use tonic::Streaming;
 use tracing::{info, warn};
 
-use crate::RootClient;
+use crate::{conn_manager::ConnManager, discovery::StaticServiceDiscovery, RootClient};
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
@@ -148,17 +148,21 @@ impl Router {
 
 async fn state_main(state: Arc<Mutex<State>>, addrs: Vec<String>) {
     let mut interval = 1;
-    let root_client = loop {
-        match RootClient::connect(addrs.clone()).await {
-            Ok(c) => break c,
-            Err(e) => {
-                warn!(err = ?e, addr=?addrs, "connect root server");
-            }
-        };
+    let root_client = RootClient::new(
+        Box::new(StaticServiceDiscovery::new(addrs)),
+        ConnManager::default(),
+    );
+    // loop {
+    //     match RootClient::connect(addrs.clone()).await {
+    //         Ok(c) => break c,
+    //         Err(e) => {
+    //             warn!(err = ?e, addr=?addrs, "connect root server");
+    //         }
+    //     };
 
-        tokio::time::sleep(Duration::from_millis(interval)).await;
-        interval = std::cmp::min(interval * 2, 1000);
-    };
+    //     tokio::time::sleep(Duration::from_millis(interval)).await;
+    //     interval = std::cmp::min(interval * 2, 1000);
+    // };
 
     info!("start watching events...");
 

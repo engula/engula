@@ -91,7 +91,7 @@ async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
         for root in roots.iter() {
             match issue_report_request(root.to_owned(), &request).await {
                 Ok(()) => return,
-                Err(Error::NotRootLeader(root)) => {
+                Err(Error::NotRootLeader(root, leader)) => {
                     *roots = root.root_nodes.into_iter().map(|n| n.addr).collect();
                     continue 'OUTER;
                 }

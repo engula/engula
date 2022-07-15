@@ -11,22 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use engula_api::server::v1::*;
 
-#![feature(map_try_insert)]
+#[crate::async_trait]
+pub trait ServiceDiscovery : Send + Sync {
+    async fn list_nodes(&self) -> Vec<String>;
+}
 
-mod app_client;
-mod conn_manager;
-mod discovery;
-mod error;
-mod node_client;
-mod retry;
-mod root_client;
-mod router;
+pub struct StaticServiceDiscovery {
+    nodes: Vec<String>,
+}
 
-pub use app_client::{Client as EngulaClient, Collection, Database, Partition};
-pub use error::Error;
-pub use node_client::{Client as NodeClient, RequestBatchBuilder};
-pub use retry::RetryState;
-pub use root_client::{AdminRequestBuilder, AdminResponseExtractor, Client as RootClient};
-pub use router::{Router, RouterGroupState};
-use tonic::async_trait;
+impl StaticServiceDiscovery {
+    pub fn new(nodes: Vec<String>) -> Self {
+        StaticServiceDiscovery { nodes }
+    }
+}
+
+#[crate::async_trait]
+impl ServiceDiscovery for StaticServiceDiscovery {
+    async fn list_nodes(&self) -> Vec<String> {
+        self.nodes.clone()
+    }
+}

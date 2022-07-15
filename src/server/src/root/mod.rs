@@ -68,7 +68,7 @@ impl RootShared {
         let core = self.core.lock().unwrap();
         core.as_ref()
             .map(|c| c.schema.clone())
-            .ok_or_else(|| Error::NotRootLeader(RootDesc::default()))
+            .ok_or_else(|| Error::NotRootLeader(RootDesc::default(), None))
     }
 }
 

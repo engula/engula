@@ -57,7 +57,7 @@ message ErrorDetailUnion {
 /// the leader of the current group.
 message NotLeader {
     uint64 group_id = 1;
-    /// The leader of the requested group. `None` means that the target replica does known
+    /// The leader of the requested group. `None` means that the target replica does not known
     /// who the current leader is.
     ReplicaDesc leader = 2;
 }
@@ -67,6 +67,9 @@ message NotLeader {
 message NotRoot {
     /// `root` contains the known root members of the node, the first most likely being the leader.
     RootDesc root = 1;
+    /// The leader of root group. `None` means that the target replica does not known who
+    /// the current leader is.
+    ReplicaDesc leader =2;
 }
 
 /// The epoch of metadata carried by the request does not match the epoch of target replica.
