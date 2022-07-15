@@ -509,10 +509,13 @@ impl Node {
                 if info.group_id == ROOT_GROUP_ID {
                     continue;
                 }
-                ns.group_count += 1;
                 let descriptor = replica.descriptor();
                 if descriptor.replicas.is_empty() {
                     ns.orphan_replica_count += 1;
+                }
+                if descriptor.replicas.iter().any(|r| r.id == info.replica_id) {
+                    // filter out the replica be removed by change_replica.
+                    ns.group_count += 1;
                 }
                 let replica_state = replica.replica_state();
                 if replica_state.role == RaftRole::Leader as i32 {

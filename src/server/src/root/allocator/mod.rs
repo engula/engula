@@ -34,31 +34,37 @@ mod source;
 
 pub use source::{AllocSource, SysAllocSource};
 
+#[derive(Clone, Debug)]
+pub enum ReplicaRoleAction {
+    Replica(ReplicaAction),
+    Leader(LeaderAction),
+}
+
+#[derive(Clone, Debug)]
 pub enum GroupAction {
     Noop,
     Add(usize),
     Remove(Vec<u64>),
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub enum ReplicaAction {
     Noop,
     Migrate(ReallocateReplica),
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub enum ShardAction {
-    Noop,
     Migrate(ReallocateShard),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum LeaderAction {
     Noop,
     Shed(TransferLeader),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransferLeader {
     pub group: u64,
     pub src_node: u64,
@@ -67,6 +73,7 @@ pub struct TransferLeader {
     pub target_replica: u64,
 }
 
+#[derive(Clone, Debug)]
 pub struct ReallocateReplica {
     pub group: u64,
     pub source_node: u64,
@@ -74,6 +81,7 @@ pub struct ReallocateReplica {
     pub target_node: NodeDesc,
 }
 
+#[derive(Clone, Debug)]
 pub struct ReallocateShard {
     pub shard: u64,
     pub source_group: u64,

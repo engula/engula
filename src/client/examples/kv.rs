@@ -18,8 +18,8 @@ use engula_client::{EngulaClient, Error, Partition};
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
 
-    let addr = "127.0.0.1:21805";
-    let client = EngulaClient::connect(addr.to_string()).await?;
+    let addrs = vec!["127.0.0.1:21805".to_owned()];
+    let client = EngulaClient::connect(addrs).await?;
     let db = client.create_database("test_db".to_string()).await?;
     let co = db
         .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))

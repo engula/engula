@@ -36,7 +36,7 @@ pub use crate::{
     error::{Error, Result},
     node::NodeConfig,
     raftgroup::RaftConfig,
-    root::AllocatorConfig,
+    root::{diagnosis, AllocatorConfig},
     service::Server,
 };
 
