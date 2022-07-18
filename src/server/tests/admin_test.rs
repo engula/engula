@@ -181,7 +181,7 @@ async fn find_root(nodes: Vec<String>) -> String {
         }
         let n_cli = n_cli.unwrap();
         let roots = n_cli.get_root().await.unwrap();
-        return roots[0].to_owned();
+        return roots.root_nodes[0].addr.to_owned();
     }
     panic!("no avaliable root")
 }

@@ -15,15 +15,16 @@
 use std::{path::Path, sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
-use engula_client::{RootClient, Router};
+use engula_client::{ConnManager, RootClient, Router};
 use tracing::{debug, info, warn};
 
 use crate::{
+    discovery::RootDiscovery,
     node::{engine::StateEngine, resolver::AddressResolver, Node},
     root::{Root, Schema},
     runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
-    Config, Error, Result, Server,
+    Config, Error, Provider, Result, Server,
 };
 
 pub const REPLICA_PER_GROUP: usize = 3;
@@ -42,39 +43,19 @@ lazy_static::lazy_static! {
 
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
-    let db_path = config.root_dir.join("db");
-    let log_path = config.root_dir.join("log");
-    let raw_db = Arc::new(open_engine(db_path)?);
-    let state_engine = StateEngine::new(raw_db.clone())?;
-
     executor.block_on(async {
-        let root_list = if config.init {
-            vec![config.addr.clone()]
-        } else {
-            config.join_list.clone()
-        };
-        let router = Router::new(root_list).await;
-        let address_resolver = Arc::new(AddressResolver::new(router.clone()));
+        let provider = build_provider(&config, executor.clone()).await?;
+        let node = Node::new(config.clone(), provider.clone())?;
 
-        let node = Node::new(
-            config.clone(),
-            log_path,
-            raw_db,
-            state_engine,
-            executor.clone(),
-            address_resolver.clone(),
-            router,
-        )?;
-
-        let ident = bootstrap_or_join_cluster(&config, &node).await?;
+        let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
-        let root = Root::new(executor.clone(), &ident, config.clone());
+        let root = Root::new(provider.clone(), &ident, config.clone());
         root.bootstrap(&node).await?;
 
         let server = Server {
             node: Arc::new(node),
             root,
-            address_resolver,
+            address_resolver: provider.address_resolver.clone(),
         };
         bootstrap_services(&config.addr, server, shutdown).await
     })
@@ -133,7 +114,11 @@ pub(crate) fn open_engine<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
     }
 }
 
-async fn bootstrap_or_join_cluster(config: &Config, node: &Node) -> Result<NodeIdent> {
+async fn bootstrap_or_join_cluster(
+    config: &Config,
+    node: &Node,
+    root_client: &RootClient,
+) -> Result<NodeIdent> {
     let state_engine = node.state_engine();
     if let Some(node_ident) = state_engine.read_ident().await? {
         info!(
@@ -147,7 +132,7 @@ async fn bootstrap_or_join_cluster(config: &Config, node: &Node) -> Result<NodeI
     Ok(if config.init {
         bootstrap_cluster(node, &config.addr).await?
     } else {
-        try_join_cluster(node, &config.addr, config.join_list.clone()).await?
+        try_join_cluster(node, &config.addr, config.join_list.clone(), root_client).await?
     })
 }
 
@@ -155,6 +140,7 @@ async fn try_join_cluster(
     node: &Node,
     local_addr: &str,
     join_list: Vec<String>,
+    root_client: &RootClient,
 ) -> Result<NodeIdent> {
     info!("try join a bootstrapted cluster");
 
@@ -181,21 +167,16 @@ async fn try_join_cluster(
 
     let mut backoff: u64 = 1;
     loop {
-        match RootClient::connect(join_list.clone()).await {
-            Ok(client) => match client.join_node(req.clone()).await {
-                Ok(res) => {
-                    debug!("issue join request to root server success");
-                    let node_ident =
-                        save_node_ident(node.state_engine(), res.cluster_id, res.node_id).await;
-                    node.update_root(res.root.unwrap_or_default()).await?;
-                    return node_ident;
-                }
-                Err(e) => {
-                    warn!(err = ?e, join_list = ?join_list, "failed to join cluster");
-                }
-            },
+        match root_client.join_node(req.clone()).await {
+            Ok(res) => {
+                debug!("issue join request to root server success");
+                let node_ident =
+                    save_node_ident(node.state_engine(), res.cluster_id, res.node_id).await;
+                node.update_root(res.root.unwrap_or_default()).await?;
+                return node_ident;
+            }
             Err(e) => {
-                warn!(err = ?e, join_list = ?join_list, "cannot connect to root server");
+                warn!(err = ?e, join_list = ?join_list, "failed to join cluster");
             }
         }
         std::thread::sleep(Duration::from_secs(backoff));
@@ -291,4 +272,34 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     node.update_root(root_desc).await?;
 
     Ok(())
+}
+
+pub(crate) async fn build_provider(config: &Config, executor: Executor) -> Result<Arc<Provider>> {
+    let db_path = config.root_dir.join("db");
+    let log_path = config.root_dir.join("log");
+    let raw_db = Arc::new(open_engine(&db_path)?);
+
+    let root_list = if config.init {
+        vec![config.addr.clone()]
+    } else {
+        config.join_list.clone()
+    };
+    let state_engine = StateEngine::new(raw_db.clone())?;
+    let discovery = Arc::new(RootDiscovery::new(root_list, state_engine.clone()));
+    let conn_manager = ConnManager::new();
+    let root_client = RootClient::new(discovery, conn_manager.clone());
+    let router = Router::new(root_client.clone()).await;
+    let address_resolver = Arc::new(AddressResolver::new(router.clone()));
+    let provider = Arc::new(Provider {
+        log_path,
+        db_path,
+        conn_manager,
+        root_client,
+        router,
+        address_resolver,
+        raw_db,
+        state_engine,
+        executor,
+    });
+    Ok(provider)
 }

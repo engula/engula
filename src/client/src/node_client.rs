@@ -33,15 +33,11 @@ impl Client {
         Ok(Self { client })
     }
 
-    pub async fn get_root(&self) -> Result<Vec<String>, tonic::Status> {
+    pub async fn get_root(&self) -> Result<RootDesc, tonic::Status> {
         let mut client = self.client.clone();
         let req = GetRootRequest::default();
         let res = client.get_root(req).await?;
-        Ok(res
-            .into_inner()
-            .root
-            .map(|r| r.root_nodes.into_iter().map(|n| n.addr).collect())
-            .unwrap_or_default())
+        Ok(res.into_inner().root.unwrap_or_default())
     }
 
     // NOTE: This method is always called by the root group.

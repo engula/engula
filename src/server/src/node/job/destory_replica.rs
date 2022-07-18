@@ -18,25 +18,23 @@ use tracing::error;
 
 use crate::{
     node::{GroupEngine, StateEngine},
-    runtime::{Executor, TaskPriority},
+    runtime::TaskPriority,
     serverpb::v1::ReplicaLocalState,
-    Result,
+    Provider, Result,
 };
 
 /// Clean a group engine and save the replica state to `ReplicaLocalState::Tombstone`.
-pub fn setup(
-    executor: &Executor,
-    group_id: u64,
-    replica_id: u64,
-    state_engine: StateEngine,
-    raw_db: Arc<rocksdb::DB>,
-) {
+pub(crate) fn setup(group_id: u64, replica_id: u64, provider: &Provider) {
     let tag = &group_id.to_le_bytes();
-    executor.spawn(Some(tag), TaskPriority::IoLow, async move {
-        if let Err(err) = destory_replica(group_id, replica_id, state_engine, raw_db).await {
-            error!("destory group engine: {}, group {}", err, group_id);
-        }
-    });
+    let state_engine = provider.state_engine.clone();
+    let raw_db = provider.raw_db.clone();
+    provider
+        .executor
+        .spawn(Some(tag), TaskPriority::IoLow, async move {
+            if let Err(err) = destory_replica(group_id, replica_id, state_engine, raw_db).await {
+                error!("destory group engine: {}, group {}", err, group_id);
+            }
+        });
 }
 
 async fn destory_replica(

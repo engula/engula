@@ -19,7 +19,6 @@ use std::{
 };
 
 use engula_api::server::v1::{group_request_union::Request, *};
-use engula_client::Router;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -29,15 +28,15 @@ use crate::{
         Replica,
     },
     raftgroup::{RaftGroupState, RaftNodeFacade},
-    runtime::{sync::WaitGroup, Executor, TaskPriority},
+    runtime::{sync::WaitGroup, TaskPriority},
     serverpb::v1::*,
+    Provider,
 };
 
 /// The task scheduler of an replica.
 pub struct Scheduler {
     #[allow(unused)]
     cfg: ReplicaConfig,
-
     ctx: ScheduleContext,
 
     // A group only can have one change config task.
@@ -51,7 +50,7 @@ struct ScheduleContext {
 
     replica: Arc<Replica>,
     raft_node: RaftNodeFacade,
-    router: Router,
+    provider: Arc<Provider>,
 
     current_term: u64,
 
@@ -174,7 +173,7 @@ impl Scheduler {
 }
 
 impl ScheduleContext {
-    fn new(replica: Arc<Replica>, router: Router) -> Self {
+    fn new(replica: Arc<Replica>, provider: Arc<Provider>) -> Self {
         let info = replica.replica_info();
         let raft_node = replica.raft_node();
         ScheduleContext {
@@ -182,7 +181,7 @@ impl ScheduleContext {
             group_id: info.group_id,
             replica,
             raft_node,
-            router,
+            provider,
             current_term: 0,
             lost_peers: HashMap::default(),
             num_voters: 0,
@@ -218,7 +217,7 @@ impl ScheduleContext {
 
     fn is_group_promotable(&self) -> bool {
         self.num_voters < self.required_replicas
-            && self.required_replicas <= self.router.total_nodes()
+            && self.required_replicas <= self.provider.router.total_nodes()
     }
 
     fn num_missing_replicas(&self) -> usize {
@@ -346,18 +345,17 @@ impl ScheduleContext {
         &mut self,
         num_required: usize,
     ) -> std::result::Result<Vec<ReplicaDesc>, engula_client::Error> {
-        use engula_client::RootClient;
-
-        let root_group_state = self.router.find_group(ROOT_GROUP_ID)?;
+        let root_group_state = self.provider.router.find_group(ROOT_GROUP_ID)?;
         let root_replicas = root_group_state.replicas.values().cloned();
 
         let mut root_list = vec![];
         for replica in root_replicas {
-            root_list.push(self.router.find_node_addr(replica.node_id)?);
+            root_list.push(self.provider.router.find_node_addr(replica.node_id)?);
         }
 
-        let root_client = RootClient::connect(root_list).await?;
-        let resp = root_client
+        let resp = self
+            .provider
+            .root_client
             .alloc_replica(AllocReplicaRequest {
                 group_id: self.group_id,
                 epoch: self.replica.epoch(),
@@ -373,10 +371,8 @@ impl ScheduleContext {
         &self,
         r: &ReplicaDesc,
     ) -> std::result::Result<(), engula_client::Error> {
-        use engula_client::NodeClient;
-
-        let addr = self.router.find_node_addr(r.node_id)?;
-        let client = NodeClient::connect(addr).await?;
+        let addr = self.provider.router.find_node_addr(r.node_id)?;
+        let client = self.provider.conn_manager.get_node_client(addr).await?;
         let desc = GroupDesc {
             id: self.group_id,
             ..Default::default()
@@ -386,25 +382,25 @@ impl ScheduleContext {
     }
 }
 
-pub fn setup(
+pub(crate) fn setup(
     cfg: ReplicaConfig,
-    executor: &Executor,
-    router: Router,
+    provider: Arc<Provider>,
     replica: Arc<Replica>,
     wait_group: WaitGroup,
 ) {
     let group_id = replica.replica_info().group_id;
     let tag = &group_id.to_le_bytes();
+    let executor = provider.executor.clone();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
-        scheduler_main(cfg, router, replica).await;
+        scheduler_main(cfg, provider, replica).await;
         drop(wait_group);
     });
 }
 
-async fn scheduler_main(cfg: ReplicaConfig, router: Router, replica: Arc<Replica>) {
+async fn scheduler_main(cfg: ReplicaConfig, provider: Arc<Provider>, replica: Arc<Replica>) {
     let mut scheduler = Scheduler {
         cfg,
-        ctx: ScheduleContext::new(replica, router),
+        ctx: ScheduleContext::new(replica, provider),
         change_config_task: None,
     };
     while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader(false).await {

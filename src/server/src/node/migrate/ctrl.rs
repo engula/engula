@@ -21,10 +21,7 @@ use tracing::{debug, error, info, warn};
 
 use super::{ForwardCtx, GroupClient};
 use crate::{
-    node::Replica,
-    runtime::{sync::WaitGroup, Executor},
-    serverpb::v1::*,
-    Error, NodeConfig, Result,
+    node::Replica, runtime::sync::WaitGroup, serverpb::v1::*, Error, NodeConfig, Provider, Result,
 };
 
 struct MigrationCoordinator {
@@ -46,23 +43,18 @@ pub struct MigrateController {
 
 struct MigrateControllerShared {
     cfg: NodeConfig,
-    executor: Executor,
-    router: Router,
+    provider: Arc<Provider>,
 }
 
 impl MigrateController {
-    pub fn new(cfg: NodeConfig, executor: Executor, router: Router) -> Self {
+    pub(crate) fn new(cfg: NodeConfig, provider: Arc<Provider>) -> Self {
         MigrateController {
-            shared: Arc::new(MigrateControllerShared {
-                cfg,
-                executor,
-                router,
-            }),
+            shared: Arc::new(MigrateControllerShared { cfg, provider }),
         }
     }
 
     pub fn router(&self) -> Router {
-        self.shared.router.clone()
+        self.shared.provider.router.clone()
     }
 
     /// Watch migration state and do the corresponding step.
@@ -93,7 +85,8 @@ impl MigrateController {
                     } else {
                         desc.src_group_id
                     };
-                    let client = GroupClient::new(target_group_id, ctrl.shared.router.clone());
+                    let client =
+                        GroupClient::new(target_group_id, ctrl.shared.provider.router.clone());
                     coord = Some(MigrationCoordinator {
                         cfg: ctrl.shared.cfg.clone(),
                         replica_id,
@@ -115,7 +108,7 @@ impl MigrateController {
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
-        super::forward_request(self.shared.router.clone(), &forward_ctx, request).await
+        super::forward_request(self.shared.provider.router.clone(), &forward_ctx, request).await
     }
 
     fn spawn_group_task<F, T>(&self, group_id: u64, future: F)
@@ -128,6 +121,7 @@ impl MigrateController {
         let tag_owner = group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
         self.shared
+            .provider
             .executor
             .spawn(tag, TaskPriority::IoHigh, future);
     }

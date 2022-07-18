@@ -16,6 +16,7 @@
 
 mod app_client;
 mod conn_manager;
+mod discovery;
 mod error;
 mod node_client;
 mod retry;
@@ -23,8 +24,11 @@ mod root_client;
 mod router;
 
 pub use app_client::{Client as EngulaClient, Collection, Database, Partition};
+pub use conn_manager::ConnManager;
+pub use discovery::{ServiceDiscovery, StaticServiceDiscovery};
 pub use error::Error;
 pub use node_client::{Client as NodeClient, RequestBatchBuilder};
 pub use retry::RetryState;
 pub use root_client::{AdminRequestBuilder, AdminResponseExtractor, Client as RootClient};
 pub use router::{Router, RouterGroupState};
+use tonic::async_trait;

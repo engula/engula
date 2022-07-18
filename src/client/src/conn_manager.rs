@@ -17,6 +17,7 @@ use std::{
     time::Duration,
 };
 
+use engula_api::server::v1::root_client::RootClient;
 use tonic::transport::{Channel, Endpoint};
 
 use crate::NodeClient;
@@ -42,6 +43,7 @@ impl ConnManager {
         ConnManager::default()
     }
 
+    // TODO(walter) add tags
     pub async fn get(&self, addr: String) -> Result<Channel, tonic::transport::Error> {
         let mut core = self.core.lock().unwrap();
         if let Some(info) = core.channels.get_mut(&addr) {
@@ -65,6 +67,15 @@ impl ConnManager {
     ) -> Result<NodeClient, tonic::transport::Error> {
         let channel = self.get(addr).await?;
         Ok(NodeClient::new(channel))
+    }
+
+    #[inline]
+    pub async fn get_root_client(
+        &self,
+        addr: String,
+    ) -> Result<RootClient<Channel>, tonic::transport::Error> {
+        let channel = self.get(addr).await?;
+        Ok(RootClient::new(channel))
     }
 }
 

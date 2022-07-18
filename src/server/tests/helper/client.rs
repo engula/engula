@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, time::Duration};
+use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use engula_api::{
     server::v1::*,
     v1::{PutRequest, PutResponse},
 };
-use engula_client::{NodeClient, Router};
+use engula_client::{ConnManager, NodeClient, RootClient, Router, StaticServiceDiscovery};
 use engula_server::{runtime, Error, Result};
 use prost::Message;
 use tonic::{Code, Status};
@@ -272,7 +272,12 @@ pub struct ClusterClient {
 #[allow(unused)]
 impl ClusterClient {
     pub async fn new(nodes: HashMap<u64, String>) -> Self {
-        let router = Router::new(nodes.values().cloned().collect()).await;
+        let conn_manager = ConnManager::new();
+        let discovery = Arc::new(StaticServiceDiscovery::new(
+            nodes.values().cloned().collect(),
+        ));
+        let root_client = RootClient::new(discovery, conn_manager);
+        let router = Router::new(root_client).await;
         ClusterClient { nodes, router }
     }
 

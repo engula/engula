@@ -213,9 +213,13 @@ impl Server {
 
     async fn wrap<T>(&self, result: Result<T>) -> Result<T> {
         match result {
-            Err(Error::NotRootLeader(_) | Error::NotLeader(_, _) | Error::GroupNotFound(_)) => {
+            Err(Error::NotRootLeader(..) | Error::GroupNotFound(_)) => {
                 let roots = self.node.get_root().await;
-                Err(Error::NotRootLeader(roots))
+                Err(Error::NotRootLeader(roots, None))
+            }
+            Err(Error::NotLeader(_, leader)) => {
+                let roots = self.node.get_root().await;
+                Err(Error::NotRootLeader(roots, leader))
             }
             Err(
                 e @ (Error::Forward(_)
