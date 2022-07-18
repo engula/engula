@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{collections::HashMap, sync::Mutex};
+
 use engula_api::server::v1::NodeDesc;
 use engula_client::Router;
 
@@ -19,11 +21,23 @@ use crate::{Error, Result};
 
 pub struct AddressResolver {
     router: Router,
+    initial_nodes: Mutex<HashMap<u64, String>>,
 }
 
 impl AddressResolver {
     pub fn new(router: Router) -> Self {
-        AddressResolver { router }
+        AddressResolver {
+            router,
+            initial_nodes: Mutex::default(),
+        }
+    }
+
+    pub fn set_initial_nodes(&self, initial_nodes: Vec<NodeDesc>) {
+        let mut guard = self.initial_nodes.lock().unwrap();
+        *guard = initial_nodes
+            .into_iter()
+            .map(|n| (n.id, n.addr))
+            .collect::<HashMap<_, _>>();
     }
 }
 
@@ -34,6 +48,15 @@ impl crate::raftgroup::AddressResolver for AddressResolver {
             return Ok(NodeDesc {
                 id: node_id,
                 addr,
+                ..Default::default()
+            });
+        }
+
+        let initial_nodes = self.initial_nodes.lock().unwrap();
+        if let Some(addr) = initial_nodes.get(&node_id) {
+            return Ok(NodeDesc {
+                id: node_id,
+                addr: addr.clone(),
                 ..Default::default()
             });
         }

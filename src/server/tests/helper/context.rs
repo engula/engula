@@ -45,6 +45,13 @@ impl TestContext {
         }
     }
 
+    pub fn shutdown(&mut self) {
+        let _ = std::mem::take(&mut self.notifier);
+        for handle in std::mem::take(&mut self.handles) {
+            handle.join().unwrap_or_default();
+        }
+    }
+
     pub fn next_listen_address(&self) -> String {
         format!("127.0.0.1:{}", next_avail_port())
     }
@@ -108,20 +115,28 @@ impl TestContext {
     #[allow(dead_code)]
     pub async fn bootstrap_servers(&mut self, num_server: usize) -> HashMap<u64, String> {
         let mut nodes = HashMap::new();
-        let mut root_addr = String::default();
         for i in 0..num_server {
             let next_addr = self.next_listen_address();
-            if i == 0 {
-                self.spawn_server(i + 1, &next_addr, true, vec![]);
-                root_addr = next_addr.clone();
-                node_client_with_retry(&next_addr).await;
-            } else {
-                // Join node one by one so that the node id is increment.
-                self.spawn_server(i + 1, &next_addr, false, vec![root_addr.clone()]);
-                node_client_with_retry(&next_addr).await;
-            }
             let node_id = i as u64;
             nodes.insert(node_id, next_addr);
+        }
+        self.start_servers(nodes).await
+    }
+
+    pub async fn start_servers(&mut self, nodes: HashMap<u64, String>) -> HashMap<u64, String> {
+        let root_addr = nodes.get(&0).expect("root addr should exists").clone();
+        let mut keys = nodes.keys().cloned().collect::<Vec<_>>();
+        keys.sort_unstable();
+        for id in keys {
+            let addr = nodes.get(&id).unwrap().clone();
+            if id == 0 {
+                self.spawn_server((id + 1) as usize, &addr, true, vec![]);
+                node_client_with_retry(&addr).await;
+            } else {
+                // Join node one by one so that the node id is increment.
+                self.spawn_server((id + 1) as usize, &addr, false, vec![root_addr.clone()]);
+                node_client_with_retry(&addr).await;
+            }
         }
         nodes
     }
@@ -129,9 +144,6 @@ impl TestContext {
 
 impl Drop for TestContext {
     fn drop(&mut self) {
-        let _ = std::mem::take(&mut self.notifier);
-        for handle in std::mem::take(&mut self.handles) {
-            handle.join().unwrap_or_default();
-        }
+        self.shutdown();
     }
 }

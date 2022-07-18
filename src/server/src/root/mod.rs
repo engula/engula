@@ -99,7 +99,7 @@ impl Root {
         self.shared.node_ident.node_id
     }
 
-    pub async fn bootstrap(&self, node: &Node) -> Result<()> {
+    pub async fn bootstrap(&self, node: &Node) -> Result<Vec<NodeDesc>> {
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
@@ -108,7 +108,13 @@ impl Root {
             .spawn(None, TaskPriority::Middle, async move {
                 root.run(replica_table).await;
             });
-        Ok(())
+
+        if let Some(replica) = node.replica_table().current_root_replica(None) {
+            let engine = replica.group_engine();
+            Ok(Schema::list_node_raw(engine).await?)
+        } else {
+            Ok(vec![])
+        }
     }
 
     pub fn schema(&self) -> Result<Arc<Schema>> {

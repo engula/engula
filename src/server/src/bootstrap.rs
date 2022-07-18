@@ -50,7 +50,12 @@ pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()>
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
         let root = Root::new(provider.clone(), &ident, config.clone());
-        root.bootstrap(&node).await?;
+        let initial_node_descs = root.bootstrap(&node).await?;
+        provider
+            .address_resolver
+            .set_initial_nodes(initial_node_descs);
+
+        info!("node {} starts serving requests", ident.node_id);
 
         let server = Server {
             node: Arc::new(node),
