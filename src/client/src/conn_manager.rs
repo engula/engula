@@ -51,7 +51,7 @@ impl ConnManager {
             return Ok(info.channel.clone());
         }
 
-        let channel = Endpoint::new(addr.clone())?.connect_lazy();
+        let channel = Endpoint::new(format!("http://{}", addr))?.connect_lazy();
         let info = ChannelInfo {
             channel: channel.clone(),
             access: 1,

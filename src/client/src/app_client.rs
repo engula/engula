@@ -38,11 +38,11 @@ struct ClientInner {
 }
 
 impl Client {
-    pub async fn connect(addr: String) -> Result<Self, crate::Error> {
+    pub async fn connect(addrs: Vec<String>) -> Result<Self, crate::Error> {
         let conn_manager = ConnManager::new();
-        let discovery = Box::new(StaticServiceDiscovery::new(vec![addr.clone()]));
+        let discovery = Box::new(StaticServiceDiscovery::new(addrs.clone()));
         let root_client = RootClient::new(discovery, conn_manager.clone());
-        let router = Router::new(vec![addr]).await;
+        let router = Router::new(addrs).await;
         Ok(Self {
             inner: Arc::new(ClientInner {
                 root_client,
@@ -64,6 +64,20 @@ impl Client {
                 client: self.clone(),
             }),
         }
+    }
+
+    pub async fn list_database(&self) -> Result<Vec<Database>, crate::Error> {
+        let root_client = self.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::list_database())
+            .await?;
+        Ok(AdminResponseExtractor::list_database(resp)
+            .into_iter()
+            .map(|desc| Database {
+                desc,
+                client: self.clone(),
+            })
+            .collect::<Vec<_>>())
     }
 
     pub async fn open_database(&self, name: String) -> Result<Database, crate::Error> {
@@ -129,6 +143,24 @@ impl Database {
         }
     }
 
+    pub async fn list_collection(&self) -> Result<Vec<Collection>, crate::Error> {
+        let client = self.client.clone();
+        let root_client = client.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::list_collection(
+                self.desc.name.to_owned(),
+            ))
+            .await?;
+        Ok(AdminResponseExtractor::list_collection(resp)
+            .into_iter()
+            .map(|co_desc| Collection {
+                db_desc: self.desc.to_owned(),
+                co_desc,
+                client: client.clone(),
+            })
+            .collect::<Vec<_>>())
+    }
+
     pub async fn open_collection(&self, name: String) -> Result<Collection, crate::Error> {
         let client = self.client.clone();
         let db_desc = self.desc.clone();
@@ -147,6 +179,11 @@ impl Database {
                 client: client.clone(),
             }),
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn name(&self) -> String {
+        self.desc.name.to_owned()
     }
 }
 
@@ -308,5 +345,10 @@ impl Collection {
         }
 
         Ok(None)
+    }
+
+    #[allow(dead_code)]
+    fn name(&self) -> String {
+        self.co_desc.name.to_owned()
     }
 }

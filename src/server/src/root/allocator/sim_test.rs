@@ -353,7 +353,6 @@ fn sim_boostrap_join_node_balance() {
                         shard.to_owned(),
                     );
                 }
-                ShardAction::Noop => unreachable!(),
             }
         }
         let sact = a.compute_shard_action().await.unwrap();
@@ -375,7 +374,6 @@ fn sim_boostrap_join_node_balance() {
                         shard.to_owned(),
                     );
                 }
-                ShardAction::Noop => unreachable!(),
             }
         }
         let sact = a.compute_shard_action().await.unwrap();

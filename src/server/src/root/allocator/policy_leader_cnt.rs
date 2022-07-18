@@ -152,7 +152,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
             if (n2.1 == BalanceStatus::Overfull) && (n1.1 != BalanceStatus::Overfull) {
                 return Ordering::Greater;
             }
-            if (n1.1 == BalanceStatus::Underfull) && (n2.1 != BalanceStatus::Underfull) {
+            if (n2.1 == BalanceStatus::Underfull) && (n1.1 != BalanceStatus::Underfull) {
                 return Ordering::Less;
             }
             return n2

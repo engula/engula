@@ -114,8 +114,9 @@ impl Server {
                 let res = self.handle_get_database(req).await?;
                 admin_response_union::Response::GetDatabase(res)
             }
-            admin_request_union::Request::ListDatabases(_req) => {
-                todo!()
+            admin_request_union::Request::ListDatabases(req) => {
+                let res = self.handle_list_database(req).await?;
+                admin_response_union::Response::ListDatabases(res)
             }
             admin_request_union::Request::CreateCollection(req) => {
                 let res = self.handle_create_collection(req).await?;
@@ -132,8 +133,9 @@ impl Server {
                 let res = self.handle_get_collection(req).await?;
                 admin_response_union::Response::GetCollection(res)
             }
-            admin_request_union::Request::ListCollections(_req) => {
-                todo!()
+            admin_request_union::Request::ListCollections(req) => {
+                let res = self.handle_list_collection(req).await?;
+                admin_response_union::Response::ListCollections(res)
             }
         };
         Ok(AdminResponseUnion {
@@ -164,6 +166,14 @@ impl Server {
         Ok(GetDatabaseResponse { database })
     }
 
+    async fn handle_list_database(
+        &self,
+        _req: ListDatabasesRequest,
+    ) -> Result<ListDatabasesResponse> {
+        let databases = self.root.list_database().await?;
+        Ok(ListDatabasesResponse { databases })
+    }
+
     async fn handle_create_collection(
         &self,
         req: CreateCollectionRequest,
@@ -191,6 +201,14 @@ impl Server {
     ) -> Result<GetCollectionResponse> {
         let collection = self.root.get_collection(&req.name, &req.parent).await?;
         Ok(GetCollectionResponse { collection })
+    }
+
+    async fn handle_list_collection(
+        &self,
+        req: ListCollectionsRequest,
+    ) -> Result<ListCollectionsResponse> {
+        let collections = self.root.list_collection(&req.parent).await?;
+        Ok(ListCollectionsResponse { collections })
     }
 
     async fn wrap<T>(&self, result: Result<T>) -> Result<T> {
