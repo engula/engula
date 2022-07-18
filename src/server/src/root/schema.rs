@@ -32,7 +32,14 @@ use tokio::time;
 use tracing::{info, warn};
 
 use super::{job::is_retry_err, store::RootStore};
-use crate::{bootstrap::*, node::engine::LOCAL_COLLECTION_ID, Error, Result};
+use crate::{
+    bootstrap::*,
+    node::{
+        engine::{SnapshotMode, LOCAL_COLLECTION_ID},
+        GroupEngine,
+    },
+    Error, Result,
+};
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
 const SYSTEM_DATABASE_ID: u64 = 1;
@@ -344,6 +351,34 @@ impl Schema {
             nodes
                 .push(NodeDesc::decode(&*val).map_err(|_| Error::InvalidData("node desc".into()))?);
         }
+        Ok(nodes)
+    }
+
+    pub async fn list_node_raw(engine: GroupEngine) -> Result<Vec<NodeDesc>> {
+        let shard_id = Self::system_shard_id(&SYSTEM_NODE_COLLECTION_ID); // System collection only have one shard.
+        let mut snapshot = match engine.snapshot(shard_id, SnapshotMode::Prefix { key: &[] }) {
+            Ok(snapshot) => snapshot,
+            Err(Error::InvalidArgument(v)) if v.starts_with("no such shard") => {
+                // This replica of root group haven't initialized.
+                return Ok(vec![]);
+            }
+            Err(e) => {
+                warn!("root list nodes raw: {e:?}");
+                return Err(e);
+            }
+        };
+        let mut nodes = Vec::new();
+        for mvcc in snapshot.iter() {
+            for entry in mvcc {
+                if let Some(val) = entry.value() {
+                    nodes.push(
+                        NodeDesc::decode(val)
+                            .map_err(|_| Error::InvalidData("node desc".into()))?,
+                    );
+                }
+            }
+        }
+
         Ok(nodes)
     }
 

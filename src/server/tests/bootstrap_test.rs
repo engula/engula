@@ -17,9 +17,7 @@ mod helper;
 
 use engula_server::Result;
 
-use crate::helper::{
-    client::node_client_with_retry, context::*, init::setup_panic_hook, runtime::block_on_current,
-};
+use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::block_on_current};
 
 #[ctor::ctor]
 fn init() {
@@ -58,4 +56,21 @@ fn join_node() -> Result<()> {
     // At this point, initialization and join has been completed.
 
     Ok(())
+}
+
+#[test]
+fn restart_cluster() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("bootstrap_test__restart_cluster");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+
+        // Shutdown and restart servers.
+        ctx.shutdown();
+
+        let nodes = ctx.start_servers(nodes).await;
+        let c = ClusterClient::new(nodes).await;
+        let app = c.app_client().await;
+        app.create_database("db".into()).await.unwrap();
+    });
 }

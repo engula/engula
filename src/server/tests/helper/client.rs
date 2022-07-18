@@ -18,7 +18,9 @@ use engula_api::{
     server::v1::*,
     v1::{PutRequest, PutResponse},
 };
-use engula_client::{ConnManager, NodeClient, RootClient, Router, StaticServiceDiscovery};
+use engula_client::{
+    ConnManager, EngulaClient, NodeClient, RootClient, Router, StaticServiceDiscovery,
+};
 use engula_server::{runtime, Error, Result};
 use prost::Message;
 use tonic::{Code, Status};
@@ -289,6 +291,11 @@ impl ClusterClient {
 
     pub fn group(&self, group_id: u64) -> GroupClient {
         GroupClient::new(group_id, self.nodes.clone())
+    }
+
+    pub async fn app_client(&self) -> EngulaClient {
+        let addrs = self.nodes.values().cloned().collect::<Vec<_>>();
+        EngulaClient::connect(addrs).await.unwrap()
     }
 
     pub async fn group_members(&self, group_id: u64) -> Vec<(u64, i32)> {

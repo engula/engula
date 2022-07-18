@@ -99,7 +99,7 @@ impl Root {
         self.shared.node_ident.node_id
     }
 
-    pub async fn bootstrap(&self, node: &Node) -> Result<()> {
+    pub async fn bootstrap(&self, node: &Node) -> Result<Vec<NodeDesc>> {
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
@@ -108,7 +108,13 @@ impl Root {
             .spawn(None, TaskPriority::Middle, async move {
                 root.run(replica_table).await;
             });
-        Ok(())
+
+        if let Some(replica) = node.replica_table().current_root_replica(None) {
+            let engine = replica.group_engine();
+            Ok(Schema::list_node_raw(engine).await?)
+        } else {
+            Ok(vec![])
+        }
     }
 
     pub fn schema(&self) -> Result<Arc<Schema>> {
@@ -757,7 +763,10 @@ impl Root {
 #[cfg(test)]
 mod root_test {
     use engula_api::{
-        server::v1::watch_response::{update_event, UpdateEvent},
+        server::v1::{
+            watch_response::{update_event, UpdateEvent},
+            GroupDesc,
+        },
         v1::DatabaseDesc,
     };
     use futures::StreamExt;
@@ -765,7 +774,7 @@ mod root_test {
 
     use super::Config;
     use crate::{
-        bootstrap::bootstrap_cluster,
+        bootstrap::{bootstrap_cluster, INITIAL_EPOCH, ROOT_GROUP_ID},
         node::Node,
         root::Root,
         runtime::{Executor, ExecutorOwner},
@@ -807,6 +816,39 @@ mod root_test {
             node.bootstrap(&ident).await.unwrap();
             root.bootstrap(&node).await.unwrap();
             // TODO: test on leader logic later.
+        });
+    }
+
+    #[test]
+    fn bootstrap_pending_root_replica() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        let tmp_dir = TempDir::new("bootstrap_pending_root").unwrap();
+        let config = Config {
+            root_dir: tmp_dir.path().to_owned(),
+            ..Default::default()
+        };
+
+        let ident = NodeIdent {
+            cluster_id: vec![],
+            node_id: 1,
+        };
+
+        let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
+        executor.block_on(async {
+            node.bootstrap(&ident).await.unwrap();
+            node.create_replica(
+                3,
+                GroupDesc {
+                    id: ROOT_GROUP_ID,
+                    epoch: INITIAL_EPOCH,
+                    shards: vec![],
+                    replicas: vec![],
+                },
+            )
+            .await
+            .unwrap();
+            root.bootstrap(&node).await.unwrap();
         });
     }
 
