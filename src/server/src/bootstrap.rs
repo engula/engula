@@ -43,42 +43,9 @@ lazy_static::lazy_static! {
 
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
-    // let db_path = config.root_dir.join("db");
-    // let log_path = config.root_dir.join("log");
-    // let raw_db = Arc::new(open_engine(db_path)?);
-    // let state_engine = StateEngine::new(raw_db.clone())?;
-
     executor.block_on(async {
         let provider = build_provider(&config, executor.clone()).await?;
-        // let root_list = if config.init {
-        //     vec![config.addr.clone()]
-        // } else {
-        //     config.join_list.clone()
-        // };
-        // let discovery = Arc::new(RootDiscovery::new(root_list, state_engine.clone()));
-        // let conn_manager = ConnManager::new();
-        // let root_client = RootClient::new(discovery, conn_manager.clone());
-        // let router = Router::new(root_client.clone()).await;
-        // let address_resolver = Arc::new(AddressResolver::new(router.clone()));
-        // let provider = Arc::new(Provider {
-        //     conn_manager,
-        //     root_client,
-        //     router,
-        //     address_resolver,
-        //     raw_db,
-        //     state_engine,
-        // });
-
-        let node = Node::new(
-            config.clone(),
-            provider.clone(),
-            // log_path,
-            // raw_db,
-            // state_engine,
-            // executor.clone(),
-            // address_resolver.clone(),
-            // router,
-        )?;
+        let node = Node::new(config.clone(), provider.clone())?;
 
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
