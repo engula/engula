@@ -18,7 +18,7 @@ use engula_api::server::v1::{
     watch_response::{update_event, UpdateEvent},
     *,
 };
-use engula_client::{NodeClient, RequestBatchBuilder};
+use engula_client::RequestBatchBuilder;
 use tokio::time;
 use tracing::{info, trace, warn};
 
@@ -63,7 +63,7 @@ impl Root {
 
         for n in nodes {
             trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-            match Self::try_send_heartbeat(&n.addr, &piggybacks).await {
+            match self.try_send_heartbeat(&n.addr, &piggybacks).await {
                 Ok(res) => {
                     for resp in res.piggybacks {
                         match resp.info.unwrap() {
@@ -86,10 +86,11 @@ impl Root {
     }
 
     async fn try_send_heartbeat(
+        &self,
         addr: &str,
         piggybacks: &[PiggybackRequest],
     ) -> Result<HeartbeatResponse> {
-        let client = NodeClient::connect(addr.to_owned()).await?;
+        let client = self.get_node_client(addr.to_owned()).await?;
         let resp = client
             .root_heartbeat(HeartbeatRequest {
                 piggybacks: piggybacks.to_owned(),
@@ -294,8 +295,9 @@ impl Root {
         );
 
         loop {
-            if let Err(err) =
-                Self::try_add_replica(schema.to_owned(), action.group, action.target_node.id).await
+            if let Err(err) = self
+                .try_add_replica(schema.to_owned(), action.group, action.target_node.id)
+                .await
             {
                 if is_retry_err(&err) {
                     warn!(
@@ -314,9 +316,9 @@ impl Root {
         }
 
         loop {
-            if let Err(err) =
-                Self::try_remove_replica(schema.to_owned(), action.group, action.source_replica)
-                    .await
+            if let Err(err) = self
+                .try_remove_replica(schema.to_owned(), action.group, action.source_replica)
+                .await
             {
                 if is_retry_err(&err) {
                     warn!(
@@ -339,6 +341,7 @@ impl Root {
     }
 
     async fn try_add_replica(
+        &self,
         schema: Arc<Schema>,
         group_id: u64,
         target_node_id: u64,
@@ -351,7 +354,7 @@ impl Root {
             .get_node(target_node_id.to_owned())
             .await?
             .ok_or(crate::Error::GroupNotFound(group_id))?;
-        let target_cli = NodeClient::connect((&target_node.addr).to_owned()).await?;
+        let target_cli = self.get_node_client(target_node.addr.clone()).await?;
         target_cli
             .create_replica(
                 new_replica,
@@ -363,7 +366,7 @@ impl Root {
             .await?;
 
         // Add new replica to group.
-        let gl_client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let gl_client = self.get_node_client(req_node.addr.clone()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).add_replica(
             group.id,
             group.epoch,
@@ -381,6 +384,7 @@ impl Root {
     }
 
     async fn try_remove_replica(
+        &self,
         schema: Arc<Schema>,
         group_id: u64,
         remove_replica: u64,
@@ -401,7 +405,7 @@ impl Root {
                     target_replica.id,
                     target_replica.node_id,
                 );
-                let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+                let client = self.get_node_client(req_node.addr.to_owned()).await?;
                 let batch = RequestBatchBuilder::new(req_node.id).transfer_leader(
                     group.id,
                     group.epoch,
@@ -418,7 +422,7 @@ impl Root {
         }
 
         // Remove from leader desc.
-        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let client = self.get_node_client(req_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).remove_replica(
             group.id,
             group.epoch,
@@ -472,13 +476,14 @@ impl Root {
         );
 
         loop {
-            if let Err(err) = Self::try_migrate_shard(
-                schema.to_owned(),
-                action.shard,
-                action.source_group,
-                action.target_group,
-            )
-            .await
+            if let Err(err) = self
+                .try_migrate_shard(
+                    schema.to_owned(),
+                    action.shard,
+                    action.source_group,
+                    action.target_group,
+                )
+                .await
             {
                 if is_retry_err(&err) {
                     warn!(
@@ -501,6 +506,7 @@ impl Root {
     }
 
     async fn try_migrate_shard(
+        &self,
         schema: Arc<Schema>,
         shard: u64,
         src_group: u64,
@@ -517,7 +523,7 @@ impl Root {
             .find(|s| s.id == shard)
             .ok_or(crate::Error::GroupNotFound(src_group.id))?;
 
-        let client = NodeClient::connect(target_node.addr.to_owned()).await?;
+        let client = self.get_node_client(target_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(target_node.id).accept_shard(
             target_group.id,
             target_group.epoch,
@@ -547,7 +553,7 @@ impl Root {
         );
 
         loop {
-            if let Err(err) = Self::try_transfer_leader(schema.to_owned(), action).await {
+            if let Err(err) = self.try_transfer_leader(schema.to_owned(), action).await {
                 if is_retry_err(&err) {
                     warn!(
                         group = action.group,
@@ -569,10 +575,14 @@ impl Root {
         Ok(())
     }
 
-    async fn try_transfer_leader(schema: Arc<Schema>, action: &TransferLeader) -> Result<()> {
+    async fn try_transfer_leader(
+        &self,
+        schema: Arc<Schema>,
+        action: &TransferLeader,
+    ) -> Result<()> {
         let (group, req_node) = Self::get_group_leader(schema.to_owned(), action.group).await?;
 
-        let client = NodeClient::connect(req_node.addr.to_owned()).await?;
+        let client = self.get_node_client(req_node.addr.to_owned()).await?;
         let batch = RequestBatchBuilder::new(req_node.id).transfer_leader(
             group.id,
             group.epoch,

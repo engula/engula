@@ -82,7 +82,7 @@ pub enum Error {
     GroupNotFound(u64),
 
     #[error("not root leader")]
-    NotRootLeader(RootDesc),
+    NotRootLeader(RootDesc, Option<ReplicaDesc>),
 
     #[error("not leader of group {0}")]
     NotLeader(u64, Option<ReplicaDesc>),
@@ -116,10 +116,12 @@ impl From<Error> for tonic::Status {
                     .encode_to_vec()
                     .into(),
             ),
-            Error::NotRootLeader(root) => Status::with_details(
+            Error::NotRootLeader(root, leader) => Status::with_details(
                 Code::Unknown,
                 "not root",
-                v1::Error::not_root_leader(root).encode_to_vec().into(),
+                v1::Error::not_root_leader(root, leader)
+                    .encode_to_vec()
+                    .into(),
             ),
             Error::EpochNotMatch(desc) => Status::with_details(
                 Code::Unknown,
@@ -185,7 +187,7 @@ impl From<Error> for engula_api::server::v1::Error {
         match err {
             Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
             Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
-            Error::NotRootLeader(roots) => v1::Error::not_root_leader(roots),
+            Error::NotRootLeader(root, leader) => v1::Error::not_root_leader(root, leader),
             Error::EpochNotMatch(desc) => v1::Error::not_match(desc),
 
             Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
@@ -228,7 +230,7 @@ impl From<engula_api::server::v1::Error> for Error {
         match detail.detail.as_ref().and_then(|u| u.value.clone()) {
             Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
             Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
-            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default()),
+            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default(), v.leader),
             Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
             Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
             _ => Error::InvalidData(msg),

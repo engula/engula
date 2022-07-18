@@ -15,40 +15,39 @@
 use std::time::Duration;
 
 use engula_api::server::v1::{
-    report_request::GroupUpdates, root_client::RootClient, GroupDesc, ReplicaState, ReportRequest,
+    report_request::GroupUpdates, GroupDesc, ReplicaState, ReportRequest,
 };
+use engula_client::RootClient;
 use futures::{channel::mpsc, StreamExt};
 use tracing::warn;
 
-use crate::{
-    node::StateEngine,
-    runtime::{Executor, TaskPriority},
-    Error, Result,
-};
+use crate::{runtime::TaskPriority, Provider};
 
 #[derive(Clone)]
 pub struct StateChannel {
     sender: mpsc::UnboundedSender<GroupUpdates>,
 }
 
-pub fn setup(executor: &Executor, state_engine: StateEngine) -> StateChannel {
+pub(crate) fn setup(provider: &Provider) -> StateChannel {
     let (sender, receiver) = mpsc::unbounded();
 
-    executor.spawn(None, TaskPriority::IoHigh, async move {
-        report_state_worker(receiver, state_engine).await;
-    });
+    let client = provider.root_client.clone();
+    provider
+        .executor
+        .spawn(None, TaskPriority::IoHigh, async move {
+            report_state_worker(receiver, client).await;
+        });
 
     StateChannel { sender }
 }
 
 async fn report_state_worker(
     mut receiver: mpsc::UnboundedReceiver<GroupUpdates>,
-    state_engine: StateEngine,
+    root_client: RootClient,
 ) {
-    let mut roots = load_roots(&state_engine).await;
     while let Some(updates) = wait_state_updates(&mut receiver).await {
         let req = ReportRequest { updates };
-        report_state_updates(&mut roots, req).await;
+        report_state_updates(&root_client, req).await;
     }
 }
 
@@ -77,33 +76,6 @@ async fn wait_state_updates(
     None
 }
 
-async fn load_roots(state_engine: &StateEngine) -> Vec<String> {
-    loop {
-        if let Some(desc) = state_engine.load_root_desc().await.unwrap() {
-            return desc.root_nodes.into_iter().map(|d| d.addr).collect();
-        }
-        crate::runtime::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
-    'OUTER: loop {
-        for root in roots.iter() {
-            match issue_report_request(root.to_owned(), &request).await {
-                Ok(()) => return,
-                Err(Error::NotRootLeader(root)) => {
-                    *roots = root.root_nodes.into_iter().map(|n| n.addr).collect();
-                    continue 'OUTER;
-                }
-                Err(err) => {
-                    warn!("report state updates: {}, root {}", err, root);
-                }
-            }
-        }
-        crate::runtime::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
 /// Issue report rpc request to root server.
 ///
 /// This function is executed synchronously, and it will not affect normal reporting, because
@@ -113,11 +85,13 @@ async fn report_state_updates(roots: &mut Vec<String>, request: ReportRequest) {
 ///
 /// If one day you find that reporting has become a bottleneck, you can consider optimizing this
 /// code.
-async fn issue_report_request(addr: String, request: &ReportRequest) -> Result<()> {
-    let addr = format!("http://{}", addr);
-    let mut client = RootClient::connect(addr).await?;
-    client.report(request.clone()).await?;
-    Ok(())
+async fn report_state_updates(root_client: &RootClient, request: ReportRequest) {
+    let mut interval = 1;
+    while let Err(e) = root_client.report(&request).await {
+        warn!("report state updates: {e}");
+        crate::runtime::time::sleep(Duration::from_millis(interval)).await;
+        interval = std::cmp::min(interval * 2, 120);
+    }
 }
 
 impl StateChannel {

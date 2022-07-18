@@ -12,8 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod destory_replica;
-mod report_state;
+#[crate::async_trait]
+pub trait ServiceDiscovery: Send + Sync {
+    async fn list_nodes(&self) -> Vec<String>;
+}
 
-pub(crate) use destory_replica::setup as setup_destory_replica;
-pub(crate) use report_state::{setup as setup_report_state, StateChannel};
+pub struct StaticServiceDiscovery {
+    nodes: Vec<String>,
+}
+
+impl StaticServiceDiscovery {
+    pub fn new(nodes: Vec<String>) -> Self {
+        StaticServiceDiscovery { nodes }
+    }
+}
+
+#[crate::async_trait]
+impl ServiceDiscovery for StaticServiceDiscovery {
+    async fn list_nodes(&self) -> Vec<String> {
+        self.nodes.clone()
+    }
+}

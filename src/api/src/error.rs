@@ -124,9 +124,10 @@ impl Error {
     }
 
     #[inline]
-    pub fn not_root_leader(root: RootDesc) -> Self {
+    pub fn not_root_leader(root: RootDesc, leader: Option<ReplicaDesc>) -> Self {
         Self::with_detail_value(error_detail_union::Value::NotRoot(NotRoot {
             root: Some(root),
+            leader,
         }))
     }
 
