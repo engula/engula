@@ -199,10 +199,21 @@ impl Node {
             return Ok(());
         }
 
+        let group_id = group.id;
+        if GroupEngine::open(group_id, self.provider.raw_db.clone())
+            .await?
+            .is_some()
+        {
+            warn!(
+                new_replica = replica_id,
+                "already exists a replica of the same group {group_id}"
+            );
+            return Err(Error::AlreadyExists(format!("group {group_id}")));
+        }
+
         // To ensure crash-recovery consistency, first create raft metadata, and then create group
         // metadata. In this way, even if the group is restarted before the group is successfully
         // created, a replica can be recreated by retrying.
-        let group_id = group.id;
         Replica::create(replica_id, &group, &self.raft_mgr).await?;
         GroupEngine::create(self.raw_db.clone(), &group).await?;
         let replica_state = if group.replicas.is_empty() {
@@ -799,6 +810,78 @@ mod tests {
             crate::runtime::time::sleep(Duration::from_millis(10)).await;
 
             node.remove_replica(replica_id, &group).await.unwrap();
+        });
+    }
+
+    /// After removing a replica, rejoin a new replica of the same group.
+    #[test]
+    fn remove_and_add_replicas_in_the_same_group() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        let tmp_dir = TempDir::new("remove_replica_of_same_group").unwrap();
+        executor_owner.executor().block_on(async {
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
+
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
+            node.create_replica(replica_id, group.clone())
+                .await
+                .unwrap();
+            let ident = NodeIdent {
+                cluster_id: vec![],
+                node_id: 1,
+            };
+            node.bootstrap(&ident).await.unwrap();
+
+            crate::runtime::time::sleep(Duration::from_millis(10)).await;
+
+            node.remove_replica(replica_id, &group).await.unwrap();
+
+            crate::runtime::time::sleep(Duration::from_millis(10)).await;
+
+            let new_replica_id = 3;
+            node.create_replica(new_replica_id, group.clone())
+                .await
+                .unwrap();
+        });
+    }
+
+    #[test]
+    fn try_add_replicas_in_the_same_group() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        let tmp_dir = TempDir::new("try_add_replicas_in_the_same_group").unwrap();
+        executor_owner.executor().block_on(async {
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
+
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
+            node.create_replica(replica_id, group.clone())
+                .await
+                .unwrap();
+            let ident = NodeIdent {
+                cluster_id: vec![],
+                node_id: 1,
+            };
+            node.bootstrap(&ident).await.unwrap();
+
+            let new_replica_id = 3;
+            let result = node.create_replica(new_replica_id, group.clone()).await;
+            assert!(matches!(result, Err(Error::AlreadyExists(msg)) if msg.contains("group")));
         });
     }
 }

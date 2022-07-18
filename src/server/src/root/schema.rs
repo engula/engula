@@ -95,7 +95,10 @@ impl Schema {
 
     pub async fn create_database(&self, desc: DatabaseDesc) -> Result<DatabaseDesc> {
         if self.get_database(&desc.name).await?.is_some() {
-            return Err(Error::DatabaseExist(desc.name.to_owned()));
+            return Err(Error::AlreadyExists(format!(
+                "database {}",
+                desc.name.to_owned()
+            )));
         }
 
         let mut desc = desc.to_owned();
@@ -150,7 +153,10 @@ impl Schema {
 
     pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         if self.get_collection(desc.db, &desc.name).await?.is_some() {
-            return Err(Error::CollectionExist(desc.name.to_owned()));
+            return Err(Error::AlreadyExists(format!(
+                "collection {}",
+                desc.name.to_owned()
+            )));
         }
 
         let mut desc = desc.to_owned();
