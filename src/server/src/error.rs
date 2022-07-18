@@ -119,7 +119,9 @@ impl From<Error> for tonic::Status {
             Error::NotRootLeader(root, leader) => Status::with_details(
                 Code::Unknown,
                 "not root",
-                v1::Error::not_root_leader(root, leader).encode_to_vec().into(),
+                v1::Error::not_root_leader(root, leader)
+                    .encode_to_vec()
+                    .into(),
             ),
             Error::EpochNotMatch(desc) => Status::with_details(
                 Code::Unknown,

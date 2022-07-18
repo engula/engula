@@ -12,24 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[crate::async_trait]
-pub trait ServiceDiscovery: Send + Sync {
-    async fn list_nodes(&self) -> Vec<String>;
+use engula_client::ServiceDiscovery;
+
+use crate::node::StateEngine;
+
+pub struct RootDiscovery {
+    initial_nodes: Vec<String>,
+    state_engine: StateEngine,
 }
 
-pub struct StaticServiceDiscovery {
-    nodes: Vec<String>,
-}
-
-impl StaticServiceDiscovery {
-    pub fn new(nodes: Vec<String>) -> Self {
-        StaticServiceDiscovery { nodes }
+impl RootDiscovery {
+    pub fn new(initial_nodes: Vec<String>, state_engine: StateEngine) -> Self {
+        RootDiscovery {
+            initial_nodes,
+            state_engine,
+        }
     }
 }
 
 #[crate::async_trait]
-impl ServiceDiscovery for StaticServiceDiscovery {
+impl ServiceDiscovery for RootDiscovery {
     async fn list_nodes(&self) -> Vec<String> {
-        self.nodes.clone()
+        if let Ok(Some(root)) = self.state_engine.load_root_desc().await {
+            return root.root_nodes.into_iter().map(|n| n.addr).collect();
+        }
+        self.initial_nodes.clone()
     }
 }

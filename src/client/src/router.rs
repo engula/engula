@@ -23,9 +23,8 @@ use tokio_stream::StreamExt;
 use tonic::Streaming;
 use tracing::{info, warn};
 
-use crate::{conn_manager::ConnManager, discovery::StaticServiceDiscovery, RootClient};
+use crate::RootClient;
 
-#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct Router {
     state: Arc<Mutex<State>>,
@@ -43,7 +42,6 @@ pub struct State {
     group_id_lookup: HashMap<u64 /* group */, RouterGroupState>,
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, Default)]
 pub struct RouterGroupState {
     pub id: u64,
@@ -52,13 +50,12 @@ pub struct RouterGroupState {
     pub replicas: HashMap<u64, ReplicaDesc>,
 }
 
-#[allow(unused)]
 impl Router {
-    pub async fn new(addrs: Vec<String>) -> Self {
+    pub async fn new(root_client: RootClient) -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let state_clone = state.clone();
         tokio::spawn(async move {
-            state_main(state_clone, addrs).await;
+            state_main(state_clone, root_client).await;
         });
         Self { state }
     }
@@ -146,27 +143,10 @@ impl Router {
     }
 }
 
-async fn state_main(state: Arc<Mutex<State>>, addrs: Vec<String>) {
-    let mut interval = 1;
-    let root_client = RootClient::new(
-        Box::new(StaticServiceDiscovery::new(addrs)),
-        ConnManager::default(),
-    );
-    // loop {
-    //     match RootClient::connect(addrs.clone()).await {
-    //         Ok(c) => break c,
-    //         Err(e) => {
-    //             warn!(err = ?e, addr=?addrs, "connect root server");
-    //         }
-    //     };
-
-    //     tokio::time::sleep(Duration::from_millis(interval)).await;
-    //     interval = std::cmp::min(interval * 2, 1000);
-    // };
-
+async fn state_main(state: Arc<Mutex<State>>, root_client: RootClient) {
     info!("start watching events...");
 
-    interval = 1;
+    let mut interval = 1;
     loop {
         let cur_group_epochs = {
             let state = state.lock().unwrap();

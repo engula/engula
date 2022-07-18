@@ -18,6 +18,7 @@
 #![feature(path_try_exists)]
 
 mod bootstrap;
+mod discovery;
 mod error;
 pub mod node;
 mod raftgroup;
@@ -26,8 +27,11 @@ pub mod runtime;
 pub mod serverpb;
 mod service;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
+use engula_client::{ConnManager, RootClient, Router};
+use node::{resolver::AddressResolver, StateEngine};
+use runtime::Executor;
 use serde::{Deserialize, Serialize};
 use tonic::async_trait;
 
@@ -59,6 +63,21 @@ pub struct Config {
 
     #[serde(default)]
     pub allocator: AllocatorConfig,
+}
+
+pub(crate) struct Provider {
+    pub log_path: PathBuf,
+
+    #[allow(unused)]
+    pub db_path: PathBuf,
+
+    pub conn_manager: ConnManager,
+    pub root_client: RootClient,
+    pub router: Router,
+    pub address_resolver: Arc<AddressResolver>,
+    pub raw_db: Arc<rocksdb::DB>,
+    pub state_engine: StateEngine,
+    pub executor: Executor,
 }
 
 #[cfg(test)]

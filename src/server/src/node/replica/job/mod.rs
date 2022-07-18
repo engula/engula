@@ -15,5 +15,5 @@
 mod purge_replica;
 mod schedule;
 
-pub use purge_replica::setup as setup_purge_replica;
-pub use schedule::setup as setup_scheduler;
+pub(crate) use purge_replica::setup as setup_purge_replica;
+pub(crate) use schedule::setup as setup_scheduler;

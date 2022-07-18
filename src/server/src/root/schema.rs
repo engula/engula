@@ -26,7 +26,7 @@ use engula_api::{
     },
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
-use engula_client::{NodeClient, RequestBatchBuilder};
+use engula_client::{ConnManager, RequestBatchBuilder};
 use prost::Message;
 use tokio::time;
 use tracing::{info, warn};
@@ -164,7 +164,12 @@ impl Schema {
         Ok(desc)
     }
 
-    pub async fn create_shards(&self, group_id: u64, descs: Vec<ShardDesc>) -> Result<()> {
+    pub async fn create_shards(
+        &self,
+        group_id: u64,
+        descs: Vec<ShardDesc>,
+        conn_manager: &ConnManager,
+    ) -> Result<()> {
         let mut wait_create = descs.to_owned();
         loop {
             let mut desc = wait_create.pop();
@@ -208,7 +213,8 @@ impl Schema {
             let node = self.get_node(node_id).await?.unwrap();
 
             if let Err(err) =
-                Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc).await
+                Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc, conn_manager)
+                    .await
             {
                 if is_retry_err(&err) {
                     warn!(
@@ -237,8 +243,9 @@ impl Schema {
         group_id: u64,
         epoch: u64,
         desc: &ShardDesc,
+        conn_manager: &ConnManager,
     ) -> Result<()> {
-        let client = NodeClient::connect(addr).await?;
+        let client = conn_manager.get_node_client(addr).await?;
         let batch =
             RequestBatchBuilder::new(node_id).create_shard(group_id, epoch, desc.to_owned());
         let resps = client.batch_group_requests(batch.build()).await?;

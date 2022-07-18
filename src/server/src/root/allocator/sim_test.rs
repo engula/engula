@@ -468,7 +468,7 @@ impl AllocSource for MockInfoProvider {
 impl MockInfoProvider {
     fn set_nodes(&self, ns: Vec<NodeDesc>) {
         let mut nodes = self.nodes.lock().unwrap();
-        _ = std::mem::replace(&mut *nodes, ns);
+        let _ = std::mem::replace(&mut *nodes, ns);
     }
 
     fn set_groups(&self, gs: Vec<GroupDesc>) {
@@ -497,7 +497,7 @@ impl MockInfoProvider {
         self.set_nodes(nodes);
 
         let descs = gs.into_iter().map(|g| (g.id, g)).collect();
-        _ = std::mem::replace(
+        let _ = std::mem::replace(
             &mut *groups,
             GroupInfo {
                 descs,
@@ -547,7 +547,7 @@ impl MockInfoProvider {
             .into_iter()
             .map(|r| (r.replica_id, r))
             .collect::<HashMap<u64, ReplicaState>>();
-        _ = std::mem::replace(&mut *replicas, id_to_state)
+        let _ = std::mem::replace(&mut *replicas, id_to_state);
     }
 
     pub fn move_replica(&self, replica_id: u64, node: u64) {

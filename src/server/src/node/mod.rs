@@ -20,10 +20,9 @@ pub mod resolver;
 pub mod route_table;
 pub mod shard;
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use engula_api::server::v1::*;
-use engula_client::Router;
 use futures::{channel::mpsc, lock::Mutex};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
@@ -41,10 +40,10 @@ use self::{
 use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{AddressResolver, RaftManager, RaftNodeFacade, TransportManager},
+    raftgroup::{RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
     serverpb::v1::*,
-    Config, Error, Result,
+    Config, Error, Provider, Result,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -84,10 +83,8 @@ pub struct Node
 where
     Self: Send + Sync,
 {
-    raw_db: Arc<rocksdb::DB>,
     cfg: NodeConfig,
-    executor: Executor,
-    state_engine: StateEngine,
+    provider: Arc<Provider>,
     raft_route_table: RaftRouteTable,
     replica_route_table: ReplicaRouteTable,
 
@@ -100,28 +97,18 @@ where
 }
 
 impl Node {
-    pub fn new(
-        cfg: Config,
-        log_path: PathBuf,
-        raw_db: Arc<rocksdb::DB>,
-        state_engine: StateEngine,
-        executor: Executor,
-        address_resolver: Arc<dyn AddressResolver>,
-        router: Router,
-    ) -> Result<Self> {
+    pub(crate) fn new(cfg: Config, provider: Arc<Provider>) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
         let trans_mgr = TransportManager::build(
-            executor.clone(),
-            address_resolver.clone(),
+            provider.executor.clone(),
+            provider.address_resolver.clone(),
             raft_route_table.clone(),
         );
-        let raft_mgr = RaftManager::open(cfg.raft.clone(), log_path, executor.clone(), trans_mgr)?;
-        let migrate_ctrl = MigrateController::new(cfg.node.clone(), executor.clone(), router);
+        let raft_mgr = RaftManager::open(cfg.raft.clone(), provider.clone(), trans_mgr)?;
+        let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
         Ok(Node {
             cfg: cfg.node,
-            raw_db,
-            executor,
-            state_engine,
+            provider,
             raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
@@ -132,6 +119,8 @@ impl Node {
 
     /// Bootstrap node and recover alive replicas.
     pub async fn bootstrap(&self, node_ident: &NodeIdent) -> Result<()> {
+        use self::job::*;
+
         let mut node_state = self.node_state.lock().await;
         debug_assert!(
             node_state.replicas.is_empty(),
@@ -139,24 +128,15 @@ impl Node {
         );
 
         node_state.ident = Some(node_ident.to_owned());
-        node_state.channel = Some(self::job::setup_report_state(
-            &self.executor,
-            self.state_engine.clone(),
-        ));
+        node_state.channel = Some(setup_report_state(self.provider.as_ref()));
 
         let node_id = node_ident.node_id;
-        let it = self.state_engine.iterate_replica_states().await;
+        let it = self.provider.state_engine.iterate_replica_states().await;
         for (group_id, replica_id, state) in it {
             match state {
                 ReplicaLocalState::Tombstone => continue,
                 ReplicaLocalState::Terminated => {
-                    self::job::setup_destory_replica(
-                        &self.executor,
-                        group_id,
-                        replica_id,
-                        self.state_engine.clone(),
-                        self.raw_db.clone(),
-                    );
+                    setup_destory_replica(group_id, replica_id, self.provider.as_ref());
                     continue;
                 }
                 _ => {}
@@ -204,13 +184,14 @@ impl Node {
         // created, a replica can be recreated by retrying.
         let group_id = group.id;
         Replica::create(replica_id, &group, &self.raft_mgr).await?;
-        GroupEngine::create(self.raw_db.clone(), &group).await?;
+        GroupEngine::create(self.provider.raw_db.clone(), &group).await?;
         let replica_state = if group.replicas.is_empty() {
             ReplicaLocalState::Pending
         } else {
             ReplicaLocalState::Initial
         };
-        self.state_engine
+        self.provider
+            .state_engine
             .save_replica_state(group_id, replica_id, replica_state)
             .await?;
 
@@ -275,18 +256,13 @@ impl Node {
         wait_group.wait().await;
 
         // This replica is shutdowned, we need to update and persisted states.
-        self.state_engine
+        self.provider
+            .state_engine
             .save_replica_state(group_id, replica_id, ReplicaLocalState::Terminated)
             .await?;
 
         // Clean group engine data in asynchronously.
-        self::job::setup_destory_replica(
-            &self.executor,
-            group_id,
-            replica_id,
-            self.state_engine.clone(),
-            self.raw_db.clone(),
-        );
+        self::job::setup_destory_replica(group_id, replica_id, self.provider.as_ref());
 
         Ok(())
     }
@@ -301,7 +277,7 @@ impl Node {
     ) -> Result<ReplicaContext> {
         use self::replica::job;
 
-        let group_engine = open_group_engine(self.raw_db.clone(), group_id).await?;
+        let group_engine = open_group_engine(self.provider.raw_db.clone(), group_id).await?;
         let wait_group = WaitGroup::new();
         let (sender, receiver) = mpsc::unbounded();
 
@@ -333,12 +309,15 @@ impl Node {
             .watch_state_changes(replica.clone(), receiver, wait_group.clone());
         job::setup_scheduler(
             self.cfg.replica.clone(),
-            &self.executor,
-            self.migrate_ctrl.router(),
+            self.provider.clone(),
             replica.clone(),
             wait_group.clone(),
         );
-        job::setup_purge_replica(self.executor.clone(), replica.clone(), wait_group.clone());
+        job::setup_purge_replica(
+            self.provider.executor.clone(),
+            replica.clone(),
+            wait_group.clone(),
+        );
 
         Ok(ReplicaContext {
             info: replica.replica_info(),
@@ -481,12 +460,12 @@ impl Node {
 
     #[inline]
     pub fn state_engine(&self) -> &StateEngine {
-        &self.state_engine
+        &self.provider.state_engine
     }
 
     #[inline]
     pub fn executor(&self) -> &Executor {
-        &self.executor
+        &self.provider.executor
     }
 
     #[inline]
@@ -648,7 +627,7 @@ async fn start_raft_group(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{path::PathBuf, time::Duration};
 
     use engula_api::server::v1::{ReplicaDesc, ReplicaRole};
     use tempdir::TempDir;
@@ -656,29 +635,17 @@ mod tests {
     use super::*;
     use crate::{bootstrap::INITIAL_EPOCH, runtime::ExecutorOwner};
 
-    async fn create_node(executor: Executor) -> Node {
-        let tmp_dir = TempDir::new("engula").unwrap().into_path();
-        let db_dir = tmp_dir.join("db");
-        let log_dir = tmp_dir.join("log");
+    async fn create_node(root_dir: PathBuf, executor: Executor) -> Node {
+        use crate::bootstrap::build_provider;
 
-        use crate::bootstrap::open_engine;
+        let config = Config {
+            root_dir,
+            ..Default::default()
+        };
 
-        let db = open_engine(db_dir).unwrap();
-        let db = Arc::new(db);
-        let state_engine = StateEngine::new(db.clone()).unwrap();
-        let router = Router::new(vec!["".to_owned()]).await;
-        let address_resolver =
-            Arc::new(crate::node::resolver::AddressResolver::new(router.clone()));
-        Node::new(
-            Config::default(),
-            log_dir,
-            db,
-            state_engine,
-            executor,
-            address_resolver,
-            router,
-        )
-        .unwrap()
+        let provider = build_provider(&config, executor.clone()).await.unwrap();
+
+        Node::new(config, provider).unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {
@@ -694,9 +661,10 @@ mod tests {
     fn create_pending_replica() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
+        let tmp_dir = TempDir::new("create_pending_replica").unwrap();
 
         executor_owner.executor().block_on(async {
-            let node = create_node(executor).await;
+            let node = create_node(tmp_dir.path().to_owned(), executor).await;
 
             let group_id = 2;
             let replica_id = 2;
@@ -719,9 +687,10 @@ mod tests {
     fn create_replica() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
+        let tmp_dir = TempDir::new("create_replica").unwrap();
 
         executor_owner.executor().block_on(async {
-            let node = create_node(executor).await;
+            let node = create_node(tmp_dir.path().to_owned(), executor).await;
 
             let group_id = 2;
             let replica_id = 2;
@@ -746,11 +715,11 @@ mod tests {
 
     #[test]
     fn recover() {
+        let tmp_dir = TempDir::new("recover-replica").unwrap();
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
-
         executor_owner.executor().block_on(async {
-            let node = create_node(executor.clone()).await;
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
 
             let group_id = 2;
             let replica_id = 2;
@@ -761,8 +730,14 @@ mod tests {
                 replicas: vec![],
             };
             node.create_replica(replica_id, group).await.unwrap();
-            drop(node);
-            let node = create_node(executor.clone()).await;
+        });
+        drop(executor);
+        drop(executor_owner);
+
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        executor_owner.executor().block_on(async {
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
             let ident = NodeIdent {
                 cluster_id: vec![],
                 node_id: 1,
@@ -776,8 +751,9 @@ mod tests {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
 
+        let tmp_dir = TempDir::new("remove_replica").unwrap();
         executor_owner.executor().block_on(async {
-            let node = create_node(executor.clone()).await;
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
 
             let group_id = 2;
             let replica_id = 2;

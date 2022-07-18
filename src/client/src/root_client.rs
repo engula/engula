@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use derivative::Derivative;
 use engula_api::{
-    server::v1::*,
+    server::v1::{root_client::RootClient, *},
     v1::{create_collection_request::Partition, *},
 };
-use prost::{DecodeError, Message};
+use prost::Message;
 use tokio::sync::Mutex;
 use tonic::{transport::Channel, Code, Status, Streaming};
 use tracing::trace;
@@ -36,9 +36,11 @@ enum RootError {
     Rpc(#[from] Status),
 }
 
+pub struct AdminRequestBuilder;
+pub struct AdminResponseExtractor;
+
 #[derive(Debug, Clone)]
 pub struct Client {
-    // client: Arc<Mutex<root_client::RootClient<Channel>>>,
     shared: Arc<ClientShared>,
 }
 
@@ -46,7 +48,7 @@ pub struct Client {
 #[derivative(Debug)]
 struct ClientShared {
     #[derivative(Debug = "ignore")]
-    discovery: Box<dyn ServiceDiscovery>,
+    discovery: Arc<dyn ServiceDiscovery>,
     conn_manager: ConnManager,
     core: Mutex<ClientCore>,
 
@@ -63,7 +65,7 @@ struct ClientCore {
 }
 
 impl Client {
-    pub fn new(discovery: Box<dyn ServiceDiscovery>, conn_manager: ConnManager) -> Self {
+    pub fn new(discovery: Arc<dyn ServiceDiscovery>, conn_manager: ConnManager) -> Self {
         Client {
             shared: Arc::new(ClientShared {
                 discovery,
@@ -75,6 +77,16 @@ impl Client {
                 refresh_descriptor_lock: Mutex::new(0),
             }),
         }
+    }
+
+    pub async fn report(&self, req: &ReportRequest) -> Result<ReportResponse, crate::Error> {
+        let res = self
+            .invoke(|mut client| {
+                let req = req.clone();
+                async move { client.report(req).await }
+            })
+            .await?;
+        Ok(res.into_inner())
     }
 
     pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse, crate::Error> {
@@ -129,18 +141,22 @@ impl Client {
         F: Fn(root_client::RootClient<Channel>) -> O,
         O: Future<Output = Result<V, Status>>,
     {
+        let mut interval = 1;
+        let mut save_core = false;
         let mut core = self.core().await;
         'OUTER: loop {
             if let Some(leader) = core.leader {
-                // do fast path.
+                // Fast path of invoking.
                 let leader_node = &core.root.root_nodes[leader];
-                let client = self
-                    .shared
-                    .conn_manager
-                    .get_root_client(leader_node.addr.clone())
-                    .await?;
+                let client = self.get_root_client(leader_node.addr.clone()).await?;
                 match invoke(client, &op).await {
-                    Ok(res) => return Ok(res),
+                    Ok(res) => {
+                        if save_core {
+                            self.apply_core(core).await;
+                        }
+                        return Ok(res);
+                    }
+                    Err(RootError::Rpc(status)) => return Err(status.into()),
                     Err(RootError::NotAvailable) => {
                         trace!(
                             "send rpc to root {}: remote is not available",
@@ -148,81 +164,75 @@ impl Client {
                         );
                     }
                     Err(RootError::NotRoot(root, leader_opt)) => {
-                        if let Some(leader) = leader_opt {
-                            // FIXME(walter) 也许 Not Leader 也返回 epoch 会更好？
-                            let mut core = self.shared.core.lock().await;
-                            if root.epoch > core.root.epoch {
-                                core.root = Arc::new(root);
-                                core.leader = Some(0); // TODO(walter) find the index of leader.
-                            }
-                        } else if core.root.epoch < root.epoch {
-                            // root is updated, try find the leader of root.
+                        if core.root.epoch <= root.epoch {
+                            // A new round is found, retry next times.
                             core.leader = None;
                             core.root = Arc::new(root);
+                            if let Some(leader) = leader_opt {
+                                // Since leader exists, we don't need to iterate root nodes.
+                                core.apply_leader(leader);
+                                save_core = true;
+                                continue 'OUTER;
+                            }
                         }
-
-                        // Testing the specified root nodes.
                     }
-                    Err(RootError::Rpc(status)) => return Err(status.into()),
                 };
             }
 
-            // Enter slow path
+            // Slow path of invoking.
             for (i, node) in core.root.root_nodes.iter().enumerate() {
-                if matches!(core.leader, Some(i)) {
+                if matches!(core.leader, Some(x) if x == i) {
                     continue;
                 }
 
-                let client = self
-                    .shared
-                    .conn_manager
-                    .get_root_client(node.addr.clone())
-                    .await?;
+                let client = self.get_root_client(node.addr.clone()).await?;
                 match invoke(client, &op).await {
                     Ok(res) => {
-                        // 1. save new leader of root.
+                        // Save new leader of root.
                         core.leader = Some(i);
-                        let mut core_guard = self.shared.core.lock().await;
-                        if core_guard.root.epoch <= core.root.epoch {
-                            // TODO(walter) add epoch so that we could found the accurate
-                            // leader.
-                            *core_guard = core;
-                        }
+                        self.apply_core(core).await;
                         return Ok(res);
+                    }
+                    Err(RootError::Rpc(status)) => {
+                        return Err(status.into());
                     }
                     Err(RootError::NotAvailable) => {
                         // Connect timeout or refused, try next address.
                     }
                     Err(RootError::NotRoot(root, leader_opt)) => {
-                        // Some payloads exists, might is conditions.
                         if core.root.epoch < root.epoch {
-                            // Find a freshed epoch.
-                            core.leader = None; // TODO(walter) the leader_opt is useable.
+                            // A new root desc is found, iterate the new root nodes.
+                            core.leader = None;
                             core.root = Arc::new(root);
+                            if let Some(leader) = leader_opt {
+                                core.apply_leader(leader);
+                                save_core = true;
+                            }
                             continue 'OUTER;
                         }
                     }
-                    Err(RootError::Rpc(status)) => {
-                        return Err(status.into());
-                    }
                 }
             }
 
-            let refresh_guard = self.shared.refresh_descriptor_lock.lock().await;
-            {
-                let core_guard = self.shared.core.lock().await;
-                if core_guard.root.epoch > core.root.epoch {
-                    // already found, try next round.
-                    continue;
-                }
-            }
+            // Sine all nodes are unreachable or timeout, try refresh roots from discovery.
+            core = self.refresh_client_core(core).await?;
 
-            // Someone is refreshed.
-            // Sine all nodes are unreachable or timeout, try refresh root from discovery?
-            if let Some(root) = self.refresh_root_descriptor(core.root.epoch).await? {
-                core.leader = None;
-                core.root = Arc::new(root);
-            }
+            tokio::time::sleep(Duration::from_millis(interval)).await;
+            interval = std::cmp::min(interval * 2, 1000);
+        }
+    }
+
+    #[inline]
+    async fn core(&self) -> ClientCore {
+        self.shared.core.lock().await.clone()
+    }
+
+    async fn apply_core(&self, core: ClientCore) {
+        let mut core_guard = self.shared.core.lock().await;
+        if core_guard.root.epoch <= core.root.epoch {
+            // TODO(walter) add term so that we could found the accurate
+            // leader.
+            *core_guard = core;
         }
     }
 
@@ -232,11 +242,7 @@ impl Client {
     ) -> Result<Option<RootDesc>, crate::Error> {
         let nodes = self.shared.discovery.list_nodes().await;
         for node in nodes {
-            let node_client = self
-                .shared
-                .conn_manager
-                .get_node_client(node.clone())
-                .await?;
+            let node_client = self.get_node_client(node).await?;
             if let Ok(root) = node_client.get_root().await {
                 if root.epoch > local_epoch {
                     return Ok(Some(root));
@@ -246,13 +252,47 @@ impl Client {
         Ok(None)
     }
 
+    async fn refresh_client_core(&self, mut core: ClientCore) -> Result<ClientCore, crate::Error> {
+        let _refresh_guard = self.shared.refresh_descriptor_lock.lock().await;
+        {
+            let core_guard = self.shared.core.lock().await;
+            if core_guard.root.epoch > core.root.epoch {
+                // already found, try next round.
+                return Ok(core_guard.clone());
+            }
+        }
+
+        if let Some(root) = self.refresh_root_descriptor(core.root.epoch).await? {
+            // Someone is refreshed.
+            core.leader = None;
+            core.root = Arc::new(root);
+        }
+        Ok(core)
+    }
+
     #[inline]
-    async fn core(&self) -> ClientCore {
-        self.shared.core.lock().await.clone()
+    async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>, crate::Error> {
+        let root_client = self.shared.conn_manager.get_root_client(addr).await?;
+        Ok(root_client)
+    }
+
+    #[inline]
+    async fn get_node_client(&self, addr: String) -> Result<NodeClient, crate::Error> {
+        let node_client = self.shared.conn_manager.get_node_client(addr).await?;
+        Ok(node_client)
     }
 }
 
-pub struct AdminRequestBuilder;
+impl ClientCore {
+    fn apply_leader(&mut self, leader: ReplicaDesc) {
+        for (idx, node) in self.root.root_nodes.iter().enumerate() {
+            if node.id == leader.node_id {
+                self.leader = Some(idx);
+                break;
+            }
+        }
+    }
+}
 
 impl AdminRequestBuilder {
     pub fn create_database(name: String) -> AdminRequest {
@@ -326,8 +366,6 @@ impl AdminRequestBuilder {
         }
     }
 }
-
-pub struct AdminResponseExtractor;
 
 impl AdminResponseExtractor {
     pub fn create_database(resp: AdminResponse) -> Option<DatabaseDesc> {
@@ -404,7 +442,6 @@ fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, Option<R
             if !err.details.is_empty() {
                 // Only convert first error detail.
                 let detail = &err.details[0];
-                let msg = detail.message.clone();
                 if let Some(Value::NotRoot(not_root)) =
                     detail.detail.as_ref().and_then(|u| u.value.clone())
                 {
@@ -427,8 +464,8 @@ where
         Err(status) => match status.code() {
             Code::Unavailable | Code::DeadlineExceeded => Err(RootError::NotAvailable),
             Code::Unknown if !status.details().is_empty() => {
-                let (root, leader_opt) =
-                    extract_root_descriptor(&status).ok_or::<RootError>(status.into())?;
+                let (root, leader_opt) = extract_root_descriptor(&status)
+                    .ok_or_else(|| <Status as Into<RootError>>::into(status))?;
                 Err(RootError::NotRoot(root, leader_opt))
             }
             _ => Err(status.into()),

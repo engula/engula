@@ -20,9 +20,8 @@ use engula_api::{
 };
 
 use crate::{
-    conn_manager::{self, ConnManager},
-    AdminRequestBuilder, AdminResponseExtractor, RequestBatchBuilder, RetryState, RootClient,
-    Router, discovery::StaticServiceDiscovery,
+    conn_manager::ConnManager, discovery::StaticServiceDiscovery, AdminRequestBuilder,
+    AdminResponseExtractor, RequestBatchBuilder, RetryState, RootClient, Router,
 };
 
 #[derive(Debug, Clone)]
@@ -40,9 +39,9 @@ struct ClientInner {
 impl Client {
     pub async fn connect(addrs: Vec<String>) -> Result<Self, crate::Error> {
         let conn_manager = ConnManager::new();
-        let discovery = Box::new(StaticServiceDiscovery::new(addrs.clone()));
+        let discovery = Arc::new(StaticServiceDiscovery::new(addrs.clone()));
         let root_client = RootClient::new(discovery, conn_manager.clone());
-        let router = Router::new(addrs).await;
+        let router = Router::new(root_client.clone()).await;
         Ok(Self {
             inner: Arc::new(ClientInner {
                 root_client,

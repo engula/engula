@@ -211,7 +211,7 @@ where
         request_sender.send(Request::Start).await.unwrap();
 
         Ok(RaftWorker {
-            executor: raft_mgr.executor.clone(),
+            executor: raft_mgr.executor().clone(),
             request_sender,
             request_receiver,
             group_id,

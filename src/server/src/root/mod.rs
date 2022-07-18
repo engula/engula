@@ -44,9 +44,9 @@ use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
 use crate::{
     bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
-    runtime::{Executor, TaskPriority},
+    runtime::TaskPriority,
     serverpb::v1::NodeIdent,
-    Config, Error, Result,
+    Config, Error, Provider, Result,
 };
 
 #[derive(Clone)]
@@ -56,7 +56,7 @@ pub struct Root {
 }
 
 pub struct RootShared {
-    executor: Executor,
+    provider: Arc<Provider>,
     node_ident: NodeIdent,
     local_addr: String,
     core: Mutex<Option<RootCore>>,
@@ -77,10 +77,10 @@ struct RootCore {
 }
 
 impl Root {
-    pub fn new(executor: Executor, node_ident: &NodeIdent, cfg: Config) -> Self {
+    pub(crate) fn new(provider: Arc<Provider>, node_ident: &NodeIdent, cfg: Config) -> Self {
         let local_addr = cfg.addr.clone();
         let shared = Arc::new(RootShared {
-            executor,
+            provider,
             local_addr,
             core: Mutex::new(None),
             node_ident: node_ident.to_owned(),
@@ -103,6 +103,7 @@ impl Root {
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
+            .provider
             .executor
             .spawn(None, TaskPriority::Middle, async move {
                 root.run(replica_table).await;
@@ -322,6 +323,16 @@ impl Root {
         };
         Ok(serde_json::to_string(&info).unwrap())
     }
+
+    async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
+        let client = self
+            .shared
+            .provider
+            .conn_manager
+            .get_node_client(addr)
+            .await?;
+        Ok(client)
+    }
 }
 
 impl Root {
@@ -471,7 +482,14 @@ impl Root {
                 "create shard {:?} in group {group_id}",
                 descs.iter().map(|d| d.id).collect::<Vec<_>>()
             );
-            if let Err(err) = schema.create_shards(group_id, descs.to_owned()).await {
+            if let Err(err) = schema
+                .create_shards(
+                    group_id,
+                    descs.to_owned(),
+                    &self.shared.provider.conn_manager,
+                )
+                .await
+            {
                 error!(
                     database = collection.db,
                     collection = ?collection.name,
@@ -710,8 +728,9 @@ impl Root {
         };
         for n in &nodes {
             let replica_id = node_to_replica.get(&n.id).unwrap();
-            if let Err(err) =
-                Self::try_create_replica(&n.addr, replica_id, group_tmpl.clone()).await
+            if let Err(err) = self
+                .try_create_replica(&n.addr, replica_id, group_tmpl.clone())
+                .await
             {
                 error!(node_id = n.id, group = group_id, err = ?err, "create group error");
                 return Err(err);
@@ -721,9 +740,14 @@ impl Root {
         Ok(())
     }
 
-    async fn try_create_replica(addr: &str, replica_id: &u64, group: GroupDesc) -> Result<()> {
-        let node_client = NodeClient::connect(addr.to_owned()).await?;
-        node_client
+    async fn try_create_replica(
+        &self,
+        addr: &str,
+        replica_id: &u64,
+        group: GroupDesc,
+    ) -> Result<()> {
+        self.get_node_client(addr.to_owned())
+            .await?
             .create_replica(replica_id.to_owned(), group)
             .await?;
         Ok(())
@@ -732,76 +756,52 @@ impl Root {
 
 #[cfg(test)]
 mod root_test {
-
-    use std::{path::PathBuf, sync::Arc};
-
     use engula_api::{
         server::v1::watch_response::{update_event, UpdateEvent},
         v1::DatabaseDesc,
     };
-    use engula_client::Router;
     use futures::StreamExt;
     use tempdir::TempDir;
 
     use super::Config;
     use crate::{
         bootstrap::bootstrap_cluster,
-        node::{Node, StateEngine},
+        node::Node,
         root::Root,
         runtime::{Executor, ExecutorOwner},
         serverpb::v1::NodeIdent,
-        AllocatorConfig, NodeConfig, RaftConfig,
     };
 
-    fn create_root(executor: Executor, node_ident: &NodeIdent) -> Root {
-        let cfg = Config {
-            root_dir: PathBuf::default(),
-            addr: "0.0.0.0:8888".into(),
-            init: false,
-            join_list: vec![],
-            node: NodeConfig::default(),
-            raft: RaftConfig::default(),
-            allocator: AllocatorConfig::default(),
-        };
-        Root::new(executor, node_ident, cfg)
-    }
+    fn create_root_and_node(
+        config: &Config,
+        executor: Executor,
+        node_ident: &NodeIdent,
+    ) -> (Root, Node) {
+        use crate::bootstrap::build_provider;
 
-    fn create_node(executor: Executor) -> Node {
-        let tmp_dir = TempDir::new("engula").unwrap().into_path();
-        let db_dir = tmp_dir.join("db");
-        let log_dir = tmp_dir.join("log");
-
-        use crate::{bootstrap::open_engine, node::resolver::AddressResolver};
-
-        let db = open_engine(db_dir).unwrap();
-        let db = Arc::new(db);
-        let state_engine = StateEngine::new(db.clone()).unwrap();
-        let router = executor.block_on(async { Router::new(vec!["".to_owned()]).await });
-        let address_resolver = Arc::new(AddressResolver::new(router.clone()));
-        Node::new(
-            Config::default(),
-            log_dir,
-            db,
-            state_engine,
-            executor,
-            address_resolver,
-            router,
-        )
-        .unwrap()
+        let provider =
+            executor.block_on(async { build_provider(config, executor.clone()).await.unwrap() });
+        let root = Root::new(provider.clone(), node_ident, config.clone());
+        let node = Node::new(config.clone(), provider).unwrap();
+        (root, node)
     }
 
     #[test]
     fn boostrap_root() {
         let executor_owner = ExecutorOwner::new(1);
         let executor = executor_owner.executor();
+        let tmp_dir = TempDir::new("bootstrap_root").unwrap();
+        let config = Config {
+            root_dir: tmp_dir.path().to_owned(),
+            ..Default::default()
+        };
 
         let ident = NodeIdent {
             cluster_id: vec![],
             node_id: 1,
         };
-        let node = create_node(executor.to_owned());
-        let root = create_root(executor.to_owned(), &ident);
 
+        let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
             bootstrap_cluster(&node, "0.0.0.0:8888").await.unwrap();
             node.bootstrap(&ident).await.unwrap();
@@ -820,7 +820,12 @@ mod root_test {
             node_id: 1,
         };
 
-        let root = create_root(executor.to_owned(), &ident);
+        let tmp_dir = TempDir::new("watch_hub").unwrap();
+        let config = Config {
+            root_dir: tmp_dir.path().to_owned(),
+            ..Default::default()
+        };
+        let (root, _node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
             let hub = root.watcher_hub();
             let _create_db1_event = Some(update_event::Event::Database(DatabaseDesc {
