@@ -366,7 +366,7 @@ impl Schema {
             for entry in mvcc {
                 if let Some(val) = entry.value() {
                     nodes.push(
-                        NodeDesc::decode(&*val)
+                        NodeDesc::decode(val)
                             .map_err(|_| Error::InvalidData("node desc".into()))?,
                     );
                 }
