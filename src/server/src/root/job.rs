@@ -23,10 +23,10 @@ use tokio::time;
 use tracing::{info, trace, warn};
 
 use super::{allocator::*, Root, Schema};
-use crate::{bootstrap::ROOT_GROUP_ID, root::schema::ReplicaNodes, Result};
+use crate::{root::schema::ReplicaNodes, Result};
 
 impl Root {
-    pub async fn send_heartbeat(&self, schema: Schema) -> Result<()> {
+    pub async fn send_heartbeat(&self, schema: Arc<Schema>) -> Result<()> {
         let cur_node_id = self.current_node_id();
         let nodes = schema.list_node().await?;
 
@@ -192,51 +192,93 @@ impl Root {
 }
 
 impl Root {
-    #[allow(dead_code)]
-    pub async fn reconcile(&self) -> Result<()> {
+    pub async fn need_reconcile(&self) -> Result<bool> {
         let group_action = self.alloc.compute_group_action().await?;
-        match group_action {
-            GroupAction::Noop => {}
-            GroupAction::Add(cnt) => self.create_groups(cnt).await?,
-            GroupAction::Remove(_) => {
-                // TODO
-            }
+        if matches!(group_action, GroupAction::Add(_)) {
+            return Ok(true);
         }
 
-        let replica_actions = self.alloc.compute_replica_action().await?;
-        for replica_action in replica_actions {
-            match replica_action {
-                ReplicaAction::Noop => {}
-                ReplicaAction::Migrate(action) => {
-                    self.reallocate_replica(action).await?;
-                }
-            }
+        let actions = self.comput_replica_role_action().await?;
+        if !actions.is_empty() {
+            return Ok(true);
         }
 
         let shard_actions = self.alloc.compute_shard_action().await?;
-        for shard_action in shard_actions {
-            match shard_action {
-                ShardAction::Noop => {}
-                ShardAction::Migrate(action) => {
-                    assert!(
-                        action.source_group != ROOT_GROUP_ID
-                            && action.target_group != ROOT_GROUP_ID
-                    );
-                    self.reallocate_shard(action).await?;
-                }
-            }
+        if !shard_actions.is_empty() {
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    pub async fn reconcile(&self, max_step_per_tick: u64) -> Result<()> {
+        let schema = self.schema()?;
+
+        let group_action = self.alloc.compute_group_action().await?;
+        if let GroupAction::Add(cnt) = group_action {
+            self.create_groups(cnt).await?;
+            return Ok(());
         }
 
+        let mut ractions = self.comput_replica_role_action().await?;
+        let mut sactions = self.alloc.compute_shard_action().await?;
+        for _ in 0..max_step_per_tick {
+            if ractions.is_empty() && sactions.is_empty() {
+                break;
+            }
+
+            if !ractions.is_empty() {
+                self.execute_reconcile(ractions).await?
+            }
+
+            if !sactions.is_empty() {
+                for action in sactions {
+                    let ShardAction::Migrate(action) = action;
+                    self.reallocate_shard(action.to_owned()).await?;
+                }
+            }
+
+            self.send_heartbeat(schema.to_owned()).await?;
+
+            ractions = self.comput_replica_role_action().await?;
+            sactions = self.alloc.compute_shard_action().await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn comput_replica_role_action(&self) -> Result<Vec<ReplicaRoleAction>> {
+        let mut actions = Vec::new();
+        let replica_actions = self.alloc.compute_replica_action().await?;
+        actions.extend_from_slice(
+            &replica_actions
+                .iter()
+                .cloned()
+                .map(ReplicaRoleAction::Replica)
+                .collect::<Vec<_>>(),
+        );
         let leader_actions = self.alloc.compute_leader_action().await?;
-        for leader_action in leader_actions {
-            match leader_action {
-                LeaderAction::Noop => {}
-                LeaderAction::Shed(action) => {
+        actions.extend_from_slice(
+            &leader_actions
+                .iter()
+                .cloned()
+                .map(ReplicaRoleAction::Leader)
+                .collect::<Vec<_>>(),
+        );
+        Ok(actions)
+    }
+
+    async fn execute_reconcile(&self, actions: Vec<ReplicaRoleAction>) -> Result<()> {
+        for action in actions {
+            match action {
+                ReplicaRoleAction::Replica(ReplicaAction::Migrate(action)) => {
+                    self.reallocate_replica(action).await?;
+                }
+                ReplicaRoleAction::Leader(LeaderAction::Shed(action)) => {
                     self.transfer_leader(&action).await?;
                 }
+                _ => {}
             }
         }
-
         Ok(())
     }
 

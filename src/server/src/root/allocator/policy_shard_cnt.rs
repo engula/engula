@@ -82,7 +82,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
             if (n2.1 == BalanceStatus::Overfull) && (n1.1 != BalanceStatus::Overfull) {
                 return Ordering::Greater;
             }
-            if (n1.1 == BalanceStatus::Underfull) && (n2.1 != BalanceStatus::Underfull) {
+            if (n2.1 == BalanceStatus::Underfull) && (n1.1 != BalanceStatus::Underfull) {
                 return Ordering::Less;
             }
             n2.0.shards.len().cmp(&n1.0.shards.len())
@@ -109,7 +109,6 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         ranked_candicates: &[(GroupDesc, BalanceStatus)],
     ) -> Option<ShardAction> {
         let mean = self.mean_shard_count();
-        let source_shard = self.preferred_remove_shard(source_group)?;
         for (target, state) in ranked_candicates.iter().rev() {
             if *state != BalanceStatus::Underfull {
                 break;
@@ -118,6 +117,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
             if Self::group_balance_state(sim_count, mean) == BalanceStatus::Overfull {
                 continue;
             }
+            let source_shard = self.preferred_remove_shard(source_group, target)?;
             return Some(ShardAction::Migrate(ReallocateShard {
                 shard: source_shard.id,
                 source_group: source_group.id,
@@ -127,9 +127,13 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         None
     }
 
-    fn preferred_remove_shard(&self, src_group: &GroupDesc) -> Option<ShardDesc> {
+    fn preferred_remove_shard(
+        &self,
+        src_group: &GroupDesc,
+        _target_group: &GroupDesc,
+    ) -> Option<ShardDesc> {
         let replicas = src_group.shards.to_owned();
-        // TODO: ranking shards and choose the preferred one.
+        // TODO: ranking shards and choose the preferred one
         replicas.get(0).map(ToOwned::to_owned)
     }
 

@@ -185,12 +185,12 @@ impl Root {
         info!("node {node_id} step root service leader");
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
-            if let Err(err) = self.send_heartbeat(schema.to_owned()).await {
+            if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
                 warn!(err = ?err, "send heartbeat meet fatal");
                 break;
             }
 
-            if let Err(err) = self.reconcile().await {
+            if let Err(err) = self.reconcile(30).await {
                 warn!(err = ?err, "reconcile meet fatal");
                 break;
             }
@@ -209,8 +209,6 @@ impl Root {
     }
 
     pub async fn info(&self) -> Result<String> {
-        use serde_json::*;
-
         let schema = self.schema()?;
         let nodes = schema.list_node().await?;
         let groups = schema.list_group().await?;
@@ -222,78 +220,106 @@ impl Root {
         let dbs = schema.list_database().await?;
         let collections = schema.list_collection().await?;
 
-        let info = json!(
-            {
-                "nodes": nodes.iter().map(|n| {
-                    json!(
-                        {
-                            "id": n.id,
-                            "addr": n.addr.to_owned(),
-                            "replicas": replicas.iter().filter(|(r, _)| r.node_id == n.id)
-                                .map(|(r, g)| {
-                                    json!(
-                                        {
-                                            "id": r.id,
-                                            "group": g,
-                                            "replica_role": r.role,
-                                            "raft_role": states.iter().find(|s|s.replica_id == r.id).map(|s|s.role).unwrap_or(-1),
-                                        }
-                                    )
-                                }).collect::<Vec<_>>(),
-                        }
-                    )
-                }).collect::<Vec<_>>(),
-                "groups": groups.iter().map(|g| {
-                    json!(
-                        {
-                            "id": g.id,
-                            "epoch": g.epoch,
-                            "replicas": g.replicas.iter().map(|r| {
-                                let s = states.iter().find(|s|s.replica_id == r.id);
-                                json!({
-                                    "id": r.id,
-                                    "node": r.node_id,
-                                    "replica_role": r.role,
-                                    "raft_role": s.map(|s|s.role).unwrap_or(-1),
-                                    "term": s.map(|s|s.term).unwrap_or(0),
-                                })
-                            }).collect::<Vec<_>>(),
-                            "shards": g.shards.iter().map(|s| {
-                                let part = match s.partition.as_ref().unwrap() {
-                                    shard_desc::Partition::Hash(shard_desc::HashPartition {slot_id, slots}) => {
-                                        format!("hash: {slot_id} of {slots}")
-                                    },
-                                    shard_desc::Partition::Range(shard_desc::RangePartition {start, end}) => {
-                                        format!("range: {start:?} to {end:?}")
-                                    },
-                                };
-                                json!({
-                                    "id": s.id,
-                                    "collection": s.collection_id,
-                                    "partition": part,
-                                })
-                            }).collect::<Vec<_>>(),
-                        }
-                    )
-                }).collect::<Vec<_>>(),
-                "databases": dbs.iter().map(|d| json!({
-                    "id": d.id,
-                    "name": d.name,
-                    "collections": collections.iter().filter(|c|c.db == d.id).map(|c| {
-                        let mode = match c.partition.as_ref().unwrap() {
-                            co_desc::Partition::Hash(co_desc::HashPartition { slots }) => {
-                                format!("hash({slots})")
-                            },
-                            co_desc::Partition::Range(co_desc::RangePartition {}) => {
-                                "range".to_owned()
-                            },
-                        };
-                        json!({"id": c.id, "name": c.name, "mode": mode})
-                    }).collect::<Vec<_>>(),
-                })).collect::<Vec<_>>(),
-            }
-        );
+        let balanced = !self.need_reconcile().await?;
 
+        use diagnosis::*;
+
+        let info = Metadata {
+            nodes: nodes
+                .iter()
+                .map(|n| Node {
+                    id: n.id,
+                    addr: n.addr.to_owned(),
+                    replicas: replicas
+                        .iter()
+                        .filter(|(r, _)| r.node_id == n.id)
+                        .map(|(r, g)| NodeReplica {
+                            id: r.id,
+                            group: g.to_owned(),
+                            replica_role: r.role,
+                            raft_role: states
+                                .iter()
+                                .find(|s| s.replica_id == r.id)
+                                .map(|s| s.role)
+                                .unwrap_or(-1),
+                        })
+                        .collect::<Vec<_>>(),
+                })
+                .collect::<Vec<_>>(),
+            databases: dbs
+                .iter()
+                .map(|d| Database {
+                    id: d.id,
+                    name: d.name.to_owned(),
+                    collections: collections
+                        .iter()
+                        .filter(|c| c.db == d.id)
+                        .map(|c| {
+                            let mode = match c.partition.as_ref().unwrap() {
+                                co_desc::Partition::Hash(co_desc::HashPartition { slots }) => {
+                                    format!("hash({slots})")
+                                }
+                                co_desc::Partition::Range(co_desc::RangePartition {}) => {
+                                    "range".to_owned()
+                                }
+                            };
+                            Collection {
+                                id: c.id,
+                                name: c.name.to_owned(),
+                                mode,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                })
+                .collect::<Vec<_>>(),
+            groups: groups
+                .iter()
+                .map(|g| Group {
+                    id: g.id,
+                    epoch: g.epoch,
+                    replicas: g
+                        .replicas
+                        .iter()
+                        .map(|r| {
+                            let s = states.iter().find(|s| s.replica_id == r.id);
+                            GroupReplica {
+                                id: r.id,
+                                node: r.node_id,
+                                replica_role: r.role,
+                                raft_role: s.map(|s| s.role).unwrap_or(-1),
+                                term: s.map(|s| s.term).unwrap_or(0),
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                    shards: g
+                        .shards
+                        .iter()
+                        .map(|s| {
+                            let part = match s.partition.as_ref().unwrap() {
+                                shard_desc::Partition::Hash(shard_desc::HashPartition {
+                                    slot_id,
+                                    slots,
+                                }) => {
+                                    format!("hash: {slot_id} of {slots}")
+                                }
+                                shard_desc::Partition::Range(shard_desc::RangePartition {
+                                    start,
+                                    end,
+                                }) => {
+                                    format!("range: {start:?} to {end:?}")
+                                }
+                            };
+                            GroupShard {
+                                id: s.id,
+                                collection: s.collection_id,
+                                partition: part,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                })
+                .collect::<Vec<_>>(),
+            balanced,
+        };
         Ok(serde_json::to_string(&info).unwrap())
     }
 }
@@ -479,8 +505,27 @@ impl Root {
         Ok(())
     }
 
+    pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
+        self.schema()?.list_database().await
+    }
+
     pub async fn get_database(&self, name: &str) -> Result<Option<DatabaseDesc>> {
         self.schema()?.get_database(name).await
+    }
+
+    pub async fn list_collection(&self, database: &str) -> Result<Vec<CollectionDesc>> {
+        let schema = self.schema()?;
+        let db = schema
+            .get_database(database)
+            .await?
+            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+        Ok(schema
+            .list_collection()
+            .await?
+            .iter()
+            .filter(|c| c.db == db.id)
+            .cloned()
+            .collect::<Vec<_>>())
     }
 
     pub async fn get_collection(
@@ -814,5 +859,70 @@ mod root_test {
             assert!(matches!(&resp22.updates[0].event, _create_db2_event));
             // hub.notify_error(Error::NotRootLeader(vec![])).await;
         });
+    }
+}
+
+pub mod diagnosis {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Metadata {
+        pub databases: Vec<Database>,
+        pub nodes: Vec<Node>,
+        pub groups: Vec<Group>,
+        pub balanced: bool,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Database {
+        pub id: u64,
+        pub name: String,
+        pub collections: Vec<Collection>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Collection {
+        pub id: u64,
+        pub mode: String,
+        pub name: String,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Node {
+        pub addr: String,
+        pub id: u64,
+        pub replicas: Vec<NodeReplica>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct NodeReplica {
+        pub group: u64,
+        pub id: u64,
+        pub raft_role: i32,
+        pub replica_role: i32,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct Group {
+        pub epoch: u64,
+        pub id: u64,
+        pub replicas: Vec<GroupReplica>,
+        pub shards: Vec<GroupShard>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct GroupReplica {
+        pub id: u64,
+        pub node: u64,
+        pub raft_role: i32,
+        pub replica_role: i32,
+        pub term: u64,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct GroupShard {
+        pub collection: u64,
+        pub id: u64,
+        pub partition: String,
     }
 }

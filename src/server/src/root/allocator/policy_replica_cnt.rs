@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use tracing::trace;
@@ -77,7 +77,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         ranked_nodes: &[(NodeDesc, BalanceStatus)],
     ) -> Option<ReplicaAction> {
         let mean = self.mean_replica_count();
-        let (source_replica, group) = self.preferred_remove_replica(src)?;
+        let groups = self.alloc_source.groups();
         for (target, state) in ranked_nodes.iter().rev() {
             if *state != BalanceStatus::Underfull {
                 break;
@@ -86,6 +86,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if Self::node_balance_state(sim_count, mean) == BalanceStatus::Overfull {
                 continue;
             }
+            let (source_replica, group) = self.preferred_remove_replica(src, target, &groups)?;
             return Some(ReplicaAction::Migrate(ReallocateReplica {
                 group,
                 source_node: source_replica.node_id,
@@ -96,15 +97,27 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         None
     }
 
-    fn preferred_remove_replica(&self, n: &NodeDesc) -> Option<(ReplicaDesc, u64)> {
-        let replicas = self.alloc_source.node_replicas(&n.id);
-        // TODO: ranking replica and choose the preferred one.
-        for r in replicas {
-            if r.1 != ROOT_GROUP_ID {
-                return Some(r);
-            }
-        }
-        None
+    fn preferred_remove_replica(
+        &self,
+        src: &NodeDesc,
+        target: &NodeDesc,
+        groups: &HashMap<u64, GroupDesc>,
+    ) -> Option<(ReplicaDesc, u64)> {
+        // TODO: sort & rank replica
+        self.alloc_source
+            .node_replicas(&src.id)
+            .into_iter()
+            .find(|(_, g)| {
+                if *g == ROOT_GROUP_ID {
+                    return false;
+                }
+                if let Some(group) = groups.get(g) {
+                    if !group.replicas.iter().any(|r| r.node_id == target.id) {
+                        return true;
+                    }
+                }
+                false
+            })
     }
 
     fn mean_replica_count(&self) -> f64 {
@@ -129,7 +142,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if (n2.1 == BalanceStatus::Overfull) && (n1.1 != BalanceStatus::Overfull) {
                 return Ordering::Greater;
             }
-            if (n1.1 == BalanceStatus::Underfull) && (n2.1 != BalanceStatus::Underfull) {
+            if (n2.1 == BalanceStatus::Underfull) && (n1.1 != BalanceStatus::Underfull) {
                 return Ordering::Less;
             }
             return n2

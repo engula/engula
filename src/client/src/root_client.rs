@@ -160,6 +160,16 @@ impl AdminRequestBuilder {
         }
     }
 
+    pub fn list_database() -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::ListDatabases(
+                    ListDatabasesRequest {},
+                )),
+            }),
+        }
+    }
+
     pub fn get_database(name: String) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
@@ -183,6 +193,16 @@ impl AdminRequestBuilder {
                         parent: db_name,
                         partition,
                     },
+                )),
+            }),
+        }
+    }
+
+    pub fn list_collection(parent: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::ListCollections(
+                    ListCollectionsRequest { parent },
                 )),
             }),
         }
@@ -216,6 +236,17 @@ impl AdminResponseExtractor {
         }
     }
 
+    pub fn list_database(resp: AdminResponse) -> Vec<DatabaseDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::ListDatabases(response)),
+        }) = resp.response
+        {
+            response.databases
+        } else {
+            vec![]
+        }
+    }
+
     pub fn get_database(resp: AdminResponse) -> Option<DatabaseDesc> {
         if let Some(AdminResponseUnion {
             response: Some(admin_response_union::Response::GetDatabase(response)),
@@ -235,6 +266,17 @@ impl AdminResponseExtractor {
             response.collection
         } else {
             None
+        }
+    }
+
+    pub fn list_collection(resp: AdminResponse) -> Vec<CollectionDesc> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::ListCollections(response)),
+        }) = resp.response
+        {
+            response.collections
+        } else {
+            vec![]
         }
     }
 
