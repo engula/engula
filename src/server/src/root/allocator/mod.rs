@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
+use engula_api::server::v1::{GroupDesc, NodeDesc};
 use serde::{Deserialize, Serialize};
 
 use self::{
@@ -203,7 +203,7 @@ impl<T: AllocSource> Allocator<T> {
     /// Allocate new replica in one group.
     pub async fn allocate_group_replica(
         &self,
-        existing_replicas: Vec<ReplicaDesc>,
+        existing_replicas: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
         self.alloc_source.refresh_all().await?;

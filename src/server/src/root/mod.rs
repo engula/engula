@@ -19,7 +19,7 @@ mod store;
 mod watch;
 
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{hash_map, HashMap, HashSet},
     sync::{Arc, Mutex},
     task::Poll,
     time::Duration,
@@ -661,19 +661,30 @@ impl Root {
         requested_cnt: u64,
     ) -> Result<Vec<ReplicaDesc>> {
         let schema = self.schema()?;
-        let existing_replicas = match schema.get_group(group_id).await? {
+        let mut existing_replicas = match schema.get_group(group_id).await? {
             Some(desc) => desc.replicas,
             None => {
                 return Err(Error::GroupNotFound(group_id));
             }
-        };
+        }
+        .into_iter()
+        .map(|r| r.node_id)
+        .collect::<HashSet<u64>>();
+        let replica_states = schema.group_replica_states(group_id).await?;
+        for replica in replica_states {
+            existing_replicas.insert(replica.node_id);
+        }
         info!(
             group = group_id,
             "attemp allocate {requested_cnt} replicas for exist group"
         );
+
         let nodes = self
             .alloc
-            .allocate_group_replica(existing_replicas, requested_cnt as usize)
+            .allocate_group_replica(
+                existing_replicas.into_iter().collect(),
+                requested_cnt as usize,
+            )
             .await?;
 
         let mut replicas = Vec::with_capacity(nodes.len());

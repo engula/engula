@@ -59,6 +59,7 @@ fn sim_boostrap_join_node_balance() {
             term: 0,
             voted_for: 0,
             role: RaftRole::Leader.into(),
+            node_id: 1,
         }]);
 
         let act = a.compute_group_action().await.unwrap();
@@ -120,6 +121,7 @@ fn sim_boostrap_join_node_balance() {
                 term: 1,
                 voted_for: 0,
                 role: RaftRole::Leader.into(),
+                node_id: 1,
             },
             ReplicaState {
                 replica_id: 2,
@@ -127,6 +129,7 @@ fn sim_boostrap_join_node_balance() {
                 term: 1,
                 voted_for: 0,
                 role: RaftRole::Follower.into(),
+                node_id: 2,
             },
             ReplicaState {
                 replica_id: 3,
@@ -134,6 +137,7 @@ fn sim_boostrap_join_node_balance() {
                 term: 1,
                 voted_for: 0,
                 role: RaftRole::Follower.into(),
+                node_id: 3,
             },
         ]);
         p.display();
@@ -176,6 +180,7 @@ fn sim_boostrap_join_node_balance() {
                             term: 0,
                             voted_for: 0,
                             role,
+                            node_id: n.id,
                         });
                         replica_id_gen += 1;
                     }
@@ -265,6 +270,7 @@ fn sim_boostrap_join_node_balance() {
                             term: 0,
                             voted_for: 0,
                             role,
+                            node_id: n.id,
                         });
                         replica_id_gen += 1;
                     }
