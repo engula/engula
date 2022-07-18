@@ -156,8 +156,9 @@ impl StreamingTask {
     async fn run(self) {
         let mut raft_node = self.raft_node.clone();
         let target_id = self.request.to.id;
-        if let Err(err) = self.serve_streaming_request().await {
-            warn!("serve request to node {}: {:?}", target_id, err);
+        let node_id = self.request.to.node_id;
+        if let Err(e) = self.serve_streaming_request().await {
+            warn!("serve request to node {node_id} replica {target_id}: {e:?}");
             raft_node.report_unreachable(target_id);
         }
     }
