@@ -193,13 +193,17 @@ impl Root {
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
-                warn!(err = ?err, "send heartbeat meet fatal");
-                break;
+                warn!(err = ?err, "send heartbeat meet error");
+                if Self::need_drop_root_leader(&err) {
+                    break;
+                }
             }
 
             if let Err(err) = self.reconcile(30).await {
-                warn!(err = ?err, "reconcile meet fatal");
-                break;
+                warn!(err = ?err, "reconcile meet error");
+                if Self::need_drop_root_leader(&err) {
+                    break;
+                }
             }
 
             crate::runtime::time::sleep(Duration::from_secs(1)).await;
@@ -213,6 +217,10 @@ impl Root {
         }
 
         Ok(())
+    }
+
+    fn need_drop_root_leader(err: &Error) -> bool {
+        matches!(err, Error::Raft(raft::Error::ProposalDropped))
     }
 
     pub async fn info(&self) -> Result<String> {
