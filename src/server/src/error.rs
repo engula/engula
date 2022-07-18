@@ -16,6 +16,9 @@ use engula_api::server::v1::{GroupDesc, ReplicaDesc, RootDesc};
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     // business errors
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+
     #[error("invalid argument {0}")]
     InvalidArgument(String),
 
@@ -25,14 +28,8 @@ pub enum Error {
     #[error("database {0} not found")]
     DatabaseNotFound(String),
 
-    #[error("database {0} exist")]
-    DatabaseExist(String),
-
-    #[error("no avaiable group")]
+    #[error("no available group")]
     NoAvaliableGroup,
-
-    #[error("collection {0} exist")]
-    CollectionExist(String),
 
     // internal errors
     #[error("invalid {0} data")]
@@ -100,9 +97,7 @@ impl From<Error> for tonic::Status {
             Error::InvalidArgument(msg) => Status::invalid_argument(msg),
             Error::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
             err @ Error::DatabaseNotFound(_) => Status::not_found(err.to_string()),
-            err @ (Error::DatabaseExist(_) | Error::CollectionExist(_)) => {
-                Status::already_exists(err.to_string())
-            }
+            err @ Error::AlreadyExists(_) => Status::already_exists(err.to_string()),
 
             Error::GroupNotFound(group_id) => Status::with_details(
                 Code::Unknown,
@@ -205,8 +200,7 @@ impl From<Error> for engula_api::server::v1::Error {
             | Error::Io(_)
             | Error::InvalidData(_)
             | Error::DatabaseNotFound(_)
-            | Error::DatabaseExist(_)
-            | Error::CollectionExist(_)
+            | Error::AlreadyExists(_)
             | Error::ClusterNotMatch
             | Error::NoAvaliableGroup
             | Error::Canceled
