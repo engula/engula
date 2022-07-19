@@ -34,7 +34,7 @@ pub use self::state::{LeaseState, LeaseStateObserver};
 use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
-    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade},
+    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy},
     serverpb::v1::*,
     Error, Result,
 };
@@ -174,10 +174,15 @@ impl Replica {
         .await
     }
 
+    /// Check if the leader still hold the lease?
+    pub async fn check_lease(&self) -> Result<()> {
+        self.check_leader_early()?;
+        self.raft_node.clone().read(ReadPolicy::ReadIndex).await?;
+        Ok(())
+    }
+
     /// Propose `SyncOp` to raft log.
     pub(super) async fn propose_sync_op(&self, op: Box<SyncOp>) -> Result<()> {
-        self.check_leader_early()?;
-
         let eval_result = EvalResult {
             op: Some(op),
             ..Default::default()

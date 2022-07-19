@@ -236,7 +236,6 @@ impl Node {
     }
 
     /// Remove the specified replica.
-    #[allow(unused)]
     pub async fn remove_replica(&self, replica_id: u64, actual_desc: &GroupDesc) -> Result<()> {
         let group_id = actual_desc.id;
         let replica = match self.replica_route_table.find(group_id) {
