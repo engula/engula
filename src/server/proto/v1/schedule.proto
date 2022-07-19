@@ -24,7 +24,13 @@ message ScheduleTask {
   oneof value {
     /// cure_group will allocates replicas from root, and replace the lost replicas.
     ChangeConfigTask cure_group = 1;
+
+    RemoveReplicaTask remove_replica = 2;
   }
+}
+
+message RemoveReplicaTask {
+  engula.server.v1.ReplicaDesc replica = 1;
 }
 
 message ChangeConfigTask {

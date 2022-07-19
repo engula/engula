@@ -14,7 +14,7 @@
 
 mod eval;
 pub mod fsm;
-pub mod job;
+pub mod schedule;
 mod migrate;
 pub mod retry;
 mod state;
