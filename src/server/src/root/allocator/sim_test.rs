@@ -67,7 +67,7 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("2. two node joined");
-        let mut nodes = p.nodes();
+        let mut nodes = p.nodes(false);
         nodes.extend_from_slice(&[
             NodeDesc {
                 id: 2,
@@ -220,7 +220,7 @@ fn sim_boostrap_join_node_balance() {
         }
 
         println!("6. node 4 joined");
-        let mut nodes = p.nodes();
+        let mut nodes = p.nodes(false);
         nodes.extend_from_slice(&[NodeDesc {
             id: 4,
             addr: "".into(),
@@ -441,7 +441,7 @@ impl AllocSource for MockInfoProvider {
         Ok(())
     }
 
-    fn nodes(&self) -> Vec<NodeDesc> {
+    fn nodes(&self, _only_alive: bool) -> Vec<NodeDesc> {
         let nodes = self.nodes.lock().unwrap();
         nodes.to_owned()
     }
@@ -494,7 +494,7 @@ impl MockInfoProvider {
         }
 
         // test only fix node.replica logic
-        let mut nodes = self.nodes();
+        let mut nodes = self.nodes(false);
         for n in nodes.iter_mut() {
             let mut cap = n.capacity.take().unwrap();
             cap.replica_count = node_replicas.get(&n.id).unwrap().len() as u64;
@@ -516,7 +516,7 @@ impl MockInfoProvider {
         let mut replicas = self.replicas.lock().unwrap();
 
         // test only, maintain leader count in node.
-        let mut nodes = self.nodes();
+        let mut nodes = self.nodes(false);
         let groups = self.groups();
         let mut node_leader = HashMap::new();
         for r in &rs {

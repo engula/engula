@@ -42,7 +42,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
 
     pub fn compute_balance(&self) -> Result<LeaderAction> {
         let mean = self.mean_leader_count();
-        let candidate_nodes = self.alloc_source.nodes();
+        let candidate_nodes = self.alloc_source.nodes(true);
         let ranked_nodes = Self::rank_nodes_for_leader(candidate_nodes, mean);
         trace!(
             scored_nodes = ?ranked_nodes.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().leader_count, s)).collect::<Vec<_>>(),
@@ -180,7 +180,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
     }
 
     fn mean_leader_count(&self) -> f64 {
-        let nodes = self.alloc_source.nodes();
+        let nodes = self.alloc_source.nodes(true);
         let total_leaders = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().leader_count)

@@ -14,6 +14,7 @@
 
 mod allocator;
 mod job;
+mod liveness;
 mod schema;
 mod store;
 mod watch;
@@ -53,6 +54,7 @@ use crate::{
 pub struct Root {
     shared: Arc<RootShared>,
     alloc: allocator::Allocator<SysAllocSource>,
+    liveness: Arc<liveness::Liveness>,
 }
 
 pub struct RootShared {
@@ -86,9 +88,14 @@ impl Root {
             node_ident: node_ident.to_owned(),
             watcher_hub: Default::default(),
         });
-        let info = Arc::new(SysAllocSource::new(shared.clone()));
+        let liveness = Arc::new(liveness::Liveness::new(cfg.to_owned()));
+        let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let alloc = allocator::Allocator::new(info, cfg.allocator);
-        Self { alloc, shared }
+        Self {
+            alloc,
+            shared,
+            liveness,
+        }
     }
 
     pub fn is_root(&self) -> bool {

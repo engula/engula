@@ -38,7 +38,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         existing_replica_nodes: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
-        let mut candidate_nodes = self.alloc_source.nodes();
+        let mut candidate_nodes = self.alloc_source.nodes(true);
 
         // skip the nodes already have group replicas.
         candidate_nodes.retain(|n| !existing_replica_nodes.iter().any(|rn| *rn == n.id));
@@ -55,7 +55,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
     pub fn compute_balance(&self) -> Result<Vec<ReplicaAction>> {
         let mean_cnt = self.mean_replica_count();
-        let candidate_nodes = self.alloc_source.nodes();
+        let candidate_nodes = self.alloc_source.nodes(true);
 
         let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
         trace!(
@@ -146,7 +146,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
     }
 
     fn mean_replica_count(&self) -> f64 {
-        let nodes = self.alloc_source.nodes();
+        let nodes = self.alloc_source.nodes(true);
         let total_replicas = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().replica_count)

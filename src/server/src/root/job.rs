@@ -63,8 +63,12 @@ impl Root {
 
         for n in nodes {
             trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-            match self.try_send_heartbeat(&n.addr, &piggybacks).await {
+            match self
+                .try_send_heartbeat(&n.addr, &piggybacks, self.liveness.heartbeat_timeout)
+                .await
+            {
                 Ok(res) => {
+                    self.liveness.renew(n.id);
                     for resp in res.piggybacks {
                         match resp.info.unwrap() {
                             piggyback_response::Info::SyncRoot(_) => {}
@@ -89,6 +93,7 @@ impl Root {
         &self,
         addr: &str,
         piggybacks: &[PiggybackRequest],
+        _timeout: Duration,
     ) -> Result<HeartbeatResponse> {
         let client = self.get_node_client(addr.to_owned()).await?;
         let resp = client
