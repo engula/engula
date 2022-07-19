@@ -62,6 +62,7 @@ pub struct RaftNode<M: StateMachine> {
 
     lease_read_requests: Vec<oneshot::Sender<Result<()>>>,
     read_index_requests: Vec<oneshot::Sender<Result<()>>>,
+    read_states: Vec<ReadState>,
 
     raw_node: RawNode<Storage>,
     applier: Applier<M>,
@@ -89,6 +90,7 @@ where
             check_quorum: true,
             max_size_per_msg: cfg.max_size_per_msg,
             max_inflight_msgs: cfg.max_inflight_msgs,
+            read_only_option: ReadOnlyOption::Safe,
             ..Default::default()
         };
 
@@ -114,6 +116,7 @@ where
             group_id,
             lease_read_requests: Vec::default(),
             read_index_requests: Vec::default(),
+            read_states: Vec::default(),
             raw_node: RawNode::with_default_logger(&config, storage)?,
             applier,
         })
@@ -198,20 +201,26 @@ where
     fn advance_read_requests(&mut self) {
         if !self.lease_read_requests.is_empty() {
             let requests = std::mem::take(&mut self.lease_read_requests);
-            self.submit_read_requests(requests);
+            if self.raw_node.raft.state != StateRole::Leader {
+                for req in requests {
+                    req.send(Err(Error::NotLeader(self.group_id, None)))
+                        .unwrap_or_default();
+                }
+            } else {
+                debug_assert!(self.raw_node.raft.commit_to_current_term());
+                let read_state_ctx = self.applier.delegate_read_requests(requests);
+                self.read_states.push(ReadState {
+                    index: self.committed_index(),
+                    request_ctx: read_state_ctx,
+                });
+            }
         }
 
         if !self.read_index_requests.is_empty() {
             let requests = std::mem::take(&mut self.read_index_requests);
-            self.submit_read_requests(requests);
+            let read_state_ctx = self.applier.delegate_read_requests(requests);
+            self.raw_node.read_index(read_state_ctx);
         }
-    }
-
-    // FIXME(walter) support different read options.
-    #[inline]
-    fn submit_read_requests(&mut self, requests: Vec<oneshot::Sender<Result<()>>>) {
-        let read_state_ctx = self.applier.delegate_read_requests(requests);
-        self.raw_node.read_index(read_state_ctx);
     }
 
     #[inline]
@@ -223,6 +232,10 @@ where
     pub(super) fn advance(&mut self, template: &mut impl AdvanceTemplate) -> Option<WriteTask> {
         self.advance_read_requests();
         if !self.raw_node.has_ready() {
+            if !self.read_states.is_empty() {
+                self.applier
+                    .apply_read_states(std::mem::take(&mut self.read_states));
+            }
             return None;
         }
 
@@ -297,6 +310,11 @@ where
     }
 
     fn handle_apply(&mut self, template: &mut impl AdvanceTemplate, ready: &mut Ready) {
+        if !self.read_states.is_empty() {
+            self.applier
+                .apply_read_states(std::mem::take(&mut self.read_states));
+        }
+
         if !ready.read_states().is_empty() {
             self.applier.apply_read_states(ready.take_read_states());
         }
