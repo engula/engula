@@ -61,12 +61,19 @@ impl Root {
             });
         }
 
+        let mut hb_futs = Vec::new();
         for n in nodes {
             trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-            match self
-                .try_send_heartbeat(&n.addr, &piggybacks, self.liveness.heartbeat_timeout)
-                .await
-            {
+            let fut = self.try_send_heartbeat(
+                n.addr.to_owned(),
+                &piggybacks,
+                self.liveness.heartbeat_timeout,
+            );
+            hb_futs.push((n.to_owned(), fut));
+        }
+
+        for (n, fut) in hb_futs {
+            match fut.await {
                 Ok(res) => {
                     self.liveness.renew(n.id);
                     for resp in res.piggybacks {
@@ -91,11 +98,11 @@ impl Root {
 
     async fn try_send_heartbeat(
         &self,
-        addr: &str,
+        addr: String,
         piggybacks: &[PiggybackRequest],
         _timeout: Duration,
     ) -> Result<HeartbeatResponse> {
-        let client = self.get_node_client(addr.to_owned()).await?;
+        let client = self.get_node_client(addr).await?;
         let resp = client
             .root_heartbeat(HeartbeatRequest {
                 piggybacks: piggybacks.to_owned(),

@@ -23,7 +23,6 @@ use std::{
     collections::{hash_map, HashMap, HashSet},
     sync::{Arc, Mutex},
     task::Poll,
-    time::Duration,
 };
 
 use engula_api::{
@@ -196,7 +195,12 @@ impl Root {
         }
 
         let node_id = self.shared.node_ident.node_id;
-        info!("node {node_id} step root service leader");
+        info!(
+            "node {node_id} step root service leader, heartbeat_interval: {:?}, liveness_threshold: {:?}",
+            self.liveness.heartbeat_interval(),
+            self.liveness.liveness_threshold,
+
+        );
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
@@ -213,7 +217,7 @@ impl Root {
                 }
             }
 
-            crate::runtime::time::sleep(Duration::from_secs(1)).await;
+            crate::runtime::time::sleep(self.liveness.heartbeat_interval()).await;
         }
         info!("node {node_id} current root node drop leader");
 

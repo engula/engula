@@ -27,8 +27,7 @@ pub struct NodeLiveness {
 
 impl NodeLiveness {
     pub fn is_dead(&self) -> bool {
-        const DEAD_THRESHOLD: u128 = Duration::from_secs(60).as_millis();
-        self.expiration + DEAD_THRESHOLD < current_timestamp()
+        self.expiration < current_timestamp()
     }
 
     #[allow(dead_code)]
@@ -39,7 +38,7 @@ impl NodeLiveness {
 
 #[derive(Clone)]
 pub struct Liveness {
-    liveness_threshold: Duration,
+    pub liveness_threshold: Duration,
     pub heartbeat_timeout: Duration,
 
     nodes: Arc<Mutex<HashMap<u64, NodeLiveness>>>,
@@ -50,6 +49,7 @@ impl Liveness {
         const RAFT_ELECTION_TIMEOUT_MULTIPLIER: u64 = 3;
         const LIVENESS_FRAC: f64 = 0.5;
 
+        // ensure liveness_threshold >>> raft_election_timeout?
         let liveness_threshold = Duration::from_millis(
             cfg.raft.election_tick as u64
                 * cfg.raft.tick_interval_ms
@@ -62,6 +62,15 @@ impl Liveness {
             heartbeat_timeout,
             nodes: Default::default(),
         }
+    }
+
+    pub fn heartbeat_interval(&self) -> Duration {
+        const RECONCILE_TIMEOUT: Duration = Duration::from_secs(1);
+        self.liveness_threshold - self.heartbeat_timeout - RECONCILE_TIMEOUT /* TODO: reconcile
+                                                                              * block job should
+                                                                              * be async and not
+                                                                              * affact the
+                                                                              * hearbeat tick */
     }
 
     pub fn get(&self, node: &u64) -> NodeLiveness {
