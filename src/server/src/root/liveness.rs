@@ -46,7 +46,7 @@ pub struct Liveness {
 
 impl Liveness {
     pub fn new(cfg: Config) -> Self {
-        const RAFT_ELECTION_TIMEOUT_MULTIPLIER: u64 = 3;
+        const RAFT_ELECTION_TIMEOUT_MULTIPLIER: u64 = 2;
         const LIVENESS_FRAC: f64 = 0.5;
 
         // ensure liveness_threshold >>> raft_election_timeout?
