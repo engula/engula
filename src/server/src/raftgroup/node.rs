@@ -282,6 +282,11 @@ where
     }
 
     #[inline]
+    pub fn raft(&self) -> &Raft<Storage> {
+        &self.raw_node.raft
+    }
+
+    #[inline]
     pub fn raft_status(&self) -> raft::Status {
         self.raw_node.status()
     }

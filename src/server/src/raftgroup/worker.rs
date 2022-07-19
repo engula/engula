@@ -194,7 +194,7 @@ where
         node_id: u64,
         state_machine: M,
         raft_mgr: &RaftManager,
-        observer: Box<dyn StateObserver>,
+        mut observer: Box<dyn StateObserver>,
     ) -> Result<Self> {
         let desc = ReplicaDesc {
             id: replica_id,
@@ -209,6 +209,13 @@ where
         let (mut request_sender, request_receiver) =
             mpsc::channel(raft_mgr.cfg.max_inflight_requests);
         request_sender.send(Request::Start).await.unwrap();
+
+        observer.on_state_updated(
+            raft_node.raft().leader_id,
+            raft_node.raft().vote,
+            raft_node.raft().term,
+            RaftRole::Follower,
+        );
 
         Ok(RaftWorker {
             executor: raft_mgr.executor().clone(),
