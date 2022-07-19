@@ -231,9 +231,9 @@ impl GroupClient {
                 err.encode_to_vec().into(),
             ))
         } else {
-            Err(Status::internal(format!(
-                "Both response and error are None in GroupResponse"
-            )))
+            Err(Status::internal(
+                "Both response and error are None in GroupResponse".to_owned(),
+            ))
         }
     }
 }
