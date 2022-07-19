@@ -79,8 +79,7 @@ impl AllocSource for SysAllocSource {
     }
 
     fn nodes(&self, only_alive: bool) -> Vec<NodeDesc> {
-        let nodes = self.nodes.lock().unwrap();
-        let mut nodes = nodes.to_owned();
+        let mut nodes = { self.nodes.lock().unwrap().clone() };
         if only_alive {
             nodes = nodes
                 .into_iter()
