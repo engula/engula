@@ -85,8 +85,7 @@ impl MigrateController {
                     } else {
                         desc.src_group_id
                     };
-                    let client =
-                        GroupClient::new(target_group_id, ctrl.shared.provider.router.clone());
+                    let client = GroupClient::new(target_group_id, ctrl.shared.provider.clone());
                     coord = Some(MigrationCoordinator {
                         cfg: ctrl.shared.cfg.clone(),
                         replica_id,
@@ -108,7 +107,7 @@ impl MigrateController {
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
-        super::forward_request(self.shared.provider.router.clone(), &forward_ctx, request).await
+        super::forward_request(self.shared.provider.clone(), &forward_ctx, request).await
     }
 
     fn spawn_group_task<F, T>(&self, group_id: u64, future: F)

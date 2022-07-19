@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, task::Poll, time::Duration};
+use std::{collections::HashMap, future::Future, sync::Arc, task::Poll, time::Duration};
 
-use engula_api::server::v1::*;
-use engula_client::{NodeClient, Router};
+use engula_api::server::v1::{group_response_union::Response, *};
+use engula_client::{NodeClient, RequestBatchBuilder};
 use futures::{FutureExt, StreamExt};
+use tonic::{Code, Status};
 use tracing::warn;
 
-use crate::{Error, Result};
+use crate::{Error, Provider, Result};
 
 pub struct RetryableShardChunkStreaming<'a> {
     shard_id: u64,
@@ -39,11 +40,11 @@ pub struct GroupClient {
     replicas: Vec<ReplicaDesc>,
     next_access_index: usize,
 
-    router: Router,
+    provider: Arc<Provider>,
 }
 
 impl GroupClient {
-    pub fn new(group_id: u64, router: Router) -> Self {
+    pub(crate) fn new(group_id: u64, provider: Arc<Provider>) -> Self {
         GroupClient {
             group_id,
 
@@ -52,10 +53,193 @@ impl GroupClient {
             leader_node_id: None,
             replicas: Vec::default(),
             next_access_index: 0,
-            router,
+            provider,
         }
     }
 
+    async fn invoke<F, O, V>(&mut self, op: F) -> Result<V>
+    where
+        F: Fn(u64, u64, u64, NodeClient) -> O,
+        O: Future<Output = std::result::Result<V, tonic::Status>>,
+    {
+        self.invoke_opt(op, false).await
+    }
+
+    async fn invoke_opt<F, O, V>(&mut self, op: F, accurate_epoch: bool) -> Result<V>
+    where
+        F: Fn(u64, u64, u64, NodeClient) -> O,
+        O: Future<Output = std::result::Result<V, tonic::Status>>,
+    {
+        loop {
+            let client = self.recommend_client().await;
+            match op(
+                self.group_id,
+                self.epoch,
+                self.leader_node_id.unwrap_or_default(),
+                client,
+            )
+            .await
+            {
+                Ok(s) => return Ok(s),
+                Err(status) => {
+                    self.apply_status(status, accurate_epoch).await?;
+                }
+            }
+        }
+    }
+
+    async fn recommend_client(&mut self) -> NodeClient {
+        let mut interval = 1;
+        loop {
+            let recommend_node_id = self.leader_node_id.or_else(|| self.next_access_node_id());
+
+            if let Some(node_id) = recommend_node_id {
+                if let Some(client) = self.fetch_client(node_id).await {
+                    // Pretend that the current node is the leader. If this request is successful,
+                    // subsequent requests can directly use it as the leader, otherwise it will be
+                    // reset in `apply_status`.
+                    if self.leader_node_id.is_none() {
+                        self.leader_node_id = Some(node_id);
+                    }
+                    return client;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(interval)).await;
+            interval = std::cmp::max(interval * 2, 1000);
+        }
+    }
+
+    fn next_access_node_id(&mut self) -> Option<u64> {
+        self.leader_node_id = None;
+        if self.replicas.is_empty() {
+            if let Ok(group) = self.provider.router.find_group(self.group_id) {
+                self.epoch = group.epoch.unwrap_or_default();
+                self.leader_node_id = group
+                    .replicas
+                    .get(&group.leader_id.unwrap_or_default())
+                    .map(|r| r.node_id);
+                self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
+                if self.leader_node_id.is_some() {
+                    return self.leader_node_id;
+                }
+            }
+        }
+
+        if !self.replicas.is_empty() {
+            let replica_desc = &self.replicas[self.next_access_index];
+            self.next_access_index = (self.next_access_index + 1) % self.replicas.len();
+            Some(replica_desc.node_id)
+        } else {
+            None
+        }
+    }
+
+    async fn fetch_client(&mut self, node_id: u64) -> Option<NodeClient> {
+        if let Some(client) = self.node_clients.get(&node_id) {
+            return Some(client.clone());
+        }
+
+        if let Ok(addr) = self.provider.router.find_node_addr(node_id) {
+            match self
+                .provider
+                .conn_manager
+                .get_node_client(addr.clone())
+                .await
+            {
+                Ok(client) => {
+                    self.node_clients.insert(node_id, client.clone());
+                    return Some(client);
+                }
+                Err(err) => {
+                    warn!("connect to node {node_id} address {addr}: {err:?}");
+                }
+            }
+        } else {
+            warn!("not found the address of node {node_id}");
+        }
+
+        None
+    }
+
+    async fn apply_status(&mut self, status: tonic::Status, accurate_epoch: bool) -> Result<()> {
+        match Error::from(status) {
+            Error::GroupNotFound(_) => {
+                self.leader_node_id = None;
+                Ok(())
+            }
+            Error::NotLeader(_, replica_desc) => {
+                self.leader_node_id = replica_desc.map(|r| r.node_id);
+                Ok(())
+            }
+            // If the exact epoch is required, don't retry if epoch isn't matched.
+            Error::EpochNotMatch(group_desc) if !accurate_epoch => {
+                if group_desc.epoch > self.epoch {
+                    self.replicas = group_desc.replicas;
+                } else {
+                    self.leader_node_id = None;
+                }
+                Ok(())
+            }
+            e => Err(e),
+        }
+    }
+}
+
+impl GroupClient {
+    pub async fn list(&mut self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let req = RequestBatchBuilder::new(node_id)
+                .shard_prefix(group_id, epoch, shard_id, prefix)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::PrefixList(resp) => Ok(resp.values),
+                    _ => Err(Status::internal(
+                        "invalid response type, PrefixList is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
+        if resps.is_empty() {
+            Err(Status::internal(
+                "response of batch request is empty".to_owned(),
+            ))
+        } else {
+            Ok(resps.pop().unwrap())
+        }
+    }
+
+    fn group_response(resp: GroupResponse) -> std::result::Result<Response, Status> {
+        use prost::Message;
+
+        if let Some(resp) = resp.response.and_then(|resp| resp.response) {
+            Ok(resp)
+        } else if let Some(err) = resp.error {
+            Err(Status::with_details(
+                Code::Unknown,
+                "response",
+                err.encode_to_vec().into(),
+            ))
+        } else {
+            Err(Status::internal(format!(
+                "Both response and error are None in GroupResponse"
+            )))
+        }
+    }
+}
+
+// Migration related functions.
+impl GroupClient {
     pub async fn setup_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
         let op = |_, _, _, client: NodeClient| {
             let req = MigrateRequest {
@@ -116,128 +300,6 @@ impl GroupClient {
             async move { client.pull(request).await }
         };
         self.invoke(op).await
-    }
-
-    async fn invoke<F, O, V>(&mut self, op: F) -> Result<V>
-    where
-        F: Fn(u64, u64, u64, NodeClient) -> O,
-        O: Future<Output = std::result::Result<V, tonic::Status>>,
-    {
-        self.invoke_opt(op, false).await
-    }
-
-    async fn invoke_opt<F, O, V>(&mut self, op: F, accurate_epoch: bool) -> Result<V>
-    where
-        F: Fn(u64, u64, u64, NodeClient) -> O,
-        O: Future<Output = std::result::Result<V, tonic::Status>>,
-    {
-        loop {
-            let client = self.recommend_client().await;
-            match op(
-                self.group_id,
-                self.epoch,
-                self.leader_node_id.unwrap_or_default(),
-                client,
-            )
-            .await
-            {
-                Ok(s) => return Ok(s),
-                Err(status) => {
-                    self.apply_status(status, accurate_epoch).await?;
-                }
-            }
-        }
-    }
-
-    async fn recommend_client(&mut self) -> NodeClient {
-        let mut interval = 1;
-        loop {
-            let recommend_node_id = self.leader_node_id.or_else(|| self.next_access_node_id());
-
-            if let Some(node_id) = recommend_node_id {
-                if let Some(client) = self.fetch_client(node_id).await {
-                    // Pretend that the current node is the leader. If this request is successful,
-                    // subsequent requests can directly use it as the leader, otherwise it will be
-                    // reset in `apply_status`.
-                    if self.leader_node_id.is_none() {
-                        self.leader_node_id = Some(node_id);
-                    }
-                    return client;
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(interval)).await;
-            interval = std::cmp::max(interval * 2, 1000);
-        }
-    }
-
-    fn next_access_node_id(&mut self) -> Option<u64> {
-        if self.replicas.is_empty() {
-            if let Ok(group) = self.router.find_group(self.group_id) {
-                self.epoch = group.epoch.unwrap_or_default();
-                self.leader_node_id = group
-                    .replicas
-                    .get(&group.leader_id.unwrap_or_default())
-                    .map(|r| r.node_id);
-                self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
-                if self.leader_node_id.is_some() {
-                    return self.leader_node_id;
-                }
-            }
-        }
-
-        if !self.replicas.is_empty() {
-            let replica_desc = &self.replicas[self.next_access_index];
-            self.next_access_index = (self.next_access_index + 1) % self.replicas.len();
-            Some(replica_desc.node_id)
-        } else {
-            None
-        }
-    }
-
-    async fn fetch_client(&mut self, node_id: u64) -> Option<NodeClient> {
-        if let Some(client) = self.node_clients.get(&node_id) {
-            return Some(client.clone());
-        }
-
-        if let Ok(addr) = self.router.find_node_addr(node_id) {
-            match NodeClient::connect(addr.clone()).await {
-                Ok(client) => {
-                    self.node_clients.insert(node_id, client.clone());
-                    return Some(client);
-                }
-                Err(err) => {
-                    warn!("connect to node {} address {}: {}", node_id, addr, err);
-                }
-            }
-        } else {
-            warn!("not found the address of node {}", node_id);
-        }
-
-        None
-    }
-
-    async fn apply_status(&mut self, status: tonic::Status, accurate_epoch: bool) -> Result<()> {
-        match Error::from(status) {
-            Error::GroupNotFound(_) => {
-                self.leader_node_id = None;
-                Ok(())
-            }
-            Error::NotLeader(_, replica_desc) => {
-                self.leader_node_id = replica_desc.map(|r| r.node_id);
-                Ok(())
-            }
-            // If the exact epoch is required, don't retry if epoch isn't matched.
-            Error::EpochNotMatch(group_desc) if !accurate_epoch => {
-                if group_desc.epoch > self.epoch {
-                    self.replicas = group_desc.replicas;
-                } else {
-                    self.leader_node_id = None;
-                }
-                Ok(())
-            }
-            e => Err(e),
-        }
     }
 }
 

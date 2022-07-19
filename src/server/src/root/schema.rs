@@ -34,11 +34,12 @@ use tracing::{info, warn};
 use super::{job::is_retry_err, store::RootStore};
 use crate::{
     bootstrap::*,
+    client::GroupClient,
     node::{
         engine::{SnapshotMode, LOCAL_COLLECTION_ID},
         GroupEngine,
     },
-    Error, Result,
+    Error, Provider, Result,
 };
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
@@ -121,7 +122,7 @@ impl Schema {
 
     pub async fn get_database(&self, name: &str) -> Result<Option<DatabaseDesc>> {
         let val = self
-            .get(&SYSTEM_DATABASE_COLLECTION_ID, name.as_bytes())
+            .get(SYSTEM_DATABASE_COLLECTION_ID, name.as_bytes())
             .await?;
         if val.is_none() {
             return Ok(None);
@@ -141,13 +142,13 @@ impl Schema {
             return Err(Error::DatabaseNotFound(name.to_owned()));
         }
         let db = db.unwrap();
-        self.delete(&SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
+        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
             .await?;
         Ok(db.id)
     }
 
     pub async fn list_database(&self) -> Result<Vec<DatabaseDesc>> {
-        let vals = self.list(&SYSTEM_DATABASE_COLLECTION_ID).await?;
+        let vals = self.list(SYSTEM_DATABASE_COLLECTION_ID).await?;
         let mut databases = Vec::new();
         for val in vals {
             databases.push(
@@ -277,7 +278,7 @@ impl Schema {
     ) -> Result<Option<CollectionDesc>> {
         let val = self
             .get(
-                &SYSTEM_COLLECTION_COLLECTION_ID,
+                SYSTEM_COLLECTION_COLLECTION_ID,
                 &collection_key(database, collection),
             )
             .await?;
@@ -296,14 +297,14 @@ impl Schema {
 
     pub async fn delete_collection(&self, collection: CollectionDesc) -> Result<()> {
         self.delete(
-            &SYSTEM_COLLECTION_COLLECTION_ID,
+            SYSTEM_COLLECTION_COLLECTION_ID,
             &collection.id.to_le_bytes(),
         )
         .await
     }
 
     pub async fn list_collection(&self) -> Result<Vec<CollectionDesc>> {
-        let vals = self.list(&SYSTEM_COLLECTION_COLLECTION_ID).await?;
+        let vals = self.list(SYSTEM_COLLECTION_COLLECTION_ID).await?;
         let mut collections = Vec::new();
         for val in vals {
             let c = CollectionDesc::decode(&*val)
@@ -323,7 +324,7 @@ impl Schema {
 
     pub async fn get_node(&self, id: u64) -> Result<Option<NodeDesc>> {
         let val = self
-            .get(&SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
+            .get(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
             .await?;
         if val.is_none() {
             return Ok(None);
@@ -334,7 +335,7 @@ impl Schema {
     }
 
     pub async fn delete_node(&self, id: u64) -> Result<()> {
-        self.delete(&SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
+        self.delete(SYSTEM_NODE_COLLECTION_ID, &id.to_le_bytes())
             .await
     }
 
@@ -345,7 +346,7 @@ impl Schema {
     }
 
     pub async fn list_node(&self) -> Result<Vec<NodeDesc>> {
-        let vals = self.list(&SYSTEM_NODE_COLLECTION_ID).await?;
+        let vals = self.list(SYSTEM_NODE_COLLECTION_ID).await?;
         let mut nodes = Vec::new();
         for val in vals {
             nodes
@@ -355,7 +356,7 @@ impl Schema {
     }
 
     pub async fn list_node_raw(engine: GroupEngine) -> Result<Vec<NodeDesc>> {
-        let shard_id = Self::system_shard_id(&SYSTEM_NODE_COLLECTION_ID); // System collection only have one shard.
+        let shard_id = Self::system_shard_id(SYSTEM_NODE_COLLECTION_ID); // System collection only have one shard.
         let mut snapshot = match engine.snapshot(shard_id, SnapshotMode::Prefix { key: &[] }) {
             Ok(snapshot) => snapshot,
             Err(Error::InvalidArgument(v)) if v.starts_with("no such shard") => {
@@ -403,7 +404,7 @@ impl Schema {
 
     pub async fn get_group(&self, id: u64) -> Result<Option<GroupDesc>> {
         let val = self
-            .get(&SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
+            .get(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
             .await?;
         if val.is_none() {
             return Ok(None);
@@ -415,12 +416,12 @@ impl Schema {
 
     pub async fn delete_group(&self, id: u64) -> Result<()> {
         // TODO: prefix delete replica_state
-        self.delete(&SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
+        self.delete(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
             .await
     }
 
     pub async fn list_group(&self) -> Result<Vec<GroupDesc>> {
-        let vals = self.list(&SYSTEM_GROUP_COLLECTION_ID).await?;
+        let vals = self.list(SYSTEM_GROUP_COLLECTION_ID).await?;
         let mut groups = Vec::new();
         for val in vals {
             groups.push(
@@ -436,7 +437,7 @@ impl Schema {
         replica_id: u64,
     ) -> Result<Option<ReplicaState>> {
         let key = replica_key(group_id, replica_id);
-        let val = self.get(&SYSTEM_REPLICA_STATE_COLLECTION_ID, &key).await?;
+        let val = self.get(SYSTEM_REPLICA_STATE_COLLECTION_ID, &key).await?;
         if val.is_none() {
             return Ok(None);
         }
@@ -450,7 +451,7 @@ impl Schema {
     }
 
     pub async fn list_replica_state(&self) -> Result<Vec<ReplicaState>> {
-        let vals = self.list(&SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
+        let vals = self.list(SYSTEM_REPLICA_STATE_COLLECTION_ID).await?;
         let mut states = Vec::with_capacity(vals.len());
         for val in vals {
             let state = ReplicaState::decode(&*val)
@@ -742,10 +743,10 @@ impl Schema {
         (desc, SYSTEM_REPLICA_STATE_COLLECTION_SHARD + 1)
     }
 
-    pub fn system_shard_id(shard_id: &u64) -> u64 {
-        let shard = SYSTEM_COLLECTION_SHARD.get(shard_id);
+    pub fn system_shard_id(collection_id: u64) -> u64 {
+        let shard = SYSTEM_COLLECTION_SHARD.get(&collection_id);
         if shard.is_none() {
-            panic!("shard id {}", shard_id);
+            panic!("no such shard exists for system collection {collection_id}");
         }
         shard.unwrap().to_owned()
     }
@@ -863,24 +864,24 @@ impl Schema {
 // internal methods.
 impl Schema {
     async fn get_meta(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.get(&SYSTEM_MATE_COLLECTION_ID, key).await
+        self.get(SYSTEM_MATE_COLLECTION_ID, key).await
     }
 
     async fn batch_write(&self, batch: BatchWriteRequest) -> Result<()> {
         self.store.batch_write(batch).await
     }
 
-    async fn get(&self, collection_id: &u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    async fn get(&self, collection_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let shard_id = Self::system_shard_id(collection_id);
         self.store.get(shard_id, key).await
     }
 
-    async fn delete(&self, collection_id: &u64, key: &[u8]) -> Result<()> {
+    async fn delete(&self, collection_id: u64, key: &[u8]) -> Result<()> {
         let shard_id = Self::system_shard_id(collection_id);
         self.store.delete(shard_id, key).await
     }
 
-    async fn list(&self, collection_id: &u64) -> Result<Vec<Vec<u8>>> {
+    async fn list(&self, collection_id: u64) -> Result<Vec<Vec<u8>>> {
         let shard_id = Self::system_shard_id(collection_id); // System collection only have one shard.
         self.store.list(shard_id, &[]).await
     }
@@ -905,13 +906,40 @@ impl Schema {
     }
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct RemoteStore {
+    provider: Arc<Provider>,
+}
+
+#[allow(dead_code)]
+impl RemoteStore {
+    pub(crate) fn new(provider: Arc<Provider>) -> Self {
+        RemoteStore { provider }
+    }
+
+    pub async fn list_replica_state(&self, group_id: u64) -> Result<Vec<ReplicaState>> {
+        let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
+        let prefix = group_key(group_id);
+
+        let mut client = GroupClient::new(group_id, self.provider.clone());
+        let mut states = vec![];
+        for value in client.list(shard_id, prefix.as_slice()).await? {
+            if let Ok(state) = ReplicaState::decode(value.as_slice()) {
+                states.push(state);
+            }
+        }
+        Ok(states)
+    }
+}
+
 #[derive(Default)]
 struct PutBatchBuilder {
     batch: Vec<(u64, Vec<u8>, Vec<u8>)>,
 }
 
 impl PutBatchBuilder {
-    fn put(&mut self, collection_id: &u64, key: Vec<u8>, val: Vec<u8>) {
+    fn put(&mut self, collection_id: u64, key: Vec<u8>, val: Vec<u8>) {
         let shard_id = Schema::system_shard_id(collection_id);
         self.batch.push((shard_id, key, val));
     }
@@ -933,13 +961,13 @@ impl PutBatchBuilder {
     }
 
     fn put_meta(&mut self, key: Vec<u8>, val: Vec<u8>) -> &mut Self {
-        self.put(&SYSTEM_MATE_COLLECTION_ID, key, val);
+        self.put(SYSTEM_MATE_COLLECTION_ID, key, val);
         self
     }
 
     fn put_group(&mut self, desc: GroupDesc) -> &mut Self {
         self.put(
-            &SYSTEM_GROUP_COLLECTION_ID,
+            SYSTEM_GROUP_COLLECTION_ID,
             desc.id.to_le_bytes().to_vec(),
             desc.encode_to_vec(),
         );
@@ -948,7 +976,7 @@ impl PutBatchBuilder {
 
     fn put_replica_state(&mut self, state: ReplicaState) -> &mut Self {
         self.put(
-            &SYSTEM_REPLICA_STATE_COLLECTION_ID,
+            SYSTEM_REPLICA_STATE_COLLECTION_ID,
             replica_key(state.group_id, state.replica_id),
             state.encode_to_vec(),
         );
@@ -957,7 +985,7 @@ impl PutBatchBuilder {
 
     fn put_node(&mut self, desc: NodeDesc) -> &mut Self {
         self.put(
-            &SYSTEM_NODE_COLLECTION_ID,
+            SYSTEM_NODE_COLLECTION_ID,
             desc.id.to_le_bytes().to_vec(),
             desc.encode_to_vec(),
         );
@@ -966,7 +994,7 @@ impl PutBatchBuilder {
 
     fn put_database(&mut self, desc: DatabaseDesc) -> &mut Self {
         self.put(
-            &SYSTEM_DATABASE_COLLECTION_ID,
+            SYSTEM_DATABASE_COLLECTION_ID,
             desc.name.as_bytes().to_vec(),
             desc.encode_to_vec(),
         );
@@ -975,7 +1003,7 @@ impl PutBatchBuilder {
 
     fn put_collection(&mut self, desc: CollectionDesc) -> &mut Self {
         self.put(
-            &SYSTEM_COLLECTION_COLLECTION_ID,
+            SYSTEM_COLLECTION_COLLECTION_ID,
             collection_key(desc.db, &desc.name),
             desc.encode_to_vec(),
         );
@@ -992,6 +1020,13 @@ fn collection_key(database_id: u64, collection_name: &str) -> Vec<u8> {
     let mut buf = Vec::with_capacity(core::mem::size_of::<u64>() + collection_name.len());
     buf.extend_from_slice(database_id.to_le_bytes().as_slice());
     buf.extend_from_slice(collection_name.as_bytes());
+    buf
+}
+
+#[inline]
+fn group_key(group_id: u64) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(core::mem::size_of::<u64>());
+    buf.extend_from_slice(group_id.to_le_bytes().as_slice());
     buf
 }
 
