@@ -38,7 +38,7 @@ pub(crate) fn setup(provider: &Provider) -> StateChannel {
             report_state_worker(receiver, client).await;
         });
 
-    StateChannel { sender }
+    StateChannel::new(sender)
 }
 
 async fn report_state_worker(
@@ -95,6 +95,10 @@ async fn report_state_updates(root_client: &RootClient, request: ReportRequest) 
 }
 
 impl StateChannel {
+    pub fn new(sender: mpsc::UnboundedSender<GroupUpdates>) -> Self {
+        StateChannel { sender }
+    }
+
     #[inline]
     pub fn broadcast_replica_state(&mut self, group_id: u64, replica_state: ReplicaState) {
         let update = GroupUpdates {

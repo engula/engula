@@ -640,7 +640,7 @@ async fn start_raft_group(
 mod tests {
     use std::{path::PathBuf, time::Duration};
 
-    use engula_api::server::v1::{ReplicaDesc, ReplicaRole};
+    use engula_api::server::v1::{report_request::GroupUpdates, ReplicaDesc, ReplicaRole};
     use tempdir::TempDir;
 
     use super::*;
@@ -858,6 +858,49 @@ mod tests {
             let new_replica_id = 3;
             let result = node.create_replica(new_replica_id, group.clone()).await;
             assert!(matches!(result, Err(Error::AlreadyExists(msg)) if msg.contains("group")));
+        });
+    }
+
+    #[test]
+    fn report_replica_state_after_creating_replica() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+
+        let tmp_dir = TempDir::new("report_replica_state_after_creating_replica").unwrap();
+        executor_owner.executor().block_on(async {
+            let node = create_node(tmp_dir.path().to_owned(), executor.clone()).await;
+
+            let group_id = 2;
+            let replica_id = 2;
+            let group = GroupDesc {
+                id: group_id,
+                epoch: INITIAL_EPOCH,
+                shards: vec![],
+                replicas: vec![],
+            };
+            node.create_replica(replica_id, group.clone())
+                .await
+                .unwrap();
+
+            let (sender, mut receiver) = mpsc::unbounded();
+            node.serve_replica(
+                group_id,
+                ReplicaDesc {
+                    id: replica_id,
+                    ..Default::default()
+                },
+                ReplicaLocalState::Normal,
+                StateChannel::new(sender),
+            )
+            .await
+            .unwrap();
+
+            use futures::stream::StreamExt;
+
+            let result = receiver.next().await;
+            assert!(
+                matches!(result, Some(GroupUpdates{ replica_state: Some(v), .. }) if v.replica_id == replica_id)
+            );
         });
     }
 }
