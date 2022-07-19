@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
-use engula_client::Router;
 
 use super::GroupClient;
-use crate::Result;
+use crate::{Provider, Result};
 
 #[derive(Debug)]
 pub struct ForwardCtx {
@@ -25,14 +26,14 @@ pub struct ForwardCtx {
     pub payloads: Vec<ShardData>,
 }
 
-pub async fn forward_request(
-    router: Router,
+pub(crate) async fn forward_request(
+    provider: Arc<Provider>,
     forward_ctx: &ForwardCtx,
     request: &Request,
 ) -> Result<Response> {
     // FIXME(walter) performance
     let group_id = forward_ctx.dest_group_id;
-    let mut group_client = GroupClient::new(group_id, router);
+    let mut group_client = GroupClient::new(group_id, provider);
     let req = ForwardRequest {
         shard_id: forward_ctx.shard_id,
         group_id,

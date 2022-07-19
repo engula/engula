@@ -271,6 +271,22 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn shard_prefix(mut self, group_id: u64, epoch: u64, shard_id: u64, prefix: &[u8]) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::PrefixList(
+                    ShardPrefixListRequest {
+                        shard_id,
+                        prefix: prefix.to_owned(),
+                    },
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn build(self) -> BatchRequest {
         BatchRequest {
             node_id: self.node_id,
