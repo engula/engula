@@ -456,6 +456,22 @@ impl Schema {
         for val in vals {
             let state = ReplicaState::decode(&*val)
                 .map_err(|_| Error::InvalidData("replica state desc".into()))?;
+            states.push(state.to_owned());
+        }
+        Ok(states)
+    }
+
+    pub async fn group_replica_states(&self, group_id: u64) -> Result<Vec<ReplicaState>> {
+        let vals = self
+            .list_prefix(
+                SYSTEM_REPLICA_STATE_COLLECTION_ID,
+                group_id.to_le_bytes().as_slice(),
+            )
+            .await?;
+        let mut states = Vec::with_capacity(vals.len());
+        for val in vals {
+            let state = ReplicaState::decode(&*val)
+                .map_err(|_| Error::InvalidData("replica state desc".into()))?;
             states.push(state);
         }
         Ok(states)
@@ -711,6 +727,7 @@ impl Schema {
             term: 0,
             voted_for: FIRST_REPLICA_ID,
             role: RaftRole::Leader.into(),
+            node_id: FIRST_NODE_ID,
         });
 
         batch.put_replica_state(ReplicaState {
@@ -719,6 +736,7 @@ impl Schema {
             term: 0,
             voted_for: INIT_USER_REPLICA_ID,
             role: RaftRole::Leader.into(),
+            node_id: FIRST_NODE_ID,
         });
 
         self.batch_write(batch.build()).await?;
@@ -882,8 +900,12 @@ impl Schema {
     }
 
     async fn list(&self, collection_id: u64) -> Result<Vec<Vec<u8>>> {
+        self.list_prefix(collection_id, &[]).await
+    }
+
+    async fn list_prefix(&self, collection_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
         let shard_id = Self::system_shard_id(collection_id); // System collection only have one shard.
-        self.store.list(shard_id, &[]).await
+        self.store.list(shard_id, prefix).await
     }
 
     async fn next_id(&self, id_type: &str) -> Result<u64> {

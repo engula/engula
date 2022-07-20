@@ -20,13 +20,13 @@ use std::{
 use engula_api::server::v1::*;
 
 use super::RootShared;
-use crate::Result;
+use crate::{root::liveness::Liveness, Result};
 
 #[crate::async_trait]
 pub trait AllocSource {
     async fn refresh_all(&self) -> Result<()>;
 
-    fn nodes(&self) -> Vec<NodeDesc>;
+    fn nodes(&self, only_alive: bool) -> Vec<NodeDesc>;
 
     fn groups(&self) -> HashMap<u64, GroupDesc>;
 
@@ -40,6 +40,7 @@ pub trait AllocSource {
 #[derive(Clone)]
 pub struct SysAllocSource {
     root: Arc<RootShared>,
+    liveness: Arc<Liveness>,
 
     nodes: Arc<Mutex<Vec<NodeDesc>>>,
     groups: Arc<Mutex<GroupInfo>>,
@@ -58,9 +59,10 @@ struct ReplicaInfo {
 }
 
 impl SysAllocSource {
-    pub fn new(root: Arc<RootShared>) -> Self {
+    pub fn new(root: Arc<RootShared>, liveness: Arc<Liveness>) -> Self {
         Self {
             root,
+            liveness,
             nodes: Default::default(),
             groups: Default::default(),
             replicas: Default::default(),
@@ -76,9 +78,15 @@ impl AllocSource for SysAllocSource {
         self.reload_replica_status().await
     }
 
-    fn nodes(&self) -> Vec<NodeDesc> {
-        let nodes = self.nodes.lock().unwrap();
-        nodes.to_owned()
+    fn nodes(&self, only_alive: bool) -> Vec<NodeDesc> {
+        let mut nodes = { self.nodes.lock().unwrap().clone() };
+        if only_alive {
+            nodes = nodes
+                .into_iter()
+                .filter(|n| !self.liveness.get(&n.id).is_dead())
+                .collect::<Vec<_>>();
+        }
+        nodes
     }
 
     fn groups(&self) -> HashMap<u64, GroupDesc> {

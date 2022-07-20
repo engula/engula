@@ -14,15 +14,15 @@
 
 mod allocator;
 mod job;
+mod liveness;
 mod schema;
 mod store;
 mod watch;
 
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{hash_map, HashMap, HashSet},
     sync::{Arc, Mutex},
     task::Poll,
-    time::Duration,
 };
 
 use engula_api::{
@@ -53,6 +53,7 @@ use crate::{
 pub struct Root {
     shared: Arc<RootShared>,
     alloc: allocator::Allocator<SysAllocSource>,
+    liveness: Arc<liveness::Liveness>,
 }
 
 pub struct RootShared {
@@ -86,9 +87,14 @@ impl Root {
             node_ident: node_ident.to_owned(),
             watcher_hub: Default::default(),
         });
-        let info = Arc::new(SysAllocSource::new(shared.clone()));
+        let liveness = Arc::new(liveness::Liveness::new(cfg.to_owned()));
+        let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let alloc = allocator::Allocator::new(info, cfg.allocator);
-        Self { alloc, shared }
+        Self {
+            alloc,
+            shared,
+            liveness,
+        }
     }
 
     pub fn is_root(&self) -> bool {
@@ -189,20 +195,29 @@ impl Root {
         }
 
         let node_id = self.shared.node_ident.node_id;
-        info!("node {node_id} step root service leader");
+        info!(
+            "node {node_id} step root service leader, heartbeat_interval: {:?}, liveness_threshold: {:?}",
+            self.liveness.heartbeat_interval(),
+            self.liveness.liveness_threshold,
+
+        );
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
             if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
-                warn!(err = ?err, "send heartbeat meet fatal");
-                break;
+                warn!(err = ?err, "send heartbeat meet error");
+                if Self::need_drop_root_leader(&err) {
+                    break;
+                }
             }
 
             if let Err(err) = self.reconcile(30).await {
-                warn!(err = ?err, "reconcile meet fatal");
-                break;
+                warn!(err = ?err, "reconcile meet error");
+                if Self::need_drop_root_leader(&err) {
+                    break;
+                }
             }
 
-            crate::runtime::time::sleep(Duration::from_secs(1)).await;
+            crate::runtime::time::sleep(self.liveness.heartbeat_interval()).await;
         }
         info!("node {node_id} current root node drop leader");
 
@@ -213,6 +228,10 @@ impl Root {
         }
 
         Ok(())
+    }
+
+    fn need_drop_root_leader(err: &Error) -> bool {
+        matches!(err, Error::Raft(raft::Error::ProposalDropped))
     }
 
     pub async fn info(&self) -> Result<String> {
@@ -661,19 +680,30 @@ impl Root {
         requested_cnt: u64,
     ) -> Result<Vec<ReplicaDesc>> {
         let schema = self.schema()?;
-        let existing_replicas = match schema.get_group(group_id).await? {
+        let mut existing_replicas = match schema.get_group(group_id).await? {
             Some(desc) => desc.replicas,
             None => {
                 return Err(Error::GroupNotFound(group_id));
             }
-        };
+        }
+        .into_iter()
+        .map(|r| r.node_id)
+        .collect::<HashSet<u64>>();
+        let replica_states = schema.group_replica_states(group_id).await?;
+        for replica in replica_states {
+            existing_replicas.insert(replica.node_id);
+        }
         info!(
             group = group_id,
             "attemp allocate {requested_cnt} replicas for exist group"
         );
+
         let nodes = self
             .alloc
-            .allocate_group_replica(existing_replicas, requested_cnt as usize)
+            .allocate_group_replica(
+                existing_replicas.into_iter().collect(),
+                requested_cnt as usize,
+            )
             .await?;
 
         let mut replicas = Vec::with_capacity(nodes.len());

@@ -144,6 +144,7 @@ impl LeaseStateObserver {
             term,
             voted_for,
             role: role.into(),
+            node_id: self.info.node_id,
         };
         let mut lease_state = self.lease_state.lock().unwrap();
         lease_state.leader_id = leader_id;

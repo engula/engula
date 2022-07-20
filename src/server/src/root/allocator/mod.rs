@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc};
+use engula_api::server::v1::{GroupDesc, NodeDesc};
 use serde::{Deserialize, Serialize};
 
 use self::{
@@ -137,7 +137,7 @@ impl<T: AllocSource> Allocator<T> {
 
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() < self.config.replicas_per_group {
+        if self.alloc_source.nodes(false).len() < self.config.replicas_per_group {
             // group alloctor start work after node_count > replicas_per_group.
             return Ok(GroupAction::Noop);
         }
@@ -188,7 +188,7 @@ impl<T: AllocSource> Allocator<T> {
 
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes().len() < self.config.replicas_per_group {
+        if self.alloc_source.nodes(false).len() < self.config.replicas_per_group {
             return Ok(Vec::new());
         }
 
@@ -203,7 +203,7 @@ impl<T: AllocSource> Allocator<T> {
     /// Allocate new replica in one group.
     pub async fn allocate_group_replica(
         &self,
-        existing_replicas: Vec<ReplicaDesc>,
+        existing_replicas: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
         self.alloc_source.refresh_all().await?;
@@ -240,7 +240,7 @@ impl<T: AllocSource> Allocator<T> {
         // 2 remove groups from unmatch cpu-quota nodes.
         // 3. remove groups with lowest migration cost.
         self.alloc_source
-            .nodes()
+            .nodes(false)
             .iter()
             .take(want_remove)
             .map(|n| n.id)
@@ -250,7 +250,7 @@ impl<T: AllocSource> Allocator<T> {
     fn desired_groups(&self) -> usize {
         let total_cpus = self
             .alloc_source
-            .nodes()
+            .nodes(false)
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().cpu_nums)
             .fold(0_f64, |acc, x| acc + x);

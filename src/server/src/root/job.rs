@@ -19,6 +19,7 @@ use engula_api::server::v1::{
     *,
 };
 use engula_client::RequestBatchBuilder;
+use futures::future::join_all;
 use tokio::time;
 use tracing::{info, trace, warn};
 
@@ -61,12 +62,25 @@ impl Root {
             });
         }
 
-        for n in nodes {
+        let mut futs = Vec::new();
+        for n in &nodes {
             trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-            match self.try_send_heartbeat(&n.addr, &piggybacks).await {
+            let fut = self.try_send_heartbeat(
+                n.addr.to_owned(),
+                &piggybacks,
+                self.liveness.heartbeat_timeout,
+            );
+            futs.push(fut);
+        }
+
+        let resps = join_all(futs).await;
+        for (i, resp) in resps.iter().enumerate() {
+            let n = nodes.get(i).unwrap();
+            match resp {
                 Ok(res) => {
-                    for resp in res.piggybacks {
-                        match resp.info.unwrap() {
+                    self.liveness.renew(n.id);
+                    for resp in &res.piggybacks {
+                        match resp.info.as_ref().unwrap() {
                             piggyback_response::Info::SyncRoot(_) => {}
                             piggyback_response::Info::CollectStats(resp) => {
                                 self.handle_collect_stats(&schema, resp, n.id).await?
@@ -87,10 +101,11 @@ impl Root {
 
     async fn try_send_heartbeat(
         &self,
-        addr: &str,
+        addr: String,
         piggybacks: &[PiggybackRequest],
+        _timeout: Duration,
     ) -> Result<HeartbeatResponse> {
-        let client = self.get_node_client(addr.to_owned()).await?;
+        let client = self.get_node_client(addr).await?;
         let resp = client
             .root_heartbeat(HeartbeatRequest {
                 piggybacks: piggybacks.to_owned(),
@@ -103,10 +118,10 @@ impl Root {
     async fn handle_collect_stats(
         &self,
         schema: &Schema,
-        resp: CollectStatsResponse,
+        resp: &CollectStatsResponse,
         node_id: u64,
     ) -> Result<()> {
-        if let Some(ns) = resp.node_stats {
+        if let Some(ns) = &resp.node_stats {
             if let Some(mut node) = schema.get_node(node_id).await? {
                 let new_group_count = ns.group_count as u64;
                 let new_leader_count = ns.leader_count as u64;
@@ -131,7 +146,7 @@ impl Root {
     async fn handle_group_detail(
         &self,
         schema: &Schema,
-        resp: CollectGroupDetailResponse,
+        resp: &CollectGroupDetailResponse,
     ) -> Result<()> {
         let mut update_events = Vec::new();
 

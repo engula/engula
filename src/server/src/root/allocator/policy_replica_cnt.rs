@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cmp::Ordering, collections::HashMap, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use tracing::trace;
@@ -31,13 +35,13 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
     pub fn allocate_group_replica(
         &self,
-        existing_replicas: Vec<ReplicaDesc>,
+        existing_replica_nodes: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
-        let mut candidate_nodes = self.alloc_source.nodes();
+        let mut candidate_nodes = self.alloc_source.nodes(true);
 
         // skip the nodes already have group replicas.
-        candidate_nodes.retain(|n| !existing_replicas.iter().any(|r| r.node_id == n.id));
+        candidate_nodes.retain(|n| !existing_replica_nodes.iter().any(|rn| *rn == n.id));
 
         // sort by alloc score
         candidate_nodes.sort_by(|n1, n2| {
@@ -51,7 +55,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
     pub fn compute_balance(&self) -> Result<Vec<ReplicaAction>> {
         let mean_cnt = self.mean_replica_count();
-        let candidate_nodes = self.alloc_source.nodes();
+        let candidate_nodes = self.alloc_source.nodes(true);
 
         let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
         trace!(
@@ -77,7 +81,28 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         ranked_nodes: &[(NodeDesc, BalanceStatus)],
     ) -> Option<ReplicaAction> {
         let mean = self.mean_replica_count();
-        let groups = self.alloc_source.groups();
+        let mut groups = self
+            .alloc_source
+            .groups()
+            .into_iter()
+            .map(|(group, desc)| {
+                (
+                    group,
+                    desc.replicas
+                        .iter()
+                        .map(|r| r.node_id)
+                        .collect::<HashSet<u64>>(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let replica_states = self.alloc_source.replica_states();
+        for replica_state in replica_states {
+            if let Some(g) = groups.get_mut(&replica_state.group_id) {
+                g.insert(replica_state.node_id);
+            }
+        }
+
         for (target, state) in ranked_nodes.iter().rev() {
             if *state != BalanceStatus::Underfull {
                 break;
@@ -101,7 +126,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         &self,
         src: &NodeDesc,
         target: &NodeDesc,
-        groups: &HashMap<u64, GroupDesc>,
+        group_nodes: &HashMap<u64, HashSet<u64>>,
     ) -> Option<(ReplicaDesc, u64)> {
         // TODO: sort & rank replica
         self.alloc_source
@@ -111,8 +136,8 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
                 if *g == ROOT_GROUP_ID {
                     return false;
                 }
-                if let Some(group) = groups.get(g) {
-                    if !group.replicas.iter().any(|r| r.node_id == target.id) {
+                if let Some(node_ids) = group_nodes.get(g) {
+                    if !node_ids.contains(&target.id) {
                         return true;
                     }
                 }
@@ -121,7 +146,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
     }
 
     fn mean_replica_count(&self) -> f64 {
-        let nodes = self.alloc_source.nodes();
+        let nodes = self.alloc_source.nodes(true);
         let total_replicas = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().replica_count)
