@@ -40,6 +40,7 @@ message ChangeConfigTask {
   CreateReplicaStep create_replica = 2;
   AddLearnerStep add_learner = 3;
   ReplaceVoterStep replace_voter = 4;
+  RemoveLearnerStep remove_learner = 5;
 }
 
 enum TaskStep {
@@ -47,6 +48,7 @@ enum TaskStep {
   CREATE_REPLICA = 1;
   ADD_LEARNER = 2;
   REPLACE_VOTER = 3;
+  REMOVE_LEARNER = 4;
 }
 
 message CreateReplicaStep {
@@ -54,10 +56,14 @@ message CreateReplicaStep {
 }
 
 message AddLearnerStep {
-  repeated engula.server.v1.ReplicaDesc replicas = 2;
+  repeated engula.server.v1.ReplicaDesc replicas = 1;
 }
 
 message ReplaceVoterStep {
   repeated engula.server.v1.ReplicaDesc incoming_voters = 1;
   repeated engula.server.v1.ReplicaDesc outgoing_voters = 2;
+}
+
+message RemoveLearnerStep {
+  repeated engula.server.v1.ReplicaDesc learners = 1;
 }

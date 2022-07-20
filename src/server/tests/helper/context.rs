@@ -135,11 +135,15 @@ impl TestContext {
             let node_id = i as u64;
             nodes.insert(node_id, next_addr);
         }
-        self.start_servers(nodes).await
+        self.start_servers(nodes.get(&0).cloned().unwrap(), nodes)
+            .await
     }
 
-    pub async fn start_servers(&mut self, nodes: HashMap<u64, String>) -> HashMap<u64, String> {
-        let root_addr = nodes.get(&0).expect("root addr should exists").clone();
+    pub async fn start_servers(
+        &mut self,
+        root_addr: String,
+        nodes: HashMap<u64, String>,
+    ) -> HashMap<u64, String> {
         let mut keys = nodes.keys().cloned().collect::<Vec<_>>();
         keys.sort_unstable();
         for id in keys {

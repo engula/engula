@@ -326,7 +326,9 @@ impl ScheduleContext {
         self.replica_states = replica_states;
         for r in &self.replica_states {
             if !replica_set.contains(&r.replica_id) {
-                self.orphan_replicas.insert(r.replica_id, Instant::now());
+                self.orphan_replicas
+                    .entry(r.replica_id)
+                    .or_insert_with(Instant::now);
             }
         }
     }
@@ -416,6 +418,14 @@ impl ScheduleContext {
                 }
             }
             TaskStep::ReplaceVoter => {
+                if self
+                    .execute_remove_learner(task.remove_learner.as_mut().unwrap())
+                    .await
+                {
+                    task.current = TaskStep::RemoveLearner as i32;
+                }
+            }
+            TaskStep::RemoveLearner => {
                 return true;
             }
         }
@@ -473,6 +483,26 @@ impl ScheduleContext {
                 group = self.group_id,
                 replica = self.replica_id,
                 "replace voters step is executed"
+            );
+            true
+        }
+    }
+
+    async fn execute_remove_learner(&self, step: &RemoveLearnerStep) -> bool {
+        let exec_ctx = ExecCtx::with_epoch(self.replica.epoch());
+        let req = Request::ChangeReplicas(step.into());
+        if let Err(e) = self.replica.execute(exec_ctx, &req).await {
+            warn!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "remove learner step: {e}, retry this step later"
+            );
+            false
+        } else {
+            info!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "remove learner step is executed"
             );
             true
         }
@@ -556,6 +586,21 @@ impl From<&ReplaceVoterStep> for ChangeReplicasRequest {
     }
 }
 
+impl From<&RemoveLearnerStep> for ChangeReplicasRequest {
+    fn from(step: &RemoveLearnerStep) -> Self {
+        let changes = ChangeReplicas {
+            changes: step
+                .learners
+                .iter()
+                .map(replica_as_outgoing_voter)
+                .collect(),
+        };
+        ChangeReplicasRequest {
+            change_replicas: Some(changes),
+        }
+    }
+}
+
 impl ChangeConfigTask {
     fn involved_replicas(&self) -> HashSet<u64> {
         let mut replicas = HashSet::default();
@@ -611,6 +656,7 @@ impl ChangeConfigTask {
             create_replica: Some(create_replica_step),
             add_learner: Some(add_learner_step),
             replace_voter: Some(replace_voter_step),
+            remove_learner: Some(RemoveLearnerStep { learners: vec![] }),
         }
     }
 
@@ -624,6 +670,9 @@ impl ChangeConfigTask {
         let add_learner_step = AddLearnerStep {
             replicas: incoming_voters.clone(),
         };
+        let remove_learner_step = RemoveLearnerStep {
+            learners: outgoing_voters.clone(),
+        };
         let replace_voter_step = ReplaceVoterStep {
             incoming_voters,
             outgoing_voters,
@@ -634,6 +683,7 @@ impl ChangeConfigTask {
             create_replica: Some(create_replica_step),
             add_learner: Some(add_learner_step),
             replace_voter: Some(replace_voter_step),
+            remove_learner: Some(remove_learner_step),
         }
     }
 
@@ -659,6 +709,16 @@ impl ChangeConfigTask {
                     .replace_voter
                     .as_ref()
                     .expect("For TaskStep::ReplaceVoter, replace_voter is not None")
+                    .is_finished(desc)
+                {
+                    return Some(());
+                }
+            }
+            TaskStep::RemoveLearner => {
+                if self
+                    .remove_learner
+                    .as_ref()
+                    .expect("For TaskStep::RemoveLearner, remove_learner is not None")
                     .is_finished(desc)
                 {
                     return Some(());
@@ -694,6 +754,18 @@ impl ReplaceVoterStep {
             }
         }
         incoming_voters.is_empty()
+    }
+}
+
+impl RemoveLearnerStep {
+    fn is_finished(&self, desc: &GroupDesc) -> bool {
+        let learners = self.learners.iter().map(|r| r.id).collect::<HashSet<_>>();
+        for replica in &desc.replicas {
+            if learners.contains(&replica.id) {
+                return false;
+            }
+        }
+        true
     }
 }
 
