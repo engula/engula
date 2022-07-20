@@ -14,9 +14,9 @@
 
 mod eval;
 pub mod fsm;
-pub mod schedule;
 mod migrate;
 pub mod retry;
+pub mod schedule;
 mod state;
 
 use std::{
@@ -167,6 +167,7 @@ impl Replica {
             } else if self.info.is_terminated() {
                 Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
             } else {
+                // FIXME(walter) remove dup wakers.
                 lease_state.leader_subscribers.push(ctx.waker().clone());
                 Poll::Pending
             }
@@ -178,17 +179,6 @@ impl Replica {
     pub async fn check_lease(&self) -> Result<()> {
         self.check_leader_early()?;
         self.raft_node.clone().read(ReadPolicy::ReadIndex).await?;
-        Ok(())
-    }
-
-    /// Propose `SyncOp` to raft log.
-    pub(super) async fn propose_sync_op(&self, op: Box<SyncOp>) -> Result<()> {
-        let eval_result = EvalResult {
-            op: Some(op),
-            ..Default::default()
-        };
-        self.raft_node.clone().propose(eval_result).await?;
-
         Ok(())
     }
 

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// mod purge_replica;
-
 use std::{
     collections::{HashMap, HashSet, LinkedList},
     sync::{Arc, Mutex},
@@ -64,7 +62,8 @@ struct ScheduleContext {
     current_term: u64,
 
     lost_peers: HashMap<u64, Instant>,
-    orphan_replicas: Vec<ReplicaState>,
+    orphan_replicas: HashMap<u64, Instant>,
+    replica_states: Vec<ReplicaState>,
 
     /// The number of voters of current group, includes both `Voter` and `IncomingVoter`.
     num_voters: usize,
@@ -78,35 +77,45 @@ impl Scheduler {
             if term != current_term {
                 break;
             }
-            let desc = self.ctx.replica.descriptor();
-            self.check_group_state(&desc).await;
-            self.advance_tasks(&desc).await;
+            crate::runtime::time::sleep(Duration::from_secs(1)).await;
+
+            if let Some(desc) = self.check_group_state().await {
+                self.advance_tasks(&desc).await;
+            };
         }
     }
 
-    async fn check_group_state(&mut self, desc: &GroupDesc) {
+    async fn check_group_state(&mut self) -> Option<GroupDesc> {
         if let Some(state) = self.ctx.raft_node.raft_group_state().await {
-            {
-                let replica_states = self.replica_states.lock().unwrap();
+            let replica_states = { self.replica_states.lock().unwrap().clone() };
+            let desc = self.ctx.replica.descriptor();
+            if self.ctx.replica.check_lease().await.is_ok() {
                 self.ctx
-                    .apply_raft_group_state(&state, desc, &*replica_states);
+                    .apply_raft_group_state(&state, &desc, replica_states);
+                self.check_config_change_state().await;
+                self.check_replica_states().await;
+                return Some(desc);
             }
-            self.check_config_change_state().await;
-            self.check_replica_states().await;
-            crate::runtime::time::sleep(Duration::from_secs(1)).await;
         }
+        None
     }
 
     async fn check_replica_states(&mut self) {
-        for s in &self.ctx.orphan_replicas {
-            if self.locked_replicas.contains(&s.replica_id) {
+        let now = Instant::now();
+        for s in &self.ctx.replica_states {
+            if let Some(instant) = self.ctx.orphan_replicas.get(&s.replica_id) {
+                if *instant + Duration::from_secs(60) > now {
+                    continue;
+                }
+            }
+
+            if !self.locked_replicas.insert(s.replica_id) {
                 continue;
             }
 
-            self.locked_replicas.insert(s.replica_id);
             let replica = ReplicaDesc {
                 id: s.replica_id,
-                node_id: u64::MAX, // FIXME(walter) s.node_id
+                node_id: s.node_id,
                 ..Default::default()
             };
             self.tasks.push_back(ScheduleTask {
@@ -132,7 +141,7 @@ impl Scheduler {
         self.tasks.clear();
         self.locked_replicas.clear();
         self.ctx.lost_peers.clear();
-        self.ctx.orphan_replicas.clear();
+        self.ctx.replica_states.clear();
         self.load_pending_tasks().await;
     }
 
@@ -166,12 +175,20 @@ impl Scheduler {
             "promote group by add {incoming_peers:?}"
         );
         self.change_config_task = Some(ChangeConfigTask::add_replicas(replicas));
+        for id in incoming_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
     }
 
     async fn setup_curing_group_task(&mut self) {
         let outgoing_voters = self.ctx.lost_replicas();
         if outgoing_voters.is_empty() {
             return;
+        }
+        for voter in &outgoing_voters {
+            if self.locked_replicas.contains(&voter.id) {
+                return;
+            }
         }
 
         let replicas = match self
@@ -200,6 +217,12 @@ impl Scheduler {
         );
 
         self.change_config_task = Some(ChangeConfigTask::replace_voters(replicas, outgoing_voters));
+        for id in incoming_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
+        for id in outgoing_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
     }
 
     async fn advance_tasks(&mut self, desc: &GroupDesc) {
@@ -245,7 +268,8 @@ impl ScheduleContext {
             provider,
             current_term: 0,
             lost_peers: HashMap::default(),
-            orphan_replicas: Vec::default(),
+            orphan_replicas: HashMap::default(),
+            replica_states: Vec::default(),
             num_voters: 0,
             // FIXME(walter) configurable replica number.
             required_replicas: 3,
@@ -256,7 +280,7 @@ impl ScheduleContext {
         &mut self,
         state: &RaftGroupState,
         desc: &GroupDesc,
-        replica_states: &[ReplicaState],
+        replica_states: Vec<ReplicaState>,
     ) {
         let lost_peers = state
             .peers
@@ -278,11 +302,13 @@ impl ScheduleContext {
             .count();
 
         let replica_set = desc.replicas.iter().map(|r| r.id).collect::<HashSet<_>>();
-        self.orphan_replicas = replica_states
-            .iter()
-            .filter(|state| replica_set.contains(&state.replica_id))
-            .cloned()
-            .collect();
+        self.orphan_replicas.retain(|k, _| !replica_set.contains(k));
+        self.replica_states = replica_states;
+        for r in &self.replica_states {
+            if !replica_set.contains(&r.replica_id) {
+                self.orphan_replicas.insert(r.replica_id, Instant::now());
+            }
+        }
     }
 
     fn is_group_sicked(&self) -> bool {
