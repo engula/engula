@@ -326,7 +326,9 @@ impl ScheduleContext {
         self.replica_states = replica_states;
         for r in &self.replica_states {
             if !replica_set.contains(&r.replica_id) {
-                self.orphan_replicas.insert(r.replica_id, Instant::now());
+                self.orphan_replicas
+                    .entry(r.replica_id)
+                    .or_insert_with(|| Instant::now());
             }
         }
     }
