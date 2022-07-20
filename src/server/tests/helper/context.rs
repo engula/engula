@@ -30,8 +30,8 @@ pub struct TestContext {
     replica_knobs: ReplicaTestingKnobs,
     disable_group_promoting: bool,
 
-    notifier: ShutdownNotifier,
-    handles: Vec<std::thread::JoinHandle<()>>,
+    notifiers: HashMap<u64, ShutdownNotifier>,
+    handles: HashMap<u64, std::thread::JoinHandle<()>>,
 }
 
 #[allow(dead_code)]
@@ -43,14 +43,14 @@ impl TestContext {
             disable_group_promoting: false,
             replica_knobs: ReplicaTestingKnobs::default(),
             alloc_cfg: AllocatorConfig::default(),
-            notifier: ShutdownNotifier::new(),
-            handles: vec![],
+            notifiers: HashMap::default(),
+            handles: HashMap::default(),
         }
     }
 
     pub fn shutdown(&mut self) {
-        let _ = std::mem::take(&mut self.notifier);
-        for handle in std::mem::take(&mut self.handles) {
+        let _ = std::mem::take(&mut self.notifiers);
+        for (_, handle) in std::mem::take(&mut self.handles) {
             handle.join().unwrap_or_default();
         }
     }
@@ -116,12 +116,14 @@ impl TestContext {
             },
             allocator: cfg,
         };
-        let shutdown = self.notifier.subscribe();
+        let notifier = ShutdownNotifier::new();
+        let shutdown = notifier.subscribe();
         let handle = thread::spawn(move || {
             let owner = ExecutorOwner::new(1);
             engula_server::run(cfg, owner.executor(), shutdown).unwrap();
         });
-        self.handles.push(handle);
+        self.notifiers.insert(idx as u64, notifier);
+        self.handles.insert(idx as u64, handle);
     }
 
     /// Create a set of servers and bootstrap all of them.
@@ -143,15 +145,30 @@ impl TestContext {
         for id in keys {
             let addr = nodes.get(&id).unwrap().clone();
             if id == 0 {
-                self.spawn_server((id + 1) as usize, &addr, true, vec![]);
+                self.spawn_server(id as usize, &addr, true, vec![]);
                 node_client_with_retry(&addr).await;
             } else {
                 // Join node one by one so that the node id is increment.
-                self.spawn_server((id + 1) as usize, &addr, false, vec![root_addr.clone()]);
+                self.spawn_server(id as usize, &addr, false, vec![root_addr.clone()]);
                 node_client_with_retry(&addr).await;
             }
         }
         nodes
+    }
+
+    pub async fn add_server(&mut self, root_addr: String, id: u64) -> String {
+        assert_ne!(id, 0);
+        let addr = self.next_listen_address();
+        self.spawn_server(id as usize, &addr, false, vec![root_addr]);
+        node_client_with_retry(&addr).await;
+        addr
+    }
+
+    pub async fn stop_server(&mut self, id: u64) {
+        self.notifiers.remove(&id);
+        if let Some(handle) = self.handles.remove(&id) {
+            handle.join().unwrap_or_default();
+        }
     }
 }
 

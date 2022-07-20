@@ -41,14 +41,16 @@ impl raft_server::Raft for Server {
                         }
                         Some(r) => r.id,
                     };
+                    let replica = msg.from_replica.as_ref().unwrap();
+                    let from_replica_id = replica.id;
+                    let from_node_id = replica.node_id;
                     if let Some(mut sender) = self.node.raft_route_table().find(target_replica_id) {
                         if sender.step(msg).is_ok() {
                             continue;
                         }
                     }
                     warn!(
-                        "receive message to a not existed replica {}",
-                        target_replica_id
+                        "receive message from node {from_node_id} replica {from_replica_id} to a not existed replica {target_replica_id}",
                     );
                     break;
                 }
