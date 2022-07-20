@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex},
     task::Waker,
 };
@@ -32,7 +33,7 @@ pub struct LeaseState {
     pub descriptor: GroupDesc,
     pub migration_state: Option<MigrationState>,
     pub migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
-    pub leader_subscribers: Vec<Waker>,
+    pub leader_subscribers: HashMap<&'static str, Waker>,
 }
 
 /// A struct that observes changes to `GroupDesc` and `ReplicaState` , and broadcasts those changes
@@ -57,7 +58,7 @@ impl LeaseState {
             leader_id: 0,
             applied_term: 0,
             replica_state: ReplicaState::default(),
-            leader_subscribers: vec![],
+            leader_subscribers: HashMap::default(),
         }
     }
 
@@ -97,7 +98,7 @@ impl LeaseState {
 
     #[inline]
     pub fn wake_all_waiters(&mut self) {
-        for waker in std::mem::take(&mut self.leader_subscribers) {
+        for (_, waker) in std::mem::take(&mut self.leader_subscribers) {
             waker.wake();
         }
     }

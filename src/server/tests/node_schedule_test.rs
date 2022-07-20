@@ -15,8 +15,6 @@
 
 mod helper;
 
-use std::time::Duration;
-
 use engula_api::server::v1::*;
 use helper::context::TestContext;
 use tracing::info;
@@ -30,41 +28,11 @@ fn init() {
 }
 
 #[test]
-fn add_replica() {
+fn remove_orphan_replicas() {
     block_on_current(async {
-        let mut ctx = TestContext::new("add-replica");
-        ctx.disable_all_balance();
-        let nodes = ctx.bootstrap_servers(2).await;
-        let c = ClusterClient::new(nodes).await;
-
-        let group_id = 0;
-        let new_replica_id = 123;
-
-        let root_group = GroupDesc {
-            id: group_id,
-            ..Default::default()
-        };
-
-        info!("create new replica {new_replica_id} of group {group_id}");
-
-        // 1. create replica firstly
-        c.create_replica(1, new_replica_id, root_group).await;
-
-        info!("try add replica {new_replica_id} into group {group_id}");
-
-        // 2. add replica to group
-        let mut group_client = c.group(group_id);
-        group_client.add_replica(new_replica_id, 1).await.unwrap();
-
-        c.assert_group_contains_member(group_id, new_replica_id)
-            .await;
-    });
-}
-
-#[test]
-fn create_group_with_multi_replicas() {
-    block_on_current(async {
-        let mut ctx = TestContext::new("create-group-with-multi-replicas");
+        let mut ctx = TestContext::new("remove-orphan-replicas");
+        ctx.mut_replica_testing_knobs()
+            .disable_orphan_replica_detecting_intervals = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
@@ -107,37 +75,27 @@ fn create_group_with_multi_replicas() {
         };
         c.create_replica(3, 103, empty_desc).await;
 
-        info!("add replica 103 to group 1");
+        info!("replica 103 should be removed because orphan replica");
 
-        let mut group_client = c.group(group_id);
-        group_client.add_replica(103, 3).await.unwrap();
-        c.assert_group_contains_member(group_id, 103).await;
-    });
-}
+        for _ in 0..1000 {
+            if c.collect_replica_state(group_id, 3)
+                .await
+                .unwrap()
+                .is_some()
+            {
+                break;
+            }
+        }
 
-/// The root group can be promoted to cluster mode as long as enough nodes are added to the cluster.
-#[test]
-fn promote_to_cluster_from_single_node() {
-    block_on_current(async {
-        let mut ctx = TestContext::new("promote-to-cluster");
-        ctx.disable_all_balance();
-        let nodes = ctx.bootstrap_servers(3).await;
-        let c = ClusterClient::new(nodes).await;
-
-        let root_group_id = 0;
-        for _ in 0..10000 {
-            let members = c.group_members(root_group_id).await;
-            if members
-                .into_iter()
-                .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
-                .count()
-                == 3
+        for _ in 0..1000 {
+            if c.collect_replica_state(group_id, 3)
+                .await
+                .unwrap()
+                .is_none()
             {
                 return;
             }
-
-            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        panic!("could not promote root group to cluster");
+        panic!("replica 103 still exists in node 3");
     });
 }

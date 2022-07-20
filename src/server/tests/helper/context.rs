@@ -14,6 +14,7 @@
 use std::{collections::HashMap, thread};
 
 use engula_server::{
+    node::replica::{ReplicaConfig, ReplicaTestingKnobs},
     runtime::{ExecutorOwner, ShutdownNotifier},
     AllocatorConfig, Config, NodeConfig, RaftConfig,
 };
@@ -26,6 +27,7 @@ use crate::helper::socket::next_avail_port;
 pub struct TestContext {
     root_dir: TempDir,
     alloc_cfg: AllocatorConfig,
+    replica_knobs: ReplicaTestingKnobs,
     disable_group_promoting: bool,
 
     notifier: ShutdownNotifier,
@@ -39,6 +41,7 @@ impl TestContext {
         TestContext {
             root_dir,
             disable_group_promoting: false,
+            replica_knobs: ReplicaTestingKnobs::default(),
             alloc_cfg: AllocatorConfig::default(),
             notifier: ShutdownNotifier::new(),
             handles: vec![],
@@ -54,6 +57,10 @@ impl TestContext {
 
     pub fn next_listen_address(&self) -> String {
         format!("127.0.0.1:{}", next_avail_port())
+    }
+
+    pub fn mut_replica_testing_knobs(&mut self) -> &mut ReplicaTestingKnobs {
+        &mut self.replica_knobs
     }
 
     pub fn disable_replica_balance(&mut self) {
@@ -96,7 +103,13 @@ impl TestContext {
             addr,
             init,
             join_list,
-            node: NodeConfig::default(),
+            node: NodeConfig {
+                replica: ReplicaConfig {
+                    testing_knobs: self.replica_knobs.clone(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             raft: RaftConfig {
                 tick_interval_ms: 500,
                 ..Default::default()

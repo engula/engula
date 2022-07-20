@@ -14,6 +14,7 @@
 
 #![feature(cursor_remaining)]
 #![feature(drain_filter)]
+#![feature(linked_list_cursors)]
 #![feature(result_into_ok_or_err)]
 #![feature(path_try_exists)]
 
@@ -72,13 +73,13 @@ pub(crate) struct Provider {
     #[allow(unused)]
     pub db_path: PathBuf,
 
+    pub address_resolver: Arc<AddressResolver>,
     pub conn_manager: ConnManager,
+    pub executor: Executor,
     pub root_client: RootClient,
     pub router: Router,
-    pub address_resolver: Arc<AddressResolver>,
     pub raw_db: Arc<rocksdb::DB>,
     pub state_engine: StateEngine,
-    pub executor: Executor,
 }
 
 #[cfg(test)]

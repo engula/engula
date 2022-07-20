@@ -14,9 +14,9 @@
 
 mod eval;
 pub mod fsm;
-pub mod job;
 mod migrate;
 pub mod retry;
+pub mod schedule;
 mod state;
 
 use std::{
@@ -39,12 +39,20 @@ use crate::{
     Error, Result,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct ReplicaTestingKnobs {
+    pub disable_orphan_replica_detecting_intervals: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReplicaConfig {
     /// The limit size of each snapshot files.
     ///
     /// Default: 64MB.
     pub snap_file_size: u64,
+
+    #[serde(skip)]
+    pub testing_knobs: ReplicaTestingKnobs,
 }
 
 pub struct ReplicaInfo {
@@ -151,7 +159,7 @@ impl Replica {
         self.evaluate_command(&exec_ctx, request).await
     }
 
-    pub async fn on_leader(&self, immediate: bool) -> Result<Option<u64>> {
+    pub async fn on_leader(&self, source: &'static str, immediate: bool) -> Result<Option<u64>> {
         use futures::future::poll_fn;
 
         if self.info.is_terminated() {
@@ -167,7 +175,9 @@ impl Replica {
             } else if self.info.is_terminated() {
                 Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
             } else {
-                lease_state.leader_subscribers.push(ctx.waker().clone());
+                lease_state
+                    .leader_subscribers
+                    .insert(source, ctx.waker().clone());
                 Poll::Pending
             }
         })
@@ -178,17 +188,6 @@ impl Replica {
     pub async fn check_lease(&self) -> Result<()> {
         self.check_leader_early()?;
         self.raft_node.clone().read(ReadPolicy::ReadIndex).await?;
-        Ok(())
-    }
-
-    /// Propose `SyncOp` to raft log.
-    pub(super) async fn propose_sync_op(&self, op: Box<SyncOp>) -> Result<()> {
-        let eval_result = EvalResult {
-            op: Some(op),
-            ..Default::default()
-        };
-        self.raft_node.clone().propose(eval_result).await?;
-
         Ok(())
     }
 
@@ -421,6 +420,7 @@ impl Default for ReplicaConfig {
     fn default() -> Self {
         ReplicaConfig {
             snap_file_size: 64 * 1024 * 1024 * 1024,
+            testing_knobs: ReplicaTestingKnobs::default(),
         }
     }
 }
