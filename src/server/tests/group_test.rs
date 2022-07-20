@@ -15,7 +15,7 @@
 
 mod helper;
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use engula_api::server::v1::*;
 use helper::context::TestContext;
@@ -135,5 +135,61 @@ fn promote_to_cluster_from_single_node() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("could not promote root group to cluster");
+    });
+}
+
+#[test]
+fn cure_group() {
+    block_on_current(async {
+        let mut ctx_1 = TestContext::new("cure-group-1");
+        ctx_1.disable_all_balance();
+        let mut nodes = ctx_1.bootstrap_servers(3).await;
+
+        let mut ctx_2 = TestContext::new("cure-group-2");
+        let addr = ctx_2.next_listen_address();
+        ctx_2
+            .start_servers(
+                nodes.get(&0).unwrap().clone(),
+                HashMap::from([(3u64, addr.clone())]),
+            )
+            .await;
+        nodes.insert(3, addr);
+        let c = ClusterClient::new(nodes).await;
+
+        let group_id = 100000000;
+        let group_desc = GroupDesc {
+            id: group_id,
+            replicas: vec![
+                ReplicaDesc {
+                    id: 100,
+                    node_id: 0,
+                    role: ReplicaRole::Voter as i32,
+                },
+                ReplicaDesc {
+                    id: 101,
+                    node_id: 1,
+                    role: ReplicaRole::Voter as i32,
+                },
+                ReplicaDesc {
+                    id: 103,
+                    node_id: 3,
+                    role: ReplicaRole::Voter as i32,
+                },
+            ],
+            ..Default::default()
+        };
+
+        // 1. create group
+        c.create_replica(0, 100, group_desc.clone()).await;
+        c.create_replica(1, 101, group_desc.clone()).await;
+        c.create_replica(3, 103, group_desc.clone()).await;
+        c.assert_group_leader(group_id).await;
+
+        info!("shutdown node 3 and replica 103");
+        c.assert_group_contains_member(group_id, 103).await;
+        drop(ctx_2);
+
+        info!("wait curing group {group_id}");
+        c.assert_group_not_contains_member(group_id, 103).await;
     });
 }

@@ -343,6 +343,19 @@ impl ClusterClient {
         panic!("group {group_id} is not contains replica {replica_id}");
     }
 
+    pub async fn assert_group_not_contains_member(&self, group_id: u64, replica_id: u64) {
+        for _ in 0..10000 {
+            if let Ok(state) = self.router.find_group(group_id) {
+                if !state.replicas.contains_key(&replica_id) {
+                    return;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} is contains replica {replica_id}");
+    }
+
     pub async fn get_group_leader(&self, group_id: u64) -> Option<u64> {
         self.router
             .find_group(group_id)

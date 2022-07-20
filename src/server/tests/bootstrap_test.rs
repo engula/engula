@@ -68,7 +68,9 @@ fn restart_cluster() {
         // Shutdown and restart servers.
         ctx.shutdown();
 
-        let nodes = ctx.start_servers(nodes).await;
+        let nodes = ctx
+            .start_servers(nodes.get(&0).unwrap().to_owned(), nodes)
+            .await;
         let c = ClusterClient::new(nodes).await;
         let app = c.app_client().await;
         app.create_database("db".into()).await.unwrap();
