@@ -328,7 +328,7 @@ impl ScheduleContext {
             if !replica_set.contains(&r.replica_id) {
                 self.orphan_replicas
                     .entry(r.replica_id)
-                    .or_insert_with(|| Instant::now());
+                    .or_insert_with(Instant::now);
             }
         }
     }

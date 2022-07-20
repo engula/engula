@@ -133,7 +133,8 @@ impl TestContext {
             let node_id = i as u64;
             nodes.insert(node_id, next_addr);
         }
-        self.start_servers(nodes.get(&0).cloned().unwrap(), nodes).await
+        self.start_servers(nodes.get(&0).cloned().unwrap(), nodes)
+            .await
     }
 
     pub async fn start_servers(
