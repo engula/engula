@@ -19,7 +19,7 @@ use std::{
 };
 
 use engula_api::server::v1::{group_request_union::Request, *};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     bootstrap::ROOT_GROUP_ID,
@@ -104,7 +104,12 @@ impl Scheduler {
         let now = Instant::now();
         for s in &self.ctx.replica_states {
             if let Some(instant) = self.ctx.orphan_replicas.get(&s.replica_id) {
-                if *instant + Duration::from_secs(60) > now {
+                if *instant + Duration::from_secs(60) > now
+                    && !self
+                        .cfg
+                        .testing_knobs
+                        .disable_orphan_replica_detecting_intervals
+                {
                     continue;
                 }
             }
@@ -714,8 +719,15 @@ pub(crate) fn setup(
     let root_store = RemoteStore::new(provider.clone());
     let replica_states = Arc::new(Mutex::new(Vec::default()));
     let cloned_replica_states = replica_states.clone();
+    let cloned_cfg = cfg.clone();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
-        watch_replica_states(root_store, cloned_replica, cloned_replica_states).await;
+        watch_replica_states(
+            cloned_cfg,
+            root_store,
+            cloned_replica,
+            cloned_replica_states,
+        )
+        .await;
         drop(cloned_wait_group);
     });
     executor.spawn(Some(tag), TaskPriority::Low, async move {
@@ -725,6 +737,7 @@ pub(crate) fn setup(
 }
 
 async fn watch_replica_states(
+    cfg: ReplicaConfig,
     root_store: RemoteStore,
     replica: Arc<Replica>,
     replica_states: Arc<Mutex<Vec<ReplicaState>>>,
@@ -740,8 +753,12 @@ async fn watch_replica_states(
                 error!("watch replica states of group {group_id}: {e:?}");
             }
         }
-        crate::runtime::time::sleep(Duration::from_secs(31)).await;
+
+        if !cfg.testing_knobs.disable_orphan_replica_detecting_intervals {
+            crate::runtime::time::sleep(Duration::from_secs(31)).await;
+        }
     }
+    debug!("replica state watcher of group {group_id} is stopped");
 }
 
 async fn scheduler_main(
@@ -750,6 +767,7 @@ async fn scheduler_main(
     replica: Arc<Replica>,
     replica_states: Arc<Mutex<Vec<ReplicaState>>>,
 ) {
+    let group_id = replica.replica_info().group_id;
     let mut scheduler = Scheduler {
         cfg,
         ctx: ScheduleContext::new(replica, provider),
@@ -761,6 +779,7 @@ async fn scheduler_main(
     while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader(false).await {
         scheduler.run(current_term).await;
     }
+    debug!("scheduler of group {group_id} is stopped");
 }
 
 fn replica_as_learner(r: &ReplicaDesc) -> ChangeReplica {

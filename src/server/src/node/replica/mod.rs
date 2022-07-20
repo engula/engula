@@ -39,12 +39,20 @@ use crate::{
     Error, Result,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct ReplicaTestingKnobs {
+    pub disable_orphan_replica_detecting_intervals: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReplicaConfig {
     /// The limit size of each snapshot files.
     ///
     /// Default: 64MB.
     pub snap_file_size: u64,
+
+    #[serde(skip)]
+    pub testing_knobs: ReplicaTestingKnobs,
 }
 
 pub struct ReplicaInfo {
@@ -411,6 +419,7 @@ impl Default for ReplicaConfig {
     fn default() -> Self {
         ReplicaConfig {
             snap_file_size: 64 * 1024 * 1024 * 1024,
+            testing_knobs: ReplicaTestingKnobs::default(),
         }
     }
 }
