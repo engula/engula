@@ -83,6 +83,16 @@ fn remove_orphan_replicas() {
                 .unwrap()
                 .is_some()
             {
+                break;
+            }
+        }
+
+        for _ in 0..1000 {
+            if c.collect_replica_state(group_id, 3)
+                .await
+                .unwrap()
+                .is_none()
+            {
                 return;
             }
         }

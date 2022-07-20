@@ -45,8 +45,12 @@ fn add_replica() {
             ..Default::default()
         };
 
+        info!("create new replica {new_replica_id} of group {group_id}");
+
         // 1. create replica firstly
         c.create_replica(1, new_replica_id, root_group).await;
+
+        info!("try add replica {new_replica_id} into group {group_id}");
 
         // 2. add replica to group
         let mut group_client = c.group(group_id);

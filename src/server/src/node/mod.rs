@@ -274,6 +274,8 @@ impl Node {
         // Clean group engine data in asynchronously.
         self::job::setup_destory_replica(group_id, replica_id, self.provider.as_ref());
 
+        info!("remove replica {replica_id} of group {group_id} success");
+
         Ok(())
     }
 
@@ -323,11 +325,6 @@ impl Node {
             replica.clone(),
             wait_group.clone(),
         );
-        // schedule::setup_purge_replica(
-        //     self.provider.executor.clone(),
-        //     replica.clone(),
-        //     wait_group.clone(),
-        // );
 
         Ok(ReplicaContext {
             info: replica.replica_info(),

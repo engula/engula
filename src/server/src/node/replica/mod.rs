@@ -159,7 +159,7 @@ impl Replica {
         self.evaluate_command(&exec_ctx, request).await
     }
 
-    pub async fn on_leader(&self, immediate: bool) -> Result<Option<u64>> {
+    pub async fn on_leader(&self, source: &'static str, immediate: bool) -> Result<Option<u64>> {
         use futures::future::poll_fn;
 
         if self.info.is_terminated() {
@@ -175,8 +175,9 @@ impl Replica {
             } else if self.info.is_terminated() {
                 Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
             } else {
-                // FIXME(walter) remove dup wakers.
-                lease_state.leader_subscribers.push(ctx.waker().clone());
+                lease_state
+                    .leader_subscribers
+                    .insert(source, ctx.waker().clone());
                 Poll::Pending
             }
         })

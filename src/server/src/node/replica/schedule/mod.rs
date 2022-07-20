@@ -19,7 +19,7 @@ use std::{
 };
 
 use engula_api::server::v1::{group_request_union::Request, *};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     bootstrap::ROOT_GROUP_ID,
@@ -73,7 +73,7 @@ impl Scheduler {
     async fn run(&mut self, current_term: u64) {
         self.ctx.current_term = current_term;
         self.recover_pending_tasks().await;
-        while let Ok(Some(term)) = self.ctx.replica.on_leader(true).await {
+        while let Ok(Some(term)) = self.ctx.replica.on_leader("scheduler", true).await {
             if term != current_term {
                 break;
             }
@@ -93,39 +93,54 @@ impl Scheduler {
                 self.ctx
                     .apply_raft_group_state(&state, &desc, replica_states);
                 self.check_config_change_state().await;
-                self.check_replica_states().await;
+                self.check_replica_states(&desc).await;
                 return Some(desc);
             }
         }
         None
     }
 
-    async fn check_replica_states(&mut self) {
+    async fn check_replica_states(&mut self, desc: &GroupDesc) {
         let now = Instant::now();
         for s in &self.ctx.replica_states {
-            if let Some(instant) = self.ctx.orphan_replicas.get(&s.replica_id) {
-                if *instant + Duration::from_secs(60) > now
-                    && !self
-                        .cfg
-                        .testing_knobs
-                        .disable_orphan_replica_detecting_intervals
-                {
-                    continue;
-                }
+            let instant = match self.ctx.orphan_replicas.get(&s.replica_id) {
+                Some(instant) => instant,
+                None => continue,
+            };
+            if *instant + Duration::from_secs(60) > now
+                && !self
+                    .cfg
+                    .testing_knobs
+                    .disable_orphan_replica_detecting_intervals
+            {
+                continue;
             }
 
             if !self.locked_replicas.insert(s.replica_id) {
                 continue;
             }
 
+            let replica_id = s.replica_id;
+            let group_id = s.group_id;
+            for r in &desc.replicas {
+                if r.id == replica_id {
+                    panic!(
+                        "replica {replica_id} belongs to group {group_id}, it must not a orphan replica",
+                    );
+                }
+            }
+
+            info!("group {group_id} find a orphan replica {replica_id}, try remove it",);
+
             let replica = ReplicaDesc {
-                id: s.replica_id,
+                id: replica_id,
                 node_id: s.node_id,
                 ..Default::default()
             };
             self.tasks.push_back(ScheduleTask {
                 value: Some(schedule_task::Value::RemoveReplica(RemoveReplicaTask {
                     replica: Some(replica),
+                    group: Some(desc.clone()),
                 })),
             });
         }
@@ -342,11 +357,10 @@ impl ScheduleContext {
 
     async fn advance_remove_replica_task(&self, task: &mut RemoveReplicaTask) -> bool {
         if let Some(replica) = task.replica.as_ref() {
-            if replica.node_id == u64::MAX {
-                return false;
-            }
-
-            if let Err(e) = self.remove_replica(replica).await {
+            if let Err(e) = self
+                .remove_replica(replica, task.group.clone().unwrap_or_default())
+                .await
+            {
                 warn!(
                     group = self.group_id,
                     replica = self.replica_id,
@@ -508,14 +522,11 @@ impl ScheduleContext {
     async fn remove_replica(
         &self,
         r: &ReplicaDesc,
+        group: GroupDesc,
     ) -> std::result::Result<(), engula_client::Error> {
         let addr = self.provider.router.find_node_addr(r.node_id)?;
         let client = self.provider.conn_manager.get_node_client(addr).await?;
-        let desc = GroupDesc {
-            id: self.group_id,
-            ..Default::default()
-        };
-        client.remove_replica(r.id, desc).await?;
+        client.remove_replica(r.id, group.clone()).await?;
         Ok(())
     }
 }
@@ -695,6 +706,7 @@ impl ScheduleTask {
         match self.value.as_ref() {
             Some(Value::RemoveReplica(RemoveReplicaTask {
                 replica: Some(replica),
+                ..
             })) => {
                 replicas.insert(replica.id);
             }
@@ -744,9 +756,10 @@ async fn watch_replica_states(
 ) {
     let info = replica.replica_info();
     let group_id = info.group_id;
-    while let Ok(Some(_)) = replica.on_leader(false).await {
+    while let Ok(Some(_)) = replica.on_leader("replica-state-watcher", false).await {
         match root_store.list_replica_state(group_id).await {
             Ok(states) => {
+                trace!("list replica states of group {group_id}: {:?}", states);
                 *replica_states.lock().unwrap() = states;
             }
             Err(e) => {
@@ -776,7 +789,7 @@ async fn scheduler_main(
         change_config_task: None,
         tasks: LinkedList::default(),
     };
-    while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader(false).await {
+    while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader("scheduler", false).await {
         scheduler.run(current_term).await;
     }
     debug!("scheduler of group {group_id} is stopped");
