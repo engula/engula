@@ -20,3 +20,12 @@ pub fn block_on_current<F: Future>(future: F) -> F::Output {
     let rt = Builder::new_current_thread().enable_all().build().unwrap();
     rt.block_on(future)
 }
+
+#[allow(dead_code)]
+pub fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(future)
+}
