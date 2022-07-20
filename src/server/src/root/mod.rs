@@ -137,7 +137,7 @@ impl Root {
             let root_replica = self.fetch_root_replica(&replica_table).await;
 
             // Wait the current root replica becomes a leader.
-            if let Ok(Some(_)) = root_replica.on_leader(false).await {
+            if let Ok(Some(_)) = root_replica.on_leader("root", false).await {
                 match self
                     .step_leader(&self.shared.local_addr, root_replica, &mut bootstrapped)
                     .await
@@ -202,7 +202,7 @@ impl Root {
 
         );
 
-        while let Ok(Some(_)) = root_replica.to_owned().on_leader(true).await {
+        while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
             if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
                 warn!(err = ?err, "send heartbeat meet error");
                 if Self::need_drop_root_leader(&err) {

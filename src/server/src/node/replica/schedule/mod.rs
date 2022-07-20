@@ -13,13 +13,13 @@
 // limitations under the License.
 
 use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+    collections::{HashMap, HashSet, LinkedList},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use engula_api::server::v1::{group_request_union::Request, *};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     bootstrap::ROOT_GROUP_ID,
@@ -28,6 +28,7 @@ use crate::{
         Replica,
     },
     raftgroup::{RaftGroupState, RaftNodeFacade},
+    root::RemoteStore,
     runtime::{sync::WaitGroup, TaskPriority},
     serverpb::v1::*,
     Provider,
@@ -39,8 +40,14 @@ pub struct Scheduler {
     cfg: ReplicaConfig,
     ctx: ScheduleContext,
 
+    replica_states: Arc<Mutex<Vec<ReplicaState>>>,
+
+    // These replicas are involved in scheduling.
+    locked_replicas: HashSet<u64>,
+
     // A group only can have one change config task.
     change_config_task: Option<ChangeConfigTask>,
+    tasks: LinkedList<ScheduleTask>,
 }
 
 struct ScheduleContext {
@@ -55,6 +62,8 @@ struct ScheduleContext {
     current_term: u64,
 
     lost_peers: HashMap<u64, Instant>,
+    orphan_replicas: HashMap<u64, Instant>,
+    replica_states: Vec<ReplicaState>,
 
     /// The number of voters of current group, includes both `Voter` and `IncomingVoter`.
     num_voters: usize,
@@ -64,21 +73,76 @@ impl Scheduler {
     async fn run(&mut self, current_term: u64) {
         self.ctx.current_term = current_term;
         self.recover_pending_tasks().await;
-        while let Ok(Some(term)) = self.ctx.replica.on_leader(true).await {
+        while let Ok(Some(term)) = self.ctx.replica.on_leader("scheduler", true).await {
             if term != current_term {
                 break;
             }
-            let desc = self.ctx.replica.descriptor();
-            self.check_replica_state(&desc).await;
-            self.advance_tasks(&desc).await;
+            crate::runtime::time::sleep(Duration::from_secs(1)).await;
+
+            if let Some(desc) = self.check_group_state().await {
+                self.advance_tasks(&desc).await;
+            };
         }
     }
 
-    async fn check_replica_state(&mut self, desc: &GroupDesc) {
+    async fn check_group_state(&mut self) -> Option<GroupDesc> {
         if let Some(state) = self.ctx.raft_node.raft_group_state().await {
-            self.ctx.apply_raft_group_state(&state, desc);
-            self.check_config_change_state().await;
-            crate::runtime::time::sleep(Duration::from_secs(1)).await;
+            let replica_states = { self.replica_states.lock().unwrap().clone() };
+            let desc = self.ctx.replica.descriptor();
+            if self.ctx.replica.check_lease().await.is_ok() {
+                self.ctx
+                    .apply_raft_group_state(&state, &desc, replica_states);
+                self.check_config_change_state().await;
+                self.check_replica_states(&desc).await;
+                return Some(desc);
+            }
+        }
+        None
+    }
+
+    async fn check_replica_states(&mut self, desc: &GroupDesc) {
+        let now = Instant::now();
+        for s in &self.ctx.replica_states {
+            let instant = match self.ctx.orphan_replicas.get(&s.replica_id) {
+                Some(instant) => instant,
+                None => continue,
+            };
+            if *instant + Duration::from_secs(60) > now
+                && !self
+                    .cfg
+                    .testing_knobs
+                    .disable_orphan_replica_detecting_intervals
+            {
+                continue;
+            }
+
+            if !self.locked_replicas.insert(s.replica_id) {
+                continue;
+            }
+
+            let replica_id = s.replica_id;
+            let group_id = s.group_id;
+            for r in &desc.replicas {
+                if r.id == replica_id {
+                    panic!(
+                        "replica {replica_id} belongs to group {group_id}, it must not a orphan replica",
+                    );
+                }
+            }
+
+            info!("group {group_id} find a orphan replica {replica_id}, try remove it",);
+
+            let replica = ReplicaDesc {
+                id: replica_id,
+                node_id: s.node_id,
+                ..Default::default()
+            };
+            self.tasks.push_back(ScheduleTask {
+                value: Some(schedule_task::Value::RemoveReplica(RemoveReplicaTask {
+                    replica: Some(replica),
+                    group: Some(desc.clone()),
+                })),
+            });
         }
     }
 
@@ -93,8 +157,12 @@ impl Scheduler {
     }
 
     async fn recover_pending_tasks(&mut self) {
-        self.load_pending_tasks().await;
         self.change_config_task = None;
+        self.tasks.clear();
+        self.locked_replicas.clear();
+        self.ctx.lost_peers.clear();
+        self.ctx.replica_states.clear();
+        self.load_pending_tasks().await;
     }
 
     async fn load_pending_tasks(&mut self) {
@@ -127,12 +195,20 @@ impl Scheduler {
             "promote group by add {incoming_peers:?}"
         );
         self.change_config_task = Some(ChangeConfigTask::add_replicas(replicas));
+        for id in incoming_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
     }
 
     async fn setup_curing_group_task(&mut self) {
         let outgoing_voters = self.ctx.lost_replicas();
         if outgoing_voters.is_empty() {
             return;
+        }
+        for voter in &outgoing_voters {
+            if self.locked_replicas.contains(&voter.id) {
+                return;
+            }
         }
 
         let replicas = match self
@@ -161,12 +237,40 @@ impl Scheduler {
         );
 
         self.change_config_task = Some(ChangeConfigTask::replace_voters(replicas, outgoing_voters));
+        for id in incoming_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
+        for id in outgoing_peers {
+            assert!(self.locked_replicas.insert(id));
+        }
     }
 
     async fn advance_tasks(&mut self, desc: &GroupDesc) {
         if let Some(task) = self.change_config_task.as_mut() {
             if self.ctx.advance_change_config_task(task, desc).await {
+                for id in task.involved_replicas() {
+                    self.locked_replicas.remove(&id);
+                }
                 self.change_config_task = None;
+            }
+        }
+
+        let mut cursor = self.tasks.cursor_front_mut();
+        while let Some(task) = cursor.current() {
+            use schedule_task::Value;
+            let done = match &mut task.value {
+                Some(Value::RemoveReplica(task)) => {
+                    self.ctx.advance_remove_replica_task(task).await
+                }
+                _ => unreachable!(),
+            };
+            if done {
+                for id in task.involved_replicas() {
+                    self.locked_replicas.remove(&id);
+                }
+                cursor.remove_current();
+            } else {
+                cursor.move_next();
             }
         }
     }
@@ -184,13 +288,20 @@ impl ScheduleContext {
             provider,
             current_term: 0,
             lost_peers: HashMap::default(),
+            orphan_replicas: HashMap::default(),
+            replica_states: Vec::default(),
             num_voters: 0,
             // FIXME(walter) configurable replica number.
             required_replicas: 3,
         }
     }
 
-    fn apply_raft_group_state(&mut self, state: &RaftGroupState, desc: &GroupDesc) {
+    fn apply_raft_group_state(
+        &mut self,
+        state: &RaftGroupState,
+        desc: &GroupDesc,
+        replica_states: Vec<ReplicaState>,
+    ) {
         let lost_peers = state
             .peers
             .iter()
@@ -209,6 +320,15 @@ impl ScheduleContext {
                 r.role == ReplicaRole::Voter as i32 || r.role == ReplicaRole::IncomingVoter as i32
             })
             .count();
+
+        let replica_set = desc.replicas.iter().map(|r| r.id).collect::<HashSet<_>>();
+        self.orphan_replicas.retain(|k, _| !replica_set.contains(k));
+        self.replica_states = replica_states;
+        for r in &self.replica_states {
+            if !replica_set.contains(&r.replica_id) {
+                self.orphan_replicas.insert(r.replica_id, Instant::now());
+            }
+        }
     }
 
     fn is_group_sicked(&self) -> bool {
@@ -233,6 +353,24 @@ impl ScheduleContext {
             }
         }
         replicas
+    }
+
+    async fn advance_remove_replica_task(&self, task: &mut RemoveReplicaTask) -> bool {
+        if let Some(replica) = task.replica.as_ref() {
+            if let Err(e) = self
+                .remove_replica(replica, task.group.clone().unwrap_or_default())
+                .await
+            {
+                warn!(
+                    group = self.group_id,
+                    replica = self.replica_id,
+                    "remove replica {replica:?}: {e}"
+                );
+                return false;
+            }
+        }
+
+        true
     }
 
     async fn advance_change_config_task(
@@ -380,31 +518,16 @@ impl ScheduleContext {
         client.create_replica(r.id, desc).await?;
         Ok(())
     }
-}
 
-pub(crate) fn setup(
-    cfg: ReplicaConfig,
-    provider: Arc<Provider>,
-    replica: Arc<Replica>,
-    wait_group: WaitGroup,
-) {
-    let group_id = replica.replica_info().group_id;
-    let tag = &group_id.to_le_bytes();
-    let executor = provider.executor.clone();
-    executor.spawn(Some(tag), TaskPriority::Low, async move {
-        scheduler_main(cfg, provider, replica).await;
-        drop(wait_group);
-    });
-}
-
-async fn scheduler_main(cfg: ReplicaConfig, provider: Arc<Provider>, replica: Arc<Replica>) {
-    let mut scheduler = Scheduler {
-        cfg,
-        ctx: ScheduleContext::new(replica, provider),
-        change_config_task: None,
-    };
-    while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader(false).await {
-        scheduler.run(current_term).await;
+    async fn remove_replica(
+        &self,
+        r: &ReplicaDesc,
+        group: GroupDesc,
+    ) -> std::result::Result<(), engula_client::Error> {
+        let addr = self.provider.router.find_node_addr(r.node_id)?;
+        let client = self.provider.conn_manager.get_node_client(addr).await?;
+        client.remove_replica(r.id, group.clone()).await?;
+        Ok(())
     }
 }
 
@@ -434,6 +557,43 @@ impl From<&ReplaceVoterStep> for ChangeReplicasRequest {
 }
 
 impl ChangeConfigTask {
+    fn involved_replicas(&self) -> HashSet<u64> {
+        let mut replicas = HashSet::default();
+        self.create_replica
+            .as_ref()
+            .unwrap()
+            .replicas
+            .iter()
+            .for_each(|r| {
+                replicas.insert(r.id);
+            });
+        self.add_learner
+            .as_ref()
+            .unwrap()
+            .replicas
+            .iter()
+            .for_each(|r| {
+                replicas.insert(r.id);
+            });
+        self.replace_voter
+            .as_ref()
+            .unwrap()
+            .incoming_voters
+            .iter()
+            .for_each(|r| {
+                replicas.insert(r.id);
+            });
+        self.replace_voter
+            .as_ref()
+            .unwrap()
+            .outgoing_voters
+            .iter()
+            .for_each(|r| {
+                replicas.insert(r.id);
+            });
+        replicas
+    }
+
     fn add_replicas(incoming_voters: Vec<ReplicaDesc>) -> Self {
         let create_replica_step = CreateReplicaStep {
             replicas: incoming_voters.clone(),
@@ -535,6 +695,104 @@ impl ReplaceVoterStep {
         }
         incoming_voters.is_empty()
     }
+}
+
+impl ScheduleTask {
+    fn involved_replicas(&self) -> HashSet<u64> {
+        use schedule_task::Value;
+
+        let mut replicas = HashSet::default();
+        #[allow(clippy::single_match)]
+        match self.value.as_ref() {
+            Some(Value::RemoveReplica(RemoveReplicaTask {
+                replica: Some(replica),
+                ..
+            })) => {
+                replicas.insert(replica.id);
+            }
+            _ => {}
+        }
+        replicas
+    }
+}
+
+pub(crate) fn setup(
+    cfg: ReplicaConfig,
+    provider: Arc<Provider>,
+    replica: Arc<Replica>,
+    wait_group: WaitGroup,
+) {
+    let group_id = replica.replica_info().group_id;
+    let tag = &group_id.to_le_bytes();
+    let executor = provider.executor.clone();
+
+    let cloned_replica = replica.clone();
+    let cloned_wait_group = wait_group.clone();
+    let root_store = RemoteStore::new(provider.clone());
+    let replica_states = Arc::new(Mutex::new(Vec::default()));
+    let cloned_replica_states = replica_states.clone();
+    let cloned_cfg = cfg.clone();
+    executor.spawn(Some(tag), TaskPriority::Low, async move {
+        watch_replica_states(
+            cloned_cfg,
+            root_store,
+            cloned_replica,
+            cloned_replica_states,
+        )
+        .await;
+        drop(cloned_wait_group);
+    });
+    executor.spawn(Some(tag), TaskPriority::Low, async move {
+        scheduler_main(cfg, provider, replica, replica_states).await;
+        drop(wait_group);
+    });
+}
+
+async fn watch_replica_states(
+    cfg: ReplicaConfig,
+    root_store: RemoteStore,
+    replica: Arc<Replica>,
+    replica_states: Arc<Mutex<Vec<ReplicaState>>>,
+) {
+    let info = replica.replica_info();
+    let group_id = info.group_id;
+    while let Ok(Some(_)) = replica.on_leader("replica-state-watcher", false).await {
+        match root_store.list_replica_state(group_id).await {
+            Ok(states) => {
+                trace!("list replica states of group {group_id}: {:?}", states);
+                *replica_states.lock().unwrap() = states;
+            }
+            Err(e) => {
+                error!("watch replica states of group {group_id}: {e:?}");
+            }
+        }
+
+        if !cfg.testing_knobs.disable_orphan_replica_detecting_intervals {
+            crate::runtime::time::sleep(Duration::from_secs(31)).await;
+        }
+    }
+    debug!("replica state watcher of group {group_id} is stopped");
+}
+
+async fn scheduler_main(
+    cfg: ReplicaConfig,
+    provider: Arc<Provider>,
+    replica: Arc<Replica>,
+    replica_states: Arc<Mutex<Vec<ReplicaState>>>,
+) {
+    let group_id = replica.replica_info().group_id;
+    let mut scheduler = Scheduler {
+        cfg,
+        ctx: ScheduleContext::new(replica, provider),
+        replica_states,
+        locked_replicas: HashSet::default(),
+        change_config_task: None,
+        tasks: LinkedList::default(),
+    };
+    while let Ok(Some(current_term)) = scheduler.ctx.replica.on_leader("scheduler", false).await {
+        scheduler.run(current_term).await;
+    }
+    debug!("scheduler of group {group_id} is stopped");
 }
 
 fn replica_as_learner(r: &ReplicaDesc) -> ChangeReplica {

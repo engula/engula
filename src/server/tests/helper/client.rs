@@ -390,4 +390,40 @@ impl ClusterClient {
         }
         panic!("group {group_id} is not contains shard {shard_id}");
     }
+
+    pub async fn collect_replica_state(
+        &self,
+        group_id: u64,
+        node_id: u64,
+    ) -> Result<Option<ReplicaState>> {
+        let node_addr = self.nodes.get(&node_id).unwrap();
+        let client = node_client_with_retry(node_addr).await;
+        let resp = client
+            .root_heartbeat(HeartbeatRequest {
+                timestamp: 0,
+                piggybacks: vec![PiggybackRequest {
+                    info: Some(piggyback_request::Info::CollectGroupDetail(
+                        CollectGroupDetailRequest {
+                            groups: vec![group_id],
+                        },
+                    )),
+                }],
+            })
+            .await
+            .unwrap();
+        for resp in &resp.piggybacks {
+            match resp.info.as_ref().unwrap() {
+                piggyback_response::Info::SyncRoot(_) => {}
+                piggyback_response::Info::CollectStats(resp) => {}
+                piggyback_response::Info::CollectGroupDetail(resp) => {
+                    for state in &resp.replica_states {
+                        if state.group_id == group_id {
+                            return Ok(Some(state.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
 }

@@ -274,6 +274,8 @@ impl Node {
         // Clean group engine data in asynchronously.
         self::job::setup_destory_replica(group_id, replica_id, self.provider.as_ref());
 
+        info!("remove replica {replica_id} of group {group_id} success");
+
         Ok(())
     }
 
@@ -285,7 +287,7 @@ impl Node {
         local_state: ReplicaLocalState,
         channel: StateChannel,
     ) -> Result<ReplicaContext> {
-        use self::replica::job;
+        use self::replica::schedule;
 
         let group_engine = open_group_engine(self.provider.raw_db.clone(), group_id).await?;
         let wait_group = WaitGroup::new();
@@ -317,14 +319,9 @@ impl Node {
         // Setup jobs
         self.migrate_ctrl
             .watch_state_changes(replica.clone(), receiver, wait_group.clone());
-        job::setup_scheduler(
+        schedule::setup(
             self.cfg.replica.clone(),
             self.provider.clone(),
-            replica.clone(),
-            wait_group.clone(),
-        );
-        job::setup_purge_replica(
-            self.provider.executor.clone(),
             replica.clone(),
             wait_group.clone(),
         );

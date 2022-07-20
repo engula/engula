@@ -944,7 +944,7 @@ impl RemoteStore {
         let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
         let prefix = group_key(group_id);
 
-        let mut client = GroupClient::new(group_id, self.provider.clone());
+        let mut client = GroupClient::new(ROOT_GROUP_ID, self.provider.clone());
         let mut states = vec![];
         for value in client.list(shard_id, prefix.as_slice()).await? {
             if let Ok(state) = ReplicaState::decode(value.as_slice()) {
