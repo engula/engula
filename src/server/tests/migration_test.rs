@@ -389,3 +389,76 @@ fn abort_migration() {
         }
     });
 }
+
+#[test]
+fn migration_with_offline_peers() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("basic-migration");
+        ctx.disable_shard_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let node_1_id = 0;
+        let node_2_id = 1;
+        let node_3_id = 2;
+
+        let group_id_1 = 100000;
+        let group_id_2 = 100001;
+        let replica_1_1 = 1000001;
+        let replica_1_2 = 1000002;
+        let replica_1_3 = 1000003;
+        let replica_2_1 = 2000001;
+        let replica_2_2 = 2000002;
+        let replica_2_3 = 2000003;
+        let shard_id = 10000000;
+
+        info!("create group {} with shard {}", group_id_1, shard_id,);
+
+        let shard_desc = ShardDesc {
+            id: shard_id,
+            collection_id: shard_id,
+            partition: Some(shard_desc::Partition::Range(
+                shard_desc::RangePartition::default(),
+            )),
+        };
+        create_group(
+            &c,
+            group_id_1,
+            vec![
+                (replica_1_1, node_1_id),
+                (replica_1_2, node_2_id),
+                (replica_1_3, node_3_id),
+            ],
+            vec![shard_desc.clone()],
+        )
+        .await;
+
+        info!("insert data into group {} shard {}", group_id_1, shard_id);
+        insert(&c, group_id_1, shard_id, 0..1000).await;
+
+        info!("create group {} ", group_id_2);
+        create_group(
+            &c,
+            group_id_2,
+            vec![
+                (replica_2_1, node_1_id),
+                (replica_2_2, node_2_id),
+                (replica_2_3, node_3_id),
+            ],
+            vec![],
+        )
+        .await;
+        info!(
+            "issue accept shard {} request to group {}",
+            shard_id, group_id_2
+        );
+
+        ctx.stop_server(2).await;
+
+        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
+        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
+
+        c.assert_group_contains_shard(group_id_2, shard_id).await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    });
+}
