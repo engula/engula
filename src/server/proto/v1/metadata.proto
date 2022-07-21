@@ -167,11 +167,11 @@ message CreateGroupTask {
   engula.server.v1.GroupDesc group_desc = 2;
   repeated engula.server.v1.NodeDesc wait_create = 3;
   repeated engula.server.v1.ReplicaDesc wait_cleanup = 4;
-  GroupTaskStep step = 5;
+  CreateGroupTaskStep step = 5;
   uint64 create_retry = 6;
 }
 
-enum GroupTaskStep {
+enum CreateGroupTaskStep {
   GROUP_INIT = 0;
   GROUP_CREATING = 1;
   GROUP_ROLLBACKING = 2;
@@ -223,7 +223,7 @@ message GroupShards {
 
 enum CreateCollectionShardStep {
   COLLECTION_CREATING = 0;
-  COLLECTION_ROLLBAKING = 1;
+  COLLECTION_ROLLBACKING = 1;
   COLLECTION_FINISH = 2;
   COLLECTION_ABORT = 3;
 }

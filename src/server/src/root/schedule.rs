@@ -111,7 +111,7 @@ impl ReconcileScheduler {
                 self.setup_task(ReconcileTask {
                     task: Some(reconcile_task::Task::CreateGroup(CreateGroupTask {
                         request_replica_cnt: cnt as u64,
-                        step: GroupTaskStep::GroupInit as i32,
+                        step: CreateGroupTaskStep::GroupInit as i32,
                         ..Default::default()
                     })),
                 })
@@ -248,8 +248,8 @@ impl ScheduleContext {
         task: &mut CreateGroupTask,
     ) -> Result<bool /* finish */> {
         loop {
-            match GroupTaskStep::from_i32(task.step).unwrap() {
-                GroupTaskStep::GroupInit => {
+            match CreateGroupTaskStep::from_i32(task.step).unwrap() {
+                CreateGroupTaskStep::GroupInit => {
                     let schema = self.shared.schema()?;
                     let nodes = self
                         .alloc
@@ -274,10 +274,10 @@ impl ScheduleContext {
                     {
                         task.group_desc = Some(group_desc);
                         task.wait_create = nodes;
-                        task.step = GroupTaskStep::GroupCreating.into();
+                        task.step = CreateGroupTaskStep::GroupCreating.into();
                     }
                 }
-                GroupTaskStep::GroupCreating => {
+                CreateGroupTaskStep::GroupCreating => {
                     let mut wait_create = task.wait_create.to_owned();
                     let group_desc = task.group_desc.as_ref().unwrap().to_owned();
                     let mut undo = Vec::new();
@@ -305,7 +305,7 @@ impl ScheduleContext {
                             } else {
                                 warn!(node=n.id, replica=replica.id, group=group_desc.id, err = ?err, "create replica for new group error, start rollback");
                                 {
-                                    task.step = GroupTaskStep::GroupRollbacking.into();
+                                    task.step = CreateGroupTaskStep::GroupRollbacking.into();
                                 }
                             };
                             continue;
@@ -317,18 +317,19 @@ impl ScheduleContext {
                         }
                     }
                     {
-                        task.step = GroupTaskStep::GroupFinish.into();
+                        task.step = CreateGroupTaskStep::GroupFinish.into();
                     }
                 }
-                GroupTaskStep::GroupRollbacking => {
+                CreateGroupTaskStep::GroupRollbacking => {
                     let mut wait_clean = task.wait_cleanup.to_owned();
                     loop {
                         let r = wait_clean.pop();
                         if r.is_none() {
                             break;
                         }
+                        let group = task.group_desc.as_ref().unwrap().id;
                         let r = r.unwrap();
-                        if let Err(err) = self.try_remove_replica(r.id).await {
+                        if let Err(err) = self.try_remove_replica(group, r.id).await {
                             error!(err = ?err, replica=r.id, "rollback temp replica of new group fail and retry later");
                             {
                                 task.wait_cleanup = wait_clean.to_owned();
@@ -337,10 +338,12 @@ impl ScheduleContext {
                         }
                     }
                     {
-                        task.step = GroupTaskStep::GroupAbort.into();
+                        task.step = CreateGroupTaskStep::GroupAbort.into();
                     }
                 }
-                GroupTaskStep::GroupFinish | GroupTaskStep::GroupAbort => return Ok(true),
+                CreateGroupTaskStep::GroupFinish | CreateGroupTaskStep::GroupAbort => {
+                    return Ok(true)
+                }
             }
         }
     }
@@ -419,10 +422,9 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceReplica => {
-                    let replica = task.src_replica;
-                    let r = self.try_remove_replica(replica.to_owned()).await;
+                    let r = self.try_remove_replica(task.group, task.src_replica).await;
                     if let Err(err) = &r {
-                        warn!(group = task.group, replica = replica, err = ?err, "remove source replica from group fail, retry in next tick");
+                        warn!(group = task.group, replica = task.src_replica, err = ?err, "remove source replica from group fail, retry in next tick");
                         continue;
                     }
                     {
@@ -480,7 +482,7 @@ impl ScheduleContext {
                                 error!(group=group_shards.group, shard=desc.id, err=?err, "create collection shard error and try to rollback");
                                 {
                                     task.step =
-                                        CreateCollectionShardStep::CollectionRollbaking.into();
+                                        CreateCollectionShardStep::CollectionRollbacking.into();
                                 }
                                 return Err(err);
                             }
@@ -495,8 +497,9 @@ impl ScheduleContext {
                         task.step = CreateCollectionShardStep::CollectionFinish.into();
                     }
                 }
-                CreateCollectionShardStep::CollectionRollbaking => {
+                CreateCollectionShardStep::CollectionRollbacking => {
                     // TODO: remove the shard in wait_cleanup.
+
                     task.step = CreateCollectionShardStep::CollectionAbort.into();
                 }
                 CreateCollectionShardStep::CollectionFinish
@@ -610,8 +613,28 @@ impl ScheduleContext {
         group_client.remove_group_replica(remove_replica).await
     }
 
-    async fn try_remove_replica(&self, _r: u64) -> Result<()> {
-        // TODO: call remove replica.
+    async fn try_remove_replica(&self, group: u64, replica: u64) -> Result<()> {
+        let schema = self.shared.schema()?;
+        let rs = schema
+            .get_replica_state(group, replica)
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group))?;
+
+        let target_node = schema
+            .get_node(rs.node_id.to_owned())
+            .await?
+            .ok_or(crate::Error::GroupNotFound(group))?;
+        self.get_node_client(target_node.addr.clone())
+            .await?
+            .remove_replica(
+                replica.to_owned(),
+                GroupDesc {
+                    id: group,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        schema.remove_replica_state(group, replica).await?;
         Ok(())
     }
 

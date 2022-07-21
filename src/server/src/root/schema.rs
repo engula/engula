@@ -306,6 +306,11 @@ impl Schema {
         Ok(())
     }
 
+    pub async fn remove_replica_state(&self, group_id: u64, replica_id: u64) -> Result<()> {
+        let key = replica_key(group_id, replica_id);
+        self.delete(SYSTEM_REPLICA_STATE_COLLECTION_ID, &key).await
+    }
+
     pub async fn get_group(&self, id: u64) -> Result<Option<GroupDesc>> {
         let val = self
             .get(SYSTEM_GROUP_COLLECTION_ID, &id.to_le_bytes())
