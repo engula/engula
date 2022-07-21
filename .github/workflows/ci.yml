@@ -61,5 +61,6 @@ jobs:
     - name: Cargo test
       uses: actions-rs/cargo@v1
       with:
+        env: RUST_LOG=engula_client=debug,engula_server=debug
         command: test
         args: --workspace
