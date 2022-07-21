@@ -21,7 +21,8 @@ use engula_api::{
 
 use crate::{
     conn_manager::ConnManager, discovery::StaticServiceDiscovery, AdminRequestBuilder,
-    AdminResponseExtractor, RequestBatchBuilder, RetryState, RootClient, Router,
+    AdminResponseExtractor, AppError, AppResult, RequestBatchBuilder, RetryState, RootClient,
+    Router,
 };
 
 #[derive(Debug, Clone)]
@@ -37,7 +38,7 @@ struct ClientInner {
 }
 
 impl Client {
-    pub async fn connect(addrs: Vec<String>) -> Result<Self, crate::Error> {
+    pub async fn connect(addrs: Vec<String>) -> AppResult<Self> {
         let conn_manager = ConnManager::new();
         let discovery = Arc::new(StaticServiceDiscovery::new(addrs.clone()));
         let root_client = RootClient::new(discovery, conn_manager.clone());
@@ -51,13 +52,13 @@ impl Client {
         })
     }
 
-    pub async fn create_database(&self, name: String) -> Result<Database, crate::Error> {
+    pub async fn create_database(&self, name: String) -> AppResult<Database> {
         let root_client = self.inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
-            None => Err(crate::Error::NotFound(format!("database {}", name))),
+            None => Err(AppError::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -65,7 +66,7 @@ impl Client {
         }
     }
 
-    pub async fn list_database(&self) -> Result<Vec<Database>, crate::Error> {
+    pub async fn list_database(&self) -> AppResult<Vec<Database>> {
         let root_client = self.inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::list_database())
@@ -79,13 +80,13 @@ impl Client {
             .collect::<Vec<_>>())
     }
 
-    pub async fn open_database(&self, name: String) -> Result<Database, crate::Error> {
+    pub async fn open_database(&self, name: String) -> AppResult<Database> {
         let root_client = self.inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::get_database(name.clone()))
             .await?;
         match AdminResponseExtractor::get_database(resp) {
-            None => Err(crate::Error::NotFound(format!("database {}", name))),
+            None => Err(AppError::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
                 desc,
                 client: self.clone(),
@@ -121,7 +122,7 @@ impl Database {
         &self,
         name: String,
         partition: Option<Partition>,
-    ) -> Result<Collection, crate::Error> {
+    ) -> AppResult<Collection> {
         let client = self.client.clone();
         let db_desc = self.desc.clone();
         let root_client = client.inner.root_client.clone();
@@ -133,7 +134,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
-            None => Err(crate::Error::NotFound(format!("collection {}", name))),
+            None => Err(AppError::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -142,7 +143,7 @@ impl Database {
         }
     }
 
-    pub async fn list_collection(&self) -> Result<Vec<Collection>, crate::Error> {
+    pub async fn list_collection(&self) -> AppResult<Vec<Collection>> {
         let client = self.client.clone();
         let root_client = client.inner.root_client.clone();
         let resp = root_client
@@ -160,7 +161,7 @@ impl Database {
             .collect::<Vec<_>>())
     }
 
-    pub async fn open_collection(&self, name: String) -> Result<Collection, crate::Error> {
+    pub async fn open_collection(&self, name: String) -> AppResult<Collection> {
         let client = self.client.clone();
         let db_desc = self.desc.clone();
         let root_client = client.inner.root_client.clone();
@@ -171,7 +172,7 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::get_collection(resp) {
-            None => Err(crate::Error::NotFound(format!("collection {}", name))),
+            None => Err(AppError::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 db_desc,
                 co_desc,
@@ -195,7 +196,7 @@ pub struct Collection {
 }
 
 impl Collection {
-    pub async fn delete(&self, key: Vec<u8>) -> Result<(), crate::Error> {
+    pub async fn delete(&self, key: Vec<u8>) -> AppResult<()> {
         let mut retry_state = RetryState::default();
 
         loop {
@@ -203,14 +204,14 @@ impl Collection {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     if !retry_state.retry(&err).await {
-                        return Err(err);
+                        return Err(err.into());
                     }
                 }
             }
         }
     }
 
-    pub async fn delete_inner(&self, key: &[u8]) -> Result<(), crate::Error> {
+    pub async fn delete_inner(&self, key: &[u8]) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group_by_shard(shard.id)?;
@@ -244,7 +245,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), crate::Error> {
+    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> AppResult<()> {
         let mut retry_state = RetryState::default();
 
         loop {
@@ -252,14 +253,14 @@ impl Collection {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     if !retry_state.retry(&err).await {
-                        return Err(err);
+                        return Err(err.into());
                     }
                 }
             }
         }
     }
 
-    pub async fn put_inner(&self, key: &[u8], value: &[u8]) -> Result<(), crate::Error> {
+    pub async fn put_inner(&self, key: &[u8], value: &[u8]) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group_by_shard(shard.id)?;
@@ -292,7 +293,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, crate::Error> {
+    pub async fn get(&self, key: Vec<u8>) -> AppResult<Option<Vec<u8>>> {
         let mut retry_state = RetryState::default();
 
         loop {
@@ -300,14 +301,14 @@ impl Collection {
                 Ok(value) => return Ok(value),
                 Err(err) => {
                     if !retry_state.retry(&err).await {
-                        return Err(err);
+                        return Err(err.into());
                     }
                 }
             }
         }
     }
 
-    pub async fn get_inner(&self, key: &[u8]) -> Result<Option<Vec<u8>>, crate::Error> {
+    pub async fn get_inner(&self, key: &[u8]) -> crate::Result<Option<Vec<u8>>> {
         let router = self.client.inner.router.clone();
         let shard = router.find_shard(self.co_desc.clone(), key)?;
         let group = router.find_group_by_shard(shard.id)?;

@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_client::{EngulaClient, Error, Partition};
+use engula_client::{AppError, EngulaClient, Partition};
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AppError> {
     tracing_subscriber::fmt::init();
 
     let addrs = vec!["127.0.0.1:21805".to_owned()];
