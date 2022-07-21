@@ -80,6 +80,7 @@ async fn execute_internal(
             }
             Err(Error::EpochNotMatch(desc)) => {
                 if is_executable(&desc, request) {
+                    debug_assert_ne!(desc.epoch, exec_ctx.epoch);
                     exec_ctx.epoch = desc.epoch;
                     freshed_descriptor = Some(desc);
                     continue;

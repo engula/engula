@@ -326,14 +326,8 @@ impl Replica {
             && exec_ctx.epoch < lease_state.descriptor.epoch
         {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
-        } else if let Some(shard_id) = exec_ctx.forward_shard_id {
-            if lease_state.is_migrating_shard(shard_id) {
-                Ok(())
-            } else {
-                // FIXME(walter) maybe migration is finished!!!!
-                // Maybe this request has expired?
-                Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
-            }
+        } else if let Some(_) = exec_ctx.forward_shard_id {
+            Ok(())
         } else if lease_state.is_migrating() && matches!(req, Request::AcceptShard(_)) {
             // At the same time, there can only be one migration task.
             Err(Error::ServiceIsBusy("migration"))
