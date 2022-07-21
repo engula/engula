@@ -16,9 +16,7 @@
 
 mod helper;
 
-use std::time::Duration;
-
-use engula_api::server::v1::{AcceptShardRequest, ReplicaRole};
+use engula_api::server::v1::ReplicaRole;
 use engula_client::{EngulaClient, Partition};
 use tracing::info;
 
