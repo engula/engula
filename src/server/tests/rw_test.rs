@@ -16,7 +16,9 @@
 
 mod helper;
 
+use engula_api::server::v1::ReplicaRole;
 use engula_client::{EngulaClient, Partition};
+use tracing::info;
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
 
@@ -130,6 +132,51 @@ fn operation_with_config_change() {
             let r = co.get(k).await.unwrap();
             let r = r.map(String::from_utf8);
             assert!(matches!(r, Some(Ok(v)) if v == format!("value-{i}")));
+        }
+    });
+}
+
+#[test]
+fn operation_with_leader_transfer() {
+    block_on_current(async move {
+        let mut ctx = TestContext::new("rw_test__operation_with_leader_transfer");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let app = c.app_client().await;
+
+        let db = app.create_database("test_db".to_string()).await.unwrap();
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Range {}))
+            .await
+            .unwrap();
+
+        for i in 0..1000 {
+            let k = format!("key-{i}").as_bytes().to_vec();
+            let v = format!("value-{i}").as_bytes().to_vec();
+            co.put(k.clone(), v).await.unwrap();
+            let r = co.get(k.clone()).await.unwrap();
+            let r = r.map(String::from_utf8);
+            assert!(matches!(r, Some(Ok(v)) if v == format!("value-{i}")));
+
+            if i % 100 == 0 {
+                let state = c
+                    .find_router_group_state_by_key(&co.desc(), k.as_slice())
+                    .await
+                    .unwrap();
+                let leader_id = state.leader_id.unwrap();
+                for (id, replica) in state.replicas {
+                    if id != leader_id && replica.role == ReplicaRole::Voter as i32 {
+                        info!(
+                            "transfer leadership of group {} from {} to {}",
+                            state.id, leader_id, id
+                        );
+                        let mut client = c.group(state.id);
+                        client.transfer_leader(id).await.unwrap();
+                        break;
+                    }
+                }
+            }
         }
     });
 }

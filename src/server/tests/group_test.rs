@@ -15,7 +15,7 @@
 
 mod helper;
 
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use engula_api::server::v1::*;
 use helper::context::TestContext;
@@ -145,19 +145,9 @@ fn promote_to_cluster_from_single_node() {
 #[test]
 fn cure_group() {
     block_on_current(async {
-        let mut ctx_1 = TestContext::new("cure-group-1");
-        ctx_1.disable_all_balance();
-        let mut nodes = ctx_1.bootstrap_servers(3).await;
-
-        let mut ctx_2 = TestContext::new("cure-group-2");
-        let addr = ctx_2.next_listen_address();
-        ctx_2
-            .start_servers(
-                nodes.get(&0).unwrap().clone(),
-                HashMap::from([(3u64, addr.clone())]),
-            )
-            .await;
-        nodes.insert(3, addr);
+        let mut ctx = TestContext::new("cure-group");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
 
         let group_id = 100000000;
@@ -191,7 +181,7 @@ fn cure_group() {
 
         info!("shutdown node 3 and replica 103");
         c.assert_group_contains_member(group_id, 103).await;
-        drop(ctx_2);
+        ctx.stop_server(3).await;
 
         info!("wait curing group {group_id}");
         c.assert_group_not_contains_member(group_id, 103).await;
