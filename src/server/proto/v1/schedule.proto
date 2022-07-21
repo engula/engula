@@ -1,11 +1,11 @@
 // Copyright 2022 The Engula Authors.
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 // http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -66,4 +66,81 @@ message ReplaceVoterStep {
 
 message RemoveLearnerStep {
   repeated engula.server.v1.ReplicaDesc learners = 1;
+}
+
+
+message ReconcileTask {
+  oneof task {
+    CreateGroupTask create_group = 1;
+    ReallocateReplicaTask reallocate_replica = 2;
+    MigrateShardTask migrate_shard = 3;
+    TransferGroupLeaderTask transfer_group_leader = 4;
+    CreateCollectionShards create_collection_shards = 5;
+  }
+}
+
+message CreateGroupTask {
+  uint64 request_replica_cnt = 1;
+  engula.server.v1.GroupDesc group_desc = 2;
+  repeated engula.server.v1.NodeDesc wait_create = 3;
+  repeated engula.server.v1.ReplicaDesc wait_cleanup = 4;
+  CreateGroupTaskStep step = 5;
+  uint64 create_retry = 6;
+}
+
+enum CreateGroupTaskStep {
+  GROUP_INIT = 0;
+  GROUP_CREATING = 1;
+  GROUP_ROLLBACKING = 2;
+  GROUP_FINISH = 3;
+  GROUP_ABORT = 4;
+}
+
+message ReallocateReplicaTask {
+  uint64 group = 1;
+  uint64 src_node = 2;
+  uint64 src_replica = 3;
+  engula.server.v1.NodeDesc dest_node = 4;
+  engula.server.v1.ReplicaDesc dest_replica = 5;
+  ReallocateReplicaTaskStep step = 6;
+}
+
+enum ReallocateReplicaTaskStep {
+  CREATING_DEST_REPLICA = 0;
+  ADD_DEST_LEARNER = 1;
+  REPLACE_DEST_VOTER = 2;
+  SHED_SOURCE_LEADER = 3;
+  REMOVE_SOURCE_MEMBERSHIP = 4;
+  REMOVE_SOURCE_REPLICA = 5;
+  REALLOCATE_FINISH = 6;
+  REALLOCATE_ABORT = 7;
+}
+
+message MigrateShardTask {
+  uint64 shard = 1;
+  uint64 src_group = 2;
+  uint64 dest_group = 3;
+}
+
+message TransferGroupLeaderTask {
+  uint64 group = 1;
+  uint64 target_replica = 5;
+}
+
+message CreateCollectionShards {
+  repeated GroupShards wait_create = 1;
+  repeated engula.server.v1.ShardDesc wait_cleanup = 2;
+  CreateCollectionShardStep step = 3;
+}
+
+message GroupShards {
+  uint64 group = 1;
+  repeated engula.server.v1.ShardDesc shards = 2;
+}
+
+enum CreateCollectionShardStep {
+  COLLECTION_CREATING = 0;
+  COLLECTION_ROLLBACKING = 1;
+  COLLECTION_FINISH = 2;
+  COLLECTION_ABORT = 3;
 }
