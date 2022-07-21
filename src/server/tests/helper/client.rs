@@ -131,6 +131,27 @@ impl GroupClient {
         }
     }
 
+    pub async fn remove_replica(&mut self, replica_id: u64, node_id: u64) -> Result<()> {
+        let change_replicas = ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas {
+                changes: vec![ChangeReplica {
+                    change_type: ChangeReplicaType::Remove.into(),
+                    replica_id,
+                    node_id,
+                }],
+            }),
+        };
+        let resp = self
+            .group_inner(group_request_union::Request::ChangeReplicas(
+                change_replicas,
+            ))
+            .await?;
+        match resp {
+            group_response_union::Response::ChangeReplicas(_) => Ok(()),
+            _ => panic!("invalid response for remove_replica(): {:?}", resp),
+        }
+    }
+
     async fn group_inner(
         &mut self,
         req: group_request_union::Request,
