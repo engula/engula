@@ -24,7 +24,7 @@ use tokio::sync::Mutex;
 use tonic::{transport::Channel, Code, Status, Streaming};
 use tracing::trace;
 
-use crate::{conn_manager::ConnManager, discovery::ServiceDiscovery, NodeClient};
+use crate::{conn_manager::ConnManager, discovery::ServiceDiscovery, NodeClient, Result};
 
 #[derive(thiserror::Error, Debug)]
 enum RootError {
@@ -79,7 +79,7 @@ impl Client {
         }
     }
 
-    pub async fn report(&self, req: &ReportRequest) -> Result<ReportResponse, crate::Error> {
+    pub async fn report(&self, req: &ReportRequest) -> Result<ReportResponse> {
         let res = self
             .invoke(|mut client| {
                 let req = req.clone();
@@ -89,7 +89,7 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse, crate::Error> {
+    pub async fn admin(&self, req: AdminRequest) -> Result<AdminResponse> {
         let res = self
             .invoke(|mut client| {
                 let req = req.clone();
@@ -99,7 +99,7 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    pub async fn join_node(&self, req: JoinNodeRequest) -> Result<JoinNodeResponse, crate::Error> {
+    pub async fn join_node(&self, req: JoinNodeRequest) -> Result<JoinNodeResponse> {
         let res = self
             .invoke(|mut client| {
                 let req = req.clone();
@@ -112,7 +112,7 @@ impl Client {
     pub async fn watch(
         &self,
         cur_group_epochs: HashMap<u64, u64>,
-    ) -> Result<Streaming<WatchResponse>, crate::Error> {
+    ) -> Result<Streaming<WatchResponse>> {
         let req = WatchRequest { cur_group_epochs };
         let res = self
             .invoke(|mut client| {
@@ -123,10 +123,7 @@ impl Client {
         Ok(res.into_inner())
     }
 
-    pub async fn alloc_replica(
-        &self,
-        req: AllocReplicaRequest,
-    ) -> Result<AllocReplicaResponse, crate::Error> {
+    pub async fn alloc_replica(&self, req: AllocReplicaRequest) -> Result<AllocReplicaResponse> {
         let resp = self
             .invoke(|mut client| {
                 let req = req.clone();
@@ -136,10 +133,10 @@ impl Client {
         Ok(resp.into_inner())
     }
 
-    async fn invoke<F, O, V>(&self, op: F) -> Result<V, crate::Error>
+    async fn invoke<F, O, V>(&self, op: F) -> Result<V>
     where
         F: Fn(root_client::RootClient<Channel>) -> O,
-        O: Future<Output = Result<V, Status>>,
+        O: Future<Output = std::result::Result<V, Status>>,
     {
         let mut interval = 1;
         let mut save_core = false;
@@ -236,10 +233,7 @@ impl Client {
         }
     }
 
-    async fn refresh_root_descriptor(
-        &self,
-        local_epoch: u64,
-    ) -> Result<Option<RootDesc>, crate::Error> {
+    async fn refresh_root_descriptor(&self, local_epoch: u64) -> Result<Option<RootDesc>> {
         let nodes = self.shared.discovery.list_nodes().await;
         for node in nodes {
             let node_client = self.get_node_client(node).await?;
@@ -252,7 +246,7 @@ impl Client {
         Ok(None)
     }
 
-    async fn refresh_client_core(&self, mut core: ClientCore) -> Result<ClientCore, crate::Error> {
+    async fn refresh_client_core(&self, mut core: ClientCore) -> Result<ClientCore> {
         let _refresh_guard = self.shared.refresh_descriptor_lock.lock().await;
         {
             let core_guard = self.shared.core.lock().await;
@@ -271,13 +265,13 @@ impl Client {
     }
 
     #[inline]
-    async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>, crate::Error> {
+    async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
         let root_client = self.shared.conn_manager.get_root_client(addr).await?;
         Ok(root_client)
     }
 
     #[inline]
-    async fn get_node_client(&self, addr: String) -> Result<NodeClient, crate::Error> {
+    async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
         let node_client = self.shared.conn_manager.get_node_client(addr).await?;
         Ok(node_client)
     }
@@ -454,10 +448,13 @@ fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, Option<R
     None
 }
 
-async fn invoke<F, O, V>(client: root_client::RootClient<Channel>, op: &F) -> Result<V, RootError>
+async fn invoke<F, O, V>(
+    client: root_client::RootClient<Channel>,
+    op: &F,
+) -> std::result::Result<V, RootError>
 where
     F: Fn(root_client::RootClient<Channel>) -> O,
-    O: Future<Output = Result<V, Status>>,
+    O: Future<Output = std::result::Result<V, Status>>,
 {
     match op(client).await {
         Ok(res) => Ok(res),

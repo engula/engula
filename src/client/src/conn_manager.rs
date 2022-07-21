@@ -20,7 +20,7 @@ use std::{
 use engula_api::server::v1::root_client::RootClient;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::NodeClient;
+use crate::{Error, NodeClient, Result};
 
 #[derive(Clone, Debug)]
 pub struct ConnManager {
@@ -44,14 +44,17 @@ impl ConnManager {
     }
 
     // TODO(walter) add tags
-    pub async fn get(&self, addr: String) -> Result<Channel, tonic::transport::Error> {
+    pub async fn get(&self, addr: String) -> Result<Channel> {
         let mut core = self.core.lock().unwrap();
         if let Some(info) = core.channels.get_mut(&addr) {
             info.access += 1;
             return Ok(info.channel.clone());
         }
 
-        let channel = Endpoint::new(format!("http://{}", addr))?.connect_lazy();
+        let channel = match Endpoint::new(format!("http://{}", addr)) {
+            Ok(endpoint) => endpoint.connect_lazy(),
+            Err(e) => return Err(Error::Internal(Box::new(e))),
+        };
         let info = ChannelInfo {
             channel: channel.clone(),
             access: 1,
@@ -61,19 +64,13 @@ impl ConnManager {
     }
 
     #[inline]
-    pub async fn get_node_client(
-        &self,
-        addr: String,
-    ) -> Result<NodeClient, tonic::transport::Error> {
+    pub async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
         let channel = self.get(addr).await?;
         Ok(NodeClient::new(channel))
     }
 
     #[inline]
-    pub async fn get_root_client(
-        &self,
-        addr: String,
-    ) -> Result<RootClient<Channel>, tonic::transport::Error> {
+    pub async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
         let channel = self.get(addr).await?;
         Ok(RootClient::new(channel))
     }
