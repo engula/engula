@@ -29,6 +29,7 @@ use engula_api::{
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 pub use self::state::{LeaseState, LeaseStateObserver};
 use super::engine::GroupEngine;
@@ -289,6 +290,12 @@ impl Replica {
                 (Some(eval_result), Response::AcceptShard(resp))
             }
             Request::Transfer(req) => {
+                info!(
+                    replica = self.info.replica_id,
+                    group = self.info.group_id,
+                    "transfer leadership to {}",
+                    req.transferee
+                );
                 self.raft_node.clone().transfer_leader(req.transferee)?;
                 return Ok(Response::Transfer(TransferResponse {}));
             }

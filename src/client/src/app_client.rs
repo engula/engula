@@ -350,4 +350,8 @@ impl Collection {
     fn name(&self) -> String {
         self.co_desc.name.to_owned()
     }
+
+    pub fn desc(&self) -> CollectionDesc {
+        self.co_desc.clone()
+    }
 }

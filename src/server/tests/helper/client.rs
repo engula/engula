@@ -16,10 +16,11 @@ use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use engula_api::{
     server::v1::*,
-    v1::{PutRequest, PutResponse},
+    v1::{CollectionDesc, PutRequest, PutResponse},
 };
 use engula_client::{
-    ConnManager, EngulaClient, NodeClient, RootClient, Router, StaticServiceDiscovery,
+    ConnManager, EngulaClient, NodeClient, RootClient, Router, RouterGroupState,
+    StaticServiceDiscovery,
 };
 use engula_server::{runtime, Error, Result};
 use prost::Message;
@@ -79,6 +80,14 @@ impl GroupClient {
             group_response_union::Response::Put(resp) => Ok(resp),
             _ => panic!("invalid response for accept_shard(): {:?}", resp),
         }
+    }
+
+    pub async fn transfer_leader(&mut self, transferee: u64) -> Result<()> {
+        self.group_inner(group_request_union::Request::Transfer(TransferRequest {
+            transferee,
+        }))
+        .await?;
+        Ok(())
     }
 
     pub async fn accept_shard(&mut self, req: AcceptShardRequest) -> Result<AcceptShardResponse> {
@@ -425,5 +434,22 @@ impl ClusterClient {
             }
         }
         Ok(None)
+    }
+
+    pub async fn get_shard_desc(&self, co_desc: &CollectionDesc, key: &[u8]) -> Option<ShardDesc> {
+        self.router.find_shard(co_desc.clone(), key).ok()
+    }
+
+    pub async fn get_router_group_state(&self, group_id: u64) -> Option<RouterGroupState> {
+        self.router.find_group(group_id).ok()
+    }
+
+    pub async fn find_router_group_state_by_key(
+        &self,
+        co_desc: &CollectionDesc,
+        key: &[u8],
+    ) -> Option<RouterGroupState> {
+        let shard = self.router.find_shard(co_desc.clone(), key).ok()?;
+        self.router.find_group_by_shard(shard.id).ok()
     }
 }
