@@ -211,6 +211,29 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn add_learner(mut self, group_id: u64, epoch: u64, replica_id: u64, node_id: u64) -> Self {
+        let change_replicas = ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas {
+                changes: vec![ChangeReplica {
+                    change_type: ChangeReplicaType::AddLearner.into(),
+                    replica_id,
+                    node_id,
+                }],
+            }),
+        };
+
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::ChangeReplicas(
+                    change_replicas,
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn remove_replica(mut self, group_id: u64, epoch: u64, replica_id: u64) -> Self {
         let change_replicas = ChangeReplicasRequest {
             change_replicas: Some(ChangeReplicas {

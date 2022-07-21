@@ -176,6 +176,7 @@ impl GroupClient {
             Error::EpochNotMatch(group_desc) if !accurate_epoch => {
                 if group_desc.epoch > self.epoch {
                     self.replicas = group_desc.replicas;
+                    self.epoch = group_desc.epoch;
                 } else {
                     self.leader_node_id = None;
                 }
@@ -202,6 +203,146 @@ impl GroupClient {
                     Response::PrefixList(resp) => Ok(resp.values),
                     _ => Err(Status::internal(
                         "invalid response type, PrefixList is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let desc = desc.to_owned();
+            let req = RequestBatchBuilder::new(node_id)
+                .create_shard(group_id, epoch, desc)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::CreateShard(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, CreateShard is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn transfer_leader(&mut self, dest_replica: u64) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let dest_replica = dest_replica.to_owned();
+            let req = RequestBatchBuilder::new(node_id)
+                .transfer_leader(group_id, epoch, dest_replica)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::Transfer(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, Transfer is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let remove_replica = remove_replica.to_owned();
+            let req = RequestBatchBuilder::new(node_id)
+                .remove_replica(group_id, epoch, remove_replica)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::ChangeReplicas(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, ChangeReplicas is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn add_replica(&mut self, replica: u64, node: u64) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let req = RequestBatchBuilder::new(node_id)
+                .add_replica(group_id, epoch, replica, node)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::ChangeReplicas(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, ChangeReplicas is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn add_learner(&mut self, replica: u64, node: u64) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let req = RequestBatchBuilder::new(node_id)
+                .add_learner(group_id, epoch, replica, node)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::ChangeReplicas(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, ChangeReplicas is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
+    pub async fn migrate_shard(
+        &mut self,
+        src_group: u64,
+        src_epoch: u64,
+        shard: &ShardDesc,
+    ) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let req = RequestBatchBuilder::new(node_id)
+                .accept_shard(group_id, epoch, src_group, src_epoch, shard)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::AcceptShard(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, AcceptShard is required",
                     )),
                 }
             }

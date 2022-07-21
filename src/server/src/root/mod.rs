@@ -15,6 +15,7 @@
 mod allocator;
 mod job;
 mod liveness;
+mod schedule;
 mod schema;
 mod store;
 mod watch;
@@ -40,20 +41,26 @@ pub use self::{
     allocator::AllocatorConfig,
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
-use self::{allocator::SysAllocSource, schema::ReplicaNodes, store::RootStore};
+use self::{
+    allocator::SysAllocSource, schedule::ReconcileScheduler, schema::ReplicaNodes, store::RootStore,
+};
 use crate::{
-    bootstrap::{INITIAL_EPOCH, REPLICA_PER_GROUP, SHARD_MAX, SHARD_MIN},
+    bootstrap::{SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::TaskPriority,
-    serverpb::v1::NodeIdent,
+    serverpb::v1::{
+        reconcile_task::Task, CreateCollectionShardStep, CreateCollectionShards, GroupShards,
+        NodeIdent, ReconcileTask,
+    },
     Config, Error, Provider, Result,
 };
 
 #[derive(Clone)]
 pub struct Root {
     shared: Arc<RootShared>,
-    alloc: allocator::Allocator<SysAllocSource>,
+    alloc: Arc<allocator::Allocator<SysAllocSource>>,
     liveness: Arc<liveness::Liveness>,
+    scheduler: Arc<ReconcileScheduler>,
 }
 
 pub struct RootShared {
@@ -89,11 +96,14 @@ impl Root {
         });
         let liveness = Arc::new(liveness::Liveness::new(cfg.to_owned()));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
-        let alloc = allocator::Allocator::new(info, cfg.allocator);
+        let alloc = Arc::new(allocator::Allocator::new(info, cfg.allocator));
+        let sched_ctx = schedule::ScheduleContext::new(shared.clone(), alloc.clone());
+        let scheduler = Arc::new(schedule::ReconcileScheduler::new(sched_ctx));
         Self {
             alloc,
             shared,
             liveness,
+            scheduler,
         }
     }
 
@@ -134,7 +144,7 @@ impl Root {
     async fn run(&self, replica_table: ReplicaRouteTable) -> ! {
         let mut bootstrapped = false;
         loop {
-            let root_replica = self.fetch_root_replica(&replica_table).await;
+            let root_replica = fetch_root_replica(&replica_table).await;
 
             // Wait the current root replica becomes a leader.
             if let Ok(Some(_)) = root_replica.on_leader("root", false).await {
@@ -152,17 +162,6 @@ impl Root {
                 }
             }
         }
-    }
-
-    async fn fetch_root_replica(&self, replica_table: &ReplicaRouteTable) -> Arc<Replica> {
-        use futures::future::poll_fn;
-        poll_fn(
-            |ctx| match replica_table.current_root_replica(Some(ctx.waker().clone())) {
-                Some(root_replica) => Poll::Ready(root_replica),
-                None => Poll::Pending,
-            },
-        )
-        .await
     }
 
     async fn step_leader(
@@ -210,12 +209,7 @@ impl Root {
                 }
             }
 
-            if let Err(err) = self.reconcile(30).await {
-                warn!(err = ?err, "reconcile meet error");
-                if Self::need_drop_root_leader(&err) {
-                    break;
-                }
-            }
+            self.scheduler.step_one().await;
 
             crate::runtime::time::sleep(self.liveness.heartbeat_interval()).await;
         }
@@ -246,7 +240,7 @@ impl Root {
         let dbs = schema.list_database().await?;
         let collections = schema.list_collection().await?;
 
-        let balanced = !self.need_reconcile().await?;
+        let balanced = !self.scheduler.need_reconcile().await?;
 
         use diagnosis::*;
 
@@ -500,30 +494,18 @@ impl Root {
             }
         }
 
-        for (group_id, descs) in group_shards {
-            info!(
-                database = collection.db,
-                collection = ?collection.name,
-                "create shard {:?} in group {group_id}",
-                descs.iter().map(|d| d.id).collect::<Vec<_>>()
-            );
-            if let Err(err) = schema
-                .create_shards(
-                    group_id,
-                    descs.to_owned(),
-                    &self.shared.provider.conn_manager,
-                )
-                .await
-            {
-                error!(
-                    database = collection.db,
-                    collection = ?collection.name,
-                    err = ?err,
-                    "create shard {:?} in group {group_id}",   descs.iter().map(|d| d.id).collect::<Vec<_>>(),
-                );
-                return Err(err);
-            }
-        }
+        self.scheduler
+            .setup_task(ReconcileTask {
+                task: Some(Task::CreateCollectionShards(CreateCollectionShards {
+                    wait_create: group_shards
+                        .into_iter()
+                        .map(|(group, shards)| GroupShards { group, shards })
+                        .collect::<Vec<_>>(),
+                    wait_cleanup: vec![],
+                    step: CreateCollectionShardStep::CollectionCreating as i32,
+                })),
+            })
+            .await;
 
         Ok(())
     }
@@ -722,72 +704,17 @@ impl Root {
         );
         Ok(replicas)
     }
+}
 
-    async fn create_groups(&self, cnt: usize) -> Result<()> {
-        info!("allocator attempt create {cnt} groups");
-        for i in 0..cnt {
-            let nodes = self
-                .alloc
-                .allocate_group_replica(vec![], REPLICA_PER_GROUP as usize)
-                .await?;
-            info!(
-                "allocator attemp create #{i} new group's replicas in {:?}",
-                nodes
-                    .iter()
-                    .map(|n| format!("{}({})", n.addr.to_owned(), n.id))
-                    .collect::<Vec<_>>()
-            );
-            self.create_group(nodes).await?;
-        }
-        Ok(())
-    }
-
-    async fn create_group(&self, nodes: Vec<NodeDesc>) -> Result<()> {
-        let schema = self.schema()?;
-        let group_id = schema.next_group_id().await?;
-        let mut replicas = Vec::new();
-        let mut node_to_replica = HashMap::new();
-        for n in &nodes {
-            let replica_id = schema.next_replica_id().await?;
-            replicas.push(ReplicaDesc {
-                id: replica_id,
-                node_id: n.id,
-                role: ReplicaRole::Voter.into(),
-            });
-            node_to_replica.insert(n.id, replica_id);
-        }
-        let group_tmpl = GroupDesc {
-            id: group_id,
-            epoch: INITIAL_EPOCH,
-            shards: vec![],
-            replicas,
-        };
-        for n in &nodes {
-            let replica_id = node_to_replica.get(&n.id).unwrap();
-            if let Err(err) = self
-                .try_create_replica(&n.addr, replica_id, group_tmpl.clone())
-                .await
-            {
-                error!(node_id = n.id, group = group_id, err = ?err, "create group error");
-                return Err(err);
-            }
-        }
-        // TODO(zojw): rety and cancel all logic.
-        Ok(())
-    }
-
-    async fn try_create_replica(
-        &self,
-        addr: &str,
-        replica_id: &u64,
-        group: GroupDesc,
-    ) -> Result<()> {
-        self.get_node_client(addr.to_owned())
-            .await?
-            .create_replica(replica_id.to_owned(), group)
-            .await?;
-        Ok(())
-    }
+pub async fn fetch_root_replica(replica_table: &ReplicaRouteTable) -> Arc<Replica> {
+    use futures::future::poll_fn;
+    poll_fn(
+        |ctx| match replica_table.current_root_replica(Some(ctx.waker().clone())) {
+            Some(root_replica) => Poll::Ready(root_replica),
+            None => Poll::Pending,
+        },
+    )
+    .await
 }
 
 #[cfg(test)]
