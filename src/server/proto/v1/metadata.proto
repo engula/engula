@@ -22,16 +22,16 @@ import "eraft.proto";
 import "engula/server/v1/metadata.proto";
 
 message SnapshotMeta {
-    EntryID apply_state = 1;
-    engula.server.v1.GroupDesc group_desc = 2;
-    repeated SnapshotFile files = 3;
+  EntryID apply_state = 1;
+  engula.server.v1.GroupDesc group_desc = 2;
+  repeated SnapshotFile files = 3;
 }
 
 message SnapshotFile {
-    // The relative path of snapshot file. eg `DATA/1.sst`, `META`.
-    bytes name = 1;
-    uint32 crc32 = 2;
-    uint64 size = 3;
+  // The relative path of snapshot file. eg `DATA/1.sst`, `META`.
+  bytes name = 1;
+  uint32 crc32 = 2;
+  uint64 size = 3;
 }
 
 /// A NodeIdent uniquely identifies a node in the cluster.
@@ -41,12 +41,14 @@ message NodeIdent {
 }
 
 enum ReplicaLocalState {
-  /// With membership, but couldn't supply service.  It is used in group creation.
+  /// With membership, but couldn't supply service.  It is used in group
+  /// creation.
   INITIAL = 0;
   /// Without membership, only response raft messages.
   PENDING = 1;
   NORMAL = 2;
-  /// The service and memory states are shutdown and cleans, but disk data still exists.
+  /// The service and memory states are shutdown and cleans, but disk data still
+  /// exists.
   TERMINATED = 3;
   TOMBSTONE = 4;
 }
@@ -75,11 +77,13 @@ message RaftLocalState {
 ///   MIGRATING -> MIGRATED -> FINISHED
 ///
 enum MigrationStep {
-  /// The dest group shold send request to source group to begin migration.  Once the source
-  /// group agrees to start the migration, the migration process must be completed.
+  /// The dest group shold send request to source group to begin migration. Once
+  /// the source group agrees to start the migration, the migration process must
+  /// be completed.
   PREPARE = 0;
   MIGRATING = 1;
-  /// Used in dest group, it should notify the source group that migration has already finished.
+  /// Used in dest group, it should notify the source group that migration has
+  /// already finished.
   MIGRATED = 2;
 
   FINISHED = 3;
@@ -90,7 +94,8 @@ message MigrationState {
   /// The descriptor of migration.
   engula.server.v1.MigrationDesc migration_desc = 1;
 
-  /// For dest group, this field saves the last key migrated by background pulling.
+  /// For dest group, this field saves the last key migrated by background
+  /// pulling.
   bytes last_migrated_key = 7;
 
   /// The step of migration progress.
@@ -104,11 +109,10 @@ message EvalResult {
 }
 
 /// WriteBatchRep is the serialized representation of DB write batch.
-message WriteBatchRep {
-  bytes data = 1;
-}
+message WriteBatchRep { bytes data = 1; }
 
-/// SyncOp is a structured message which contain operations must be executed in order in all replicas.
+/// SyncOp is a structured message which contain operations must be executed in
+/// order in all replicas.
 message SyncOp {
   /// Add new shard to existing group.
   AddShard add_shard = 1;
@@ -117,20 +121,17 @@ message SyncOp {
   /// An event of shard migration.
   Migration migration = 3;
 
-  /// A trick, force prost box the `SyncOp`, because `SyncOp` message is too large.
+  /// A trick, force prost box the `SyncOp`, because `SyncOp` message is too
+  /// large.
   EvalResult must_boxed = 128;
 }
 
-message AddShard {
-  engula.server.v1.ShardDesc shard = 1;
-}
+message AddShard { engula.server.v1.ShardDesc shard = 1; }
 
-/// PurgeOrphanReplica is used by the replica leader. When the replica leader finds an orphan
-/// replica, it can propose a command. After the command is successfully executed, the replica
-/// can be shutdown safely.
-message PurgeOrphanReplica {
-  uint64 replica_id = 1;
-}
+/// PurgeOrphanReplica is used by the replica leader. When the replica leader
+/// finds an orphan replica, it can propose a command. After the command is
+/// successfully executed, the replica can be shutdown safely.
+message PurgeOrphanReplica { uint64 replica_id = 1; }
 
 message Migration {
   enum Event {
@@ -146,6 +147,7 @@ message Migration {
 
   engula.server.v1.MigrationDesc migration_desc = 2;
 
-  /// The latest migrated key, used for fault tolerance, locate the cursor that has been replicated.
+  /// The latest migrated key, used for fault tolerance, locate the cursor that
+  /// has been replicated.
   bytes last_ingested_key = 3;
 }

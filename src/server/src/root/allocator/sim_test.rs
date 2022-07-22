@@ -313,7 +313,6 @@ fn sim_boostrap_join_node_balance() {
                     );
                     p.move_replica(*source_replica, target_node.id)
                 }
-                ReplicaAction::Noop => unreachable!(),
             }
         }
         let racts = a.compute_replica_action().await.unwrap();
@@ -332,7 +331,6 @@ fn sim_boostrap_join_node_balance() {
                     );
                     p.move_replica(*source_replica, target_node.id)
                 }
-                ReplicaAction::Noop => unreachable!(),
             }
         }
         let racts = a.compute_replica_action().await.unwrap();
