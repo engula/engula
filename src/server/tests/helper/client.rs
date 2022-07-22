@@ -40,6 +40,7 @@ pub async fn node_client_with_retry(addr: &str) -> NodeClient {
 }
 
 #[allow(unused)]
+#[derive(Clone)]
 pub struct GroupClient {
     group_id: u64,
     epoch: u64,
@@ -100,6 +101,28 @@ impl GroupClient {
         }
     }
 
+    pub async fn setup_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
+        let op = |_, _, _, client: NodeClient| {
+            let req = MigrateRequest {
+                desc: Some(desc.clone()),
+                action: MigrateAction::Setup as i32,
+            };
+            async move { client.migrate(req).await }
+        };
+        self.invoke_opt(op, /* accurate_epoch= */ true).await
+    }
+
+    pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
+        let op = |_, _, _, client: NodeClient| {
+            let req = MigrateRequest {
+                desc: Some(desc.clone()),
+                action: MigrateAction::Commit as i32,
+            };
+            async move { client.migrate(req).await }
+        };
+        self.invoke(op).await
+    }
+
     pub async fn create_shard(&mut self, req: CreateShardRequest) -> Result<CreateShardResponse> {
         let resp = self
             .group_inner(group_request_union::Request::CreateShard(req))
@@ -115,6 +138,27 @@ impl GroupClient {
             change_replicas: Some(ChangeReplicas {
                 changes: vec![ChangeReplica {
                     change_type: ChangeReplicaType::Add.into(),
+                    replica_id,
+                    node_id,
+                }],
+            }),
+        };
+        let resp = self
+            .group_inner(group_request_union::Request::ChangeReplicas(
+                change_replicas,
+            ))
+            .await?;
+        match resp {
+            group_response_union::Response::ChangeReplicas(_) => Ok(()),
+            _ => panic!("invalid response for add_replica(): {:?}", resp),
+        }
+    }
+
+    pub async fn add_learner(&mut self, replica_id: u64, node_id: u64) -> Result<()> {
+        let change_replicas = ChangeReplicasRequest {
+            change_replicas: Some(ChangeReplicas {
+                changes: vec![ChangeReplica {
+                    change_type: ChangeReplicaType::AddLearner.into(),
                     replica_id,
                     node_id,
                 }],
@@ -191,6 +235,14 @@ impl GroupClient {
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
+        self.invoke_opt(op, false).await
+    }
+
+    async fn invoke_opt<F, O, V>(&mut self, op: F, accurate_epoch: bool) -> Result<V>
+    where
+        F: Fn(u64, u64, u64, NodeClient) -> O,
+        O: Future<Output = std::result::Result<V, tonic::Status>>,
+    {
         let mut interval = 1;
         loop {
             let client = self.recommend_client().await;
@@ -204,7 +256,7 @@ impl GroupClient {
             {
                 Ok(s) => return Ok(s),
                 Err(status) => {
-                    self.apply_status(status).await?;
+                    self.apply_status(status, accurate_epoch).await?;
                     tokio::time::sleep(Duration::from_millis(interval)).await;
                     interval = std::cmp::min(interval * 2, 1000);
                 }
@@ -266,7 +318,7 @@ impl GroupClient {
         None
     }
 
-    async fn apply_status(&mut self, status: tonic::Status) -> Result<()> {
+    async fn apply_status(&mut self, status: tonic::Status, accurate_epoch: bool) -> Result<()> {
         match Error::from(status) {
             Error::GroupNotFound(id) => {
                 trace!("{:?} group {} not found", self.leader_node_id, id);
@@ -278,7 +330,7 @@ impl GroupClient {
                 self.leader_node_id = replica_desc.map(|r| r.node_id);
                 Ok(())
             }
-            Error::EpochNotMatch(desc) => {
+            Error::EpochNotMatch(desc) if !accurate_epoch => {
                 trace!(
                     "{:?} group {} epoch not match, source epoch {}, output epoch {}",
                     self.leader_node_id,
@@ -413,6 +465,18 @@ impl ClusterClient {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("group {group_id} does not have a leader");
+    }
+
+    pub async fn group_remove_node(&self, group_id: u64, node_id: u64) -> Result<()> {
+        if let Ok(state) = self.router.find_group(group_id) {
+            for (_, replica) in state.replicas {
+                if replica.node_id == node_id {
+                    let mut c = self.group(group_id);
+                    c.remove_replica(replica.id, node_id).await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn get_group_epoch(&self, group_id: u64) -> Option<u64> {
