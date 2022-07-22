@@ -206,13 +206,7 @@ fn operation_with_shard_migration() {
             .await
             .unwrap();
         let prev_group_id = source_state.id;
-        let mut target_group_id = 2;
-        if prev_group_id == target_group_id {
-            target_group_id = 3;
-        }
-        while (c.get_router_group_state(target_group_id).await).is_none() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        let target_group_id = 0;
 
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();
