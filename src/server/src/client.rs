@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, sync::Arc, task::Poll, time::Duration};
+use std::{
+    collections::HashMap, future::Future, io::ErrorKind, sync::Arc, task::Poll, time::Duration,
+};
 
 use engula_api::server::v1::{group_response_union::Response, *};
 use engula_client::{NodeClient, RequestBatchBuilder};
@@ -182,9 +184,51 @@ impl GroupClient {
                 }
                 Ok(())
             }
+            Error::Rpc(status) if retriable_rpc_err(&status) => {
+                self.leader_node_id = None;
+                Ok(())
+            }
+            Error::Io(err) if retriable_io_err(&err) => {
+                self.leader_node_id = None;
+                Ok(())
+            }
             e => Err(e),
         }
     }
+}
+
+fn retriable_rpc_err(status: &tonic::Status) -> bool {
+    if status.code() == tonic::Code::Unavailable {
+        return true;
+    }
+    if status.code() == tonic::Code::Unknown {
+        if let Some(err) = find_source::<std::io::Error>(status) {
+            return retriable_io_err(err);
+        }
+    }
+    false
+}
+
+fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
+    use std::error::Error;
+    let mut cause = err.source();
+    while let Some(err) = cause {
+        if let Some(typed) = err.downcast_ref() {
+            return Some(typed);
+        }
+        cause = err.source();
+    }
+    None
+}
+
+fn retriable_io_err(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+    )
 }
 
 impl GroupClient {
