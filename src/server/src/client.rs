@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, sync::Arc, task::Poll, time::Duration};
+use std::{
+    collections::HashMap, future::Future, io::ErrorKind, sync::Arc, task::Poll, time::Duration,
+};
 
 use engula_api::server::v1::{group_response_union::Response, *};
 use engula_client::{NodeClient, RequestBatchBuilder};
@@ -186,9 +188,23 @@ impl GroupClient {
                 self.leader_node_id = None;
                 Ok(())
             }
+            Error::Io(err) if retriable_network_err(&err) => {
+                self.leader_node_id = None;
+                Ok(())
+            }
             e => Err(e),
         }
     }
+}
+
+fn retriable_network_err(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+    )
 }
 
 impl GroupClient {
