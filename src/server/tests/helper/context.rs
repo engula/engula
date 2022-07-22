@@ -83,6 +83,7 @@ impl TestContext {
         self.disable_replica_balance();
         self.disable_leader_balance();
         self.disable_shard_balance();
+        self.disable_group_balance();
     }
 
     #[allow(dead_code)]
