@@ -188,6 +188,28 @@ impl GroupClient {
 }
 
 impl GroupClient {
+    pub async fn delete(&mut self, shard_id: u64, key: &[u8]) -> Result<()> {
+        let op = |group_id, epoch, node_id, client: NodeClient| {
+            let req = RequestBatchBuilder::new(node_id)
+                .delete(group_id, epoch, shard_id, key.to_owned())
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::Delete(_) => Ok(()),
+                    _ => Err(Status::internal(
+                        "invalid response type, Delete is required",
+                    )),
+                }
+            }
+        };
+        self.invoke(op).await
+    }
+
     pub async fn list(&mut self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
         let op = |group_id, epoch, node_id, client: NodeClient| {
             let req = RequestBatchBuilder::new(node_id)
