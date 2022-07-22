@@ -58,6 +58,7 @@ struct ScheduleContext {
     replica: Arc<Replica>,
     raft_node: RaftNodeFacade,
     provider: Arc<Provider>,
+    root_store: RemoteStore,
 
     current_term: u64,
 
@@ -280,12 +281,14 @@ impl ScheduleContext {
     fn new(replica: Arc<Replica>, provider: Arc<Provider>) -> Self {
         let info = replica.replica_info();
         let raft_node = replica.raft_node();
+        let root_store = RemoteStore::new(provider.clone());
         ScheduleContext {
             replica_id: info.replica_id,
             group_id: info.group_id,
             replica,
             raft_node,
             provider,
+            root_store,
             current_term: 0,
             lost_peers: HashMap::default(),
             orphan_replicas: HashMap::default(),
@@ -357,7 +360,7 @@ impl ScheduleContext {
         replicas
     }
 
-    async fn advance_remove_replica_task(&self, task: &mut RemoveReplicaTask) -> bool {
+    async fn advance_remove_replica_task(&mut self, task: &mut RemoveReplicaTask) -> bool {
         if let Some(replica) = task.replica.as_ref() {
             if let Err(e) = self
                 .remove_replica(replica, task.group.clone().unwrap_or_default())
@@ -370,6 +373,21 @@ impl ScheduleContext {
                 );
                 return false;
             }
+
+            if let Err(e) = self
+                .root_store
+                .clear_replica_state(self.group_id, replica.id)
+                .await
+            {
+                warn!(
+                    group = self.group_id,
+                    replica = self.replica_id,
+                    "remove replica state of {replica:?}: {e}"
+                );
+                return false;
+            }
+
+            self.orphan_replicas.remove(&replica.id);
         }
 
         true

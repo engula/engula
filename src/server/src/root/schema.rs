@@ -838,12 +838,10 @@ impl Schema {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct RemoteStore {
     provider: Arc<Provider>,
 }
 
-#[allow(dead_code)]
 impl RemoteStore {
     pub(crate) fn new(provider: Arc<Provider>) -> Self {
         RemoteStore { provider }
@@ -861,6 +859,15 @@ impl RemoteStore {
             }
         }
         Ok(states)
+    }
+
+    pub async fn clear_replica_state(&self, group_id: u64, replica_id: u64) -> Result<()> {
+        let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
+        let key = replica_key(group_id, replica_id);
+
+        let mut client = GroupClient::new(ROOT_GROUP_ID, self.provider.clone());
+        client.delete(shard_id, &key).await?;
+        Ok(())
     }
 }
 
