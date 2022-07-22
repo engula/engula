@@ -75,7 +75,7 @@ async fn move_shard(
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         for _ in 0..1000 {
-            if is_not_in_migration(&c, dest_group_id).await {
+            if is_not_in_migration(c, dest_group_id).await {
                 continue 'OUTER;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -284,13 +284,13 @@ async fn create_two_groups(
             shard_desc::RangePartition::default(),
         )),
     };
-    create_group(&c, group_id_1, nodes.clone(), vec![shard_desc.clone()]).await;
+    create_group(c, group_id_1, nodes.clone(), vec![shard_desc.clone()]).await;
 
     info!("insert data into group {} shard {}", group_id_1, shard_id);
-    insert(&c, group_id_1, shard_id, 0..num_keys).await;
+    insert(c, group_id_1, shard_id, 0..num_keys).await;
 
     info!("create group {} ", group_id_2);
-    create_group(&c, group_id_2, nodes, vec![]).await;
+    create_group(c, group_id_2, nodes, vec![]).await;
     (group_id_1, group_id_2, shard_desc)
 }
 
