@@ -110,7 +110,7 @@ impl ReconcileScheduler {
             for _ in 0..cnt {
                 self.setup_task(ReconcileTask {
                     task: Some(reconcile_task::Task::CreateGroup(CreateGroupTask {
-                        request_replica_cnt: cnt as u64,
+                        request_replica_cnt: self.ctx.alloc.replicas_per_group() as u64,
                         step: CreateGroupTaskStep::GroupInit as i32,
                         ..Default::default()
                     })),
