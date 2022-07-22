@@ -20,7 +20,7 @@ pub mod resolver;
 pub mod route_table;
 pub mod shard;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use engula_api::server::v1::*;
 use futures::{channel::mpsc, lock::Mutex};
@@ -433,26 +433,29 @@ impl Node {
             }
         };
 
-        match MigrateAction::from_i32(request.action) {
-            Some(MigrateAction::Setup) => {
-                match replica.setup_migration(&desc).await {
-                    Ok(()) => {}
-                    Err(Error::ServiceIsBusy(_)) => {
-                        // already exists a migration task
-                        todo!("handle already existed migration task");
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                };
+        loop {
+            match MigrateAction::from_i32(request.action) {
+                Some(MigrateAction::Setup) => {
+                    match replica.setup_migration(&desc).await {
+                        Ok(()) => {
+                            return Ok(MigrateResponse {});
+                        }
+                        Err(Error::ServiceIsBusy(_)) => {
+                            // already exists a migration task
+                            crate::runtime::time::sleep(Duration::from_micros(200)).await;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    };
+                }
+                Some(MigrateAction::Commit) => {
+                    replica.commit_migration(&desc).await?;
+                    return Ok(MigrateResponse {});
+                }
+                _ => return Err(Error::InvalidArgument("unknown action".to_owned())),
             }
-            Some(MigrateAction::Commit) => {
-                replica.commit_migration(&desc).await?;
-            }
-            _ => return Err(Error::InvalidArgument("unknown action".to_owned())),
         }
-
-        Ok(MigrateResponse {})
     }
 
     #[inline]
@@ -560,6 +563,39 @@ impl Node {
             replica_states: states,
             group_descs: descriptors,
         }
+    }
+
+    pub async fn collect_migration_state(
+        &self,
+        req: &CollectMigrationStateRequest,
+    ) -> CollectMigrationStateResponse {
+        use collect_migration_state_response::State;
+
+        let mut resp = CollectMigrationStateResponse {
+            state: State::None as i32,
+            desc: None,
+        };
+
+        let group_id = req.group;
+        if let Some(replica) = self.replica_route_table.find(group_id) {
+            if !replica.replica_info().is_terminated() {
+                if let Some(ms) = replica.migration_state() {
+                    let mut state = match MigrationStep::from_i32(ms.step) {
+                        Some(MigrationStep::Prepare) => State::Setup,
+                        Some(MigrationStep::Migrated) => State::Migrated,
+                        Some(MigrationStep::Migrating) => State::Migrating,
+                        _ => State::None,
+                    };
+                    if ms.migration_desc.is_none() {
+                        state = State::None;
+                    }
+                    resp.state = state as i32;
+                    resp.desc = ms.migration_desc;
+                }
+            }
+        }
+
+        resp
     }
 
     #[inline]

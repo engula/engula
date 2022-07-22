@@ -114,6 +114,11 @@ impl node_server::Node for Server {
                         self.node.collect_group_detail(&req).await,
                     )
                 }
+                piggyback_request::Info::CollectMigrationState(req) => {
+                    piggyback_response::Info::CollectMigrationState(
+                        self.node.collect_migration_state(&req).await,
+                    )
+                }
             };
             piggybacks_resps.push(PiggybackResponse { info: Some(info) });
         }

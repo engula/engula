@@ -49,7 +49,6 @@ pub enum GroupAction {
 
 #[derive(Clone, Debug)]
 pub enum ReplicaAction {
-    Noop,
     Migrate(ReallocateReplica),
 }
 

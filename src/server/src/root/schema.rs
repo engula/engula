@@ -15,7 +15,6 @@
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap},
     sync::Arc,
-    time::Duration,
 };
 
 use engula_api::{
@@ -26,12 +25,10 @@ use engula_api::{
     },
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
-use engula_client::{ConnManager, RequestBatchBuilder};
 use prost::Message;
-use tokio::time;
 use tracing::{info, warn};
 
-use super::{job::is_retry_err, store::RootStore};
+use super::store::RootStore;
 use crate::{
     bootstrap::*,
     client::GroupClient,
@@ -178,99 +175,6 @@ impl Schema {
         Ok(desc)
     }
 
-    pub async fn create_shards(
-        &self,
-        group_id: u64,
-        descs: Vec<ShardDesc>,
-        conn_manager: &ConnManager,
-    ) -> Result<()> {
-        let mut wait_create = descs.to_owned();
-        loop {
-            let mut desc = wait_create.pop();
-            if desc.is_none() {
-                break;
-            }
-            let desc = desc.take().unwrap();
-
-            let group = self
-                .get_group(group_id)
-                .await?
-                .ok_or(Error::GroupNotFound(group_id))?;
-            let epoch = group.epoch;
-
-            let mut group_leader = None;
-            for replica in &group.replicas {
-                if replica.role != ReplicaRole::Voter as i32 {
-                    continue;
-                }
-                if let Some(rs) = self.get_replica_state(group_id, replica.id).await? {
-                    if rs.role == RaftRole::Leader as i32 {
-                        group_leader = Some(replica);
-                        break;
-                    }
-                }
-            }
-            if group_leader.is_none() {
-                // TODO: retry
-                warn!(
-                    group = group_id,
-                    shard = desc.id,
-                    "no avaliable group leader, retry later"
-                );
-                time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-
-            let group_leader = group_leader.take().unwrap();
-            let node_id = group_leader.node_id;
-
-            let node = self.get_node(node_id).await?.unwrap();
-
-            if let Err(err) =
-                Self::try_create_shard(node_id, node.addr, group_id, epoch, &desc, conn_manager)
-                    .await
-            {
-                if is_retry_err(&err) {
-                    warn!(
-                        group = group_id,
-                        shard = desc.id,
-                        node = node_id,
-                        epoch = epoch,
-                        err = ?err,
-                        "create shard error, retry later"
-                    );
-                    time::sleep(Duration::from_secs(1)).await;
-                    wait_create.push(desc);
-                    continue;
-                } else {
-                    return Err(err);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn try_create_shard(
-        node_id: u64,
-        addr: String,
-        group_id: u64,
-        epoch: u64,
-        desc: &ShardDesc,
-        conn_manager: &ConnManager,
-    ) -> Result<()> {
-        let client = conn_manager.get_node_client(addr).await?;
-        let batch =
-            RequestBatchBuilder::new(node_id).create_shard(group_id, epoch, desc.to_owned());
-        let resps = client.batch_group_requests(batch.build()).await?;
-        for resp in resps {
-            if let Some(err) = resp.error {
-                return Err(err.into());
-            }
-        }
-        Ok(())
-    }
-
     pub async fn get_collection(
         &self,
         database: u64,
@@ -400,6 +304,11 @@ impl Schema {
         }
         self.batch_write(builder.build()).await?;
         Ok(())
+    }
+
+    pub async fn remove_replica_state(&self, group_id: u64, replica_id: u64) -> Result<()> {
+        let key = replica_key(group_id, replica_id);
+        self.delete(SYSTEM_REPLICA_STATE_COLLECTION_ID, &key).await
     }
 
     pub async fn get_group(&self, id: u64) -> Result<Option<GroupDesc>> {
@@ -929,12 +838,10 @@ impl Schema {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct RemoteStore {
     provider: Arc<Provider>,
 }
 
-#[allow(dead_code)]
 impl RemoteStore {
     pub(crate) fn new(provider: Arc<Provider>) -> Self {
         RemoteStore { provider }
@@ -952,6 +859,15 @@ impl RemoteStore {
             }
         }
         Ok(states)
+    }
+
+    pub async fn clear_replica_state(&self, group_id: u64, replica_id: u64) -> Result<()> {
+        let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
+        let key = replica_key(group_id, replica_id);
+
+        let mut client = GroupClient::new(ROOT_GROUP_ID, self.provider.clone());
+        client.delete(shard_id, &key).await?;
+        Ok(())
     }
 }
 
