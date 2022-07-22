@@ -19,14 +19,30 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::{server::v1::*, v1::PutRequest};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::block_on_current};
+use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
 
 #[ctor::ctor]
 fn init() {
     setup_panic_hook();
     tracing_subscriber::fmt::init();
+}
+
+async fn is_not_in_migration(c: &ClusterClient, dest_group_id: u64) -> bool {
+    use collect_migration_state_response::State;
+    if let Some(leader_node_id) = c.get_group_leader_node_id(dest_group_id).await {
+        if let Ok(resp) = c
+            .collect_migration_state(dest_group_id, leader_node_id)
+            .await
+        {
+            if resp.state == State::None as i32 {
+                // migration is finished or aborted.
+                return true;
+            }
+        }
+    }
+    false
 }
 
 async fn move_shard(
@@ -35,8 +51,6 @@ async fn move_shard(
     dest_group_id: u64,
     src_group_id: u64,
 ) {
-    use collect_migration_state_response::State;
-
     'OUTER: for _ in 0..10 {
         let src_group_epoch = c.must_group_epoch(src_group_id).await;
 
@@ -61,16 +75,8 @@ async fn move_shard(
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         for _ in 0..1000 {
-            if let Some(leader_node_id) = c.get_group_leader_node_id(dest_group_id).await {
-                if let Ok(resp) = c
-                    .collect_migration_state(dest_group_id, leader_node_id)
-                    .await
-                {
-                    if resp.state == State::None as i32 {
-                        // migration is finished or aborted.
-                        continue 'OUTER;
-                    }
-                }
+            if is_not_in_migration(c, dest_group_id).await {
+                continue 'OUTER;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -235,31 +241,57 @@ fn single_replica_migration() {
     });
 }
 
-async fn create_group(
-    c: &ClusterClient,
-    id: u64,
-    replica_ids: Vec<(u64, u64)>,
-    shards: Vec<ShardDesc>,
-) {
-    let replicas = replica_ids
+async fn create_group(c: &ClusterClient, group_id: u64, nodes: Vec<u64>, shards: Vec<ShardDesc>) {
+    let replicas = nodes
         .iter()
         .cloned()
-        .map(|(id, node_id)| ReplicaDesc {
-            id,
-            node_id,
-            role: ReplicaRole::Voter as i32,
+        .map(|node_id| {
+            let replica_id = group_id * 10 + node_id;
+            ReplicaDesc {
+                id: replica_id,
+                node_id,
+                role: ReplicaRole::Voter as i32,
+            }
         })
-        .collect();
+        .collect::<Vec<_>>();
     let group_desc = GroupDesc {
-        id,
+        id: group_id,
         shards,
-        replicas,
+        replicas: replicas.clone(),
         ..Default::default()
     };
-    for (replica_id, node_id) in replica_ids {
-        c.create_replica(node_id, replica_id, group_desc.clone())
+    for replica in replicas {
+        c.create_replica(replica.node_id, replica.id, group_desc.clone())
             .await;
     }
+}
+
+async fn create_two_groups(
+    c: &ClusterClient,
+    nodes: Vec<u64>,
+    num_keys: u64,
+) -> (u64, u64, ShardDesc) {
+    let group_id_1 = 100000;
+    let group_id_2 = 100001;
+    let shard_id = 10000000;
+
+    info!("create group {} with shard {}", group_id_1, shard_id,);
+
+    let shard_desc = ShardDesc {
+        id: shard_id,
+        collection_id: shard_id,
+        partition: Some(shard_desc::Partition::Range(
+            shard_desc::RangePartition::default(),
+        )),
+    };
+    create_group(c, group_id_1, nodes.clone(), vec![shard_desc.clone()]).await;
+
+    info!("insert data into group {} shard {}", group_id_1, shard_id);
+    insert(c, group_id_1, shard_id, 0..num_keys).await;
+
+    info!("create group {} ", group_id_2);
+    create_group(c, group_id_2, nodes, vec![]).await;
+    (group_id_1, group_id_2, shard_desc)
 }
 
 /// The basic migration test.
@@ -269,57 +301,11 @@ fn basic_migration() {
         let mut ctx = TestContext::new("basic-migration");
         ctx.disable_shard_balance();
         let nodes = ctx.bootstrap_servers(3).await;
+        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         let c = ClusterClient::new(nodes).await;
-        let node_1_id = 0;
-        let node_2_id = 1;
-        let node_3_id = 2;
+        let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids, 1000).await;
+        let shard_id = shard_desc.id;
 
-        let group_id_1 = 100000;
-        let group_id_2 = 100001;
-        let replica_1_1 = 1000001;
-        let replica_1_2 = 1000002;
-        let replica_1_3 = 1000003;
-        let replica_2_1 = 2000001;
-        let replica_2_2 = 2000002;
-        let replica_2_3 = 2000003;
-        let shard_id = 10000000;
-
-        info!("create group {} with shard {}", group_id_1, shard_id,);
-
-        let shard_desc = ShardDesc {
-            id: shard_id,
-            collection_id: shard_id,
-            partition: Some(shard_desc::Partition::Range(
-                shard_desc::RangePartition::default(),
-            )),
-        };
-        create_group(
-            &c,
-            group_id_1,
-            vec![
-                (replica_1_1, node_1_id),
-                (replica_1_2, node_2_id),
-                (replica_1_3, node_3_id),
-            ],
-            vec![shard_desc.clone()],
-        )
-        .await;
-
-        info!("insert data into group {} shard {}", group_id_1, shard_id);
-        insert(&c, group_id_1, shard_id, 0..1000).await;
-
-        info!("create group {} ", group_id_2);
-        create_group(
-            &c,
-            group_id_2,
-            vec![
-                (replica_2_1, node_1_id),
-                (replica_2_2, node_2_id),
-                (replica_2_3, node_3_id),
-            ],
-            vec![],
-        )
-        .await;
         info!(
             "issue accept shard {} request to group {}",
             shard_id, group_id_2
@@ -335,64 +321,19 @@ fn abort_migration() {
         let mut ctx = TestContext::new("abort-migration");
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
+        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         let c = ClusterClient::new(nodes).await;
-        let node_1_id = 0;
-        let node_2_id = 1;
-        let node_3_id = 2;
+        let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids, 0).await;
+        let shard_id = shard_desc.id;
 
-        let group_id_1 = 100000;
-        let group_id_2 = 100001;
-        let replica_1_1 = 1000001;
-        let replica_1_2 = 1000002;
-        let replica_1_3 = 1000003;
-        let replica_2_1 = 2000001;
-        let replica_2_2 = 2000002;
-        let replica_2_3 = 2000003;
-        let shard_id = 10000000;
-
-        info!("create group {} with shard {}", group_id_1, shard_id,);
-
-        let shard_desc = ShardDesc {
-            id: shard_id,
-            collection_id: shard_id,
-            partition: Some(shard_desc::Partition::Range(
-                shard_desc::RangePartition::default(),
-            )),
-        };
-        create_group(
-            &c,
-            group_id_1,
-            vec![
-                (replica_1_1, node_1_id),
-                (replica_1_2, node_2_id),
-                (replica_1_3, node_3_id),
-            ],
-            vec![shard_desc.clone()],
-        )
-        .await;
-
-        info!("create group {} ", group_id_2);
-        create_group(
-            &c,
-            group_id_2,
-            vec![
-                (replica_2_1, node_1_id),
-                (replica_2_2, node_2_id),
-                (replica_2_3, node_3_id),
-            ],
-            vec![],
-        )
-        .await;
         info!(
             "issue accept shard {} request to group {}",
             shard_id, group_id_2
         );
 
         let src_epoch = c.must_group_epoch(group_id_1).await;
-        let mut group_client = c.group(group_id_1);
-        group_client.transfer_leader(replica_1_1).await.unwrap();
-        group_client
-            .remove_replica(replica_1_3, node_3_id)
+        c.group(group_id_1)
+            .add_learner(123123, 1231231231)
             .await
             .unwrap();
 
@@ -405,12 +346,13 @@ fn abort_migration() {
 
         // It will be reject by service busy?
         // Ensure issue at least one shard migartion.
-        while group_client.accept_shard(req.clone()).await.is_err() {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+        while let Err(e) = group_client.accept_shard(req.clone()).await {
+            error!("accept shard: {e:?}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
         // Ensure the formar shard migration is aborted by epoch not match.
         while group_client.accept_shard(req.clone()).await.is_err() {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     });
 }
@@ -418,67 +360,108 @@ fn abort_migration() {
 #[test]
 fn migration_with_offline_peers() {
     block_on_current(async {
-        let mut ctx = TestContext::new("basic-migration");
+        let mut ctx = TestContext::new("migration-with-offline-peers");
         ctx.disable_shard_balance();
         let nodes = ctx.bootstrap_servers(3).await;
+        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         let c = ClusterClient::new(nodes).await;
-        let node_1_id = 0;
-        let node_2_id = 1;
-        let node_3_id = 2;
+        let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids.clone(), 0).await;
+        let shard_id = shard_desc.id;
 
-        let group_id_1 = 100000;
-        let group_id_2 = 100001;
-        let replica_1_1 = 1000001;
-        let replica_1_2 = 1000002;
-        let replica_1_3 = 1000003;
-        let replica_2_1 = 2000001;
-        let replica_2_2 = 2000002;
-        let replica_2_3 = 2000003;
-        let shard_id = 10000000;
-
-        info!("create group {} with shard {}", group_id_1, shard_id,);
-
-        let shard_desc = ShardDesc {
-            id: shard_id,
-            collection_id: shard_id,
-            partition: Some(shard_desc::Partition::Range(
-                shard_desc::RangePartition::default(),
-            )),
-        };
-        create_group(
-            &c,
-            group_id_1,
-            vec![
-                (replica_1_1, node_1_id),
-                (replica_1_2, node_2_id),
-                (replica_1_3, node_3_id),
-            ],
-            vec![shard_desc.clone()],
-        )
-        .await;
-
-        info!("insert data into group {} shard {}", group_id_1, shard_id);
-        insert(&c, group_id_1, shard_id, 0..1000).await;
-
-        info!("create group {} ", group_id_2);
-        create_group(
-            &c,
-            group_id_2,
-            vec![
-                (replica_2_1, node_1_id),
-                (replica_2_2, node_2_id),
-                (replica_2_3, node_3_id),
-            ],
-            vec![],
-        )
-        .await;
         info!(
             "issue accept shard {} request to group {}",
             shard_id, group_id_2
         );
 
-        ctx.stop_server(2).await;
+        ctx.stop_server(*node_ids.last().unwrap()).await;
 
         move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
+    });
+}
+
+#[test]
+fn source_group_receive_duplicate_accepting_shard_request() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("source-group-receive-duplicate-accepting-shard-request");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
+        let c = ClusterClient::new(nodes).await;
+        let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids.clone(), 0).await;
+
+        for _ in 0..10 {
+            let mut g = c.group(group_id_1);
+            let src_group_epoch = c.must_group_epoch(group_id_1).await;
+            let desc = MigrationDesc {
+                shard_desc: Some(shard_desc.clone()),
+                src_group_id: group_id_1,
+                src_group_epoch,
+                dest_group_id: group_id_2,
+                dest_group_epoch: 1,
+            };
+            match g.setup_migration(&desc).await {
+                Err(engula_server::Error::EpochNotMatch(_)) => {
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("setup migration receive: {e:?}"),
+            }
+            // retry
+            g.setup_migration(&desc).await.unwrap();
+
+            g.commit_migration(&desc).await.unwrap();
+            // retry
+            g.commit_migration(&desc).await.unwrap();
+            break;
+        }
+    });
+}
+
+#[test]
+fn source_group_receive_many_accepting_shard_request() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("source-group-receive-many-accpeting-shard-request");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
+        let c = ClusterClient::new(nodes).await;
+        let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids.clone(), 0).await;
+
+        for _ in 0..10 {
+            let mut g = c.group(group_id_1);
+            let src_group_epoch = c.must_group_epoch(group_id_1).await;
+            let desc = MigrationDesc {
+                shard_desc: Some(shard_desc.clone()),
+                src_group_id: group_id_1,
+                src_group_epoch,
+                dest_group_id: group_id_2,
+                dest_group_epoch: 1,
+            };
+            match g.setup_migration(&desc).await {
+                Err(engula_server::Error::EpochNotMatch(_)) => {
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("setup migration receive: {e:?}"),
+            }
+
+            let mut cloned_g = g.clone();
+            let diff_desc = MigrationDesc {
+                dest_group_id: 1231,
+                ..desc.clone()
+            };
+            let handle = spawn(async move {
+                // retry
+                assert!(matches!(
+                    cloned_g.setup_migration(&diff_desc).await,
+                    Err(engula_server::Error::EpochNotMatch(_))
+                ));
+            });
+
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            g.commit_migration(&desc).await.unwrap();
+            handle.await.unwrap();
+            break;
+        }
     });
 }

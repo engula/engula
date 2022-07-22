@@ -207,6 +207,8 @@ impl Replica {
             Err(Error::NotLeader(group_id, lease_state.leader_descriptor()))
         } else if matches!(event, MigrationEvent::Setup) {
             Self::check_migration_setup(self.info.as_ref(), &lease_state, desc)
+        } else if matches!(event, MigrationEvent::Commit) {
+            Self::check_migration_commit(self.info.as_ref(), &lease_state, desc)
         } else if lease_state.migration_state.is_none() {
             Err(Error::InvalidArgument(
                 "no such migration exists".to_owned(),
@@ -243,4 +245,52 @@ impl Replica {
             Ok(false)
         }
     }
+
+    fn check_migration_commit(
+        info: &ReplicaInfo,
+        lease_state: &LeaseState,
+        desc: &MigrationDesc,
+    ) -> Result<bool> {
+        let epoch = desc.src_group_epoch;
+        let shard_desc = desc.shard_desc.as_ref().unwrap();
+        if epoch < lease_state.descriptor.epoch
+            && is_migration_finished(shard_desc, &lease_state.descriptor)
+        {
+            info!(
+                replica = info.replica_id,
+                group = info.group_id,
+                %desc,
+                "this migration has been committed, skip commit request");
+            Ok(false)
+        } else if lease_state.migration_state.is_none() || !lease_state.is_same_migration(desc) {
+            info!(
+                "migration state is {:?}, descriptor {:?}",
+                lease_state.migration_state, lease_state.descriptor
+            );
+            Err(Error::InvalidArgument(
+                "no such migration exists".to_owned(),
+            ))
+        } else if lease_state.migration_state.as_ref().unwrap().step
+            == MigrationStep::Migrated as i32
+        {
+            info!(
+                replica = info.replica_id,
+                group = info.group_id,
+                %desc,
+                "this migration has been committed, skip commit request");
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+}
+
+fn is_migration_finished(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool {
+    // For source dest, if a shard is migrated, the shard desc should not exists.
+    for shard in &group_desc.shards {
+        if shard.id == shard_desc.id {
+            return false;
+        }
+    }
+    true
 }
