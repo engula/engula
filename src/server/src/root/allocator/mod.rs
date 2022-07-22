@@ -128,6 +128,11 @@ impl<T: AllocSource> Allocator<T> {
             config,
         }
     }
+
+    pub fn replicas_per_group(&self) -> usize {
+        self.config.replicas_per_group
+    }
+
     /// Compute group change action.
     pub async fn compute_group_action(&self) -> Result<GroupAction> {
         if !self.config.enable_group_balance {
