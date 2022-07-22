@@ -19,7 +19,7 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::{server::v1::*, v1::PutRequest};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::block_on_current};
 
@@ -29,20 +29,56 @@ fn init() {
     tracing_subscriber::fmt::init();
 }
 
-async fn accept_shard(
+async fn move_shard(
     c: &ClusterClient,
     shard_desc: &ShardDesc,
-    group_id: u64,
+    dest_group_id: u64,
     src_group_id: u64,
-    src_group_epoch: u64,
 ) {
-    let mut c = c.group(group_id);
-    let req = AcceptShardRequest {
-        src_group_id,
-        src_group_epoch,
-        shard_desc: Some(shard_desc.to_owned()),
-    };
-    c.accept_shard(req).await.unwrap();
+    use collect_migration_state_response::State;
+
+    'OUTER: for _ in 0..10 {
+        let src_group_epoch = c.must_group_epoch(src_group_id).await;
+
+        // Shard migration is finished.
+        if c.group_contains_shard(dest_group_id, shard_desc.id) {
+            return;
+        }
+
+        let mut g = c.group(dest_group_id);
+        let req = AcceptShardRequest {
+            src_group_id,
+            src_group_epoch,
+            shard_desc: Some(shard_desc.clone()),
+        };
+        if let Err(e) = g.accept_shard(req).await {
+            warn!(
+                "accept shard {} from {src_group_id} to {dest_group_id}: {e:?}",
+                shard_desc.id
+            );
+            continue;
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        for _ in 0..1000 {
+            if let Some(leader_node_id) = c.get_group_leader_node_id(dest_group_id).await {
+                if let Ok(resp) = c
+                    .collect_migration_state(dest_group_id, leader_node_id)
+                    .await
+                {
+                    if resp.state == State::None as i32 {
+                        // migration is finished or aborted.
+                        continue 'OUTER;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        panic!("migration task is timeout");
+    }
+
+    panic!("move shard is failed after 10 retries");
 }
 
 async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops::Range<u64>) {
@@ -123,12 +159,7 @@ fn single_replica_empty_shard_migration() {
             shard_id, group_id_2
         );
 
-        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(2);
-        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
-
-        c.assert_group_contains_shard(group_id_2, shard_id).await;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
     });
 }
 
@@ -200,12 +231,7 @@ fn single_replica_migration() {
             shard_id, group_id_2
         );
 
-        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(2);
-        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
-
-        c.assert_group_contains_shard(group_id_2, shard_id).await;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
     });
 }
 
@@ -299,12 +325,7 @@ fn basic_migration() {
             shard_id, group_id_2
         );
 
-        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
-        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
-
-        c.assert_group_contains_shard(group_id_2, shard_id).await;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
     });
 }
 
@@ -367,14 +388,13 @@ fn abort_migration() {
             shard_id, group_id_2
         );
 
-        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
+        let src_epoch = c.must_group_epoch(group_id_1).await;
         let mut group_client = c.group(group_id_1);
         group_client.transfer_leader(replica_1_1).await.unwrap();
         group_client
             .remove_replica(replica_1_3, node_3_id)
             .await
             .unwrap();
-        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
 
         let mut group_client = c.group(group_id_2);
         let req = AcceptShardRequest {
@@ -384,6 +404,11 @@ fn abort_migration() {
         };
 
         // It will be reject by service busy?
+        // Ensure issue at least one shard migartion.
+        while group_client.accept_shard(req.clone()).await.is_err() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        // Ensure the formar shard migration is aborted by epoch not match.
         while group_client.accept_shard(req.clone()).await.is_err() {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
@@ -454,11 +479,6 @@ fn migration_with_offline_peers() {
 
         ctx.stop_server(2).await;
 
-        let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
-        accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;
-
-        c.assert_group_contains_shard(group_id_2, shard_id).await;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
     });
 }

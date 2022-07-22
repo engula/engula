@@ -79,11 +79,12 @@ impl Root {
                     self.liveness.renew(n.id);
                     for resp in &res.piggybacks {
                         match resp.info.as_ref().unwrap() {
-                            piggyback_response::Info::SyncRoot(_) => {}
-                            piggyback_response::Info::CollectStats(resp) => {
+                            piggyback_response::Info::SyncRoot(_)
+                            | piggyback_response::Info::CollectMigrationState(_) => {}
+                            piggyback_response::Info::CollectStats(ref resp) => {
                                 self.handle_collect_stats(&schema, resp, n.id).await?
                             }
-                            piggyback_response::Info::CollectGroupDetail(resp) => {
+                            piggyback_response::Info::CollectGroupDetail(ref resp) => {
                                 self.handle_group_detail(&schema, resp).await?
                             }
                         }
