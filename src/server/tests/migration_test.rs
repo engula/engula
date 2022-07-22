@@ -447,12 +447,18 @@ fn migration_with_offline_peers() {
             vec![],
         )
         .await;
+
+        info!("transfer source group {group_id_1} leader to node {node_3_id}",);
+        let mut group_client = c.group(group_id_1);
+        group_client.transfer_leader(replica_1_3).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        insert(&c, group_id_1, shard_id, 1000..1010).await;
+
         info!(
-            "issue accept shard {} request to group {}",
-            shard_id, group_id_2
+            "shutdown node {node_3_id} and issue accept shard {shard_id} request to group {group_id_2}",
         );
 
-        ctx.stop_server(2).await;
+        ctx.stop_server(node_3_id).await;
 
         let src_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
         accept_shard(&c, &shard_desc, group_id_2, group_id_1, src_epoch).await;

@@ -182,6 +182,10 @@ impl GroupClient {
                 }
                 Ok(())
             }
+            Error::Rpc(status) if status.code() == tonic::Code::Unavailable => {
+                self.leader_node_id = None;
+                Ok(())
+            }
             e => Err(e),
         }
     }
