@@ -562,6 +562,39 @@ impl Node {
         }
     }
 
+    pub async fn collect_migration_state(
+        &self,
+        req: &CollectMigrationStateRequest,
+    ) -> CollectMigrationStateResponse {
+        use collect_migration_state_response::State;
+
+        let mut resp = CollectMigrationStateResponse {
+            state: State::None as i32,
+            desc: None,
+        };
+
+        let group_id = req.group;
+        if let Some(replica) = self.replica_route_table.find(group_id) {
+            if !replica.replica_info().is_terminated() {
+                if let Some(ms) = replica.migration_state() {
+                    let mut state = match MigrationStep::from_i32(ms.step) {
+                        Some(MigrationStep::Prepare) => State::Setup,
+                        Some(MigrationStep::Migrated) => State::Migrated,
+                        Some(MigrationStep::Migrating) => State::Migrating,
+                        _ => State::None,
+                    };
+                    if ms.migration_desc.is_none() {
+                        state = State::None;
+                    }
+                    resp.state = state as i32;
+                    resp.desc = ms.migration_desc;
+                }
+            }
+        }
+
+        resp
+    }
+
     #[inline]
     async fn serving_group_id_list(&self) -> Vec<u64> {
         let node_state = self.node_state.lock().await;

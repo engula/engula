@@ -204,6 +204,7 @@ message PiggybackRequest {
     SyncRootRequest sync_root = 1;
     CollectStatsRequest collect_stats = 2;
     CollectGroupDetailRequest collect_group_detail = 3;
+    CollectMigrationStateRequest collect_migration_state = 4;
   }
 }
 
@@ -212,6 +213,7 @@ message PiggybackResponse {
     SyncRootResponse sync_root = 1;
     CollectStatsResponse collect_stats = 2;
     CollectGroupDetailResponse collect_group_detail = 3;
+    CollectMigrationStateResponse collect_migration_state = 4;
   }
 }
 
@@ -262,6 +264,20 @@ message CollectGroupDetailResponse {
   /// If a replica is the leader of group, it also needs to be responsible for
   /// filling in the `GroupDesc`.
   repeated GroupDesc group_descs = 2;
+}
+
+message CollectMigrationStateRequest { uint64 group = 1; }
+
+message CollectMigrationStateResponse {
+  enum State {
+    NONE = 0;
+    SETUP = 1;
+    MIGRATING = 2;
+    MIGRATED = 3;
+  }
+
+  State state = 1;
+  MigrationDesc desc = 2;
 }
 
 message PullRequest {

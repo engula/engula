@@ -393,6 +393,17 @@ impl ClusterClient {
             .and_then(|s| s.leader_id)
     }
 
+    pub async fn get_group_leader_node_id(&self, group_id: u64) -> Option<u64> {
+        if let Ok(state) = self.router.find_group(group_id) {
+            for (_, replica) in state.replicas {
+                if matches!(state.leader_id, Some(v) if v == replica.id) {
+                    return Some(replica.node_id);
+                }
+            }
+        }
+        None
+    }
+
     pub async fn assert_group_leader(&self, group_id: u64) -> u64 {
         for _ in 0..10000 {
             if let Some(leader) = self.get_group_leader(group_id).await {
@@ -408,17 +419,65 @@ impl ClusterClient {
         self.router.find_group(group_id).ok().and_then(|s| s.epoch)
     }
 
+    pub async fn must_group_epoch(&self, group_id: u64) -> u64 {
+        for _ in 0..1000 {
+            if let Some(epoch) = self.get_group_epoch(group_id) {
+                return epoch;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("no such group {group_id} exists");
+    }
+
+    pub fn group_contains_shard(&self, group_id: u64, shard_id: u64) -> bool {
+        if let Ok(state) = self.router.find_group_by_shard(shard_id) {
+            if state.id == group_id {
+                return true;
+            }
+        }
+        false
+    }
+
     pub async fn assert_group_contains_shard(&self, group_id: u64, shard_id: u64) {
         for _ in 0..10000 {
-            if let Ok(state) = self.router.find_group_by_shard(shard_id) {
-                if state.id == group_id {
-                    return;
-                }
+            if self.group_contains_shard(group_id, shard_id) {
+                return;
             }
 
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("group {group_id} is not contains shard {shard_id}");
+    }
+
+    pub async fn collect_migration_state(
+        &self,
+        group_id: u64,
+        node_id: u64,
+    ) -> Result<CollectMigrationStateResponse> {
+        let node_addr = self.nodes.get(&node_id).unwrap();
+        let client = node_client_with_retry(node_addr).await;
+        let resp = client
+            .root_heartbeat(HeartbeatRequest {
+                timestamp: 0,
+                piggybacks: vec![PiggybackRequest {
+                    info: Some(piggyback_request::Info::CollectMigrationState(
+                        CollectMigrationStateRequest { group: group_id },
+                    )),
+                }],
+            })
+            .await?;
+        for resp in &resp.piggybacks {
+            match resp.info.as_ref().unwrap() {
+                piggyback_response::Info::SyncRoot(_)
+                | piggyback_response::Info::CollectStats(_)
+                | piggyback_response::Info::CollectGroupDetail(_) => {}
+                piggyback_response::Info::CollectMigrationState(resp) => {
+                    return Ok(resp.clone());
+                }
+            }
+        }
+        panic!("collect_migration_state have't received response");
     }
 
     pub async fn collect_replica_state(
@@ -443,8 +502,9 @@ impl ClusterClient {
             .unwrap();
         for resp in &resp.piggybacks {
             match resp.info.as_ref().unwrap() {
-                piggyback_response::Info::SyncRoot(_) => {}
-                piggyback_response::Info::CollectStats(resp) => {}
+                piggyback_response::Info::SyncRoot(_)
+                | piggyback_response::Info::CollectStats(_)
+                | piggyback_response::Info::CollectMigrationState(_) => {}
                 piggyback_response::Info::CollectGroupDetail(resp) => {
                     for state in &resp.replica_states {
                         if state.group_id == group_id {

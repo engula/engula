@@ -221,6 +221,11 @@ impl Replica {
     pub fn group_engine(&self) -> GroupEngine {
         self.group_engine.clone()
     }
+
+    #[inline]
+    pub fn migration_state(&self) -> Option<MigrationState> {
+        self.lease_state.lock().unwrap().migration_state.clone()
+    }
 }
 
 impl Replica {
