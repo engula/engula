@@ -14,22 +14,41 @@
 
 use tonic::codegen::*;
 
-use crate::root::Root;
+use crate::Server;
 
 pub(super) struct MetadataHandle {
-    root: Root,
+    server: Server,
 }
 
 impl MetadataHandle {
-    pub fn new(root: Root) -> Self {
-        Self { root }
+    pub fn new(server: Server) -> Self {
+        Self { server }
     }
 }
 
 #[crate::async_trait]
 impl super::service::HttpHandle for MetadataHandle {
-    async fn call(&self) -> crate::Result<http::Response<String>> {
-        let info = self.root.info().await?;
+    async fn call(&self, path: &str) -> crate::Result<http::Response<String>> {
+        let info = match self.server.root.info().await {
+            Ok(info) => info,
+            Err(e @ crate::Error::NotRootLeader(..)) => {
+                let root_desc = self.server.node.get_root().await;
+                let node = root_desc.root_nodes.get(0);
+                if node.is_none() {
+                    return Err(e);
+                }
+                let resp = http::Response::builder()
+                    .status(http::StatusCode::PERMANENT_REDIRECT)
+                    .header(
+                        http::header::LOCATION,
+                        format!("http://{}{}", node.unwrap().addr, path),
+                    )
+                    .body("".into())
+                    .unwrap();
+                return Ok(resp);
+            }
+            Err(e) => return Err(e),
+        };
         Ok(http::Response::builder()
             .status(http::StatusCode::OK)
             .body(info)
