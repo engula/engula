@@ -29,7 +29,7 @@ use crate::{conn_manager::ConnManager, discovery::ServiceDiscovery, NodeClient, 
 #[derive(thiserror::Error, Debug)]
 enum RootError {
     #[error("not root")]
-    NotRoot(RootDesc, Option<ReplicaDesc>),
+    NotRoot(RootDesc, u64, Option<ReplicaDesc>),
     #[error("not available")]
     NotAvailable,
     #[error("rpc")]
@@ -61,6 +61,7 @@ struct ClientShared {
 struct ClientCore {
     /// The id of node which serve leader replica.
     leader: Option<usize>,
+    term: u64,
     root: Arc<RootDesc>,
 }
 
@@ -72,6 +73,7 @@ impl Client {
                 conn_manager,
                 core: Mutex::new(ClientCore {
                     leader: None,
+                    term: 0,
                     root: Arc::default(),
                 }),
                 refresh_descriptor_lock: Mutex::new(0),
@@ -160,16 +162,18 @@ impl Client {
                             leader_node.addr
                         );
                     }
-                    Err(RootError::NotRoot(root, leader_opt)) => {
+                    Err(RootError::NotRoot(root, term, leader_opt)) => {
                         if core.root.epoch <= root.epoch {
                             // A new round is found, retry next times.
                             core.leader = None;
                             core.root = Arc::new(root);
                             if let Some(leader) = leader_opt {
-                                // Since leader exists, we don't need to iterate root nodes.
-                                core.apply_leader(leader);
-                                save_core = true;
-                                continue 'OUTER;
+                                if core.term < term {
+                                    // Since leader exists, we don't need to iterate root nodes.
+                                    core.apply_leader(leader, term);
+                                    save_core = true;
+                                    continue 'OUTER;
+                                }
                             }
                         }
                     }
@@ -196,14 +200,16 @@ impl Client {
                     Err(RootError::NotAvailable) => {
                         // Connect timeout or refused, try next address.
                     }
-                    Err(RootError::NotRoot(root, leader_opt)) => {
+                    Err(RootError::NotRoot(root, term, leader_opt)) => {
                         if core.root.epoch < root.epoch {
                             // A new root desc is found, iterate the new root nodes.
                             core.leader = None;
                             core.root = Arc::new(root);
                             if let Some(leader) = leader_opt {
-                                core.apply_leader(leader);
-                                save_core = true;
+                                if core.term < term {
+                                    core.apply_leader(leader, term);
+                                    save_core = true;
+                                }
                             }
                             continue 'OUTER;
                         }
@@ -278,10 +284,11 @@ impl Client {
 }
 
 impl ClientCore {
-    fn apply_leader(&mut self, leader: ReplicaDesc) {
+    fn apply_leader(&mut self, leader: ReplicaDesc, term: u64) {
         for (idx, node) in self.root.root_nodes.iter().enumerate() {
             if node.id == leader.node_id {
                 self.leader = Some(idx);
+                self.term = term;
                 break;
             }
         }
@@ -429,7 +436,7 @@ impl AdminResponseExtractor {
     }
 }
 
-fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, Option<ReplicaDesc>)> {
+fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, u64, Option<ReplicaDesc>)> {
     use error_detail_union::Value;
     if status.code() == Code::Unknown && !status.details().is_empty() {
         if let Ok(err) = Error::decode(status.details()) {
@@ -439,7 +446,11 @@ fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, Option<R
                 if let Some(Value::NotRoot(not_root)) =
                     detail.detail.as_ref().and_then(|u| u.value.clone())
                 {
-                    return Some((not_root.root.unwrap_or_default(), not_root.leader));
+                    return Some((
+                        not_root.root.unwrap_or_default(),
+                        not_root.term,
+                        not_root.leader,
+                    ));
                 }
             }
         }
@@ -468,9 +479,9 @@ where
                         Err(status.into())
                     }
                 } else {
-                    let (root, leader_opt) = extract_root_descriptor(&status)
+                    let (root, term, leader_opt) = extract_root_descriptor(&status)
                         .ok_or_else(|| <Status as Into<RootError>>::into(status))?;
-                    Err(RootError::NotRoot(root, leader_opt))
+                    Err(RootError::NotRoot(root, term, leader_opt))
                 }
             }
             _ => Err(status.into()),

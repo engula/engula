@@ -46,7 +46,7 @@ pub struct State {
 pub struct RouterGroupState {
     pub id: u64,
     pub epoch: u64,
-    pub leader_id: Option<u64>,
+    pub leader_state: Option<(/* id */ u64, /* term */ u64)>,
     pub replicas: HashMap<u64, ReplicaDesc>,
 }
 
@@ -222,13 +222,13 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                     let mut group_state = RouterGroupState {
                         id,
                         epoch,
-                        leader_id: None,
+                        leader_state: None,
                         replicas,
                     };
                     if let Some(old_state) = state.group_id_lookup.get(&id) {
-                        group_state.leader_id = old_state.leader_id;
+                        group_state.leader_state = old_state.leader_state;
                     } else if let Some(cached_state) = cached_group_states.remove(&id) {
-                        group_state.leader_id = cached_state.leader_id;
+                        group_state.leader_state = leader_state(&cached_state);
                     }
                     state.group_id_lookup.insert(id, group_state);
 
@@ -250,7 +250,7 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                 UpdateEvent::GroupState(group_state) => {
                     let id = group_state.group_id;
                     if let Some(group) = state.group_id_lookup.get_mut(&id) {
-                        group.leader_id = group_state.leader_id;
+                        group.leader_state = leader_state(&group_state);
                     } else {
                         cached_group_states.insert(id, group_state);
                     }
@@ -301,5 +301,18 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                 }
             }
         }
+    }
+}
+
+#[inline]
+fn leader_state(group_state: &GroupState) -> Option<(u64, u64)> {
+    if let Some(leader_id) = group_state.leader_id {
+        group_state
+            .replicas
+            .iter()
+            .find(|r| r.replica_id == leader_id)
+            .map(|r| (leader_id, r.term))
+    } else {
+        None
     }
 }

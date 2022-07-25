@@ -133,13 +133,14 @@ impl ClusterClient {
         self.router
             .find_group(group_id)
             .ok()
-            .and_then(|s| s.leader_id)
+            .and_then(|s| s.leader_state)
+            .map(|s| s.0)
     }
 
     pub async fn get_group_leader_node_id(&self, group_id: u64) -> Option<u64> {
         if let Ok(state) = self.router.find_group(group_id) {
             for (_, replica) in state.replicas {
-                if matches!(state.leader_id, Some(v) if v == replica.id) {
+                if matches!(state.leader_state, Some(v) if v.0 == replica.id) {
                     return Some(replica.node_id);
                 }
             }

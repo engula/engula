@@ -185,6 +185,7 @@ impl Replica {
         if !lease_state.is_ready_for_serving() {
             Err(Error::NotLeader(
                 self.info.group_id,
+                lease_state.applied_term,
                 lease_state.leader_descriptor(),
             ))
         } else if !lease_state.is_migrating_shard(shard_id) {
@@ -204,7 +205,11 @@ impl Replica {
 
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_ready_for_serving() {
-            Err(Error::NotLeader(group_id, lease_state.leader_descriptor()))
+            Err(Error::NotLeader(
+                group_id,
+                lease_state.applied_term,
+                lease_state.leader_descriptor(),
+            ))
         } else if matches!(event, MigrationEvent::Setup) {
             Self::check_migration_setup(self.info.as_ref(), &lease_state, desc)
         } else if matches!(event, MigrationEvent::Commit) {

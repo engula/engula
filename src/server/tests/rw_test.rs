@@ -166,7 +166,7 @@ fn operation_with_leader_transfer() {
                     .find_router_group_state_by_key(&co.desc(), k.as_slice())
                     .await
                     .unwrap();
-                let leader_id = state.leader_id.unwrap();
+                let leader_id = state.leader_state.unwrap().0;
                 for (id, replica) in state.replicas {
                     if id != leader_id && replica.role == ReplicaRole::Voter as i32 {
                         info!(

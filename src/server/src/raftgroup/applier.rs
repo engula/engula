@@ -223,7 +223,7 @@ impl<M: StateMachine> Applier<M> {
                 ctx.sender.send(Ok(())).unwrap_or_default();
             } else {
                 ctx.sender
-                    .send(Err(Error::NotLeader(self.group_id, None)))
+                    .send(Err(Error::NotLeader(self.group_id, term, None)))
                     .unwrap_or_default();
             }
         }

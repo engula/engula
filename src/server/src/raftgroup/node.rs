@@ -130,7 +130,11 @@ where
     ) {
         if self.raw_node.raft.state != StateRole::Leader {
             sender
-                .send(Err(Error::NotLeader(self.group_id, None)))
+                .send(Err(Error::NotLeader(
+                    self.group_id,
+                    self.raw_node.raft.term,
+                    None,
+                )))
                 .unwrap_or_default();
             return;
         }
@@ -153,7 +157,11 @@ where
     ) {
         if self.raw_node.raft.state != StateRole::Leader {
             sender
-                .send(Err(Error::NotLeader(self.group_id, None)))
+                .send(Err(Error::NotLeader(
+                    self.group_id,
+                    self.raw_node.raft.term,
+                    None,
+                )))
                 .unwrap_or_default();
             return;
         }
@@ -203,8 +211,12 @@ where
             let requests = std::mem::take(&mut self.lease_read_requests);
             if self.raw_node.raft.state != StateRole::Leader {
                 for req in requests {
-                    req.send(Err(Error::NotLeader(self.group_id, None)))
-                        .unwrap_or_default();
+                    req.send(Err(Error::NotLeader(
+                        self.group_id,
+                        self.raw_node.raft.term,
+                        None,
+                    )))
+                    .unwrap_or_default();
                 }
             } else {
                 debug_assert!(self.raw_node.raft.commit_to_current_term());

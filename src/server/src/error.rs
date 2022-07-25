@@ -79,10 +79,14 @@ pub enum Error {
     GroupNotFound(u64),
 
     #[error("not root leader")]
-    NotRootLeader(RootDesc, Option<ReplicaDesc>),
+    NotRootLeader(RootDesc, u64, Option<ReplicaDesc>),
 
     #[error("not leader of group {0}")]
-    NotLeader(u64, Option<ReplicaDesc>),
+    NotLeader(
+        /* group_id */ u64,
+        /* term */ u64,
+        Option<ReplicaDesc>,
+    ),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -105,17 +109,17 @@ impl From<Error> for tonic::Status {
                 e.to_string(),
                 v1::Error::group_not_found(group_id).encode_to_vec().into(),
             ),
-            Error::NotLeader(group_id, leader) => Status::with_details(
+            Error::NotLeader(group_id, term, leader) => Status::with_details(
                 Code::Unknown,
                 format!("not leader of group {}", group_id),
-                v1::Error::not_leader(group_id, leader)
+                v1::Error::not_leader(group_id, term, leader)
                     .encode_to_vec()
                     .into(),
             ),
-            Error::NotRootLeader(root, leader) => Status::with_details(
+            Error::NotRootLeader(root, term, leader) => Status::with_details(
                 Code::Unknown,
                 "not root",
-                v1::Error::not_root_leader(root, leader)
+                v1::Error::not_root_leader(root, term, leader)
                     .encode_to_vec()
                     .into(),
             ),
@@ -168,8 +172,12 @@ impl From<Error> for engula_api::server::v1::Error {
 
         match err {
             Error::GroupNotFound(group_id) => v1::Error::group_not_found(group_id),
-            Error::NotLeader(group_id, leader) => v1::Error::not_leader(group_id, leader),
-            Error::NotRootLeader(root, leader) => v1::Error::not_root_leader(root, leader),
+            Error::NotLeader(group_id, term, leader) => {
+                v1::Error::not_leader(group_id, term, leader)
+            }
+            Error::NotRootLeader(root, term, leader) => {
+                v1::Error::not_root_leader(root, term, leader)
+            }
             Error::EpochNotMatch(desc) => v1::Error::not_match(desc),
 
             Error::InvalidArgument(msg) => v1::Error::status(Code::InvalidArgument.into(), msg),
@@ -212,8 +220,12 @@ impl From<engula_client::Error> for Error {
             engula_client::Error::Rpc(err) => Error::Rpc(err),
 
             engula_client::Error::GroupNotFound(v) => Error::GroupNotFound(v),
-            engula_client::Error::NotRootLeader(desc, leader) => Error::NotRootLeader(desc, leader),
-            engula_client::Error::NotLeader(group, leader) => Error::NotLeader(group, leader),
+            engula_client::Error::NotRootLeader(desc, term, leader) => {
+                Error::NotRootLeader(desc, term, leader)
+            }
+            engula_client::Error::NotLeader(group, term, leader) => {
+                Error::NotLeader(group, term, leader)
+            }
             engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
 
             // FIXME(walter) handle unknown errors.
