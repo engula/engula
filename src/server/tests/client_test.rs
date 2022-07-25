@@ -121,3 +121,36 @@ fn access_not_exists_database_or_collection() {
         assert!(matches!(r, Some(Ok(v)) if v == "value"));
     });
 }
+
+#[test]
+fn request_to_offline_leader() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("client_test__request_to_offline_leader");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let client = c.app_client().await;
+        let db = client.create_database("test_db".to_string()).await.unwrap();
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
+            .await
+            .unwrap();
+
+        for i in 0..1000 {
+            let k = format!("key-{i}").as_bytes().to_vec();
+            let v = format!("value-{i}").as_bytes().to_vec();
+            co.put(k.clone(), v).await.unwrap();
+            let r = co.get(k).await.unwrap();
+            let r = r.map(String::from_utf8);
+            assert!(matches!(r, Some(Ok(v)) if v == format!("value-{i}")));
+            if i == 100 {
+                let state = c
+                    .find_router_group_state_by_key(&co.desc(), b"key")
+                    .await
+                    .unwrap();
+                let node_id = c.get_group_leader_node_id(state.id).await.unwrap();
+                ctx.stop_server(node_id).await;
+            }
+        }
+    })
+}
