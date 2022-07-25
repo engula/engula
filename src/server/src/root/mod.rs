@@ -659,18 +659,22 @@ impl Root {
     pub async fn alloc_replica(
         &self,
         group_id: u64,
+        epoch: u64,
         requested_cnt: u64,
     ) -> Result<Vec<ReplicaDesc>> {
         let schema = self.schema()?;
-        let mut existing_replicas = match schema.get_group(group_id).await? {
-            Some(desc) => desc.replicas,
-            None => {
-                return Err(Error::GroupNotFound(group_id));
-            }
+        let group_desc = schema
+            .get_group(group_id)
+            .await?
+            .ok_or(Error::GroupNotFound(group_id))?;
+        if group_desc.epoch != epoch {
+            return Err(Error::InvalidArgument("epoch not match".to_owned()));
         }
-        .into_iter()
-        .map(|r| r.node_id)
-        .collect::<HashSet<u64>>();
+        let mut existing_replicas = group_desc
+            .replicas
+            .into_iter()
+            .map(|r| r.node_id)
+            .collect::<HashSet<u64>>();
         let replica_states = schema.group_replica_states(group_id).await?;
         for replica in replica_states {
             existing_replicas.insert(replica.node_id);
@@ -687,6 +691,9 @@ impl Root {
                 requested_cnt as usize,
             )
             .await?;
+        if nodes.len() != requested_cnt as usize {
+            return Err(Error::ResourceExhausted("no enough nodes".to_owned()));
+        }
 
         let mut replicas = Vec::with_capacity(nodes.len());
         for n in &nodes {

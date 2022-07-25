@@ -51,6 +51,9 @@ pub enum Error {
     #[error("{0} not found")]
     NotFound(String),
 
+    #[error("{0} is exhausted")]
+    ResourceExhausted(String),
+
     #[error("group epoch not match")]
     EpochNotMatch(GroupDesc),
 
@@ -81,6 +84,7 @@ impl From<tonic::Status> for Error {
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
             Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
             Code::AlreadyExists => Error::AlreadyExists(status.message().into()),
+            Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
             Code::Internal => Error::Internal(status.message().into()),
             Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
@@ -126,6 +130,7 @@ impl From<Error> for AppError {
             Error::Rpc(status) => panic!("unknown error: {status:?}"),
 
             Error::EpochNotMatch(_)
+            | Error::ResourceExhausted(_)
             | Error::GroupNotFound(_)
             | Error::NotRootLeader(_, _)
             | Error::NotLeader(_, _) => unreachable!(),
