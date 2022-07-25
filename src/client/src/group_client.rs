@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::HashMap, future::Future, io::ErrorKind, sync::Arc, task::Poll, time::Duration,
-};
+use std::{collections::HashMap, future::Future, io::ErrorKind, task::Poll, time::Duration};
 
-use engula_api::server::v1::{group_response_union::Response, *};
-use engula_client::{NodeClient, RequestBatchBuilder};
+use engula_api::{
+    server::v1::{group_request_union::Request, group_response_union::Response, *},
+    shard,
+};
 use futures::{FutureExt, StreamExt};
 use tonic::{Code, Status};
-use tracing::warn;
+use tracing::{debug, trace, warn};
 
-use crate::{Error, Provider, Result};
+use crate::{ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router};
 
 pub struct RetryableShardChunkStreaming<'a> {
     shard_id: u64,
@@ -31,31 +31,42 @@ pub struct RetryableShardChunkStreaming<'a> {
     streaming: tonic::Streaming<ShardChunk>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct InvokeOpt<'a> {
+    request: Option<&'a Request>,
+    accurate_epoch: bool,
+}
+
+#[derive(Clone)]
 pub struct GroupClient {
     group_id: u64,
+    router: Router,
+    conn_manager: ConnManager,
+
+    epoch: u64,
+    replicas: Vec<ReplicaDesc>,
+
+    // Cache the access node id to avoid polling again.
+    access_node_id: Option<u64>,
+    next_access_index: usize,
 
     /// Node id to node client.
     node_clients: HashMap<u64, NodeClient>,
-
-    epoch: u64,
-    leader_node_id: Option<u64>,
-    replicas: Vec<ReplicaDesc>,
-    next_access_index: usize,
-
-    provider: Arc<Provider>,
 }
 
 impl GroupClient {
-    pub(crate) fn new(group_id: u64, provider: Arc<Provider>) -> Self {
+    pub fn new(group_id: u64, router: Router, conn_manager: ConnManager) -> Self {
         GroupClient {
             group_id,
 
             node_clients: HashMap::default(),
             epoch: 0,
-            leader_node_id: None,
+            access_node_id: None,
             replicas: Vec::default(),
             next_access_index: 0,
-            provider,
+
+            router,
+            conn_manager,
         }
     }
 
@@ -64,73 +75,77 @@ impl GroupClient {
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
-        self.invoke_opt(op, false).await
+        self.invoke_opt(op, InvokeOpt::default()).await
     }
 
-    async fn invoke_opt<F, O, V>(&mut self, op: F, accurate_epoch: bool) -> Result<V>
+    async fn invoke_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
     where
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
-        loop {
-            let client = self.recommend_client().await;
-            match op(
-                self.group_id,
-                self.epoch,
-                self.leader_node_id.unwrap_or_default(),
-                client,
-            )
-            .await
-            {
+        // FIXME(walter) support timeout
+        for _ in 0..4 {
+            let (node_id, client) = self.recommend_client().await;
+            trace!("issue rpc request to node {node_id}");
+            match op(self.group_id, self.epoch, node_id, client).await {
                 Ok(s) => return Ok(s),
                 Err(status) => {
-                    self.apply_status(status, accurate_epoch).await?;
+                    self.apply_status(status, &opt).await?;
                 }
             }
         }
+
+        // FIXME(walter) support timeout
+        Err(Error::EpochNotMatch(GroupDesc::default()))
     }
 
-    async fn recommend_client(&mut self) -> NodeClient {
+    async fn recommend_client(&mut self) -> (u64, NodeClient) {
         let mut interval = 1;
         loop {
-            let recommend_node_id = self.leader_node_id.or_else(|| self.next_access_node_id());
+            if self.replicas.len() <= self.next_access_index {
+                self.refresh_group_state();
+            }
 
+            let recommend_node_id = self.access_node_id.or_else(|| self.next_access_node_id());
             if let Some(node_id) = recommend_node_id {
                 if let Some(client) = self.fetch_client(node_id).await {
-                    // Pretend that the current node is the leader. If this request is successful,
-                    // subsequent requests can directly use it as the leader, otherwise it will be
-                    // reset in `apply_status`.
-                    if self.leader_node_id.is_none() {
-                        self.leader_node_id = Some(node_id);
-                    }
-                    return client;
+                    self.access_node_id = Some(node_id);
+                    return (node_id, client);
                 }
             }
 
+            self.access_node_id = None;
+
+            // Sleep before the next round to avoid busy requests.
             tokio::time::sleep(Duration::from_millis(interval)).await;
             interval = std::cmp::max(interval * 2, 1000);
         }
     }
 
-    fn next_access_node_id(&mut self) -> Option<u64> {
-        self.leader_node_id = None;
-        if self.replicas.is_empty() {
-            if let Ok(group) = self.provider.router.find_group(self.group_id) {
-                self.epoch = group.epoch.unwrap_or_default();
-                self.leader_node_id = group
-                    .replicas
-                    .get(&group.leader_id.unwrap_or_default())
-                    .map(|r| r.node_id);
+    fn refresh_group_state(&mut self) {
+        self.next_access_index = 0;
+        if let Ok(group) = self.router.find_group(self.group_id) {
+            if self.epoch < group.epoch {
+                let mut leader_node_id = None;
+                if let Some(leader_id) = group.leader_id {
+                    if let Some(desc) = group.replicas.get(&leader_id) {
+                        leader_node_id = Some(desc.node_id);
+                    }
+                };
+                self.epoch = group.epoch;
                 self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
-                if self.leader_node_id.is_some() {
-                    return self.leader_node_id;
+                if let Some(node_id) = leader_node_id {
+                    move_node_to_first_element(&mut self.replicas, node_id);
                 }
             }
         }
+    }
 
-        if !self.replicas.is_empty() {
+    /// Return the next node id, skip the leader node.
+    fn next_access_node_id(&mut self) -> Option<u64> {
+        if self.next_access_index < self.replicas.len() {
             let replica_desc = &self.replicas[self.next_access_index];
-            self.next_access_index = (self.next_access_index + 1) % self.replicas.len();
+            self.next_access_index += 1;
             Some(replica_desc.node_id)
         } else {
             None
@@ -142,14 +157,10 @@ impl GroupClient {
             return Some(client.clone());
         }
 
-        if let Ok(addr) = self.provider.router.find_node_addr(node_id) {
-            match self
-                .provider
-                .conn_manager
-                .get_node_client(addr.clone())
-                .await
-            {
+        if let Ok(addr) = self.router.find_node_addr(node_id) {
+            match self.conn_manager.get_node_client(addr.clone()).await {
                 Ok(client) => {
+                    trace!("connect node {node_id} with addr {addr}");
                     self.node_clients.insert(node_id, client.clone());
                     return Some(client);
                 }
@@ -164,116 +175,103 @@ impl GroupClient {
         None
     }
 
-    async fn apply_status(&mut self, status: tonic::Status, accurate_epoch: bool) -> Result<()> {
+    async fn apply_status(&mut self, status: tonic::Status, opt: &InvokeOpt<'_>) -> Result<()> {
         match Error::from(status) {
             Error::GroupNotFound(_) => {
-                self.leader_node_id = None;
+                debug!("group client issue rpc: group {} not found", self.group_id);
+                self.access_node_id = None;
                 Ok(())
             }
-            Error::NotLeader(_, replica_desc) => {
-                self.leader_node_id = replica_desc.map(|r| r.node_id);
+            Error::NotLeader(_, leader_desc) => {
+                debug!(
+                    "group client issue rpc: replica {} not leader of group {}",
+                    self.access_node_id.unwrap_or_default(),
+                    self.group_id
+                );
+                self.access_node_id = None;
+                if let Some(leader) = leader_desc {
+                    move_node_to_first_element(&mut self.replicas, leader.node_id);
+                    self.access_node_id = Some(leader.node_id);
+                }
+                Ok(())
+            }
+            Error::Rpc(status) if retryable_rpc_err(&status) => {
+                debug!(
+                    "group client issue rpc: group {} with retryable status: {}",
+                    self.group_id,
+                    status.to_string(),
+                );
+                self.access_node_id = None;
                 Ok(())
             }
             // If the exact epoch is required, don't retry if epoch isn't matched.
-            Error::EpochNotMatch(group_desc) if !accurate_epoch => {
-                if group_desc.epoch > self.epoch {
+            Error::EpochNotMatch(group_desc) if !opt.accurate_epoch => {
+                if group_desc.epoch <= self.epoch {
+                    panic!(
+                        "receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
+                        self.epoch, group_desc
+                    );
+                }
+
+                debug!(
+                    "group client issue rpc: group {} epoch {} not match target epoch {}",
+                    self.group_id, self.epoch, group_desc.epoch,
+                );
+
+                if opt
+                    .request
+                    .map(|r| !is_executable(&group_desc, r))
+                    .unwrap_or_default()
+                {
+                    // The target group would not execute the specified request.
+                    Err(Error::EpochNotMatch(group_desc))
+                } else {
                     self.replicas = group_desc.replicas;
                     self.epoch = group_desc.epoch;
-                } else {
-                    self.leader_node_id = None;
+                    self.next_access_index = 1;
+                    move_node_to_first_element(
+                        &mut self.replicas,
+                        self.access_node_id.unwrap_or_default(),
+                    );
+                    Ok(())
                 }
-                Ok(())
             }
-            Error::Rpc(status) if retriable_rpc_err(&status) => {
-                self.leader_node_id = None;
-                Ok(())
+            e => {
+                // FIXME(walter) performance
+                warn!(err = ?e, "group client issue rpc");
+                Err(e)
             }
-            Error::Io(err) if retriable_io_err(&err) => {
-                self.leader_node_id = None;
-                Ok(())
-            }
-            e => Err(e),
         }
     }
-}
-
-fn retriable_rpc_err(status: &tonic::Status) -> bool {
-    if status.code() == tonic::Code::Unavailable {
-        return true;
-    }
-    if status.code() == tonic::Code::Unknown {
-        if let Some(err) = find_source::<std::io::Error>(status) {
-            return retriable_io_err(err);
-        }
-    }
-    false
-}
-
-fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
-    use std::error::Error;
-    let mut cause = err.source();
-    while let Some(err) = cause {
-        if let Some(typed) = err.downcast_ref() {
-            return Some(typed);
-        }
-        cause = err.source();
-    }
-    None
-}
-
-fn retriable_io_err(err: &std::io::Error) -> bool {
-    matches!(
-        err.kind(),
-        ErrorKind::ConnectionRefused
-            | ErrorKind::ConnectionReset
-            | ErrorKind::ConnectionAborted
-            | ErrorKind::BrokenPipe
-    )
 }
 
 impl GroupClient {
-    pub async fn delete(&mut self, shard_id: u64, key: &[u8]) -> Result<()> {
+    pub async fn request(&mut self, request: &Request) -> Result<Response> {
         let op = |group_id, epoch, node_id, client: NodeClient| {
-            let req = RequestBatchBuilder::new(node_id)
-                .delete(group_id, epoch, shard_id, key.to_owned())
-                .build();
+            let req = BatchRequest {
+                node_id,
+                requests: vec![GroupRequest {
+                    group_id,
+                    epoch,
+                    request: Some(GroupRequestUnion {
+                        request: Some(request.clone()),
+                    }),
+                }],
+            };
             async move {
-                let resp = client
+                client
                     .batch_group_requests(req)
                     .await
                     .and_then(Self::batch_response)
-                    .and_then(Self::group_response)?;
-                match resp {
-                    Response::Delete(_) => Ok(()),
-                    _ => Err(Status::internal(
-                        "invalid response type, Delete is required",
-                    )),
-                }
+                    .and_then(Self::group_response)
             }
         };
-        self.invoke(op).await
-    }
 
-    pub async fn list(&mut self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
-            let req = RequestBatchBuilder::new(node_id)
-                .shard_prefix(group_id, epoch, shard_id, prefix)
-                .build();
-            async move {
-                let resp = client
-                    .batch_group_requests(req)
-                    .await
-                    .and_then(Self::batch_response)
-                    .and_then(Self::group_response)?;
-                match resp {
-                    Response::PrefixList(resp) => Ok(resp.values),
-                    _ => Err(Status::internal(
-                        "invalid response type, PrefixList is required",
-                    )),
-                }
-            }
+        let opt = InvokeOpt {
+            request: Some(request),
+            accurate_epoch: false,
         };
-        self.invoke(op).await
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
@@ -389,7 +387,7 @@ impl GroupClient {
         self.invoke(op).await
     }
 
-    pub async fn migrate_shard(
+    pub async fn accept_shard(
         &mut self,
         src_group: u64,
         src_epoch: u64,
@@ -455,7 +453,11 @@ impl GroupClient {
             };
             async move { client.migrate(req).await }
         };
-        self.invoke_opt(op, /* accurate_epoch= */ true).await
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ..Default::default()
+        };
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
@@ -524,7 +526,11 @@ impl<'a> RetryableShardChunkStreaming<'a> {
                     return Some(Ok(item));
                 }
                 Err(status) => {
-                    if let Err(e) = self.client.apply_status(status, false).await {
+                    if let Err(e) = self
+                        .client
+                        .apply_status(status, &InvokeOpt::default())
+                        .await
+                    {
                         return Some(Err(e));
                     }
                 }
@@ -549,5 +555,75 @@ impl<'a> futures::Stream for RetryableShardChunkStreaming<'a> {
         let future = self.get_mut().next();
         futures::pin_mut!(future);
         future.poll_unpin(cx)
+    }
+}
+
+fn retryable_rpc_err(status: &tonic::Status) -> bool {
+    if status.code() == tonic::Code::Unavailable {
+        return true;
+    }
+    if status.code() == tonic::Code::Unknown {
+        if let Some(err) = find_source::<std::io::Error>(status) {
+            return retryable_io_err(err);
+        }
+    }
+    false
+}
+
+fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
+    use std::error::Error;
+    let mut cause = err.source();
+    while let Some(err) = cause {
+        if let Some(typed) = err.downcast_ref() {
+            return Some(typed);
+        }
+        cause = err.source();
+    }
+    None
+}
+
+fn retryable_io_err(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+    )
+}
+
+fn is_executable(descriptor: &GroupDesc, request: &Request) -> bool {
+    match request {
+        Request::Get(req) => {
+            is_target_shard_exists(descriptor, req.shard_id, &req.get.as_ref().unwrap().key)
+        }
+        Request::Put(req) => {
+            is_target_shard_exists(descriptor, req.shard_id, &req.put.as_ref().unwrap().key)
+        }
+        Request::Delete(req) => {
+            is_target_shard_exists(descriptor, req.shard_id, &req.delete.as_ref().unwrap().key)
+        }
+        Request::PrefixList(req) => is_target_shard_exists(descriptor, req.shard_id, &req.prefix),
+        _ => false,
+    }
+}
+
+fn is_target_shard_exists(desc: &GroupDesc, shard_id: u64, key: &[u8]) -> bool {
+    // TODO(walter) support migrate meta.
+    desc.shards
+        .iter()
+        .find(|s| s.id == shard_id)
+        .map(|s| shard::belong_to(s, key))
+        .unwrap_or_default()
+}
+
+fn move_node_to_first_element(replicas: &mut [ReplicaDesc], node_id: u64) {
+    if let Some(idx) = replicas
+        .iter()
+        .position(|replica| replica.node_id == node_id)
+    {
+        if idx != 0 {
+            replicas.swap(0, idx)
+        }
     }
 }

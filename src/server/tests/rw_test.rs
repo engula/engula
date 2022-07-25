@@ -18,7 +18,7 @@ mod helper;
 
 use std::time::Duration;
 
-use engula_api::server::v1::{AcceptShardRequest, ReplicaRole};
+use engula_api::server::v1::ReplicaRole;
 use engula_client::{EngulaClient, Partition};
 use tracing::info;
 
@@ -228,11 +228,7 @@ fn operation_with_shard_migration() {
                 let mut client = c.group(target_group_id);
                 spawn(async move {
                     client
-                        .accept_shard(AcceptShardRequest {
-                            src_group_epoch: source_state.epoch.unwrap_or_default(),
-                            src_group_id: source_state.id,
-                            shard_desc: Some(shard_desc),
-                        })
+                        .accept_shard(source_state.id, source_state.epoch, &shard_desc)
                         .await
                         .unwrap();
                 });

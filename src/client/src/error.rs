@@ -14,7 +14,7 @@
 
 use std::error::Error as StdError;
 
-use engula_api::server::v1::{error_detail_union, error_detail_union::Value, GroupResponse};
+use engula_api::server::v1::{GroupDesc, ReplicaDesc, RootDesc};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type AppResult<T> = std::result::Result<T, AppError>;
@@ -24,57 +24,44 @@ pub enum AppError {
     #[error("{0} not found")]
     NotFound(String),
 
-    #[error("deadline is exceeded")]
-    DeadlineExceeded,
+    #[error("invalid argument {0}")]
+    InvalidArgument(String),
+
+    #[error("deadline exceeded {0}")]
+    DeadlineExceeded(String),
 
     #[error("internal {0}")]
-    Internal(Box<dyn StdError + Send + 'static>),
+    Internal(Box<dyn StdError + Send + Sync + 'static>),
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("{0} not found")]
-    NotFound(String),
+    #[error("invalid argument {0}")]
+    InvalidArgument(String),
 
-    #[error("group response error")]
-    GroupResponseError(Option<error_detail_union::Value>),
+    #[error("deadline exceeded {0}")]
+    DeadlineExceeded(String),
+
+    #[error("group epoch not match")]
+    EpochNotMatch(GroupDesc),
+
+    #[error("group {0} not found")]
+    GroupNotFound(u64),
+
+    #[error("not root leader")]
+    NotRootLeader(RootDesc, Option<ReplicaDesc>),
+
+    #[error("not leader of group {0}")]
+    NotLeader(u64, Option<ReplicaDesc>),
 
     #[error("rpc {0}")]
     Rpc(tonic::Status),
 
+    #[error("{0} not found")]
+    NotFound(String),
+
     #[error("internal {0}")]
-    Internal(Box<dyn StdError + Send + 'static>),
-}
-
-impl Error {
-    pub fn from_group_response(r: &GroupResponse) -> Option<Self> {
-        r.error.as_ref().map(|err| {
-            Error::GroupResponseError(
-                err.details
-                    .get(0)
-                    .cloned()
-                    .and_then(|d| d.detail)
-                    .and_then(|u| u.value),
-            )
-        })
-    }
-
-    pub fn should_retry(&self) -> bool {
-        match self {
-            Error::Internal(_) => false,
-            Error::Rpc(_) => true,
-            Error::NotFound(_) => true,
-            Error::GroupResponseError(None) => true,
-            Error::GroupResponseError(Some(err)) => match err {
-                Value::NotLeader(_) => true,
-                Value::NotMatch(_) => true,
-                Value::ServerIsBusy(_) => false,
-                Value::GroupNotFound(_) => true,
-                Value::NotRoot(_) => true,
-                Value::StatusCode(_) => true,
-            },
-        }
-    }
+    Internal(Box<dyn StdError + Send + Sync + 'static>),
 }
 
 impl From<tonic::Status> for Error {
@@ -85,18 +72,35 @@ impl From<tonic::Status> for Error {
 
         match status.code() {
             Code::Ok => panic!("invalid argument"),
+            Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
+            Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
             Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
-                .map(|err| {
-                    Error::GroupResponseError(
-                        err.details
-                            .get(0)
-                            .cloned()
-                            .and_then(|d| d.detail)
-                            .and_then(|u| u.value),
-                    )
-                })
+                .map(Into::into)
                 .unwrap_or_else(|_| Error::Rpc(status)),
             _ => Error::Rpc(status),
+        }
+    }
+}
+
+impl From<engula_api::server::v1::Error> for Error {
+    fn from(err: engula_api::server::v1::Error) -> Self {
+        use engula_api::server::v1::error_detail_union::Value;
+        use tonic::Status;
+
+        if err.details.is_empty() {
+            return Status::internal("ErrorDetails is empty").into();
+        }
+
+        // Only convert first error detail.
+        let detail = &err.details[0];
+        let msg = detail.message.clone();
+        match detail.detail.as_ref().and_then(|u| u.value.clone()) {
+            Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
+            Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
+            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default(), v.leader),
+            Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
+            Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
+            _ => Status::internal(format!("unknown error detail, msg: {msg}")).into(),
         }
     }
 }
@@ -104,9 +108,17 @@ impl From<tonic::Status> for Error {
 impl From<Error> for AppError {
     fn from(err: Error) -> Self {
         match err {
-            Error::Internal(v) => AppError::Internal(v),
+            Error::InvalidArgument(v) => AppError::InvalidArgument(v),
+            Error::DeadlineExceeded(v) => AppError::DeadlineExceeded(v),
             Error::NotFound(v) => AppError::NotFound(v),
-            Error::Rpc(_) | Error::GroupResponseError(_) => AppError::DeadlineExceeded,
+            Error::Internal(v) => AppError::Internal(v),
+
+            Error::Rpc(status) => panic!("unknown error: {status:?}"),
+
+            Error::EpochNotMatch(_)
+            | Error::GroupNotFound(_)
+            | Error::NotRootLeader(_, _)
+            | Error::NotLeader(_, _) => unreachable!(),
         }
     }
 }

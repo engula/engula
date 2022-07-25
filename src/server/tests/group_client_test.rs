@@ -18,9 +18,7 @@ mod helper;
 
 use std::time::Duration;
 
-use engula_api::server::v1::{
-    shard_desc, AcceptShardRequest, GroupDesc, ReplicaDesc, ReplicaRole, ShardDesc,
-};
+use engula_api::server::v1::{shard_desc, GroupDesc, ReplicaDesc, ReplicaRole, ShardDesc};
 
 use crate::helper::{
     client::ClusterClient, context::*, init::setup_panic_hook, runtime::block_on_current,
@@ -95,12 +93,9 @@ fn request_to_offline_leader() {
         // replace this with simple put when group_client move to engula client
         let mut tc = c.group(group_id_2);
         let src_group_epoch = c.get_group_epoch(group_id_1).unwrap_or(4);
-        let req = AcceptShardRequest {
-            src_group_id: group_id_1,
-            src_group_epoch,
-            shard_desc: Some(shard_desc.to_owned()),
-        };
-        tc.accept_shard(req).await.unwrap();
+        tc.accept_shard(group_id_1, src_group_epoch, &shard_desc)
+            .await
+            .unwrap();
 
         c.assert_group_contains_shard(group_id_2, shard_id).await;
     })

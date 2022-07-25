@@ -19,7 +19,6 @@
 #![feature(path_try_exists)]
 
 mod bootstrap;
-mod client;
 mod discovery;
 mod error;
 pub mod node;
