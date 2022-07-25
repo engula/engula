@@ -50,6 +50,7 @@ impl RetryState {
             }
             Error::InvalidArgument(_)
             | Error::DeadlineExceeded(_)
+            | Error::ResourceExhausted(_)
             | Error::AlreadyExists(_)
             | Error::Rpc(_)
             | Error::Internal(_) => Err(err),

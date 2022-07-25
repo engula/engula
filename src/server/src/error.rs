@@ -31,6 +31,9 @@ pub enum Error {
     #[error("no available group")]
     NoAvaliableGroup,
 
+    #[error("{0} is exhausted")]
+    ResourceExhausted(String),
+
     // internal errors
     #[error("invalid {0} data")]
     InvalidData(String),
@@ -95,6 +98,7 @@ impl From<Error> for tonic::Status {
             Error::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
             err @ Error::DatabaseNotFound(_) => Status::not_found(err.to_string()),
             err @ Error::AlreadyExists(_) => Status::already_exists(err.to_string()),
+            Error::ResourceExhausted(msg) => Status::resource_exhausted(msg),
 
             Error::GroupNotFound(group_id) => Status::with_details(
                 Code::Unknown,
@@ -153,20 +157,7 @@ impl From<prost::DecodeError> for Error {
 
 impl From<tonic::Status> for Error {
     fn from(status: tonic::Status) -> Self {
-        use engula_api::server::v1;
-        use prost::Message;
-        use tonic::Code;
-
-        match status.code() {
-            Code::Ok => panic!("invalid argument"),
-            Code::Cancelled => Error::Canceled,
-            Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
-            Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
-            Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
-                .map(Into::into)
-                .unwrap_or_else(|_| Error::Rpc(status)),
-            _ => Error::Rpc(status),
-        }
+        engula_client::Error::from(status).into()
     }
 }
 
@@ -189,6 +180,7 @@ impl From<Error> for engula_api::server::v1::Error {
             Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
 
             err @ (Error::Transport(_)
+            | Error::ResourceExhausted(_)
             | Error::Raft(_)
             | Error::RaftEngine(_)
             | Error::RocksDb(_)
@@ -206,24 +198,7 @@ impl From<Error> for engula_api::server::v1::Error {
 
 impl From<engula_api::server::v1::Error> for Error {
     fn from(err: engula_api::server::v1::Error) -> Self {
-        use engula_api::server::v1::error_detail_union::Value;
-        use tonic::Status;
-
-        if err.details.is_empty() {
-            return Error::InvalidData("ErrorDetails is empty".into());
-        }
-
-        // Only convert first error detail.
-        let detail = &err.details[0];
-        let msg = detail.message.clone();
-        match detail.detail.as_ref().and_then(|u| u.value.clone()) {
-            Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
-            Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
-            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default(), v.leader),
-            Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
-            Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
-            _ => Error::InvalidData(msg),
-        }
+        engula_client::Error::from(err).into()
     }
 }
 
@@ -232,13 +207,14 @@ impl From<engula_client::Error> for Error {
         match err {
             engula_client::Error::InvalidArgument(v) => Error::InvalidArgument(v),
             engula_client::Error::DeadlineExceeded(v) => Error::DeadlineExceeded(v),
-            engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
             engula_client::Error::AlreadyExists(v) => Error::AlreadyExists(v),
+            engula_client::Error::ResourceExhausted(v) => Error::ResourceExhausted(v),
             engula_client::Error::Rpc(err) => Error::Rpc(err),
 
-            engula_client::Error::GroupNotFound(_)
-            | engula_client::Error::NotRootLeader(..)
-            | engula_client::Error::NotLeader(..) => unreachable!(),
+            engula_client::Error::GroupNotFound(v) => Error::GroupNotFound(v),
+            engula_client::Error::NotRootLeader(desc, leader) => Error::NotRootLeader(desc, leader),
+            engula_client::Error::NotLeader(group, leader) => Error::NotLeader(group, leader),
+            engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
 
             // FIXME(walter) handle unknown errors.
             engula_client::Error::NotFound(v) => panic!("unknown not found: {v}"),

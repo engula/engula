@@ -76,7 +76,7 @@ impl root_server::Root for Server {
         let replicas = self
             .wrap(
                 self.root
-                    .alloc_replica(req.group_id, req.num_required)
+                    .alloc_replica(req.group_id, req.epoch, req.num_required)
                     .await,
             )
             .await?;
