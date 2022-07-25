@@ -266,50 +266,6 @@ impl GroupClient {
         self.invoke_opt(op, opt).await
     }
 
-    // pub async fn delete(&mut self, shard_id: u64, key: &[u8]) -> Result<()> {
-    //     let op = |group_id, epoch, node_id, client: NodeClient| {
-    //         let req = RequestBatchBuilder::new(node_id)
-    //             .delete(group_id, epoch, shard_id, key.to_owned())
-    //             .build();
-    //         async move {
-    //             let resp = client
-    //                 .batch_group_requests(req)
-    //                 .await
-    //                 .and_then(Self::batch_response)
-    //                 .and_then(Self::group_response)?;
-    //             match resp {
-    //                 Response::Delete(_) => Ok(()),
-    //                 _ => Err(Status::internal(
-    //                     "invalid response type, Delete is required",
-    //                 )),
-    //             }
-    //         }
-    //     };
-    //     self.invoke(op).await
-    // }
-
-    // pub async fn list(&mut self, shard_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-    //     let op = |group_id, epoch, node_id, client: NodeClient| {
-    //         let req = RequestBatchBuilder::new(node_id)
-    //             .shard_prefix(group_id, epoch, shard_id, prefix)
-    //             .build();
-    //         async move {
-    //             let resp = client
-    //                 .batch_group_requests(req)
-    //                 .await
-    //                 .and_then(Self::batch_response)
-    //                 .and_then(Self::group_response)?;
-    //             match resp {
-    //                 Response::PrefixList(resp) => Ok(resp.values),
-    //                 _ => Err(Status::internal(
-    //                     "invalid response type, PrefixList is required",
-    //                 )),
-    //             }
-    //         }
-    //     };
-    //     self.invoke(op).await
-    // }
-
     pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
         let op = |group_id, epoch, node_id, client: NodeClient| {
             let desc = desc.to_owned();
