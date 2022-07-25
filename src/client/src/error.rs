@@ -35,9 +35,6 @@ pub enum AppError {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum GroupError {}
-
-#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("invalid argument {0}")]
     InvalidArgument(String),

@@ -124,19 +124,19 @@ impl GroupClient {
 
     fn refresh_group_state(&mut self) {
         self.next_access_index = 0;
-        if let Ok(mut group) = self.router.find_group(self.group_id) {
+        if let Ok(group) = self.router.find_group(self.group_id) {
             if self.epoch < group.epoch {
-                self.epoch = group.epoch;
-                self.replicas.clear();
+                let mut leader_node_id = None;
                 if let Some(leader_id) = group.leader_id {
-                    if let Some(desc) = group.replicas.remove(&leader_id) {
-                        self.replicas.push(desc);
+                    if let Some(desc) = group.replicas.get(&leader_id) {
+                        leader_node_id = Some(desc.node_id);
                     }
+                };
+                self.epoch = group.epoch;
+                self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
+                if let Some(node_id) = leader_node_id {
+                    move_node_to_first_element(&mut self.replicas, node_id);
                 }
-
-                // The first element of `self.replicas` is the leader node, if leader exists.
-                self.replicas
-                    .extend(group.replicas.into_iter().map(|(_, v)| v));
             }
         }
     }
@@ -182,13 +182,17 @@ impl GroupClient {
                 self.access_node_id = None;
                 Ok(())
             }
-            Error::NotLeader(_, replica_desc) => {
+            Error::NotLeader(_, leader_desc) => {
                 debug!(
                     "group client issue rpc: replica {} not leader of group {}",
                     self.access_node_id.unwrap_or_default(),
                     self.group_id
                 );
-                self.access_node_id = replica_desc.map(|r| r.node_id);
+                self.access_node_id = None;
+                if let Some(leader) = leader_desc {
+                    move_node_to_first_element(&mut self.replicas, leader.node_id);
+                    self.access_node_id = Some(leader.node_id);
+                }
                 Ok(())
             }
             Error::Rpc(status) if retryable_rpc_err(&status) => {
@@ -222,9 +226,13 @@ impl GroupClient {
                     // The target group would not execute the specified request.
                     Err(Error::EpochNotMatch(group_desc))
                 } else {
-                    self.next_access_index = 0;
                     self.replicas = group_desc.replicas;
                     self.epoch = group_desc.epoch;
+                    self.next_access_index = 1;
+                    move_node_to_first_element(
+                        &mut self.replicas,
+                        self.access_node_id.unwrap_or_default(),
+                    );
                     Ok(())
                 }
             }
@@ -607,4 +615,15 @@ fn is_target_shard_exists(desc: &GroupDesc, shard_id: u64, key: &[u8]) -> bool {
         .find(|s| s.id == shard_id)
         .map(|s| shard::belong_to(s, key))
         .unwrap_or_default()
+}
+
+fn move_node_to_first_element(replicas: &mut [ReplicaDesc], node_id: u64) {
+    if let Some(idx) = replicas
+        .iter()
+        .position(|replica| replica.node_id == node_id)
+    {
+        if idx != 0 {
+            replicas.swap(0, idx)
+        }
+    }
 }
