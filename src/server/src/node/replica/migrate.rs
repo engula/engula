@@ -251,13 +251,7 @@ impl Replica {
         lease_state: &LeaseState,
         desc: &MigrationDesc,
     ) -> Result<bool> {
-        let shard_desc = desc.shard_desc.as_ref().unwrap();
-        if (desc.src_group_id == info.group_id
-            && desc.src_group_epoch < lease_state.descriptor.epoch
-            && is_shard_migrated_out(shard_desc, &lease_state.descriptor))
-            || (desc.dest_group_epoch < lease_state.descriptor.epoch
-                && is_shard_migrated_in(shard_desc, &lease_state.descriptor))
-        {
+        if is_migration_finished(info, desc, &lease_state.descriptor) {
             info!(
                 replica = info.replica_id,
                 group = info.group_id,
@@ -285,6 +279,25 @@ impl Replica {
             Ok(true)
         }
     }
+}
+
+fn is_migration_finished(info: &ReplicaInfo, desc: &MigrationDesc, descriptor: &GroupDesc) -> bool {
+    let shard_desc = desc.shard_desc.as_ref().unwrap();
+    if desc.src_group_id == info.group_id
+        && desc.src_group_epoch < descriptor.epoch
+        && is_shard_migrated_out(shard_desc, descriptor)
+    {
+        return true;
+    }
+
+    if desc.dest_group_id == info.group_id
+        && desc.dest_group_epoch < descriptor.epoch
+        && is_shard_migrated_in(shard_desc, descriptor)
+    {
+        return true;
+    }
+
+    false
 }
 
 fn is_shard_migrated_out(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool {

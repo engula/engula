@@ -369,7 +369,8 @@ fn migration_with_offline_peers() {
         let mut ctx = TestContext::new("migration-with-offline-peers");
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
-        let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
+        let mut node_ids = nodes.keys().cloned().collect::<Vec<_>>();
+        node_ids.sort_unstable();
         let c = ClusterClient::new(nodes).await;
         let (group_id_1, group_id_2, shard_desc) = create_two_groups(&c, node_ids.clone(), 0).await;
         let shard_id = shard_desc.id;
