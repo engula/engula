@@ -15,8 +15,8 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
+use engula_client::GroupClient;
 
-use super::GroupClient;
 use crate::{Provider, Result};
 
 #[derive(Debug)]
@@ -33,7 +33,11 @@ pub(crate) async fn forward_request(
 ) -> Result<Response> {
     // FIXME(walter) performance
     let group_id = forward_ctx.dest_group_id;
-    let mut group_client = GroupClient::new(group_id, provider);
+    let mut group_client = GroupClient::new(
+        group_id,
+        provider.router.clone(),
+        provider.conn_manager.clone(),
+    );
     let req = ForwardRequest {
         shard_id: forward_ctx.shard_id,
         group_id,

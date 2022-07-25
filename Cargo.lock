@@ -506,6 +506,7 @@ dependencies = [
 name = "engula-api"
 version = "0.4.0"
 dependencies = [
+ "crc32fast",
  "prost",
  "prost-types",
  "tonic",
@@ -519,6 +520,7 @@ dependencies = [
  "crc32fast",
  "derivative",
  "engula-api",
+ "futures",
  "prost",
  "thiserror",
  "tokio",

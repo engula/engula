@@ -15,13 +15,13 @@
 use std::{future::Future, sync::Arc};
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
-use engula_client::Router;
+use engula_client::{GroupClient, Router};
 use futures::{channel::mpsc, StreamExt};
 use tracing::{debug, error, info, warn};
 
-use super::{ForwardCtx, GroupClient};
+use super::ForwardCtx;
 use crate::{
-    node::Replica, runtime::sync::WaitGroup, serverpb::v1::*, Error, NodeConfig, Provider, Result,
+    node::Replica, runtime::sync::WaitGroup, serverpb::v1::*, NodeConfig, Provider, Result,
 };
 
 struct MigrationCoordinator {
@@ -85,7 +85,11 @@ impl MigrateController {
                     } else {
                         desc.src_group_id
                     };
-                    let client = GroupClient::new(target_group_id, ctrl.shared.provider.clone());
+                    let client = GroupClient::new(
+                        target_group_id,
+                        ctrl.shared.provider.router.clone(),
+                        ctrl.shared.provider.conn_manager.clone(),
+                    );
                     coord = Some(MigrationCoordinator {
                         cfg: ctrl.shared.cfg.clone(),
                         replica_id,
@@ -171,7 +175,7 @@ impl MigrationCoordinator {
                 );
                 self.enter_pulling_step().await;
             }
-            Err(Error::EpochNotMatch(group_desc)) => {
+            Err(engula_client::Error::EpochNotMatch(group_desc)) => {
                 // Since the epoch is not matched, this migration should be rollback.
                 warn!(replica = self.replica_id, group = self.group_id, desc = %self.desc,
                     "abort migration since epoch not match, new epoch is {}",

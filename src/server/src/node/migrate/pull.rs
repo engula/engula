@@ -19,9 +19,9 @@ use std::{
 };
 
 use engula_api::server::v1::*;
+use engula_client::GroupClient;
 use futures::StreamExt;
 
-use super::GroupClient;
 use crate::{node::Replica, Result};
 
 pub async fn pull_shard(

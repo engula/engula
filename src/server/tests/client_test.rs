@@ -54,7 +54,7 @@ fn to_unreachable_peers() {
         let v = "value-1".as_bytes().to_vec();
         assert!(matches!(
             co.put(k.clone(), v).await,
-            Err(AppError::DeadlineExceeded)
+            Err(AppError::DeadlineExceeded(_))
         ));
     });
 }

@@ -20,11 +20,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use engula_api::server::v1::*;
+use engula_api::{server::v1::*, shard};
 use prost::Message;
 use tracing::info;
 
-use crate::{bootstrap::INITIAL_EPOCH, node::shard, serverpb::v1::*, Error, Result};
+use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::*, Error, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;

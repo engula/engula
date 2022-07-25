@@ -15,7 +15,7 @@
 use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
-use engula_client::NodeClient;
+use engula_client::{GroupClient, NodeClient};
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
@@ -25,7 +25,6 @@ use super::{
 };
 use crate::{
     bootstrap::INITIAL_EPOCH,
-    client::GroupClient,
     root::{
         allocator::{Allocator, SysAllocSource},
         Schema,
@@ -571,13 +570,23 @@ impl ScheduleContext {
     }
 
     async fn try_add_learner(&self, group_id: u64, replica_id: u64, node_id: u64) -> Result<()> {
-        let mut group_client = GroupClient::new(group_id, self.shared.provider.to_owned());
-        group_client.add_learner(replica_id, node_id).await
+        let mut group_client = GroupClient::new(
+            group_id,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.add_learner(replica_id, node_id).await?;
+        Ok(())
     }
 
     async fn try_replace_voter(&self, group_id: u64, replica_id: u64, node_id: u64) -> Result<()> {
-        let mut group_client = GroupClient::new(group_id, self.shared.provider.to_owned());
-        group_client.add_replica(replica_id, node_id).await
+        let mut group_client = GroupClient::new(
+            group_id,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.add_replica(replica_id, node_id).await?;
+        Ok(())
     }
 
     async fn try_shed_leader(&self, group_id: u64, remove_replica: u64) -> Result<()> {
@@ -609,8 +618,13 @@ impl ScheduleContext {
     }
 
     async fn try_remove_membership(&self, group: u64, remove_replica: u64) -> Result<()> {
-        let mut group_client = GroupClient::new(group, self.shared.provider.to_owned());
-        group_client.remove_group_replica(remove_replica).await
+        let mut group_client = GroupClient::new(
+            group,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.remove_group_replica(remove_replica).await?;
+        Ok(())
     }
 
     async fn try_remove_replica(&self, group: u64, replica: u64) -> Result<()> {
@@ -639,8 +653,13 @@ impl ScheduleContext {
     }
 
     async fn try_transfer_leader(&self, group: u64, target_replica: u64) -> Result<()> {
-        let mut group_client = GroupClient::new(group, self.shared.provider.to_owned());
-        group_client.transfer_leader(target_replica).await
+        let mut group_client = GroupClient::new(
+            group,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.transfer_leader(target_replica).await?;
+        Ok(())
     }
 
     async fn try_migrate_shard(&self, src_group: u64, target_group: u64, shard: u64) -> Result<()> {
@@ -651,15 +670,25 @@ impl ScheduleContext {
             .find(|s| s.id == shard)
             .ok_or(crate::Error::GroupNotFound(src_group.id))?;
 
-        let mut group_client = GroupClient::new(target_group, self.shared.provider.to_owned());
+        let mut group_client = GroupClient::new(
+            target_group,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
         group_client
-            .migrate_shard(src_group.id, src_group.epoch, shard_desc)
-            .await
-        // TODO: handle src_group epocho not match?
+            .accept_shard(src_group.id, src_group.epoch, shard_desc)
+            .await?;
+        // TODO: handle src_group epoch not match?
+        Ok(())
     }
 
     async fn try_create_shard(&self, group_id: u64, desc: &ShardDesc) -> Result<()> {
-        let mut group_client = GroupClient::new(group_id, self.shared.provider.to_owned());
-        group_client.create_shard(desc).await
+        let mut group_client = GroupClient::new(
+            group_id,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.create_shard(desc).await?;
+        Ok(())
     }
 }

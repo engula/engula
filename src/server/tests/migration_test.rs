@@ -18,7 +18,10 @@ mod helper;
 
 use std::time::Duration;
 
-use engula_api::{server::v1::*, v1::PutRequest};
+use engula_api::{
+    server::v1::{group_request_union::Request, *},
+    v1::PutRequest,
+};
 use tracing::{error, info, warn};
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
@@ -60,12 +63,10 @@ async fn move_shard(
         }
 
         let mut g = c.group(dest_group_id);
-        let req = AcceptShardRequest {
-            src_group_id,
-            src_group_epoch,
-            shard_desc: Some(shard_desc.clone()),
-        };
-        if let Err(e) = g.accept_shard(req).await {
+        if let Err(e) = g
+            .accept_shard(src_group_id, src_group_epoch, shard_desc)
+            .await
+        {
             warn!(
                 "accept shard {} from {src_group_id} to {dest_group_id}: {e:?}",
                 shard_desc.id
@@ -92,11 +93,15 @@ async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops
     for i in range {
         let key = format!("key-{}", i);
         let value = format!("value-{}", i);
-        let req = PutRequest {
+        let put = PutRequest {
             key: key.as_bytes().to_vec(),
             value: value.as_bytes().to_vec(),
         };
-        c.put(shard_id, req).await.unwrap();
+        let req = Request::Put(ShardPutRequest {
+            shard_id,
+            put: Some(put),
+        });
+        c.request(&req).await.unwrap();
     }
 }
 
@@ -338,20 +343,21 @@ fn abort_migration() {
             .unwrap();
 
         let mut group_client = c.group(group_id_2);
-        let req = AcceptShardRequest {
-            src_group_id: group_id_1,
-            src_group_epoch: src_epoch,
-            shard_desc: Some(shard_desc.to_owned()),
-        };
-
         // It will be reject by service busy?
         // Ensure issue at least one shard migartion.
-        while let Err(e) = group_client.accept_shard(req.clone()).await {
+        while let Err(e) = group_client
+            .accept_shard(group_id_1, src_epoch, &shard_desc)
+            .await
+        {
             error!("accept shard: {e:?}");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         // Ensure the formar shard migration is aborted by epoch not match.
-        while group_client.accept_shard(req.clone()).await.is_err() {
+        while group_client
+            .accept_shard(group_id_1, src_epoch, &shard_desc)
+            .await
+            .is_err()
+        {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     });
@@ -400,7 +406,7 @@ fn source_group_receive_duplicate_accepting_shard_request() {
                 dest_group_epoch: 1,
             };
             match g.setup_migration(&desc).await {
-                Err(engula_server::Error::EpochNotMatch(_)) => {
+                Err(engula_client::Error::EpochNotMatch(_)) => {
                     continue;
                 }
                 Ok(_) => {}
@@ -438,7 +444,7 @@ fn source_group_receive_many_accepting_shard_request() {
                 dest_group_epoch: 1,
             };
             match g.setup_migration(&desc).await {
-                Err(engula_server::Error::EpochNotMatch(_)) => {
+                Err(engula_client::Error::EpochNotMatch(_)) => {
                     continue;
                 }
                 Ok(_) => {}
@@ -454,7 +460,7 @@ fn source_group_receive_many_accepting_shard_request() {
                 // retry
                 assert!(matches!(
                     cloned_g.setup_migration(&diff_desc).await,
-                    Err(engula_server::Error::EpochNotMatch(_))
+                    Err(engula_client::Error::EpochNotMatch(_))
                 ));
             });
 

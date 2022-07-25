@@ -14,6 +14,7 @@
 
 mod error;
 mod migration;
+pub mod shard;
 
 pub mod v1 {
     #![allow(clippy::all)]

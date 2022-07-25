@@ -15,13 +15,13 @@
 use std::sync::Arc;
 
 use engula_api::{
-    server::v1::*,
+    server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{create_collection_request::*, *},
 };
 
 use crate::{
-    conn_manager::ConnManager, discovery::StaticServiceDiscovery, AdminRequestBuilder,
-    AdminResponseExtractor, AppError, AppResult, RequestBatchBuilder, RetryState, RootClient,
+    conn_manager::ConnManager, discovery::StaticServiceDiscovery, group_client::GroupClient,
+    AdminRequestBuilder, AdminResponseExtractor, AppError, AppResult, RetryState, RootClient,
     Router,
 };
 
@@ -203,46 +203,10 @@ impl Collection {
             match self.delete_inner(&key).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
-                    if !retry_state.retry(&err).await {
-                        return Err(err.into());
-                    }
+                    retry_state.retry(err).await?;
                 }
             }
         }
-    }
-
-    pub async fn delete_inner(&self, key: &[u8]) -> crate::Result<()> {
-        let router = self.client.inner.router.clone();
-        let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group_by_shard(shard.id)?;
-        let epoch = group
-            .epoch
-            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
-        let leader_id = group
-            .leader_id
-            .ok_or_else(|| crate::Error::NotFound(format!("leader_id (key={:?})", key)))?;
-        let node_id = group
-            .replicas
-            .get(&leader_id)
-            .map(|desc| desc.node_id)
-            .ok_or_else(|| crate::Error::NotFound(format!("leader_node_id (key={:?})", key)))?;
-        let addr = router.find_node_addr(node_id)?;
-        let client = self.client.inner.conn_manager.get_node_client(addr).await?;
-        let resp = client
-            .batch_group_requests(
-                RequestBatchBuilder::new(node_id)
-                    .delete(group.id, epoch, shard.id, key.to_vec())
-                    .build(),
-            )
-            .await?;
-
-        for r in resp {
-            if let Some(err) = crate::Error::from_group_response(&r) {
-                return Err(err);
-            }
-        }
-
-        Ok(())
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> AppResult<()> {
@@ -252,45 +216,10 @@ impl Collection {
             match self.put_inner(&key, &value).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
-                    if !retry_state.retry(&err).await {
-                        return Err(err.into());
-                    }
+                    retry_state.retry(err).await?;
                 }
             }
         }
-    }
-
-    pub async fn put_inner(&self, key: &[u8], value: &[u8]) -> crate::Result<()> {
-        let router = self.client.inner.router.clone();
-        let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group_by_shard(shard.id)?;
-        let epoch = group
-            .epoch
-            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
-        let leader_id = group
-            .leader_id
-            .ok_or_else(|| crate::Error::NotFound(format!("leader_id (key={:?})", key)))?;
-        let node_id = group
-            .replicas
-            .get(&leader_id)
-            .map(|desc| desc.node_id)
-            .ok_or_else(|| crate::Error::NotFound(format!("leader_node_id (key={:?})", key)))?;
-        let addr = router.find_node_addr(node_id)?;
-        let client = self.client.inner.conn_manager.get_node_client(addr).await?;
-        let resp = client
-            .batch_group_requests(
-                RequestBatchBuilder::new(node_id)
-                    .put(group.id, epoch, shard.id, key.to_vec(), value.to_vec())
-                    .build(),
-            )
-            .await?;
-        for r in resp {
-            if let Some(err) = crate::Error::from_group_response(&r) {
-                return Err(err);
-            }
-        }
-
-        Ok(())
     }
 
     pub async fn get(&self, key: Vec<u8>) -> AppResult<Option<Vec<u8>>> {
@@ -300,51 +229,69 @@ impl Collection {
             match self.get_inner(&key).await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
-                    if !retry_state.retry(&err).await {
-                        return Err(err.into());
-                    }
+                    retry_state.retry(err).await?;
                 }
             }
         }
     }
 
-    pub async fn get_inner(&self, key: &[u8]) -> crate::Result<Option<Vec<u8>>> {
+    async fn delete_inner(&self, key: &[u8]) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
-        let shard = router.find_shard(self.co_desc.clone(), key)?;
-        let group = router.find_group_by_shard(shard.id)?;
-        let epoch = group
-            .epoch
-            .ok_or_else(|| crate::Error::NotFound(format!("epoch (key={:?})", key)))?;
-        let leader = group
-            .leader_id
-            .ok_or_else(|| crate::Error::NotFound(format!("leader unavailable (key={:?})", key)))?;
-        let node_id = group
-            .replicas
-            .get(&leader)
-            .map(|desc| desc.node_id)
-            .ok_or_else(|| crate::Error::NotFound(format!("node_id (key={:?})", key)))?;
-        let addr = router.find_node_addr(node_id)?;
-        let client = self.client.inner.conn_manager.get_node_client(addr).await?;
-        let resp = client
-            .batch_group_requests(
-                RequestBatchBuilder::new(node_id)
-                    .get(group.id, epoch, shard.id, key.to_vec())
-                    .build(),
-            )
-            .await?;
-        for r in resp {
-            if let Some(err) = crate::Error::from_group_response(&r) {
-                return Err(err);
-            }
-            if let Some(GroupResponseUnion {
-                response: Some(group_response_union::Response::Get(GetResponse { value })),
-            }) = r.response
-            {
-                return Ok(value);
-            }
-        }
+        let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
+        let mut client = GroupClient::new(
+            group,
+            self.client.inner.router.clone(),
+            self.client.inner.conn_manager.clone(),
+        );
+        let req = Request::Delete(ShardDeleteRequest {
+            shard_id: shard.id,
+            delete: Some(DeleteRequest {
+                key: key.to_owned(),
+            }),
+        });
+        client.request(&req).await?;
+        Ok(())
+    }
 
-        Ok(None)
+    async fn put_inner(&self, key: &[u8], value: &[u8]) -> crate::Result<()> {
+        let router = self.client.inner.router.clone();
+        let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
+        let mut client = GroupClient::new(
+            group,
+            self.client.inner.router.clone(),
+            self.client.inner.conn_manager.clone(),
+        );
+        let req = Request::Put(ShardPutRequest {
+            shard_id: shard.id,
+            put: Some(PutRequest {
+                key: key.to_owned(),
+                value: value.to_owned(),
+            }),
+        });
+        client.request(&req).await?;
+        Ok(())
+    }
+
+    async fn get_inner(&self, key: &[u8]) -> crate::Result<Option<Vec<u8>>> {
+        let router = self.client.inner.router.clone();
+        let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
+        let mut client = GroupClient::new(
+            group,
+            self.client.inner.router.clone(),
+            self.client.inner.conn_manager.clone(),
+        );
+        let req = Request::Get(ShardGetRequest {
+            shard_id: shard.id,
+            get: Some(GetRequest {
+                key: key.to_owned(),
+            }),
+        });
+        match client.request(&req).await? {
+            Response::Get(GetResponse { value }) => Ok(value),
+            _ => Err(crate::Error::Internal(wrap(
+                "invalid response type, Get is required",
+            ))),
+        }
     }
 
     #[allow(dead_code)]
@@ -355,4 +302,10 @@ impl Collection {
     pub fn desc(&self) -> CollectionDesc {
         self.co_desc.clone()
     }
+}
+
+#[inline]
+fn wrap(msg: &str) -> Box<dyn std::error::Error + Sync + Send + 'static> {
+    let msg = String::from(msg);
+    msg.into()
 }

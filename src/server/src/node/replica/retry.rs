@@ -14,13 +14,13 @@
 
 use std::time::Duration;
 
-use engula_api::server::v1::{group_request_union::Request, *};
+use engula_api::{
+    server::v1::{group_request_union::Request, *},
+    shard,
+};
 
 use super::{ExecCtx, Replica};
-use crate::{
-    node::{migrate::MigrateController, shard},
-    Error, Result,
-};
+use crate::{node::migrate::MigrateController, Error, Result};
 
 /// A wrapper function that detects and completes retries as quickly as possible.
 pub async fn execute(

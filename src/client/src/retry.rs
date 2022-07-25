@@ -14,10 +14,9 @@
 
 use std::time::Duration;
 
-use tokio::time;
-use tracing::debug;
+use tracing::trace;
 
-use crate::Error;
+use crate::{Error, Result};
 
 pub struct RetryState {
     cnt: u64,
@@ -26,7 +25,7 @@ pub struct RetryState {
 
 impl Default for RetryState {
     fn default() -> Self {
-        RetryState::new(30, Duration::from_millis(200))
+        RetryState::new(10, Duration::from_millis(200))
     }
 }
 
@@ -35,14 +34,24 @@ impl RetryState {
         Self { cnt, interval }
     }
 
-    pub async fn retry(&mut self, err: &Error) -> bool {
-        if self.cnt > 0 && err.should_retry() {
-            self.cnt -= 1;
-            time::sleep(self.interval).await;
-            debug!("retry: {:?}", err);
-            true
-        } else {
-            false
+    pub async fn retry(&mut self, err: Error) -> Result<()> {
+        match err {
+            Error::NotFound(_) | Error::EpochNotMatch(_) => {
+                self.cnt -= 1;
+                trace!("retry state cnt {}", self.cnt);
+                if self.cnt == 0 {
+                    return Err(Error::DeadlineExceeded("timeout".into()));
+                }
+                tokio::time::sleep(self.interval).await;
+                Ok(())
+            }
+            Error::NotLeader(..) | Error::GroupNotFound(_) | Error::NotRootLeader(..) => {
+                unreachable!()
+            }
+            Error::InvalidArgument(_)
+            | Error::DeadlineExceeded(_)
+            | Error::Rpc(_)
+            | Error::Internal(_) => Err(err),
         }
     }
 }

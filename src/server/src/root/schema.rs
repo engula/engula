@@ -19,19 +19,21 @@ use std::{
 
 use engula_api::{
     server::v1::{
+        group_request_union::Request,
+        group_response_union::Response,
         shard_desc::{Partition, RangePartition},
         watch_response::{delete_event, update_event, DeleteEvent, UpdateEvent},
         *,
     },
-    v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
+    v1::{collection_desc, CollectionDesc, DatabaseDesc, DeleteRequest, PutRequest},
 };
+use engula_client::GroupClient;
 use prost::Message;
 use tracing::{info, warn};
 
 use super::store::RootStore;
 use crate::{
     bootstrap::*,
-    client::GroupClient,
     node::{
         engine::{SnapshotMode, LOCAL_COLLECTION_ID},
         GroupEngine,
@@ -851,9 +853,23 @@ impl RemoteStore {
         let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
         let prefix = group_key(group_id);
 
-        let mut client = GroupClient::new(ROOT_GROUP_ID, self.provider.clone());
+        let req = Request::PrefixList(ShardPrefixListRequest { shard_id, prefix });
+        let mut client = GroupClient::new(
+            ROOT_GROUP_ID,
+            self.provider.router.clone(),
+            self.provider.conn_manager.clone(),
+        );
+        let values = match client.request(&req).await? {
+            Response::PrefixList(ShardPrefixListResponse { values }) => values,
+            _ => {
+                return Err(Error::InvalidData(
+                    "invalid response type, `SharedPrefixListResponse` is required".to_owned(),
+                ))
+            }
+        };
+
         let mut states = vec![];
-        for value in client.list(shard_id, prefix.as_slice()).await? {
+        for value in values {
             if let Ok(state) = ReplicaState::decode(value.as_slice()) {
                 states.push(state);
             }
@@ -865,8 +881,16 @@ impl RemoteStore {
         let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
         let key = replica_key(group_id, replica_id);
 
-        let mut client = GroupClient::new(ROOT_GROUP_ID, self.provider.clone());
-        client.delete(shard_id, &key).await?;
+        let req = Request::Delete(ShardDeleteRequest {
+            shard_id,
+            delete: Some(DeleteRequest { key }),
+        });
+        let mut client = GroupClient::new(
+            ROOT_GROUP_ID,
+            self.provider.router.clone(),
+            self.provider.conn_manager.clone(),
+        );
+        client.request(&req).await?;
         Ok(())
     }
 }

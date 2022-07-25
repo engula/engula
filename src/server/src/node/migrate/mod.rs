@@ -22,4 +22,3 @@ pub(crate) use self::{
     forward::{forward_request, ForwardCtx},
     pull::{pull_shard, ShardChunkStream},
 };
-use crate::client::GroupClient;

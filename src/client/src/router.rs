@@ -45,7 +45,7 @@ pub struct State {
 #[derive(Debug, Clone, Default)]
 pub struct RouterGroupState {
     pub id: u64,
-    pub epoch: Option<u64>,
+    pub epoch: u64,
     pub leader_id: Option<u64>,
     pub replicas: HashMap<u64, ReplicaDesc>,
 }
@@ -60,7 +60,11 @@ impl Router {
         Self { state }
     }
 
-    pub fn find_shard(&self, desc: CollectionDesc, key: &[u8]) -> Result<ShardDesc, crate::Error> {
+    pub fn find_shard(
+        &self,
+        desc: CollectionDesc,
+        key: &[u8],
+    ) -> Result<(u64, ShardDesc), crate::Error> {
         if let Some(collection_desc::Partition::Hash(collection_desc::HashPartition { slots })) =
             desc.partition
         {
@@ -91,7 +95,13 @@ impl Router {
                 })
                 .unwrap();
 
-            return Ok(shard.clone());
+            let group_id = state
+                .shard_group_lookup
+                .get(&shard.id)
+                .cloned()
+                .ok_or_else(|| crate::Error::NotFound(format!("shard (key={key:?}) group")))?;
+
+            return Ok((group_id, shard.clone()));
         }
 
         let state = self.state.lock().unwrap();
@@ -109,7 +119,15 @@ impl Router {
                 if (end.as_slice() < key) || (end.is_empty())
                 /* end = vec![] means MAX */
                 {
-                    return Ok(shard.clone());
+                    let group_id = state
+                        .shard_group_lookup
+                        .get(&shard.id)
+                        .cloned()
+                        .ok_or_else(|| {
+                            crate::Error::NotFound(format!("shard (key={key:?}) group"))
+                        })?;
+
+                    return Ok((group_id, shard.clone()));
                 }
             }
         }
@@ -153,7 +171,7 @@ async fn state_main(state: Arc<Mutex<State>>, root_client: RootClient) {
             state
                 .group_id_lookup
                 .iter()
-                .map(|(id, s)| (*id, s.epoch.unwrap_or_default()))
+                .map(|(id, s)| (*id, s.epoch))
                 .collect()
         };
         let events = match root_client.watch(cur_group_epochs).await {
@@ -174,6 +192,7 @@ async fn state_main(state: Arc<Mutex<State>>, root_client: RootClient) {
 async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>) {
     use watch_response::{delete_event::Event as DeleteEvent, update_event::Event as UpdateEvent};
 
+    let mut cached_group_states: HashMap<u64, GroupState> = HashMap::default();
     while let Some(event) = events.next().await {
         let (updates, deletes) = match event {
             Ok(resp) => (resp.updates, resp.deletes),
@@ -202,12 +221,14 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                         .collect::<HashMap<u64, ReplicaDesc>>();
                     let mut group_state = RouterGroupState {
                         id,
-                        epoch: Some(epoch),
+                        epoch,
                         leader_id: None,
                         replicas,
                     };
                     if let Some(old_state) = state.group_id_lookup.get(&id) {
                         group_state.leader_id = old_state.leader_id;
+                    } else if let Some(cached_state) = cached_group_states.remove(&id) {
+                        group_state.leader_id = cached_state.leader_id;
                     }
                     state.group_id_lookup.insert(id, group_state);
 
@@ -228,18 +249,11 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                 }
                 UpdateEvent::GroupState(group_state) => {
                     let id = group_state.group_id;
-                    let leader_id = group_state.leader_id;
-                    let mut group_state = RouterGroupState {
-                        id,
-                        epoch: None,
-                        leader_id,
-                        replicas: HashMap::new(),
-                    };
-                    if let Some(old_state) = state.group_id_lookup.get(&id) {
-                        group_state.epoch = old_state.epoch;
-                        group_state.replicas = old_state.replicas.clone();
+                    if let Some(group) = state.group_id_lookup.get_mut(&id) {
+                        group.leader_id = group_state.leader_id;
+                    } else {
+                        cached_group_states.insert(id, group_state);
                     }
-                    state.group_id_lookup.insert(id, group_state);
                 }
                 UpdateEvent::Database(db_desc) => {
                     let desc = db_desc.clone();

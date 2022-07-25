@@ -230,8 +230,18 @@ impl From<engula_api::server::v1::Error> for Error {
 impl From<engula_client::Error> for Error {
     fn from(err: engula_client::Error) -> Self {
         match err {
+            engula_client::Error::InvalidArgument(v) => Error::InvalidArgument(v),
+            engula_client::Error::DeadlineExceeded(v) => Error::DeadlineExceeded(v),
+            engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
             engula_client::Error::Rpc(err) => Error::Rpc(err),
-            _ => panic!("unknown err {err:?}"),
+
+            engula_client::Error::GroupNotFound(_)
+            | engula_client::Error::NotRootLeader(..)
+            | engula_client::Error::NotLeader(..) => unreachable!(),
+
+            // FIXME(walter) handle unknown errors.
+            engula_client::Error::NotFound(v) => panic!("unknown not found: {v}"),
+            engula_client::Error::Internal(v) => panic!("internal error: {v:?}"),
         }
     }
 }
