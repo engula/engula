@@ -75,10 +75,15 @@ impl TestContext {
         self.alloc_cfg.enable_shard_balance = false;
     }
 
+    pub fn disable_group_balance(&mut self) {
+        self.alloc_cfg.enable_group_balance = false;
+    }
+
     pub fn disable_all_balance(&mut self) {
         self.disable_replica_balance();
         self.disable_leader_balance();
         self.disable_shard_balance();
+        self.disable_group_balance();
     }
 
     #[allow(dead_code)]

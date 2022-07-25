@@ -327,18 +327,10 @@ impl Replica {
             // Replica has just been elected as the leader, and there are still exists unapplied
             // WALs, so the freshness of metadata cannot be guaranteed.
             Err(Error::GroupNotReady(group_id))
-        } else if exec_ctx.forward_shard_id.is_none()
-            && exec_ctx.epoch < lease_state.descriptor.epoch
-        {
+        } else if exec_ctx.forward_shard_id.is_some() {
+            Ok(())
+        } else if exec_ctx.epoch < lease_state.descriptor.epoch {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
-        } else if let Some(shard_id) = exec_ctx.forward_shard_id {
-            if lease_state.is_migrating_shard(shard_id) {
-                Ok(())
-            } else {
-                // FIXME(walter) maybe migration is finished!!!!
-                // Maybe this request has expired?
-                Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
-            }
         } else if lease_state.is_migrating() && matches!(req, Request::AcceptShard(_)) {
             // At the same time, there can only be one migration task.
             Err(Error::ServiceIsBusy("migration"))

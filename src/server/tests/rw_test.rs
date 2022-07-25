@@ -16,7 +16,9 @@
 
 mod helper;
 
-use engula_api::server::v1::ReplicaRole;
+use std::time::Duration;
+
+use engula_api::server::v1::{AcceptShardRequest, ReplicaRole};
 use engula_client::{EngulaClient, Partition};
 use tracing::info;
 
@@ -178,5 +180,68 @@ fn operation_with_leader_transfer() {
                 }
             }
         }
+    });
+}
+
+#[test]
+fn operation_with_shard_migration() {
+    block_on_current(async move {
+        let mut ctx = TestContext::new("rw_test__operation_with_shard_migration");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let app = c.app_client().await;
+
+        let db = app.create_database("test_db".to_string()).await.unwrap();
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Range {}))
+            .await
+            .unwrap();
+
+        while (c.find_router_group_state_by_key(&co.desc(), &[0]).await).is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let source_state = c
+            .find_router_group_state_by_key(&co.desc(), &[0])
+            .await
+            .unwrap();
+        let prev_group_id = source_state.id;
+        let target_group_id = 0;
+
+        for i in 0..1000 {
+            let k = format!("key-{i}").as_bytes().to_vec();
+            let v = format!("value-{i}").as_bytes().to_vec();
+            co.put(k.clone(), v).await.unwrap();
+            let r = co.get(k).await.unwrap();
+            let r = r.map(String::from_utf8);
+            assert!(matches!(r, Some(Ok(v)) if v == format!("value-{i}")));
+
+            if i % 100 == 0 {
+                let source_state = c
+                    .find_router_group_state_by_key(&co.desc(), &[0])
+                    .await
+                    .unwrap();
+                if source_state.id == target_group_id {
+                    continue;
+                }
+                let shard_desc = c.get_shard_desc(&co.desc(), &[0]).await.unwrap();
+                let mut client = c.group(target_group_id);
+                spawn(async move {
+                    client
+                        .accept_shard(AcceptShardRequest {
+                            src_group_epoch: source_state.epoch.unwrap_or_default(),
+                            src_group_id: source_state.id,
+                            shard_desc: Some(shard_desc),
+                        })
+                        .await
+                        .unwrap();
+                });
+            }
+        }
+        let source_state = c
+            .find_router_group_state_by_key(&co.desc(), &[0])
+            .await
+            .unwrap();
+        assert_ne!(source_state.id, prev_group_id);
     });
 }
