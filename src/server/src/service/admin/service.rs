@@ -26,7 +26,7 @@ use tonic::{
 
 #[crate::async_trait]
 pub(super) trait HttpHandle: Send + Sync {
-    async fn call(&self) -> crate::Result<http::Response<String>>;
+    async fn call(&self, path: &str) -> crate::Result<http::Response<String>>;
 }
 
 pub(super) struct Router {
@@ -123,7 +123,7 @@ impl Router {
             }
         };
 
-        let resp = match handle.call().await {
+        let resp = match handle.call(&path).await {
             Ok(resp) => resp.map(boxed),
             Err(e) => http::Response::builder()
                 .status(http::StatusCode::INTERNAL_SERVER_ERROR)

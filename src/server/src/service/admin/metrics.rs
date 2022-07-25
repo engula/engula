@@ -28,7 +28,7 @@ pub(super) struct MetricsHandle;
 
 #[crate::async_trait]
 impl super::service::HttpHandle for MetricsHandle {
-    async fn call(&self) -> crate::Result<http::Response<String>> {
+    async fn call(&self, _: &str) -> crate::Result<http::Response<String>> {
         METRICS_RPC_REQUESTS_TOTAL.inc();
 
         let encoder = TextEncoder::new();

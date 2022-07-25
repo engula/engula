@@ -24,10 +24,7 @@ use crate::Server;
 pub fn make_admin_service(server: Server) -> AdminService {
     let router = Router::empty()
         .route("/metrics", self::metrics::MetricsHandle)
-        .route(
-            "/metadata",
-            self::metadata::MetadataHandle::new(server.root),
-        )
+        .route("/metadata", self::metadata::MetadataHandle::new(server))
         .route("/health", self::health::HealthHandle);
     let api = Router::nest("/admin", router);
     AdminService::new(api)

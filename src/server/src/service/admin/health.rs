@@ -18,7 +18,7 @@ pub(super) struct HealthHandle;
 
 #[crate::async_trait]
 impl super::service::HttpHandle for HealthHandle {
-    async fn call(&self) -> crate::Result<http::Response<String>> {
+    async fn call(&self, _: &str) -> crate::Result<http::Response<String>> {
         Ok(http::Response::builder()
             .status(http::StatusCode::OK)
             .body("Ok\n".to_owned())
