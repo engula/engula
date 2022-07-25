@@ -251,10 +251,12 @@ impl Replica {
         lease_state: &LeaseState,
         desc: &MigrationDesc,
     ) -> Result<bool> {
-        let epoch = desc.src_group_epoch;
         let shard_desc = desc.shard_desc.as_ref().unwrap();
-        if epoch < lease_state.descriptor.epoch
-            && is_migration_finished(shard_desc, &lease_state.descriptor)
+        if (desc.src_group_id == info.group_id
+            && desc.src_group_epoch < lease_state.descriptor.epoch
+            && is_shard_migrated_out(shard_desc, &lease_state.descriptor))
+            || (desc.dest_group_epoch < lease_state.descriptor.epoch
+                && is_shard_migrated_in(shard_desc, &lease_state.descriptor))
         {
             info!(
                 replica = info.replica_id,
@@ -285,7 +287,7 @@ impl Replica {
     }
 }
 
-fn is_migration_finished(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool {
+fn is_shard_migrated_out(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool {
     // For source dest, if a shard is migrated, the shard desc should not exists.
     for shard in &group_desc.shards {
         if shard.id == shard_desc.id {
@@ -293,4 +295,14 @@ fn is_migration_finished(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool
         }
     }
     true
+}
+
+fn is_shard_migrated_in(shard_desc: &ShardDesc, group_desc: &GroupDesc) -> bool {
+    // For dest dest, if a shard is migrated, the shard desc should exists.
+    for shard in &group_desc.shards {
+        if shard.id == shard_desc.id {
+            return true;
+        }
+    }
+    false
 }
