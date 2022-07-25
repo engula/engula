@@ -24,6 +24,9 @@ pub enum AppError {
     #[error("{0} not found")]
     NotFound(String),
 
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+
     #[error("invalid argument {0}")]
     InvalidArgument(String),
 
@@ -42,6 +45,12 @@ pub enum Error {
     #[error("deadline exceeded {0}")]
     DeadlineExceeded(String),
 
+    #[error("{0} already exists")]
+    AlreadyExists(String),
+
+    #[error("{0} not found")]
+    NotFound(String),
+
     #[error("group epoch not match")]
     EpochNotMatch(GroupDesc),
 
@@ -57,9 +66,6 @@ pub enum Error {
     #[error("rpc {0}")]
     Rpc(tonic::Status),
 
-    #[error("{0} not found")]
-    NotFound(String),
-
     #[error("internal {0}")]
     Internal(Box<dyn StdError + Send + Sync + 'static>),
 }
@@ -74,6 +80,9 @@ impl From<tonic::Status> for Error {
             Code::Ok => panic!("invalid argument"),
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
             Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
+            Code::AlreadyExists => Error::AlreadyExists(status.message().into()),
+            Code::NotFound => Error::NotFound(status.message().into()),
+            Code::Internal => Error::Internal(status.message().into()),
             Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
                 .map(Into::into)
                 .unwrap_or_else(|_| Error::Rpc(status)),
@@ -111,6 +120,7 @@ impl From<Error> for AppError {
             Error::InvalidArgument(v) => AppError::InvalidArgument(v),
             Error::DeadlineExceeded(v) => AppError::DeadlineExceeded(v),
             Error::NotFound(v) => AppError::NotFound(v),
+            Error::AlreadyExists(v) => AppError::AlreadyExists(v),
             Error::Internal(v) => AppError::Internal(v),
 
             Error::Rpc(status) => panic!("unknown error: {status:?}"),

@@ -58,3 +58,66 @@ fn to_unreachable_peers() {
         ));
     });
 }
+
+#[test]
+fn create_duplicated_database_or_collection() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("client_test__create_duplicated_database_or_collection");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let client = c.app_client().await;
+        let db = client.create_database("test_db".to_string()).await.unwrap();
+        assert!(matches!(
+            client.create_database("test_db".to_string()).await,
+            Err(AppError::AlreadyExists(_))
+        ));
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
+            .await
+            .unwrap();
+        assert!(matches!(
+            db.create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
+                .await,
+            Err(AppError::AlreadyExists(_))
+        ));
+
+        let k = "key".as_bytes().to_vec();
+        let v = "value".as_bytes().to_vec();
+        co.put(k.clone(), v).await.unwrap();
+        let r = co.get(k).await.unwrap();
+        let r = r.map(String::from_utf8);
+        assert!(matches!(r, Some(Ok(v)) if v == "value"));
+    });
+}
+
+#[test]
+fn access_not_exists_database_or_collection() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("client_test__access_not_exists_database_or_collection");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(3).await;
+        let c = ClusterClient::new(nodes).await;
+        let client = c.app_client().await;
+        assert!(matches!(
+            client.open_database("test_db".to_string()).await,
+            Err(AppError::NotFound(_))
+        ));
+        let db = client.create_database("test_db".to_string()).await.unwrap();
+        assert!(matches!(
+            db.open_collection("test_co".to_string()).await,
+            Err(AppError::NotFound(_))
+        ));
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
+            .await
+            .unwrap();
+
+        let k = "key".as_bytes().to_vec();
+        let v = "value".as_bytes().to_vec();
+        co.put(k.clone(), v).await.unwrap();
+        let r = co.get(k).await.unwrap();
+        let r = r.map(String::from_utf8);
+        assert!(matches!(r, Some(Ok(v)) if v == "value"));
+    });
+}

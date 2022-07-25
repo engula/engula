@@ -233,6 +233,7 @@ impl From<engula_client::Error> for Error {
             engula_client::Error::InvalidArgument(v) => Error::InvalidArgument(v),
             engula_client::Error::DeadlineExceeded(v) => Error::DeadlineExceeded(v),
             engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
+            engula_client::Error::AlreadyExists(v) => Error::AlreadyExists(v),
             engula_client::Error::Rpc(err) => Error::Rpc(err),
 
             engula_client::Error::GroupNotFound(_)
