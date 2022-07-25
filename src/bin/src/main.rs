@@ -81,7 +81,9 @@ impl StartCommand {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_ansi(atty::is(atty::Stream::Stderr))
+        .init();
 
     let cmd = Command::parse();
     cmd.run()
