@@ -99,6 +99,20 @@ impl Liveness {
         }
     }
 
+    pub fn init_node_if_first_seen(&self, node_id: u64) {
+        // Give `liveness_threshold` time window to retry before mark as offline.
+        let mut nodes = self.nodes.lock().unwrap();
+        if let hash_map::Entry::Vacant(ent) = nodes.entry(node_id) {
+            ent.insert(NodeLiveness {
+                expiration: self.new_expiration(),
+            });
+        }
+    }
+
+    pub fn reset(&self) {
+        self.nodes.lock().unwrap().clear();
+    }
+
     fn new_expiration(&self) -> u128 {
         current_timestamp() + self.liveness_threshold.as_millis()
     }
