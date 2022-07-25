@@ -110,7 +110,7 @@ async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops
 fn single_replica_empty_shard_migration() {
     block_on_current(async {
         let mut ctx = TestContext::new("single-replica-empty-shard-migration");
-        ctx.disable_shard_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -179,7 +179,7 @@ fn single_replica_empty_shard_migration() {
 fn single_replica_migration() {
     block_on_current(async {
         let mut ctx = TestContext::new("single-replica-migration");
-        ctx.disable_shard_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -304,7 +304,7 @@ async fn create_two_groups(
 fn basic_migration() {
     block_on_current(async {
         let mut ctx = TestContext::new("basic-migration");
-        ctx.disable_shard_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         let c = ClusterClient::new(nodes).await;
@@ -367,7 +367,7 @@ fn abort_migration() {
 fn migration_with_offline_peers() {
     block_on_current(async {
         let mut ctx = TestContext::new("migration-with-offline-peers");
-        ctx.disable_shard_balance();
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         let c = ClusterClient::new(nodes).await;
