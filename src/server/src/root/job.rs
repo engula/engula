@@ -91,6 +91,7 @@ impl Root {
                     }
                 }
                 Err(err) => {
+                    self.liveness.init_node_if_first_seen(n.id);
                     warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
             }
