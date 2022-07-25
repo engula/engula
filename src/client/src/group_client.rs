@@ -44,6 +44,7 @@ pub struct GroupClient {
     conn_manager: ConnManager,
 
     epoch: u64,
+    leader_state: Option<(u64, u64)>,
     replicas: Vec<ReplicaDesc>,
 
     // Cache the access node id to avoid polling again.
@@ -61,6 +62,7 @@ impl GroupClient {
 
             node_clients: HashMap::default(),
             epoch: 0,
+            leader_state: None,
             access_node_id: None,
             replicas: Vec::default(),
             next_access_index: 0,
@@ -127,14 +129,20 @@ impl GroupClient {
         if let Ok(group) = self.router.find_group(self.group_id) {
             if self.epoch < group.epoch {
                 let mut leader_node_id = None;
-                if let Some(leader_id) = group.leader_id {
+                if let Some((leader_id, _)) = group.leader_state {
                     if let Some(desc) = group.replicas.get(&leader_id) {
                         leader_node_id = Some(desc.node_id);
                     }
                 };
+                self.leader_state = group.leader_state;
                 self.epoch = group.epoch;
                 self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
                 if let Some(node_id) = leader_node_id {
+                    trace!(
+                        "group client refresh group {} state with leader node id {}",
+                        self.group_id,
+                        node_id
+                    );
                     move_node_to_first_element(&mut self.replicas, node_id);
                 }
             }
@@ -178,26 +186,40 @@ impl GroupClient {
     async fn apply_status(&mut self, status: tonic::Status, opt: &InvokeOpt<'_>) -> Result<()> {
         match Error::from(status) {
             Error::GroupNotFound(_) => {
-                debug!("group client issue rpc: group {} not found", self.group_id);
-                self.access_node_id = None;
-                Ok(())
-            }
-            Error::NotLeader(_, leader_desc) => {
                 debug!(
-                    "group client issue rpc: replica {} not leader of group {}",
+                    "group client issue rpc to {}: group {} not found",
                     self.access_node_id.unwrap_or_default(),
                     self.group_id
                 );
                 self.access_node_id = None;
+                Ok(())
+            }
+            Error::NotLeader(_, term, leader_desc) => {
+                debug!(
+                    "group client issue rpc to {}: not leader of group {}, new leader {:?}",
+                    self.access_node_id.unwrap_or_default(),
+                    self.group_id,
+                    leader_desc
+                );
+                self.access_node_id = None;
                 if let Some(leader) = leader_desc {
-                    move_node_to_first_element(&mut self.replicas, leader.node_id);
-                    self.access_node_id = Some(leader.node_id);
+                    // Ignore staled `NotLeader` response.
+                    if !self
+                        .leader_state
+                        .map(|(_, local_term)| local_term >= term)
+                        .unwrap_or_default()
+                    {
+                        move_node_to_first_element(&mut self.replicas, leader.node_id);
+                        self.access_node_id = Some(leader.node_id);
+                        self.leader_state = Some((leader.id, term));
+                    }
                 }
                 Ok(())
             }
             Error::Rpc(status) if retryable_rpc_err(&status) => {
                 debug!(
-                    "group client issue rpc: group {} with retryable status: {}",
+                    "group client issue rpc to {}: group {} with retryable status: {}",
+                    self.access_node_id.unwrap_or_default(),
                     self.group_id,
                     status.to_string(),
                 );
@@ -214,8 +236,11 @@ impl GroupClient {
                 }
 
                 debug!(
-                    "group client issue rpc: group {} epoch {} not match target epoch {}",
-                    self.group_id, self.epoch, group_desc.epoch,
+                    "group client issue rpc to {}: group {} epoch {} not match target epoch {}",
+                    self.access_node_id.unwrap_or_default(),
+                    self.group_id,
+                    self.epoch,
+                    group_desc.epoch,
                 );
 
                 if opt

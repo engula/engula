@@ -164,7 +164,7 @@ impl Replica {
         use futures::future::poll_fn;
 
         if self.info.is_terminated() {
-            return Err(Error::NotLeader(self.info.group_id, None));
+            return Err(Error::NotLeader(self.info.group_id, 0, None));
         }
 
         poll_fn(|ctx| {
@@ -174,7 +174,7 @@ impl Replica {
             } else if immediate {
                 Poll::Ready(Ok(None))
             } else if self.info.is_terminated() {
-                Poll::Ready(Err(Error::NotLeader(self.info.group_id, None)))
+                Poll::Ready(Err(Error::NotLeader(self.info.group_id, 0, None)))
             } else {
                 lease_state
                     .leader_subscribers
@@ -322,7 +322,11 @@ impl Replica {
         let group_id = self.info.group_id;
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_raft_leader() {
-            Err(Error::NotLeader(group_id, lease_state.leader_descriptor()))
+            Err(Error::NotLeader(
+                group_id,
+                lease_state.applied_term,
+                lease_state.leader_descriptor(),
+            ))
         } else if !lease_state.is_log_term_matched() {
             // Replica has just been elected as the leader, and there are still exists unapplied
             // WALs, so the freshness of metadata cannot be guaranteed.
@@ -350,7 +354,11 @@ impl Replica {
     fn check_leader_early(&self) -> Result<()> {
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_ready_for_serving() {
-            Err(Error::NotLeader(self.info.group_id, None))
+            Err(Error::NotLeader(
+                self.info.group_id,
+                lease_state.applied_term,
+                lease_state.leader_descriptor(),
+            ))
         } else {
             Ok(())
         }

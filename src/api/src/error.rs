@@ -116,17 +116,19 @@ impl ErrorDetail {
 
 impl Error {
     #[inline]
-    pub fn not_leader(group_id: u64, leader: Option<ReplicaDesc>) -> Self {
+    pub fn not_leader(group_id: u64, term: u64, leader: Option<ReplicaDesc>) -> Self {
         Self::with_detail_value(error_detail_union::Value::NotLeader(NotLeader {
             group_id,
+            term,
             leader,
         }))
     }
 
     #[inline]
-    pub fn not_root_leader(root: RootDesc, leader: Option<ReplicaDesc>) -> Self {
+    pub fn not_root_leader(root: RootDesc, term: u64, leader: Option<ReplicaDesc>) -> Self {
         Self::with_detail_value(error_detail_union::Value::NotRoot(NotRoot {
             root: Some(root),
+            term,
             leader,
         }))
     }
