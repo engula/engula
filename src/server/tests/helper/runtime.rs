@@ -16,6 +16,7 @@ use std::future::Future;
 
 use tokio::runtime::Builder;
 
+#[allow(dead_code)]
 pub fn block_on_current<F: Future>(future: F) -> F::Output {
     let rt = Builder::new_current_thread().enable_all().build().unwrap();
     rt.block_on(future)
