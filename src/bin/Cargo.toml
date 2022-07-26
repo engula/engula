@@ -17,3 +17,4 @@ config = { version = "0.13.1", features = ["toml"] }
 num_cpus = "1.13.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
+atty = "0.2.14"
