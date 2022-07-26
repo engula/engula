@@ -61,10 +61,14 @@ pub enum Error {
     GroupNotFound(u64),
 
     #[error("not root leader")]
-    NotRootLeader(RootDesc, Option<ReplicaDesc>),
+    NotRootLeader(RootDesc, u64, Option<ReplicaDesc>),
 
     #[error("not leader of group {0}")]
-    NotLeader(u64, Option<ReplicaDesc>),
+    NotLeader(
+        /* group_id */ u64,
+        /* term */ u64,
+        Option<ReplicaDesc>,
+    ),
 
     #[error("rpc {0}")]
     Rpc(tonic::Status),
@@ -109,8 +113,10 @@ impl From<engula_api::server::v1::Error> for Error {
         let msg = detail.message.clone();
         match detail.detail.as_ref().and_then(|u| u.value.clone()) {
             Some(Value::GroupNotFound(v)) => Error::GroupNotFound(v.group_id),
-            Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.leader),
-            Some(Value::NotRoot(v)) => Error::NotRootLeader(v.root.unwrap_or_default(), v.leader),
+            Some(Value::NotLeader(v)) => Error::NotLeader(v.group_id, v.term, v.leader),
+            Some(Value::NotRoot(v)) => {
+                Error::NotRootLeader(v.root.unwrap_or_default(), v.term, v.leader)
+            }
             Some(Value::NotMatch(v)) => Error::EpochNotMatch(v.descriptor.unwrap_or_default()),
             Some(Value::StatusCode(v)) => Status::new(v.into(), msg).into(),
             _ => Status::internal(format!("unknown error detail, msg: {msg}")).into(),
@@ -132,8 +138,8 @@ impl From<Error> for AppError {
             Error::EpochNotMatch(_)
             | Error::ResourceExhausted(_)
             | Error::GroupNotFound(_)
-            | Error::NotRootLeader(_, _)
-            | Error::NotLeader(_, _) => unreachable!(),
+            | Error::NotRootLeader(..)
+            | Error::NotLeader(..) => unreachable!(),
         }
     }
 }

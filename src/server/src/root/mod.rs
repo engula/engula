@@ -76,7 +76,7 @@ impl RootShared {
         let core = self.core.lock().unwrap();
         core.as_ref()
             .map(|c| c.schema.clone())
-            .ok_or_else(|| Error::NotRootLeader(RootDesc::default(), None))
+            .ok_or_else(|| Error::NotRootLeader(RootDesc::default(), 0, None))
     }
 }
 
@@ -152,7 +152,7 @@ impl Root {
                     .step_leader(&self.shared.local_addr, root_replica, &mut bootstrapped)
                     .await
                 {
-                    Ok(()) | Err(Error::NotLeader(_, _)) => {
+                    Ok(()) | Err(Error::NotLeader(..)) => {
                         // Step follower
                         continue;
                     }
