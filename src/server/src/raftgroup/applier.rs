@@ -78,14 +78,14 @@ impl<M: StateMachine> Applier<M> {
             sender,
         };
 
-        // FIXME(walter) invoke with NotLeader if the proposal index is go back.
         // ensure the proposals are monotonic.
         if let Some(last_ctx) = self.proposal_queue.back() {
             if last_ctx.index >= ctx.index {
-                panic!(
-                    "last ctx index {}, current idx {}",
-                    last_ctx.index, ctx.index
-                );
+                let last_ctx = self.proposal_queue.pop_back().unwrap();
+                last_ctx
+                    .sender
+                    .send(Err(Error::NotLeader(self.group_id, term, None)))
+                    .unwrap_or_default();
             }
         }
         self.proposal_queue.push_back(ctx);

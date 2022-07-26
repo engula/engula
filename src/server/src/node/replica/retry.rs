@@ -88,10 +88,6 @@ async fn execute_internal(
 
                 return Err(Error::EpochNotMatch(desc));
             }
-            Err(Error::Raft(raft::Error::ProposalDropped)) => {
-                // FIXME(walter) replace by service is busy.
-                return Err(Error::NotLeader(replica.info.group_id, 0, None));
-            }
             Err(e) => return Err(e),
         }
     }
