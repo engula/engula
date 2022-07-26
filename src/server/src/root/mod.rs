@@ -217,7 +217,6 @@ impl Root {
 
         // After that, RootCore needs to be set to None before returning.
         {
-
             self.liveness.reset();
 
             let mut core = self.shared.core.lock().unwrap();
