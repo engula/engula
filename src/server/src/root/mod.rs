@@ -231,6 +231,8 @@ impl Root {
             });
         }
 
+        self.heartbeat_queue.enable(true).await;
+
         let node_id = self.shared.node_ident.node_id;
         info!(
             "node {node_id} step root service leader, heartbeat_interval: {:?}, liveness_threshold: {:?}",
@@ -254,6 +256,7 @@ impl Root {
         info!("node {node_id} current root node drop leader");
 
         // After that, RootCore needs to be set to None before returning.
+        self.heartbeat_queue.enable(false).await;
         {
             self.liveness.reset();
 
@@ -775,6 +778,7 @@ pub struct HeartbeatQueue {
 
 #[derive(Default)]
 struct HeartbeatQueueCore {
+    enable: bool,
     delay: delay_queue::DelayQueue<HeartbeatTask>,
     node_scheduled: HashMap<u64, (delay_queue::Key, Instant)>,
 }
@@ -782,6 +786,9 @@ struct HeartbeatQueueCore {
 impl HeartbeatQueue {
     pub async fn try_schedule(&self, task: HeartbeatTask, when: Instant) {
         let mut core = self.core.lock().await;
+        if !core.enable {
+            return;
+        }
         let node = task.node_id;
         if let Some((scheduled_key, old_when)) =
             core.node_scheduled.get(&node).map(ToOwned::to_owned)
@@ -800,6 +807,9 @@ impl HeartbeatQueue {
 
     async fn try_poll(&self) -> Vec<HeartbeatTask> {
         let mut core = self.core.lock().await;
+        if !core.enable {
+            return vec![];
+        }
         let tasks = futures::future::poll_fn(|cx| {
             let mut tasks = Vec::new();
             while let Poll::Ready(Some(task)) = core.delay.poll_expired(cx) {
@@ -816,6 +826,15 @@ impl HeartbeatQueue {
             core.node_scheduled.remove(&task.node_id);
         }
         tasks
+    }
+
+    async fn enable(&self, enable: bool) {
+        let mut core = self.core.lock().await;
+        if core.enable != enable {
+            core.node_scheduled.clear();
+            core.delay.clear();
+            core.enable = enable;
+        }
     }
 }
 
