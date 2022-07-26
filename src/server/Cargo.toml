@@ -28,6 +28,7 @@ num_cpus = "1.13"
 rand = "0.8"
 serde = { version = "1.0.139", features = ["derive"] }
 serde_json = "1.0"
+tokio-util = { version = "0.7.3", features = ["time"] }
 
 [dependencies.raft]
 git = "https://github.com/w41ter/raft-rs.git"

@@ -12,22 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashSet, sync::Arc, time::Duration, vec};
+use std::{collections::HashSet, ops::Add, sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{
     watch_response::{update_event, UpdateEvent},
     *,
 };
 use futures::future::join_all;
+use tokio::time::Instant;
 use tracing::{info, trace, warn};
 
-use super::{Root, Schema};
+use super::{HeartbeatTask, Root, Schema};
 use crate::{root::schema::ReplicaNodes, Result};
 
 impl Root {
-    pub async fn send_heartbeat(&self, schema: Arc<Schema>) -> Result<()> {
+    pub async fn send_heartbeat(&self, schema: Arc<Schema>, tasks: &[HeartbeatTask]) -> Result<()> {
         let cur_node_id = self.current_node_id();
         let nodes = schema.list_node().await?;
+        let nodes = nodes
+            .iter()
+            .filter(|n| tasks.iter().any(|t| t.node_id == n.id))
+            .collect::<Vec<_>>();
+
+        info!("sending heartbeat to {:?}", &nodes);
 
         let mut piggybacks = Vec::new();
 
@@ -66,12 +73,13 @@ impl Root {
             let fut = self.try_send_heartbeat(
                 n.addr.to_owned(),
                 &piggybacks,
-                self.liveness.heartbeat_timeout,
+                Duration::from_secs(self.cfg.heartbeat_timeout_sec),
             );
             futs.push(fut);
         }
 
         let resps = join_all(futs).await;
+        let last_heartbeat = Instant::now();
         for (i, resp) in resps.iter().enumerate() {
             let n = nodes.get(i).unwrap();
             match resp {
@@ -95,6 +103,12 @@ impl Root {
                     warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
             }
+            self.heartbeat_queue
+                .try_schedule(
+                    HeartbeatTask { node_id: n.id },
+                    last_heartbeat.add(self.cfg.heartbeat_interval()),
+                )
+                .await;
         }
         Ok(())
     }

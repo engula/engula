@@ -16,7 +16,7 @@ use std::{collections::HashMap, thread, time::Duration};
 use engula_server::{
     node::replica::{ReplicaConfig, ReplicaTestingKnobs},
     runtime::{ExecutorOwner, ShutdownNotifier},
-    AllocatorConfig, Config, NodeConfig, RaftConfig,
+    Config, NodeConfig, RaftConfig, RootConfig,
 };
 use tempdir::TempDir;
 use tracing::info;
@@ -27,7 +27,7 @@ use crate::helper::socket::next_avail_port;
 #[allow(dead_code)]
 pub struct TestContext {
     root_dir: TempDir,
-    alloc_cfg: AllocatorConfig,
+    root_cfg: RootConfig,
     replica_knobs: ReplicaTestingKnobs,
     disable_group_promoting: bool,
 
@@ -45,7 +45,7 @@ impl TestContext {
             root_dir,
             disable_group_promoting: false,
             replica_knobs: ReplicaTestingKnobs::default(),
-            alloc_cfg: AllocatorConfig::default(),
+            root_cfg: RootConfig::default(),
             tick_interval_ms: 50,
             notifiers: HashMap::default(),
             handles: HashMap::default(),
@@ -68,19 +68,19 @@ impl TestContext {
     }
 
     pub fn disable_replica_balance(&mut self) {
-        self.alloc_cfg.enable_replica_balance = false;
+        self.root_cfg.enable_replica_balance = false;
     }
 
     pub fn disable_leader_balance(&mut self) {
-        self.alloc_cfg.enable_leader_balance = false;
+        self.root_cfg.enable_leader_balance = false;
     }
 
     pub fn disable_shard_balance(&mut self) {
-        self.alloc_cfg.enable_shard_balance = false;
+        self.root_cfg.enable_shard_balance = false;
     }
 
     pub fn disable_group_balance(&mut self) {
-        self.alloc_cfg.enable_group_balance = false;
+        self.root_cfg.enable_group_balance = false;
     }
 
     pub fn disable_all_balance(&mut self) {
@@ -92,7 +92,7 @@ impl TestContext {
 
     #[allow(dead_code)]
     pub fn spawn_server(&mut self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
-        self.spawn_server_with_cfg(idx, addr, init, join_list, self.alloc_cfg.clone());
+        self.spawn_server_with_cfg(idx, addr, init, join_list, self.root_cfg.clone());
     }
 
     #[allow(dead_code)]
@@ -102,7 +102,7 @@ impl TestContext {
         addr: &str,
         init: bool,
         join_list: Vec<String>,
-        cfg: AllocatorConfig,
+        root: RootConfig,
     ) {
         let addr = addr.to_owned();
         let name = idx.to_string();
@@ -123,7 +123,7 @@ impl TestContext {
                 tick_interval_ms: self.tick_interval_ms,
                 ..Default::default()
             },
-            allocator: cfg,
+            root,
         };
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();

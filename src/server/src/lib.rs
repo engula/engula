@@ -41,7 +41,7 @@ pub use crate::{
     error::{Error, Result},
     node::NodeConfig,
     raftgroup::RaftConfig,
-    root::{diagnosis, AllocatorConfig},
+    root::{diagnosis, RootConfig},
     service::Server,
 };
 
@@ -63,7 +63,7 @@ pub struct Config {
     pub raft: RaftConfig,
 
     #[serde(default)]
-    pub allocator: AllocatorConfig,
+    pub root: RootConfig,
 }
 
 pub(crate) struct Provider {

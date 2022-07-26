@@ -21,7 +21,7 @@ use tracing::{error, info, warn};
 
 use super::{
     allocator::{GroupAction, LeaderAction, ReplicaAction, ReplicaRoleAction, ShardAction},
-    RootShared,
+    HeartbeatQueue, RootShared,
 };
 use crate::{
     bootstrap::INITIAL_EPOCH,
@@ -43,6 +43,8 @@ pub struct ReconcileScheduler {
 pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
+    #[allow(dead_code)]
+    heartbeat_queue: Arc<HeartbeatQueue>,
 }
 
 pub struct ScheduleConfig {
@@ -215,8 +217,16 @@ impl ReconcileScheduler {
 }
 
 impl ScheduleContext {
-    pub(crate) fn new(shared: Arc<RootShared>, alloc: Arc<Allocator<SysAllocSource>>) -> Self {
-        Self { shared, alloc }
+    pub(crate) fn new(
+        shared: Arc<RootShared>,
+        alloc: Arc<Allocator<SysAllocSource>>,
+        heartbeat_queue: Arc<HeartbeatQueue>,
+    ) -> Self {
+        Self {
+            shared,
+            alloc,
+            heartbeat_queue,
+        }
     }
 
     pub async fn handle_task(
