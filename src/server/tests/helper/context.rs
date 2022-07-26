@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::{collections::HashMap, thread};
+use std::{collections::HashMap, thread, time::Duration};
 
 use engula_server::{
     node::replica::{ReplicaConfig, ReplicaTestingKnobs},
@@ -19,6 +19,7 @@ use engula_server::{
     AllocatorConfig, Config, NodeConfig, RaftConfig,
 };
 use tempdir::TempDir;
+use tracing::info;
 
 use super::client::node_client_with_retry;
 use crate::helper::socket::next_avail_port;
@@ -29,6 +30,8 @@ pub struct TestContext {
     alloc_cfg: AllocatorConfig,
     replica_knobs: ReplicaTestingKnobs,
     disable_group_promoting: bool,
+
+    tick_interval_ms: u64,
 
     notifiers: HashMap<u64, ShutdownNotifier>,
     handles: HashMap<u64, std::thread::JoinHandle<()>>,
@@ -43,6 +46,7 @@ impl TestContext {
             disable_group_promoting: false,
             replica_knobs: ReplicaTestingKnobs::default(),
             alloc_cfg: AllocatorConfig::default(),
+            tick_interval_ms: 50,
             notifiers: HashMap::default(),
             handles: HashMap::default(),
         }
@@ -116,7 +120,7 @@ impl TestContext {
                 ..Default::default()
             },
             raft: RaftConfig {
-                tick_interval_ms: 500,
+                tick_interval_ms: self.tick_interval_ms,
                 ..Default::default()
             },
             allocator: cfg,
@@ -173,10 +177,15 @@ impl TestContext {
     }
 
     pub async fn stop_server(&mut self, id: u64) {
+        info!("stop server {id}");
         self.notifiers.remove(&id);
         if let Some(handle) = self.handles.remove(&id) {
             handle.join().unwrap_or_default();
         }
+    }
+
+    pub async fn wait_election_timeout(&self) {
+        tokio::time::sleep(Duration::from_millis(self.tick_interval_ms * 6)).await;
     }
 }
 

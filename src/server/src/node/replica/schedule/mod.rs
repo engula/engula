@@ -22,7 +22,6 @@ use engula_api::server::v1::{group_request_union::Request, *};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-    bootstrap::ROOT_GROUP_ID,
     node::{
         replica::{ExecCtx, ReplicaConfig},
         Replica,
@@ -176,16 +175,13 @@ impl Scheduler {
             return;
         }
 
-        let replicas = match self.ctx.alloc_addition_replicas(acquire_replicas).await {
-            Ok(replicas) => replicas,
-            Err(e) => {
-                error!(
-                    replica = self.ctx.replica_id,
-                    group = self.ctx.group_id,
-                    "alloc addition replicas for promoting group: {e}",
-                );
-                return;
-            }
+        let replicas = match self
+            .ctx
+            .alloc_addition_replicas("promoting_group", acquire_replicas)
+            .await
+        {
+            Some(replicas) => replicas,
+            None => return,
         };
 
         let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
@@ -214,18 +210,11 @@ impl Scheduler {
 
         let replicas = match self
             .ctx
-            .alloc_addition_replicas(outgoing_voters.len())
+            .alloc_addition_replicas("curing_group", outgoing_voters.len())
             .await
         {
-            Ok(replicas) => replicas,
-            Err(e) => {
-                error!(
-                    replica = self.ctx.replica_id,
-                    group = self.ctx.group_id,
-                    "alloc addition replicas for curing group: {e}",
-                );
-                return;
-            }
+            Some(replicas) => replicas,
+            None => return,
         };
 
         let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
@@ -398,13 +387,15 @@ impl ScheduleContext {
         task: &mut ChangeConfigTask,
         desc: &GroupDesc,
     ) -> bool {
-        if task.next_step(desc).is_some() && self.change_config_next_step(task).await {
-            info!(
-                group = self.group_id,
-                replica = self.replica_id,
-                "change config task success"
-            );
-            return true;
+        while task.next_step(desc).is_some() {
+            if self.change_config_next_step(task).await {
+                info!(
+                    group = self.group_id,
+                    replica = self.replica_id,
+                    "change config task success"
+                );
+                return true;
+            }
         }
         false
     }
@@ -529,28 +520,38 @@ impl ScheduleContext {
     /// Alloc addition replicas from root.
     async fn alloc_addition_replicas(
         &mut self,
+        who: &str,
         num_required: usize,
-    ) -> std::result::Result<Vec<ReplicaDesc>, engula_client::Error> {
-        let root_group_state = self.provider.router.find_group(ROOT_GROUP_ID)?;
-        let root_replicas = root_group_state.replicas.values().cloned();
-
-        let mut root_list = vec![];
-        for replica in root_replicas {
-            root_list.push(self.provider.router.find_node_addr(replica.node_id)?);
+    ) -> Option<Vec<ReplicaDesc>> {
+        let req = AllocReplicaRequest {
+            group_id: self.group_id,
+            epoch: self.replica.epoch(),
+            current_term: self.current_term,
+            leader_id: self.replica_id,
+            num_required: num_required as u64,
+        };
+        match self.provider.root_client.alloc_replica(req).await {
+            Ok(resp) => Some(resp.replicas),
+            Err(
+                e @ (engula_client::Error::ResourceExhausted(_)
+                | engula_client::Error::EpochNotMatch(_)),
+            ) => {
+                debug!(
+                    replica = self.replica_id,
+                    group = self.group_id,
+                    "alloc addition replicas for {who}: {e}",
+                );
+                None
+            }
+            Err(e) => {
+                error!(
+                    replica = self.replica_id,
+                    group = self.group_id,
+                    "alloc addition replicas for {who}: {e}",
+                );
+                None
+            }
         }
-
-        let resp = self
-            .provider
-            .root_client
-            .alloc_replica(AllocReplicaRequest {
-                group_id: self.group_id,
-                epoch: self.replica.epoch(),
-                current_term: self.current_term,
-                leader_id: self.replica_id,
-                num_required: num_required as u64,
-            })
-            .await?;
-        Ok(resp.replicas)
     }
 
     async fn create_replica(

@@ -39,6 +39,7 @@ fn to_unreachable_peers() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         let k = "key".as_bytes().to_vec();
         let v = "value".as_bytes().to_vec();
@@ -81,6 +82,7 @@ fn create_duplicated_database_or_collection() {
                 .await,
             Err(AppError::AlreadyExists(_))
         ));
+        c.assert_collection_ready(&co.desc()).await;
 
         let k = "key".as_bytes().to_vec();
         let v = "value".as_bytes().to_vec();
@@ -112,6 +114,7 @@ fn access_not_exists_database_or_collection() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         let k = "key".as_bytes().to_vec();
         let v = "value".as_bytes().to_vec();
@@ -135,6 +138,8 @@ fn request_to_offline_leader() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+
+        c.assert_collection_ready(&co.desc()).await;
 
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();

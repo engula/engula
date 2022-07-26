@@ -15,8 +15,6 @@
 
 mod helper;
 
-use std::time::Duration;
-
 use engula_api::server::v1::*;
 use helper::context::TestContext;
 use tracing::info;
@@ -54,6 +52,10 @@ fn add_replica() {
 
         // 2. add replica to group
         let mut group_client = c.group(group_id);
+        group_client.add_learner(new_replica_id, 1).await.unwrap();
+
+        ctx.wait_election_timeout().await;
+
         group_client.add_replica(new_replica_id, 1).await.unwrap();
 
         c.assert_group_contains_member(group_id, new_replica_id)
@@ -111,6 +113,8 @@ fn create_group_with_multi_replicas() {
 
         let mut group_client = c.group(group_id);
         group_client.add_replica(103, 3).await.unwrap();
+        ctx.wait_election_timeout().await;
+
         c.assert_group_contains_member(group_id, 103).await;
     });
 }
@@ -136,7 +140,7 @@ fn promote_to_cluster_from_single_node() {
                 return;
             }
 
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            ctx.wait_election_timeout().await;
         }
         panic!("could not promote root group to cluster");
     });
@@ -181,7 +185,9 @@ fn cure_group() {
 
         info!("shutdown node 3 and replica 103");
         c.assert_group_contains_member(group_id, 103).await;
+
         ctx.stop_server(3).await;
+        ctx.wait_election_timeout().await;
 
         info!("wait curing group {group_id}");
         c.assert_group_not_contains_member(group_id, 103).await;

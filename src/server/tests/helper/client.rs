@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use engula_api::{server::v1::*, v1::CollectionDesc};
 use engula_client::{
@@ -26,7 +30,7 @@ pub async fn node_client_with_retry(addr: &str) -> NodeClient {
         match NodeClient::connect(addr.to_string()).await {
             Ok(client) => return client,
             Err(_) => {
-                runtime::time::sleep(Duration::from_millis(3000)).await;
+                runtime::time::sleep(Duration::from_millis(50)).await;
             }
         };
     }
@@ -89,11 +93,12 @@ impl ClusterClient {
         replicas.sort_unstable();
         for _ in 0..10000 {
             let members = self.group_members(group_id).await;
-            let members = members
+            let mut members = members
                 .into_iter()
                 .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
                 .map(|(k, _)| k)
                 .collect::<Vec<u64>>();
+            members.sort_unstable();
             if members == replicas {
                 return;
             }
@@ -101,6 +106,22 @@ impl ClusterClient {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("group {group_id} does not have expected replicas {replicas:?}");
+    }
+
+    pub async fn assert_num_group_voters(&self, group_id: u64, size: usize) {
+        for _ in 0..10000 {
+            let members = self.group_members(group_id).await;
+            if members
+                .into_iter()
+                .filter(|(_, v)| *v == ReplicaRole::Voter as i32)
+                .count()
+                == size
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} does not have expected number of voters ({size})");
     }
 
     pub async fn assert_group_contains_member(&self, group_id: u64, replica_id: u64) {
@@ -291,5 +312,23 @@ impl ClusterClient {
     ) -> Option<RouterGroupState> {
         let (_, shard) = self.router.find_shard(co_desc.clone(), key).ok()?;
         self.router.find_group_by_shard(shard.id).ok()
+    }
+
+    pub async fn assert_collection_ready(&self, co_desc: &CollectionDesc) {
+        let mut ready_group: HashSet<u64> = HashSet::default();
+        for i in 0..255u8 {
+            for _ in 0..1000 {
+                let state = match self.find_router_group_state_by_key(co_desc, &[i]).await {
+                    Some(state) => state,
+                    None => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        continue;
+                    }
+                };
+                if ready_group.insert(state.id) {
+                    self.assert_num_group_voters(state.id, 3).await;
+                }
+            }
+        }
     }
 }
