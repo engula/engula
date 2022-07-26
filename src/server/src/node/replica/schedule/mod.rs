@@ -387,15 +387,13 @@ impl ScheduleContext {
         task: &mut ChangeConfigTask,
         desc: &GroupDesc,
     ) -> bool {
-        while task.next_step(desc).is_some() {
-            if self.change_config_next_step(task).await {
-                info!(
-                    group = self.group_id,
-                    replica = self.replica_id,
-                    "change config task success"
-                );
-                return true;
-            }
+        if task.next_step(desc).is_some() && self.change_config_next_step(task).await {
+            info!(
+                group = self.group_id,
+                replica = self.replica_id,
+                "change config task success"
+            );
+            return true;
         }
         false
     }
