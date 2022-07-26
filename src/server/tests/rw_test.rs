@@ -82,7 +82,7 @@ fn cluster_put_and_get() {
 #[test]
 fn cluster_put_many_keys() {
     block_on_current(async {
-        let mut ctx = TestContext::new("rw_test__cluster_put_and_get");
+        let mut ctx = TestContext::new("rw_test__cluster_put_many_keys");
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
