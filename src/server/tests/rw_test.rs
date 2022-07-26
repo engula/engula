@@ -16,8 +16,6 @@
 
 mod helper;
 
-use std::time::Duration;
-
 use engula_api::server::v1::ReplicaRole;
 use engula_client::{EngulaClient, Partition};
 use tracing::info;
@@ -70,6 +68,7 @@ fn cluster_put_and_get() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         let k = "book_name".as_bytes().to_vec();
         let v = "rust_in_actions".as_bytes().to_vec();
@@ -83,7 +82,7 @@ fn cluster_put_and_get() {
 #[test]
 fn cluster_put_many_keys() {
     block_on_current(async {
-        let mut ctx = TestContext::new("rw_test__cluster_put_and_get");
+        let mut ctx = TestContext::new("rw_test__cluster_put_many_keys");
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
@@ -94,6 +93,7 @@ fn cluster_put_many_keys() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();
@@ -121,6 +121,7 @@ fn operation_with_config_change() {
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         for i in 0..3000 {
             if i == 20 {
@@ -152,6 +153,7 @@ fn operation_with_leader_transfer() {
             .create_collection("test_co".to_string(), Some(Partition::Range {}))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();
@@ -197,10 +199,8 @@ fn operation_with_shard_migration() {
             .create_collection("test_co".to_string(), Some(Partition::Range {}))
             .await
             .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
 
-        while (c.find_router_group_state_by_key(&co.desc(), &[0]).await).is_none() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
         let source_state = c
             .find_router_group_state_by_key(&co.desc(), &[0])
             .await

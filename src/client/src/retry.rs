@@ -25,7 +25,7 @@ pub struct RetryState {
 
 impl Default for RetryState {
     fn default() -> Self {
-        RetryState::new(10, Duration::from_millis(200))
+        RetryState::new(30, Duration::from_millis(200))
     }
 }
 

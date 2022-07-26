@@ -153,15 +153,15 @@ impl LeaseStateObserver {
         lease_state.replica_state = replica_state.clone();
         let desc = if role == RaftRole::Leader {
             info!(
-                "replica {} become leader of group {} at term {}",
-                self.info.replica_id, self.info.group_id, term
+                "replica {} node {} become leader of group {} at term {term}",
+                self.info.replica_id, self.info.node_id, self.info.group_id
             );
             Some(lease_state.descriptor.clone())
         } else {
             if prev_role == RaftRole::Leader as i32 {
                 info!(
-                    "replica {} resign as leader of group {} at term {}",
-                    self.info.replica_id, self.info.group_id, term
+                    "replica {} node {} resign as leader of group {} at term {term}",
+                    self.info.replica_id, self.info.node_id, self.info.group_id
                 );
             }
             None
@@ -201,8 +201,8 @@ impl StateMachineObserver for LeaseStateObserver {
         lease_state.applied_term = term;
         if lease_state.is_ready_for_serving() {
             info!(
-                "replica {} is ready for serving requests of group {} at term {}",
-                self.info.replica_id, self.info.group_id, term
+                "replica {} node {} is ready for serving requests of group {} at term {term}",
+                self.info.replica_id, self.info.node_id, self.info.group_id
             );
             lease_state.wake_all_waiters();
             if let Some(migration_state) = lease_state.migration_state.as_ref() {

@@ -50,11 +50,12 @@ impl Liveness {
         const LIVENESS_FRAC: f64 = 0.5;
 
         // ensure liveness_threshold >>> raft_election_timeout?
-        let liveness_threshold = Duration::from_millis(
+        let liveness_threshold = Duration::from_millis(std::cmp::max(
             cfg.raft.election_tick as u64
                 * cfg.raft.tick_interval_ms
                 * RAFT_ELECTION_TIMEOUT_MULTIPLIER,
-        );
+            3000,
+        ));
         let heartbeat_timeout =
             Duration::from_millis((liveness_threshold.as_millis() as f64 * LIVENESS_FRAC) as u64);
         Self {
@@ -69,7 +70,7 @@ impl Liveness {
         self.liveness_threshold - self.heartbeat_timeout - RECONCILE_TIMEOUT /* TODO: reconcile
                                                                               * block job should
                                                                               * be async and not
-                                                                              * affact the
+                                                                              * affect the
                                                                               * hearbeat tick */
     }
 

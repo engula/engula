@@ -350,7 +350,7 @@ fn abort_migration() {
             .await
         {
             error!("accept shard: {e:?}");
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            ctx.wait_election_timeout().await;
         }
         // Ensure the formar shard migration is aborted by epoch not match.
         while group_client
@@ -358,7 +358,7 @@ fn abort_migration() {
             .await
             .is_err()
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            ctx.wait_election_timeout().await;
         }
     });
 }
@@ -465,7 +465,7 @@ fn source_group_receive_many_accepting_shard_request() {
                 ));
             });
 
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            ctx.wait_election_timeout().await;
             g.commit_migration(&desc).await.unwrap();
             handle.await.unwrap();
             break;
