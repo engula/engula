@@ -250,7 +250,10 @@ impl Node {
         };
 
         replica.shutdown(actual_desc).await?;
-        self.replica_route_table.remove(group_id);
+        if self.replica_route_table.remove(group_id).is_none() {
+            return Ok(());
+        }
+
         self.raft_route_table.delete(replica_id);
 
         let wait_group = {
