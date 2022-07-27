@@ -74,9 +74,9 @@ impl ReplicaRouteTable {
         }
     }
 
-    pub fn remove(&self, group_id: u64) {
+    pub fn remove(&self, group_id: u64) -> Option<Arc<Replica>> {
         let mut core = self.core.write().unwrap();
-        core.replicas.remove(&group_id);
+        core.replicas.remove(&group_id)
     }
 }
 
