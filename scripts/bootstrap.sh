@@ -15,12 +15,13 @@
 # limitations under the License.
 
 ###### CONFIG ######
+MODE=debug
 
 # The working dir of the target cluster envs.
 BASE_DIR=$(pwd)/cluster_test
 
 # The directory which contains the target binary file.
-BINARY_DIR=$(pwd)/target/debug/
+BINARY_DIR=$(pwd)/target/${MODE}/
 
 # The number of servers of this clusters.
 NUM_SERVERS=5
@@ -34,11 +35,11 @@ export RUST_LOG=engula_server=debug
 
 function build_cluster_env() {
     mkdir -p ${BASE_DIR}/log
-    mkdir -p ${BASE_DIR}/config
 
     ln -s ${BINARY_DIR}/engula ${BASE_DIR}
     for id in $(seq 1 ${NUM_SERVERS}); do
         mkdir -p ${BASE_DIR}/server/${id}
+        mkdir -p ${BASE_DIR}/config/${id}
     done
 }
 
@@ -96,10 +97,66 @@ function start_join_server() {
         >${BASE_DIR}/log/${id}.log 2>&1 &
 }
 
-function start_cluster() {
-    start_init_server
+function start_server() {
+    local id=$1
+    ulimit -c unlimited
+    ulimit -n 1024000
+    setsid ${BASE_DIR}/engula start \
+        --conf ${BASE_DIR}/config/${id}.toml \
+        >${BASE_DIR}/log/${id}.log 2>&1 &
+}
+
+# start [id]
+#   start server or entire cluster if no id specified.
+function start() {
+    local id=$1
+    if [[ "x$id" == "x" ]]; then
+        for id in $(seq 1 ${NUM_SERVERS}); do
+            start_server $id
+        done
+    else
+        start_server $id
+    fi
+}
+
+function stop_server() {
+    local id=$1
+    ps -ef |
+        grep "engula start" |
+        grep "${BASE_DIR}/config/${id}.toml" |
+        grep -v grep |
+        awk '{print $2}' |
+        xargs kill -9 >/dev/null 2>&1
+}
+
+# stop [id]
+#   stop server or entire cluster if no id specified.
+function stop() {
+    local id=$1
+    if [[ "x$id" == "x" ]]; then
+        for id in $(seq 1 ${NUM_SERVERS}); do
+            stop_server $id
+        done
+    else
+        stop_server $id
+    fi
+}
+
+function setup_cluster() {
+    ${BASE_DIR}/engula start \
+        --db ${BASE_DIR}/server/1 \
+        --addr "127.0.0.1:${BASE_PORT}" \
+        --init \
+        --dump-config ${BASE_DIR}/config/1.toml
+
     for id in $(seq 2 ${NUM_SERVERS}); do
-        start_join_server $id
+        local servers="$(join_list)"
+
+        ${BASE_DIR}/engula start \
+            --db ${BASE_DIR}/server/${id} \
+            --addr "127.0.0.1:$(server_port ${id})" \
+            ${servers} \
+            --dump-config ${BASE_DIR}/config/${id}.toml
     done
 }
 
@@ -110,17 +167,30 @@ fi
 pushd ${BASE_DIR} >/dev/null
 
 while [[ $# != 0 ]]; do
-    case $1 in
+    cmd=$1
+    shift
+
+    case $cmd in
+    setup)
+        setup_cluster
+        start
+        exit 0
+        ;;
+    shutdown)
+        stop
+        rm -rf ${BASE_DIR}
+        exit 0
+        ;;
     start)
-        start_cluster
+        start $@
+        exit 0
+        ;;
+    stop)
+        stop $@
         exit 0
         ;;
     status)
         ps -ef | grep "engula start" | grep -v grep
-        exit 0
-        ;;
-    stop)
-        ps -ef | grep "engula start" | grep -v grep | awk '{print $2}' | xargs kill -9
         exit 0
         ;;
     clean)
@@ -131,16 +201,22 @@ while [[ $# != 0 ]]; do
         list_addrs
         exit 0
         ;;
+    help)
+        break;
+        ;;
     *)
+        echo "unknow command $cmd"
         break
         ;;
     esac
 done
 
-echo "unknow command $1"
-echo "  start   - start cluster"
-echo "  stop    - stop servers"
-echo "  status  - show servers status"
-echo "  clean   - clean all staled data"
-echo "  addrs   - list addrs of servers in this cluster"
+echo "./scripts/bootstrap.sh [cmd [option]]"
+echo "  setup       - setup a new cluster"
+echo "  shutdown    - stop cluster and clean all staled data"
+echo "  clean       - clean all staled data"
+echo "  start [id]  - start server or cluster"
+echo "  stop  [id]  - stop server or cluster"
+echo "  status      - show servers status"
+echo "  addrs       - list addrs of servers in this cluster"
 exit 1

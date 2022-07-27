@@ -499,6 +499,7 @@ dependencies = [
  "config",
  "engula-server",
  "num_cpus",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

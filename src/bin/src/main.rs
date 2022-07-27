@@ -17,7 +17,7 @@ use engula_server::{Error, Result};
 use tracing::info;
 
 #[derive(Parser)]
-#[clap(version)]
+#[clap(name = "engula", version, author, about)]
 struct Command {
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -43,8 +43,12 @@ impl SubCommand {
 }
 
 #[derive(Parser)]
+#[clap(about = "Start engula server")]
 struct StartCommand {
-    #[clap(long)]
+    #[clap(
+        long,
+        help = "Try to bootstrap a cluster if it not initialized, otherwise join a cluster"
+    )]
     init: bool,
     #[clap(long)]
     join: Option<Vec<String>>,
@@ -54,6 +58,9 @@ struct StartCommand {
     addr: Option<String>,
     #[clap(long)]
     db: Option<String>,
+
+    #[clap(long, help = "dump config as toml file and exit")]
+    dump_config: Option<String>,
 }
 
 impl StartCommand {
@@ -66,6 +73,12 @@ impl StartCommand {
                 return Err(Error::InvalidArgument(format!("Config: {e}")));
             }
         };
+
+        if let Some(filename) = self.dump_config {
+            let contents = toml::to_string(&config).expect("Config is serializable");
+            std::fs::write(filename, contents)?;
+            return Ok(());
+        }
 
         info!("{config:#?}");
 
@@ -108,7 +121,7 @@ fn load_config(
         .set_override_option("addr", cmd.addr.clone())?
         .set_override_option("root_dir", cmd.db.clone())?
         .set_override_option("join_list", cmd.join.clone())?
-        .set_override("init", cmd.init)?
+        .set_override_option("init", if cmd.init { Some(true) } else { None })?
         .build()?;
 
     c.try_deserialize()
