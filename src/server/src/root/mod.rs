@@ -105,8 +105,12 @@ impl Root {
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
-        let sched_ctx =
-            schedule::ScheduleContext::new(shared.clone(), alloc.clone(), heartbeat_queue.clone());
+        let sched_ctx = schedule::ScheduleContext::new(
+            shared.clone(),
+            alloc.clone(),
+            heartbeat_queue.clone(),
+            cfg.root.to_owned(),
+        );
         let scheduler = Arc::new(schedule::ReconcileScheduler::new(sched_ctx));
         Self {
             cfg: cfg.root,
@@ -254,10 +258,6 @@ impl Root {
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
             let next_interval = self.scheduler.step_one().await;
-
-            let next_interval = next_interval
-                .unwrap_or_else(|| Duration::from_secs(self.cfg.schedule_interval_sec));
-
             crate::runtime::time::sleep(next_interval).await;
         }
         info!("node {node_id} current root node drop leader");
@@ -774,8 +774,19 @@ pub async fn fetch_root_replica(replica_table: &ReplicaRouteTable) -> Arc<Replic
 }
 
 #[derive(Debug)]
+pub enum QueueTask {
+    Heartbeat(HeartbeatTask),
+    Sentinel(Sentinel),
+}
+
+#[derive(Debug)]
 pub struct HeartbeatTask {
     pub node_id: u64,
+}
+
+#[derive(Debug)]
+pub struct Sentinel {
+    sender: futures::channel::oneshot::Sender<()>,
 }
 
 #[derive(Default)]
@@ -786,7 +797,7 @@ pub struct HeartbeatQueue {
 #[derive(Default)]
 struct HeartbeatQueueCore {
     enable: bool,
-    delay: delay_queue::DelayQueue<HeartbeatTask>,
+    delay: delay_queue::DelayQueue<QueueTask>,
     node_scheduled: HashMap<u64, (delay_queue::Key, Instant)>,
 }
 
@@ -807,11 +818,25 @@ impl HeartbeatQueue {
                     trace!(node=node, when=?when, "update next heartbeat");
                 }
             } else {
-                let key = core.delay.insert_at(task, when);
+                let key = core.delay.insert_at(QueueTask::Heartbeat(task), when);
                 core.node_scheduled.insert(node, (key, when));
                 trace!(node=node, when=?when, "schedule next heartbeat");
             }
         }
+    }
+
+    pub async fn wait_one_heartbeat_tick(&self) {
+        let (sender, receiver) = futures::channel::oneshot::channel::<()>();
+        let sentinel = Sentinel { sender };
+        {
+            let mut core = self.core.lock().await;
+            if !core.enable {
+                return;
+            }
+            core.delay
+                .insert(QueueTask::Sentinel(sentinel), Duration::from_millis(0));
+        }
+        let _ = receiver.await;
     }
 
     async fn try_poll(&self) -> Vec<HeartbeatTask> {
@@ -831,10 +856,19 @@ impl HeartbeatQueue {
             .into_iter()
             .map(|e| e.into_inner())
             .collect::<Vec<_>>();
-        for task in &tasks {
-            core.node_scheduled.remove(&task.node_id);
+        let mut heartbeats = Vec::new();
+        for task in tasks {
+            match task {
+                QueueTask::Heartbeat(task) => {
+                    core.node_scheduled.remove(&task.node_id);
+                    heartbeats.push(task);
+                }
+                QueueTask::Sentinel(sential) => {
+                    let _ = sential.sender.send(());
+                }
+            }
         }
-        tasks
+        heartbeats
     }
 
     async fn enable(&self, enable: bool) {

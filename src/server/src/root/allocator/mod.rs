@@ -104,6 +104,7 @@ pub struct RootConfig {
     pub liveness_threshold_sec: u64,
     pub heartbeat_timeout_sec: u64,
     pub schedule_interval_sec: u64,
+    pub max_create_group_retry_before_rollback: u64,
 }
 
 impl Default for RootConfig {
@@ -117,6 +118,7 @@ impl Default for RootConfig {
             liveness_threshold_sec: 30,
             heartbeat_timeout_sec: 4,
             schedule_interval_sec: 1,
+            max_create_group_retry_before_rollback: 10,
         }
     }
 }

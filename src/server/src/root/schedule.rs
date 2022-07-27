@@ -29,8 +29,6 @@ use crate::{
 
 pub struct ReconcileScheduler {
     ctx: ScheduleContext,
-    cfg: ScheduleConfig,
-
     tasks: Mutex<LinkedList<ReconcileTask>>,
 }
 
@@ -38,18 +36,7 @@ pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
     heartbeat_queue: Arc<HeartbeatQueue>,
-}
-
-pub struct ScheduleConfig {
-    max_create_group_retry_before_rollback: u64,
-}
-
-impl Default for ScheduleConfig {
-    fn default() -> Self {
-        Self {
-            max_create_group_retry_before_rollback: 10,
-        }
-    }
+    cfg: RootConfig,
 }
 
 impl ReconcileScheduler {
@@ -57,19 +44,19 @@ impl ReconcileScheduler {
         Self {
             ctx,
             tasks: Default::default(),
-            cfg: Default::default(),
         }
     }
 
-    pub async fn step_one(&self) -> Option<Duration> {
+    pub async fn step_one(&self) -> Duration {
         let cr = self.check(1).await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
-            let nowait = self.advance_tasks().await;
-            if nowait {
-                return Some(Duration::ZERO);
+            let immediately_next = self.advance_tasks().await;
+            if immediately_next {
+                self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await;
+                return Duration::ZERO;
             }
         }
-        None
+        Duration::from_secs(self.ctx.cfg.schedule_interval_sec)
     }
 
     pub async fn setup_task(&self, task: ReconcileTask) {
@@ -206,7 +193,7 @@ impl ReconcileScheduler {
         let mut nowait_next = !task.is_empty();
         let mut cursor = task.cursor_front_mut();
         while let Some(task) = cursor.current() {
-            let rs = self.ctx.handle_task(&self.cfg, task).await;
+            let rs = self.ctx.handle_task(task).await;
             match rs {
                 Ok((true /* ack */, immediately_next)) => {
                     cursor.remove_current();
@@ -229,17 +216,18 @@ impl ScheduleContext {
         shared: Arc<RootShared>,
         alloc: Arc<Allocator<SysAllocSource>>,
         heartbeat_queue: Arc<HeartbeatQueue>,
+        cfg: RootConfig,
     ) -> Self {
         Self {
             shared,
             alloc,
             heartbeat_queue,
+            cfg,
         }
     }
 
     pub async fn handle_task(
         &self,
-        cfg: &ScheduleConfig,
         task: &mut ReconcileTask,
     ) -> Result<(
         bool, /* ack current */
@@ -247,7 +235,7 @@ impl ScheduleContext {
     )> {
         info!(task=?task, "handle reconcile task");
         match task.task.as_mut().unwrap() {
-            Task::CreateGroup(create_group) => self.handle_create_group(cfg, create_group).await,
+            Task::CreateGroup(create_group) => self.handle_create_group(create_group).await,
             Task::ReallocateReplica(reallocate_replica) => {
                 self.handle_reallocate_replica(reallocate_replica).await
             }
@@ -264,7 +252,6 @@ impl ScheduleContext {
 
     async fn handle_create_group(
         &self,
-        cfg: &ScheduleConfig,
         task: &mut CreateGroupTask,
     ) -> Result<(
         bool, /* ack current */
@@ -321,7 +308,7 @@ impl ScheduleContext {
                             .await
                         {
                             let retried = task.create_retry;
-                            if retried < cfg.max_create_group_retry_before_rollback {
+                            if retried < self.cfg.max_create_group_retry_before_rollback {
                                 warn!(node=n.id, replica=replica.id, group=group_desc.id, retried = retried, err = ?err, "create replica for new group error, retry in next");
                                 {
                                     task.create_retry += 1;
@@ -377,7 +364,7 @@ impl ScheduleContext {
                             Instant::now(),
                         )
                         .await;
-                    return Ok((true, false));
+                    return Ok((true, true));
                 }
             }
         }
@@ -485,7 +472,7 @@ impl ScheduleContext {
                             Instant::now(),
                         )
                         .await;
-                    return Ok((true, false));
+                    return Ok((true, true));
                 }
             }
         }
@@ -535,7 +522,7 @@ impl ScheduleContext {
                 Instant::now(),
             )
             .await;
-        Ok((true, false))
+        Ok((true, true))
     }
 
     async fn handle_create_collection_shards(
