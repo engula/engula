@@ -140,7 +140,13 @@ where
         }
 
         if let Err(err) = self.raw_node.propose(context, data) {
-            sender.send(Err(err.into())).unwrap_or_default();
+            if matches!(err, raft::Error::ProposalDropped) {
+                sender
+                    .send(Err(Error::ServiceIsBusy("proposal dropped")))
+                    .unwrap_or_default();
+            } else {
+                sender.send(Err(err.into())).unwrap_or_default();
+            }
             return;
         }
 
@@ -167,7 +173,13 @@ where
         }
 
         if let Err(err) = self.raw_node.propose_conf_change(context, cc) {
-            sender.send(Err(err.into())).unwrap_or_default();
+            if matches!(err, raft::Error::ProposalDropped) {
+                sender
+                    .send(Err(Error::ServiceIsBusy("proposal dropped")))
+                    .unwrap_or_default();
+            } else {
+                sender.send(Err(err.into())).unwrap_or_default();
+            }
             return;
         }
 
@@ -203,7 +215,10 @@ where
 
     #[inline]
     pub fn step(&mut self, msg: Message) -> std::result::Result<(), raft::Error> {
-        self.raw_node.step(msg)
+        match self.raw_node.step(msg) {
+            Ok(()) | Err(raft::Error::StepPeerNotFound) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     fn advance_read_requests(&mut self) {
