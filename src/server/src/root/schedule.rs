@@ -16,19 +16,13 @@ use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
 use engula_client::{GroupClient, NodeClient};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
 
-use super::{
-    allocator::{GroupAction, LeaderAction, ReplicaAction, ReplicaRoleAction, ShardAction},
-    HeartbeatQueue, RootShared,
-};
+use super::{allocator::*, *};
 use crate::{
     bootstrap::INITIAL_EPOCH,
-    root::{
-        allocator::{Allocator, SysAllocSource},
-        Schema,
-    },
+    root::Schema,
     serverpb::v1::{reconcile_task::Task, *},
     Result,
 };
@@ -43,7 +37,6 @@ pub struct ReconcileScheduler {
 pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
-    #[allow(dead_code)]
     heartbeat_queue: Arc<HeartbeatQueue>,
 }
 
@@ -151,6 +144,8 @@ impl ReconcileScheduler {
                                 TransferGroupLeaderTask {
                                     group: action.group,
                                     target_replica: action.target_replica,
+                                    src_node: action.src_node,
+                                    dest_node: action.target_node,
                                 },
                             )),
                         })
@@ -465,6 +460,23 @@ impl ScheduleContext {
             error!(group = task.group, dest_replica = task.target_replica, err = ?&err, "transfer group leader fail");
             return Err(err);
         }
+        let now = Instant::now();
+        self.heartbeat_queue
+            .try_schedule(
+                HeartbeatTask {
+                    node_id: task.dest_node,
+                },
+                now,
+            )
+            .await;
+        self.heartbeat_queue
+            .try_schedule(
+                HeartbeatTask {
+                    node_id: task.src_node,
+                },
+                now,
+            )
+            .await;
         Ok(true)
     }
 

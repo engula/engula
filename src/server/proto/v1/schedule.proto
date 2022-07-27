@@ -124,7 +124,9 @@ message MigrateShardTask {
 
 message TransferGroupLeaderTask {
   uint64 group = 1;
-  uint64 target_replica = 5;
+  uint64 target_replica = 2;
+  uint64 src_node = 3;
+  uint64 dest_node = 4;
 }
 
 message CreateCollectionShards {
