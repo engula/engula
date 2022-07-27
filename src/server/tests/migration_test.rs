@@ -22,6 +22,7 @@ use engula_api::{
     server::v1::{group_request_union::Request, *},
     v1::PutRequest,
 };
+use engula_client::RetryState;
 use tracing::{error, info, warn};
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
@@ -101,7 +102,16 @@ async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops
             shard_id,
             put: Some(put),
         });
-        c.request(&req).await.unwrap();
+
+        let mut retry_state = RetryState::default();
+        loop {
+            match c.request(&req).await {
+                Ok(_) => break,
+                Err(err) => {
+                    retry_state.retry(err).await.unwrap();
+                }
+            }
+        }
     }
 }
 
