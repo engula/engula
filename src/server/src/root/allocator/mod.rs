@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use engula_api::server::v1::{GroupDesc, NodeDesc};
 use serde::{Deserialize, Serialize};
@@ -95,15 +95,19 @@ enum BalanceStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AllocatorConfig {
+pub struct RootConfig {
     pub replicas_per_group: usize,
     pub enable_group_balance: bool,
     pub enable_replica_balance: bool,
     pub enable_shard_balance: bool,
     pub enable_leader_balance: bool,
+    pub liveness_threshold_sec: u64,
+    pub heartbeat_timeout_sec: u64,
+    pub schedule_interval_sec: u64,
+    pub max_create_group_retry_before_rollback: u64,
 }
 
-impl Default for AllocatorConfig {
+impl Default for RootConfig {
     fn default() -> Self {
         Self {
             replicas_per_group: REPLICA_PER_GROUP,
@@ -111,18 +115,28 @@ impl Default for AllocatorConfig {
             enable_replica_balance: true,
             enable_shard_balance: true,
             enable_leader_balance: true,
+            liveness_threshold_sec: 30,
+            heartbeat_timeout_sec: 4,
+            schedule_interval_sec: 1,
+            max_create_group_retry_before_rollback: 10,
         }
+    }
+}
+
+impl RootConfig {
+    pub fn heartbeat_interval(&self) -> Duration {
+        Duration::from_secs(self.liveness_threshold_sec - self.heartbeat_timeout_sec)
     }
 }
 
 #[derive(Clone)]
 pub struct Allocator<T: AllocSource> {
     alloc_source: Arc<T>,
-    config: AllocatorConfig,
+    config: RootConfig,
 }
 
 impl<T: AllocSource> Allocator<T> {
-    pub fn new(alloc_source: Arc<T>, config: AllocatorConfig) -> Self {
+    pub fn new(alloc_source: Arc<T>, config: RootConfig) -> Self {
         Self {
             alloc_source,
             config,

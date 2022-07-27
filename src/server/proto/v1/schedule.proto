@@ -86,6 +86,7 @@ message CreateGroupTask {
   repeated engula.server.v1.ReplicaDesc wait_cleanup = 4;
   CreateGroupTaskStep step = 5;
   uint64 create_retry = 6;
+  repeated uint64 invoked_nodes = 7;
 }
 
 enum CreateGroupTaskStep {
@@ -124,7 +125,9 @@ message MigrateShardTask {
 
 message TransferGroupLeaderTask {
   uint64 group = 1;
-  uint64 target_replica = 5;
+  uint64 target_replica = 2;
+  uint64 src_node = 3;
+  uint64 dest_node = 4;
 }
 
 message CreateCollectionShards {

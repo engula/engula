@@ -16,45 +16,27 @@ use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
 use engula_client::{GroupClient, NodeClient};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
 
-use super::{
-    allocator::{GroupAction, LeaderAction, ReplicaAction, ReplicaRoleAction, ShardAction},
-    RootShared,
-};
+use super::{allocator::*, *};
 use crate::{
     bootstrap::INITIAL_EPOCH,
-    root::{
-        allocator::{Allocator, SysAllocSource},
-        Schema,
-    },
+    root::Schema,
     serverpb::v1::{reconcile_task::Task, *},
     Result,
 };
 
 pub struct ReconcileScheduler {
     ctx: ScheduleContext,
-    cfg: ScheduleConfig,
-
     tasks: Mutex<LinkedList<ReconcileTask>>,
 }
 
 pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
-}
-
-pub struct ScheduleConfig {
-    max_create_group_retry_before_rollback: u64,
-}
-
-impl Default for ScheduleConfig {
-    fn default() -> Self {
-        Self {
-            max_create_group_retry_before_rollback: 10,
-        }
-    }
+    heartbeat_queue: Arc<HeartbeatQueue>,
+    cfg: RootConfig,
 }
 
 impl ReconcileScheduler {
@@ -62,15 +44,19 @@ impl ReconcileScheduler {
         Self {
             ctx,
             tasks: Default::default(),
-            cfg: Default::default(),
         }
     }
 
-    pub async fn step_one(&self) {
+    pub async fn step_one(&self) -> Duration {
         let cr = self.check(1).await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
-            self.advance_tasks().await;
+            let immediately_next = self.advance_tasks().await;
+            if immediately_next {
+                self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await;
+                return Duration::ZERO;
+            }
         }
+        Duration::from_secs(self.ctx.cfg.schedule_interval_sec)
     }
 
     pub async fn setup_task(&self, task: ReconcileTask) {
@@ -149,6 +135,8 @@ impl ReconcileScheduler {
                                 TransferGroupLeaderTask {
                                     group: action.group,
                                     target_replica: action.target_replica,
+                                    src_node: action.src_node,
+                                    dest_node: action.target_node,
                                 },
                             )),
                         })
@@ -200,33 +188,54 @@ impl ReconcileScheduler {
 }
 
 impl ReconcileScheduler {
-    async fn advance_tasks(&self) {
+    async fn advance_tasks(&self) -> bool {
         let mut task = self.tasks.lock().await;
+        let mut nowait_next = !task.is_empty();
         let mut cursor = task.cursor_front_mut();
         while let Some(task) = cursor.current() {
-            let rs = self.ctx.handle_task(&self.cfg, task).await;
-            if rs.is_ok() && rs.unwrap() {
-                cursor.remove_current();
-            } else {
-                cursor.move_next();
+            let rs = self.ctx.handle_task(task).await;
+            match rs {
+                Ok((true /* ack */, immediately_next)) => {
+                    cursor.remove_current();
+                    if !immediately_next {
+                        nowait_next = false
+                    }
+                }
+                _ => {
+                    // ack == false or meet error.
+                    cursor.move_next();
+                }
             }
         }
+        nowait_next
     }
 }
 
 impl ScheduleContext {
-    pub(crate) fn new(shared: Arc<RootShared>, alloc: Arc<Allocator<SysAllocSource>>) -> Self {
-        Self { shared, alloc }
+    pub(crate) fn new(
+        shared: Arc<RootShared>,
+        alloc: Arc<Allocator<SysAllocSource>>,
+        heartbeat_queue: Arc<HeartbeatQueue>,
+        cfg: RootConfig,
+    ) -> Self {
+        Self {
+            shared,
+            alloc,
+            heartbeat_queue,
+            cfg,
+        }
     }
 
     pub async fn handle_task(
         &self,
-        cfg: &ScheduleConfig,
         task: &mut ReconcileTask,
-    ) -> Result<bool> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         info!(task=?task, "handle reconcile task");
         match task.task.as_mut().unwrap() {
-            Task::CreateGroup(create_group) => self.handle_create_group(cfg, create_group).await,
+            Task::CreateGroup(create_group) => self.handle_create_group(create_group).await,
             Task::ReallocateReplica(reallocate_replica) => {
                 self.handle_reallocate_replica(reallocate_replica).await
             }
@@ -243,9 +252,11 @@ impl ScheduleContext {
 
     async fn handle_create_group(
         &self,
-        cfg: &ScheduleConfig,
         task: &mut CreateGroupTask,
-    ) -> Result<bool /* finish */> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match CreateGroupTaskStep::from_i32(task.step).unwrap() {
                 CreateGroupTaskStep::GroupInit => {
@@ -272,6 +283,7 @@ impl ScheduleContext {
                     };
                     {
                         task.group_desc = Some(group_desc);
+                        task.invoked_nodes = nodes.iter().map(|n| n.id).collect();
                         task.wait_create = nodes;
                         task.step = CreateGroupTaskStep::GroupCreating.into();
                     }
@@ -296,7 +308,7 @@ impl ScheduleContext {
                             .await
                         {
                             let retried = task.create_retry;
-                            if retried < cfg.max_create_group_retry_before_rollback {
+                            if retried < self.cfg.max_create_group_retry_before_rollback {
                                 warn!(node=n.id, replica=replica.id, group=group_desc.id, retried = retried, err = ?err, "create replica for new group error, retry in next");
                                 {
                                     task.create_retry += 1;
@@ -340,8 +352,19 @@ impl ScheduleContext {
                         task.step = CreateGroupTaskStep::GroupAbort.into();
                     }
                 }
-                CreateGroupTaskStep::GroupFinish | CreateGroupTaskStep::GroupAbort => {
-                    return Ok(true)
+                CreateGroupTaskStep::GroupAbort => return Ok((true, false)),
+                CreateGroupTaskStep::GroupFinish => {
+                    self.heartbeat_queue
+                        .try_schedule(
+                            task.invoked_nodes
+                                .iter()
+                                .cloned()
+                                .map(|node_id| HeartbeatTask { node_id })
+                                .collect(),
+                            Instant::now(),
+                        )
+                        .await;
+                    return Ok((true, true));
                 }
             }
         }
@@ -350,7 +373,10 @@ impl ScheduleContext {
     async fn handle_reallocate_replica(
         &self,
         task: &mut ReallocateReplicaTask,
-    ) -> Result<bool /* done */> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match ReallocateReplicaTaskStep::from_i32(task.step).unwrap() {
                 ReallocateReplicaTaskStep::CreatingDestReplica => {
@@ -430,13 +456,35 @@ impl ScheduleContext {
                         task.step = ReallocateReplicaTaskStep::ReallocateFinish.into();
                     }
                 }
-                ReallocateReplicaTaskStep::ReallocateFinish
-                | ReallocateReplicaTaskStep::ReallocateAbort => return Ok(true),
+
+                ReallocateReplicaTaskStep::ReallocateAbort => return Ok((true, false)),
+                ReallocateReplicaTaskStep::ReallocateFinish => {
+                    self.heartbeat_queue
+                        .try_schedule(
+                            vec![
+                                HeartbeatTask {
+                                    node_id: task.src_node,
+                                },
+                                HeartbeatTask {
+                                    node_id: task.dest_node.as_ref().unwrap().id,
+                                },
+                            ],
+                            Instant::now(),
+                        )
+                        .await;
+                    return Ok((true, true));
+                }
             }
         }
     }
 
-    async fn handle_migrate_shard(&self, task: &mut MigrateShardTask) -> Result<bool> {
+    async fn handle_migrate_shard(
+        &self,
+        task: &mut MigrateShardTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         let r = self
             .try_migrate_shard(task.src_group, task.dest_group, task.shard)
             .await;
@@ -444,10 +492,16 @@ impl ScheduleContext {
             error!(shard = task.shard, src_group = task.src_group, dest_group = task.dest_group, err = ?&err, "migrate shard fail");
             return Err(err);
         }
-        Ok(true)
+        Ok((true, false))
     }
 
-    async fn handle_transfer_leader(&self, task: &mut TransferGroupLeaderTask) -> Result<bool> {
+    async fn handle_transfer_leader(
+        &self,
+        task: &mut TransferGroupLeaderTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         let r = self
             .try_transfer_leader(task.group, task.target_replica)
             .await;
@@ -455,13 +509,29 @@ impl ScheduleContext {
             error!(group = task.group, dest_replica = task.target_replica, err = ?&err, "transfer group leader fail");
             return Err(err);
         }
-        Ok(true)
+        self.heartbeat_queue
+            .try_schedule(
+                vec![
+                    HeartbeatTask {
+                        node_id: task.dest_node,
+                    },
+                    HeartbeatTask {
+                        node_id: task.src_node,
+                    },
+                ],
+                Instant::now(),
+            )
+            .await;
+        Ok((true, true))
     }
 
     async fn handle_create_collection_shards(
         &self,
         task: &mut CreateCollectionShards,
-    ) -> Result<bool> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match CreateCollectionShardStep::from_i32(task.step).unwrap() {
                 CreateCollectionShardStep::CollectionCreating => {
@@ -502,7 +572,7 @@ impl ScheduleContext {
                     task.step = CreateCollectionShardStep::CollectionAbort.into();
                 }
                 CreateCollectionShardStep::CollectionFinish
-                | CreateCollectionShardStep::CollectionAbort => return Ok(true),
+                | CreateCollectionShardStep::CollectionAbort => return Ok((true, false)),
             }
         }
     }

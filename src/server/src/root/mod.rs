@@ -24,6 +24,7 @@ use std::{
     collections::{hash_map, HashMap, HashSet},
     sync::{Arc, Mutex},
     task::Poll,
+    time::Duration,
 };
 
 use engula_api::{
@@ -34,11 +35,13 @@ use engula_api::{
     },
 };
 use engula_client::NodeClient;
+use tokio::time::Instant;
+use tokio_util::time::delay_queue;
 use tracing::{error, info, trace, warn};
 
 pub(crate) use self::schema::*;
 pub use self::{
-    allocator::AllocatorConfig,
+    allocator::RootConfig,
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{
@@ -47,7 +50,7 @@ use self::{
 use crate::{
     bootstrap::{SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
-    runtime::TaskPriority,
+    runtime::{self, TaskPriority},
     serverpb::v1::{
         reconcile_task::Task, CreateCollectionShardStep, CreateCollectionShards, GroupShards,
         NodeIdent, ReconcileTask,
@@ -57,10 +60,12 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Root {
+    cfg: RootConfig,
     shared: Arc<RootShared>,
     alloc: Arc<allocator::Allocator<SysAllocSource>>,
     liveness: Arc<liveness::Liveness>,
     scheduler: Arc<ReconcileScheduler>,
+    heartbeat_queue: Arc<HeartbeatQueue>,
 }
 
 pub struct RootShared {
@@ -94,16 +99,26 @@ impl Root {
             node_ident: node_ident.to_owned(),
             watcher_hub: Default::default(),
         });
-        let liveness = Arc::new(liveness::Liveness::new(cfg.to_owned()));
+        let liveness = Arc::new(liveness::Liveness::new(Duration::from_secs(
+            cfg.root.liveness_threshold_sec,
+        )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
-        let alloc = Arc::new(allocator::Allocator::new(info, cfg.allocator));
-        let sched_ctx = schedule::ScheduleContext::new(shared.clone(), alloc.clone());
+        let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
+        let heartbeat_queue = Arc::new(HeartbeatQueue::default());
+        let sched_ctx = schedule::ScheduleContext::new(
+            shared.clone(),
+            alloc.clone(),
+            heartbeat_queue.clone(),
+            cfg.root.to_owned(),
+        );
         let scheduler = Arc::new(schedule::ReconcileScheduler::new(sched_ctx));
         Self {
+            cfg: cfg.root,
             alloc,
             shared,
             liveness,
             scheduler,
+            heartbeat_queue,
         }
     }
 
@@ -116,13 +131,20 @@ impl Root {
     }
 
     pub async fn bootstrap(&self, node: &Node) -> Result<Vec<NodeDesc>> {
+        let root = self.clone();
+        self.shared
+            .provider
+            .executor
+            .spawn(None, TaskPriority::Middle, async move {
+                root.run_heartbeat().await;
+            });
         let replica_table = node.replica_table().clone();
         let root = self.clone();
         self.shared
             .provider
             .executor
             .spawn(None, TaskPriority::Middle, async move {
-                root.run(replica_table).await;
+                root.run_schedule(replica_table).await;
             });
 
         if let Some(replica) = node.replica_table().current_root_replica(None) {
@@ -141,7 +163,11 @@ impl Root {
         self.shared.watcher_hub.clone()
     }
 
-    async fn run(&self, replica_table: ReplicaRouteTable) -> ! {
+    // A Daemon task to:
+    // - check root leadership
+    // - schedule group/replica/shard
+    // - schedule heartbeat sending
+    async fn run_schedule(&self, replica_table: ReplicaRouteTable) -> ! {
         let mut bootstrapped = false;
         loop {
             let root_replica = fetch_root_replica(&replica_table).await;
@@ -161,6 +187,22 @@ impl Root {
                     }
                 }
             }
+        }
+    }
+
+    // A Deamon task to finsh handle task scheduled in heartbeat_queue and reschedule for next
+    // heartbeat.
+    async fn run_heartbeat(&self) -> ! {
+        loop {
+            if let Ok(schema) = self.schema() {
+                let nodes = self.heartbeat_queue.try_poll().await;
+                if !nodes.is_empty() {
+                    if let Err(err) = self.send_heartbeat(schema.to_owned(), &nodes).await {
+                        warn!(err = ?err, "send heartbeat meet error");
+                    }
+                }
+            }
+            runtime::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -193,29 +235,35 @@ impl Root {
             });
         }
 
+        self.heartbeat_queue.enable(true).await;
+
         let node_id = self.shared.node_ident.node_id;
         info!(
             "node {node_id} step root service leader, heartbeat_interval: {:?}, liveness_threshold: {:?}",
-            self.liveness.heartbeat_interval(),
-            self.liveness.liveness_threshold,
-
+            self.cfg.heartbeat_interval(),
+            Duration::from_secs(self.cfg.liveness_threshold_sec),
         );
 
+        // try schedule a full cluster heartbeat when current node become new root leader.
+        let nodes = schema.list_node().await?;
+        self.heartbeat_queue
+            .try_schedule(
+                nodes
+                    .iter()
+                    .map(|n| HeartbeatTask { node_id: n.id })
+                    .collect::<Vec<_>>(),
+                Instant::now(),
+            )
+            .await;
+
         while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
-            if let Err(err) = self.send_heartbeat(Arc::new(schema.to_owned())).await {
-                warn!(err = ?err, "send heartbeat meet error");
-                if Self::need_drop_root_leader(&err) {
-                    break;
-                }
-            }
-
-            self.scheduler.step_one().await;
-
-            crate::runtime::time::sleep(self.liveness.heartbeat_interval()).await;
+            let next_interval = self.scheduler.step_one().await;
+            crate::runtime::time::sleep(next_interval).await;
         }
         info!("node {node_id} current root node drop leader");
 
         // After that, RootCore needs to be set to None before returning.
+        self.heartbeat_queue.enable(false).await;
         {
             self.liveness.reset();
 
@@ -224,10 +272,6 @@ impl Root {
         }
 
         Ok(())
-    }
-
-    fn need_drop_root_leader(err: &Error) -> bool {
-        matches!(err, Error::Raft(raft::Error::ProposalDropped))
     }
 
     pub async fn info(&self) -> Result<String> {
@@ -606,6 +650,9 @@ impl Root {
             nodes.move_first(node.id);
             nodes.0
         };
+        self.heartbeat_queue
+            .try_schedule(vec![HeartbeatTask { node_id: node.id }], Instant::now())
+            .await;
         info!(node = node.id, addr = ?node.addr, "new node join cluster");
         Ok((cluster_id, node, root))
     }
@@ -724,6 +771,114 @@ pub async fn fetch_root_replica(replica_table: &ReplicaRouteTable) -> Arc<Replic
         },
     )
     .await
+}
+
+#[derive(Debug)]
+pub enum QueueTask {
+    Heartbeat(HeartbeatTask),
+    Sentinel(Sentinel),
+}
+
+#[derive(Debug)]
+pub struct HeartbeatTask {
+    pub node_id: u64,
+}
+
+#[derive(Debug)]
+pub struct Sentinel {
+    sender: futures::channel::oneshot::Sender<()>,
+}
+
+#[derive(Default)]
+pub struct HeartbeatQueue {
+    core: Arc<futures::lock::Mutex<HeartbeatQueueCore>>,
+}
+
+#[derive(Default)]
+struct HeartbeatQueueCore {
+    enable: bool,
+    delay: delay_queue::DelayQueue<QueueTask>,
+    node_scheduled: HashMap<u64, (delay_queue::Key, Instant)>,
+}
+
+impl HeartbeatQueue {
+    pub async fn try_schedule(&self, tasks: Vec<HeartbeatTask>, when: Instant) {
+        let mut core = self.core.lock().await;
+        if !core.enable {
+            return;
+        }
+        for task in tasks {
+            let node = task.node_id;
+            if let Some((scheduled_key, old_when)) =
+                core.node_scheduled.get(&node).map(ToOwned::to_owned)
+            {
+                if when <= old_when {
+                    core.delay.reset_at(&scheduled_key, when);
+                    core.node_scheduled.insert(node, (scheduled_key, when));
+                    trace!(node=node, when=?when, "update next heartbeat");
+                }
+            } else {
+                let key = core.delay.insert_at(QueueTask::Heartbeat(task), when);
+                core.node_scheduled.insert(node, (key, when));
+                trace!(node=node, when=?when, "schedule next heartbeat");
+            }
+        }
+    }
+
+    pub async fn wait_one_heartbeat_tick(&self) {
+        let (sender, receiver) = futures::channel::oneshot::channel::<()>();
+        let sentinel = Sentinel { sender };
+        {
+            let mut core = self.core.lock().await;
+            if !core.enable {
+                return;
+            }
+            core.delay
+                .insert(QueueTask::Sentinel(sentinel), Duration::from_millis(0));
+        }
+        let _ = receiver.await;
+    }
+
+    async fn try_poll(&self) -> Vec<HeartbeatTask> {
+        let mut core = self.core.lock().await;
+        if !core.enable {
+            return vec![];
+        }
+        let tasks = futures::future::poll_fn(|cx| {
+            let mut tasks = Vec::new();
+            while let Poll::Ready(Some(task)) = core.delay.poll_expired(cx) {
+                tasks.push(task);
+            }
+            Poll::Ready(tasks)
+        })
+        .await;
+        let tasks = tasks
+            .into_iter()
+            .map(|e| e.into_inner())
+            .collect::<Vec<_>>();
+        let mut heartbeats = Vec::new();
+        for task in tasks {
+            match task {
+                QueueTask::Heartbeat(task) => {
+                    core.node_scheduled.remove(&task.node_id);
+                    heartbeats.push(task);
+                }
+                QueueTask::Sentinel(sential) => {
+                    let _ = sential.sender.send(());
+                }
+            }
+        }
+        heartbeats
+    }
+
+    async fn enable(&self, enable: bool) {
+        let mut core = self.core.lock().await;
+        if core.enable != enable {
+            core.node_scheduled.clear();
+            core.delay.clear();
+            core.enable = enable;
+        }
+    }
 }
 
 #[cfg(test)]

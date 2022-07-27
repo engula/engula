@@ -62,12 +62,6 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
                         src_node,
                         target_node,
                     } => {
-                        // Because the leader of root group has a lot of work, for example, the
-                        // router is directly connected to the root group leader, so avoid balancing
-                        // the root group leader.
-                        if group == ROOT_GROUP_ID {
-                            continue;
-                        }
                         return Ok(LeaderAction::Shed(TransferLeader {
                             group,
                             src_node,
@@ -92,7 +86,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         let groups = self.alloc_source.groups();
         for (replica, group_id) in node_replicas
             .iter()
-            .filter(|(r, g)| *g != ROOT_GROUP_ID || r.role == ReplicaRole::Voter as i32)
+            .filter(|(r, g)| *g != ROOT_GROUP_ID && r.role == ReplicaRole::Voter as i32)
         {
             let replica_state = self
                 .alloc_source

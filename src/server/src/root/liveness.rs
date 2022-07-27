@@ -18,8 +18,6 @@ use std::{
     time::Duration,
 };
 
-use crate::Config;
-
 #[derive(Clone)]
 pub struct NodeLiveness {
     expiration: u128,
@@ -38,40 +36,16 @@ impl NodeLiveness {
 
 #[derive(Clone)]
 pub struct Liveness {
-    pub liveness_threshold: Duration,
-    pub heartbeat_timeout: Duration,
-
+    liveness_threshold: Duration,
     nodes: Arc<Mutex<HashMap<u64, NodeLiveness>>>,
 }
 
 impl Liveness {
-    pub fn new(cfg: Config) -> Self {
-        const RAFT_ELECTION_TIMEOUT_MULTIPLIER: u64 = 2;
-        const LIVENESS_FRAC: f64 = 0.5;
-
-        // ensure liveness_threshold >>> raft_election_timeout?
-        let liveness_threshold = Duration::from_millis(std::cmp::max(
-            cfg.raft.election_tick as u64
-                * cfg.raft.tick_interval_ms
-                * RAFT_ELECTION_TIMEOUT_MULTIPLIER,
-            3000,
-        ));
-        let heartbeat_timeout =
-            Duration::from_millis((liveness_threshold.as_millis() as f64 * LIVENESS_FRAC) as u64);
+    pub fn new(liveness_threshold: Duration) -> Self {
         Self {
             liveness_threshold,
-            heartbeat_timeout,
             nodes: Default::default(),
         }
-    }
-
-    pub fn heartbeat_interval(&self) -> Duration {
-        const RECONCILE_TIMEOUT: Duration = Duration::from_secs(1);
-        self.liveness_threshold - self.heartbeat_timeout - RECONCILE_TIMEOUT /* TODO: reconcile
-                                                                              * block job should
-                                                                              * be async and not
-                                                                              * affect the
-                                                                              * hearbeat tick */
     }
 
     pub fn get(&self, node: &u64) -> NodeLiveness {
