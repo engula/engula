@@ -242,16 +242,23 @@ impl Root {
 
         // try schedule a full cluster heartbeat when current node become new root leader.
         let nodes = schema.list_node().await?;
-        for task in nodes.iter().map(|n| HeartbeatTask { node_id: n.id }) {
-            self.heartbeat_queue
-                .try_schedule(task, Instant::now())
-                .await;
-        }
+        self.heartbeat_queue
+            .try_schedule(
+                nodes
+                    .iter()
+                    .map(|n| HeartbeatTask { node_id: n.id })
+                    .collect::<Vec<_>>(),
+                Instant::now(),
+            )
+            .await;
 
         while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
-            self.scheduler.step_one().await;
+            let next_interval = self.scheduler.step_one().await;
 
-            crate::runtime::time::sleep(Duration::from_secs(self.cfg.schedule_interval_sec)).await;
+            let next_interval = next_interval
+                .unwrap_or_else(|| Duration::from_secs(self.cfg.schedule_interval_sec));
+
+            crate::runtime::time::sleep(next_interval).await;
         }
         info!("node {node_id} current root node drop leader");
 
@@ -644,7 +651,7 @@ impl Root {
             nodes.0
         };
         self.heartbeat_queue
-            .try_schedule(HeartbeatTask { node_id: node.id }, Instant::now())
+            .try_schedule(vec![HeartbeatTask { node_id: node.id }], Instant::now())
             .await;
         info!(node = node.id, addr = ?node.addr, "new node join cluster");
         Ok((cluster_id, node, root))
@@ -784,24 +791,26 @@ struct HeartbeatQueueCore {
 }
 
 impl HeartbeatQueue {
-    pub async fn try_schedule(&self, task: HeartbeatTask, when: Instant) {
+    pub async fn try_schedule(&self, tasks: Vec<HeartbeatTask>, when: Instant) {
         let mut core = self.core.lock().await;
         if !core.enable {
             return;
         }
-        let node = task.node_id;
-        if let Some((scheduled_key, old_when)) =
-            core.node_scheduled.get(&node).map(ToOwned::to_owned)
-        {
-            if when <= old_when {
-                core.delay.reset_at(&scheduled_key, when);
-                core.node_scheduled.insert(node, (scheduled_key, when));
-                trace!(node=node, when=?when, "update next heartbeat");
+        for task in tasks {
+            let node = task.node_id;
+            if let Some((scheduled_key, old_when)) =
+                core.node_scheduled.get(&node).map(ToOwned::to_owned)
+            {
+                if when <= old_when {
+                    core.delay.reset_at(&scheduled_key, when);
+                    core.node_scheduled.insert(node, (scheduled_key, when));
+                    trace!(node=node, when=?when, "update next heartbeat");
+                }
+            } else {
+                let key = core.delay.insert_at(task, when);
+                core.node_scheduled.insert(node, (key, when));
+                trace!(node=node, when=?when, "schedule next heartbeat");
             }
-        } else {
-            let key = core.delay.insert_at(task, when);
-            core.node_scheduled.insert(node, (key, when));
-            trace!(node=node, when=?when, "schedule next heartbeat");
         }
     }
 

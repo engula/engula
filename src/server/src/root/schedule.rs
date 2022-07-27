@@ -61,11 +61,15 @@ impl ReconcileScheduler {
         }
     }
 
-    pub async fn step_one(&self) {
+    pub async fn step_one(&self) -> Option<Duration> {
         let cr = self.check(1).await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
-            self.advance_tasks().await;
+            let nowait = self.advance_tasks().await;
+            if nowait {
+                return Some(Duration::ZERO);
+            }
         }
+        None
     }
 
     pub async fn setup_task(&self, task: ReconcileTask) {
@@ -197,17 +201,26 @@ impl ReconcileScheduler {
 }
 
 impl ReconcileScheduler {
-    async fn advance_tasks(&self) {
+    async fn advance_tasks(&self) -> bool {
         let mut task = self.tasks.lock().await;
+        let mut nowait_next = !task.is_empty();
         let mut cursor = task.cursor_front_mut();
         while let Some(task) = cursor.current() {
             let rs = self.ctx.handle_task(&self.cfg, task).await;
-            if rs.is_ok() && rs.unwrap() {
-                cursor.remove_current();
-            } else {
-                cursor.move_next();
+            match rs {
+                Ok((true /* ack */, immediately_next)) => {
+                    cursor.remove_current();
+                    if !immediately_next {
+                        nowait_next = false
+                    }
+                }
+                _ => {
+                    // ack == false or meet error.
+                    cursor.move_next();
+                }
             }
         }
+        nowait_next
     }
 }
 
@@ -228,7 +241,10 @@ impl ScheduleContext {
         &self,
         cfg: &ScheduleConfig,
         task: &mut ReconcileTask,
-    ) -> Result<bool> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         info!(task=?task, "handle reconcile task");
         match task.task.as_mut().unwrap() {
             Task::CreateGroup(create_group) => self.handle_create_group(cfg, create_group).await,
@@ -250,7 +266,10 @@ impl ScheduleContext {
         &self,
         cfg: &ScheduleConfig,
         task: &mut CreateGroupTask,
-    ) -> Result<bool /* finish */> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match CreateGroupTaskStep::from_i32(task.step).unwrap() {
                 CreateGroupTaskStep::GroupInit => {
@@ -277,6 +296,7 @@ impl ScheduleContext {
                     };
                     {
                         task.group_desc = Some(group_desc);
+                        task.invoked_nodes = nodes.iter().map(|n| n.id).collect();
                         task.wait_create = nodes;
                         task.step = CreateGroupTaskStep::GroupCreating.into();
                     }
@@ -345,8 +365,19 @@ impl ScheduleContext {
                         task.step = CreateGroupTaskStep::GroupAbort.into();
                     }
                 }
-                CreateGroupTaskStep::GroupFinish | CreateGroupTaskStep::GroupAbort => {
-                    return Ok(true)
+                CreateGroupTaskStep::GroupAbort => return Ok((true, false)),
+                CreateGroupTaskStep::GroupFinish => {
+                    self.heartbeat_queue
+                        .try_schedule(
+                            task.invoked_nodes
+                                .iter()
+                                .cloned()
+                                .map(|node_id| HeartbeatTask { node_id })
+                                .collect(),
+                            Instant::now(),
+                        )
+                        .await;
+                    return Ok((true, false));
                 }
             }
         }
@@ -355,7 +386,10 @@ impl ScheduleContext {
     async fn handle_reallocate_replica(
         &self,
         task: &mut ReallocateReplicaTask,
-    ) -> Result<bool /* done */> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match ReallocateReplicaTaskStep::from_i32(task.step).unwrap() {
                 ReallocateReplicaTaskStep::CreatingDestReplica => {
@@ -435,13 +469,35 @@ impl ScheduleContext {
                         task.step = ReallocateReplicaTaskStep::ReallocateFinish.into();
                     }
                 }
-                ReallocateReplicaTaskStep::ReallocateFinish
-                | ReallocateReplicaTaskStep::ReallocateAbort => return Ok(true),
+
+                ReallocateReplicaTaskStep::ReallocateAbort => return Ok((true, false)),
+                ReallocateReplicaTaskStep::ReallocateFinish => {
+                    self.heartbeat_queue
+                        .try_schedule(
+                            vec![
+                                HeartbeatTask {
+                                    node_id: task.src_node,
+                                },
+                                HeartbeatTask {
+                                    node_id: task.dest_node.as_ref().unwrap().id,
+                                },
+                            ],
+                            Instant::now(),
+                        )
+                        .await;
+                    return Ok((true, false));
+                }
             }
         }
     }
 
-    async fn handle_migrate_shard(&self, task: &mut MigrateShardTask) -> Result<bool> {
+    async fn handle_migrate_shard(
+        &self,
+        task: &mut MigrateShardTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         let r = self
             .try_migrate_shard(task.src_group, task.dest_group, task.shard)
             .await;
@@ -449,10 +505,16 @@ impl ScheduleContext {
             error!(shard = task.shard, src_group = task.src_group, dest_group = task.dest_group, err = ?&err, "migrate shard fail");
             return Err(err);
         }
-        Ok(true)
+        Ok((true, false))
     }
 
-    async fn handle_transfer_leader(&self, task: &mut TransferGroupLeaderTask) -> Result<bool> {
+    async fn handle_transfer_leader(
+        &self,
+        task: &mut TransferGroupLeaderTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         let r = self
             .try_transfer_leader(task.group, task.target_replica)
             .await;
@@ -460,30 +522,29 @@ impl ScheduleContext {
             error!(group = task.group, dest_replica = task.target_replica, err = ?&err, "transfer group leader fail");
             return Err(err);
         }
-        let now = Instant::now();
         self.heartbeat_queue
             .try_schedule(
-                HeartbeatTask {
-                    node_id: task.dest_node,
-                },
-                now,
+                vec![
+                    HeartbeatTask {
+                        node_id: task.dest_node,
+                    },
+                    HeartbeatTask {
+                        node_id: task.src_node,
+                    },
+                ],
+                Instant::now(),
             )
             .await;
-        self.heartbeat_queue
-            .try_schedule(
-                HeartbeatTask {
-                    node_id: task.src_node,
-                },
-                now,
-            )
-            .await;
-        Ok(true)
+        Ok((true, false))
     }
 
     async fn handle_create_collection_shards(
         &self,
         task: &mut CreateCollectionShards,
-    ) -> Result<bool> {
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
         loop {
             match CreateCollectionShardStep::from_i32(task.step).unwrap() {
                 CreateCollectionShardStep::CollectionCreating => {
@@ -524,7 +585,7 @@ impl ScheduleContext {
                     task.step = CreateCollectionShardStep::CollectionAbort.into();
                 }
                 CreateCollectionShardStep::CollectionFinish
-                | CreateCollectionShardStep::CollectionAbort => return Ok(true),
+                | CreateCollectionShardStep::CollectionAbort => return Ok((true, false)),
             }
         }
     }

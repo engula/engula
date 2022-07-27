@@ -86,6 +86,7 @@ message CreateGroupTask {
   repeated engula.server.v1.ReplicaDesc wait_cleanup = 4;
   CreateGroupTaskStep step = 5;
   uint64 create_retry = 6;
+  repeated uint64 invoked_nodes = 7;
 }
 
 enum CreateGroupTaskStep {
