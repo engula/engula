@@ -88,7 +88,7 @@ impl AllocSource for SysAllocSource {
 
     fn nodes(&self, filter: NodeFilter) -> Vec<NodeDesc> {
         let all_nodes = { self.nodes.lock().unwrap().clone() };
-        let nodes = match filter {
+        match filter {
             NodeFilter::All => all_nodes,
             NodeFilter::Alive => all_nodes
                 .into_iter()
@@ -104,8 +104,7 @@ impl AllocSource for SysAllocSource {
                 .into_iter()
                 .filter(|n| n.status != NodeStatus::Decommissioned as i32)
                 .collect::<Vec<_>>(),
-        };
-        nodes
+        }
     }
 
     fn groups(&self) -> HashMap<u64, GroupDesc> {

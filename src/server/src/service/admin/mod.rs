@@ -15,7 +15,7 @@
 mod health;
 mod metadata;
 mod metrics;
-mod node;
+mod cluster;
 mod service;
 
 pub use self::service::AdminService;
@@ -30,13 +30,13 @@ pub fn make_admin_service(server: Server) -> AdminService {
             self::metadata::MetadataHandle::new(server.to_owned()),
         )
         .route("/health", self::health::HealthHandle)
-        .route("/cordon", self::node::CordonHandle::new(server.to_owned()))
+        .route("/cordon", self::cluster::CordonHandle::new(server.to_owned()))
         .route(
             "/uncordon",
-            self::node::UncordonHandle::new(server.to_owned()),
+            self::cluster::UncordonHandle::new(server.to_owned()),
         )
-        .route("/drain", self::node::DrainHandle::new(server.to_owned()))
-        .route("/node_status", self::node::StatusHandle::new(server));
+        .route("/drain", self::cluster::DrainHandle::new(server.to_owned()))
+        .route("/node_status", self::cluster::StatusHandle::new(server));
     let api = Router::nest("/admin", router);
     AdminService::new(api)
 }

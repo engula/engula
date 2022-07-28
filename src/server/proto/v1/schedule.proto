@@ -22,7 +22,8 @@ import "v1/metadata.proto";
 
 message ScheduleTask {
   oneof value {
-    /// cure_group will allocates replicas from root, and replace the lost replicas.
+    /// cure_group will allocates replicas from root, and replace the lost
+    /// replicas.
     ChangeConfigTask cure_group = 1;
 
     RemoveReplicaTask remove_replica = 2;
@@ -55,9 +56,7 @@ message CreateReplicaStep {
   repeated engula.server.v1.ReplicaDesc replicas = 1;
 }
 
-message AddLearnerStep {
-  repeated engula.server.v1.ReplicaDesc replicas = 1;
-}
+message AddLearnerStep { repeated engula.server.v1.ReplicaDesc replicas = 1; }
 
 message ReplaceVoterStep {
   repeated engula.server.v1.ReplicaDesc incoming_voters = 1;
@@ -68,7 +67,6 @@ message RemoveLearnerStep {
   repeated engula.server.v1.ReplicaDesc learners = 1;
 }
 
-
 message ReconcileTask {
   oneof task {
     CreateGroupTask create_group = 1;
@@ -76,6 +74,7 @@ message ReconcileTask {
     MigrateShardTask migrate_shard = 3;
     TransferGroupLeaderTask transfer_group_leader = 4;
     CreateCollectionShards create_collection_shards = 5;
+    ShedLeaderTask shed_leader = 6;
   }
 }
 
@@ -147,3 +146,5 @@ enum CreateCollectionShardStep {
   COLLECTION_FINISH = 2;
   COLLECTION_ABORT = 3;
 }
+
+message ShedLeaderTask { uint64 node_id = 1; }

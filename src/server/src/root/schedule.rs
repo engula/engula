@@ -247,6 +247,7 @@ impl ScheduleContext {
                 self.handle_create_collection_shards(create_collection_shards)
                     .await
             }
+            Task::ShedLeader(shed_leader) => self.handle_shed_leader(shed_leader).await,
         }
     }
 
@@ -575,6 +576,78 @@ impl ScheduleContext {
                 | CreateCollectionShardStep::CollectionAbort => return Ok((true, false)),
             }
         }
+    }
+
+    async fn handle_shed_leader(
+        &self,
+        shed: &mut ShedLeaderTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
+        let node = shed.node_id;
+        loop {
+            let schema = self.shared.schema()?;
+
+            if let Some(desc) = schema.get_node(node).await? {
+                if desc.status != NodeStatus::Draining as i32 {
+                    warn!(node = node, "shed leader task cancelled");
+                    break;
+                }
+            }
+
+            let leader_replicas = schema
+                .list_replica_state()
+                .await?
+                .into_iter()
+                .filter(|r| r.node_id == node && r.role == RaftRole::Leader as i32)
+                .collect::<Vec<_>>();
+
+            // exit when all leader move-out
+            // also change node status to Drained
+            if leader_replicas.is_empty() {
+                if let Some(mut desc) = schema.get_node(node).await? {
+                    if desc.status == NodeStatus::Draining as i32 {
+                        desc.status = NodeStatus::Drained as i32;
+                        schema.update_node(desc).await?; // TODO: cas
+                    }
+                }
+                break;
+            }
+
+            for replica in &leader_replicas {
+                let group_id = replica.group_id;
+                if let Some(group) = schema.get_group(group_id).await? {
+                    let mut target_replica = None;
+                    for r in &group.replicas {
+                        if r.id == replica.replica_id {
+                            continue;
+                        }
+                        let target_node = schema.get_node(r.node_id).await?;
+                        if target_node.is_none() {
+                            continue;
+                        }
+                        if target_node.as_ref().unwrap().status != NodeStatus::Active as i32 {
+                            continue;
+                        }
+                        target_replica = Some(r.to_owned())
+                    }
+                    if let Some(target_replica) = target_replica {
+                        self.try_transfer_leader(group_id, target_replica.id)
+                            .await?;
+                    } else {
+                        warn!(
+                            node = node,
+                            group = group_id,
+                            src_replica = replica.replica_id,
+                            "shed leader from node fail due to no suitable target replica."
+                        )
+                    }
+                }
+            }
+        }
+
+        Ok((true, true))
     }
 }
 
