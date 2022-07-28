@@ -53,8 +53,7 @@ use crate::{
     runtime::{self, TaskPriority},
     serverpb::v1::{
         reconcile_task::{self, Task},
-        CreateCollectionShardStep, CreateCollectionShards, GroupShards, NodeIdent, ReconcileTask,
-        ShedLeaderTask,
+        *,
     },
     Config, Error, Provider, Result,
 };
@@ -319,7 +318,17 @@ impl Root {
         let schema = self.schema()?;
 
         if self.current_node_id() == node_id {
-            todo!("evit root leader and let client retry")
+            info!("try to drain root leader and move root leadership out first");
+            self.scheduler
+                .setup_task(ReconcileTask {
+                    task: Some(reconcile_task::Task::ShedRoot(ShedRootLeaderTask {
+                        node_id,
+                    })),
+                })
+                .await;
+            return Err(crate::Error::InvalidArgument(
+                "node is root leader, try again later".into(),
+            ));
         }
 
         let mut node_desc = schema

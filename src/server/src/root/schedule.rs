@@ -21,7 +21,7 @@ use tracing::{error, info, warn};
 
 use super::{allocator::*, *};
 use crate::{
-    bootstrap::INITIAL_EPOCH,
+    bootstrap::{INITIAL_EPOCH, ROOT_GROUP_ID},
     root::Schema,
     serverpb::v1::{reconcile_task::Task, *},
     Result,
@@ -248,6 +248,7 @@ impl ScheduleContext {
                     .await
             }
             Task::ShedLeader(shed_leader) => self.handle_shed_leader(shed_leader).await,
+            Task::ShedRoot(shed_root) => self.handle_shed_root(shed_root).await,
         }
     }
 
@@ -648,6 +649,36 @@ impl ScheduleContext {
         }
 
         Ok((true, true))
+    }
+
+    async fn handle_shed_root(
+        &self,
+        task: &mut ShedRootLeaderTask,
+    ) -> Result<(
+        bool, /* ack current */
+        bool, /* immediately step next tick */
+    )> {
+        let node = task.node_id;
+        let schema = self.shared.schema()?;
+        let root_group = schema.get_group(ROOT_GROUP_ID).await?.unwrap();
+        let mut target = None;
+        for r in &root_group.replicas {
+            if r.node_id == node {
+                continue;
+            }
+            let target_node = schema.get_node(r.node_id).await?;
+            if target_node.is_none() {
+                continue;
+            }
+            if target_node.as_ref().unwrap().status != NodeStatus::Active as i32 {
+                continue;
+            }
+            target = Some(r.to_owned())
+        }
+        if let Some(r) = target {
+            self.try_transfer_leader(root_group.id, r.id).await?
+        }
+        Ok((true, false))
     }
 }
 

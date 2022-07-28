@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cluster;
 mod health;
 mod metadata;
 mod metrics;
-mod cluster;
 mod service;
 
 pub use self::service::AdminService;
@@ -30,7 +30,10 @@ pub fn make_admin_service(server: Server) -> AdminService {
             self::metadata::MetadataHandle::new(server.to_owned()),
         )
         .route("/health", self::health::HealthHandle)
-        .route("/cordon", self::cluster::CordonHandle::new(server.to_owned()))
+        .route(
+            "/cordon",
+            self::cluster::CordonHandle::new(server.to_owned()),
+        )
         .route(
             "/uncordon",
             self::cluster::UncordonHandle::new(server.to_owned()),

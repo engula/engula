@@ -75,6 +75,7 @@ message ReconcileTask {
     TransferGroupLeaderTask transfer_group_leader = 4;
     CreateCollectionShards create_collection_shards = 5;
     ShedLeaderTask shed_leader = 6;
+    ShedRootLeaderTask shed_root = 7;
   }
 }
 
@@ -148,3 +149,5 @@ enum CreateCollectionShardStep {
 }
 
 message ShedLeaderTask { uint64 node_id = 1; }
+
+message ShedRootLeaderTask { uint64 node_id = 1; }

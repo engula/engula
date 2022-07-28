@@ -54,7 +54,7 @@ impl AdminService {
 
 impl<B> Service<http::Request<B>> for AdminService
 where
-    B: Send + 'static,
+    B: Send,
 {
     type Response = http::Response<tonic::body::BoxBody>;
     type Error = std::convert::Infallible;
