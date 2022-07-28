@@ -16,7 +16,11 @@ use engula_api::server::v1::*;
 use futures::{channel::mpsc, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::{node::migrate::ShardChunkStream, runtime::TaskPriority, Error, Server};
+use super::metrics::*;
+use crate::{
+    node::migrate::ShardChunkStream, record_latency, record_latency_opt, runtime::TaskPriority,
+    Error, Server,
+};
 
 #[tonic::async_trait]
 impl node_server::Node for Server {
@@ -27,6 +31,8 @@ impl node_server::Node for Server {
         request: Request<BatchRequest>,
     ) -> Result<Response<BatchResponse>, Status> {
         let batch_request = request.into_inner();
+        record_latency!(take_batch_request_metrics(&batch_request));
+
         let (sender, mut receiver) = mpsc::channel(batch_request.requests.len());
         for (index, request) in batch_request.requests.into_iter().enumerate() {
             let server = self.clone();
@@ -36,6 +42,7 @@ impl node_server::Node for Server {
                 Some(task_tag.as_slice()),
                 TaskPriority::Middle,
                 async move {
+                    record_latency_opt!(take_group_request_metrics(&request));
                     let response = server
                         .node
                         .execute_request(request)
@@ -62,6 +69,7 @@ impl node_server::Node for Server {
         &self,
         _request: Request<GetRootRequest>,
     ) -> Result<Response<GetRootResponse>, Status> {
+        record_latency!(take_get_root_request_metrics());
         let root = self.node.get_root().await;
         Ok(Response::new(GetRootResponse { root: Some(root) }))
     }
@@ -70,6 +78,7 @@ impl node_server::Node for Server {
         &self,
         request: Request<CreateReplicaRequest>,
     ) -> Result<Response<CreateReplicaResponse>, Status> {
+        record_latency!(take_create_replica_request_metrics());
         let request = request.into_inner();
         let group_desc = request
             .group
@@ -83,6 +92,7 @@ impl node_server::Node for Server {
         &self,
         request: Request<RemoveReplicaRequest>,
     ) -> Result<Response<RemoveReplicaResponse>, Status> {
+        record_latency!(take_remove_replica_request_metrics());
         let request = request.into_inner();
         let group_desc = request
             .group
@@ -98,6 +108,7 @@ impl node_server::Node for Server {
     ) -> Result<Response<HeartbeatResponse>, Status> {
         use engula_api::server::v1::{piggyback_request, piggyback_response};
 
+        record_latency!(take_root_heartbeat_request_metrics());
         let request = request.into_inner();
         let mut piggybacks_resps = Vec::with_capacity(request.piggybacks.len());
 
@@ -135,6 +146,7 @@ impl node_server::Node for Server {
         &self,
         request: Request<MigrateRequest>,
     ) -> Result<Response<MigrateResponse>, Status> {
+        record_latency!(take_migrate_request_metrics());
         let req = request.into_inner();
         let resp = self.node.migrate(req).await?;
         Ok(Response::new(resp))
@@ -144,6 +156,7 @@ impl node_server::Node for Server {
         &self,
         request: Request<PullRequest>,
     ) -> Result<Response<Self::PullStream>, Status> {
+        record_latency!(take_pull_request_metrics());
         let request = request.into_inner();
         let stream = self.node.pull_shard_chunks(request).await?;
         Ok(Response::new(stream))
@@ -153,6 +166,7 @@ impl node_server::Node for Server {
         &self,
         request: Request<ForwardRequest>,
     ) -> Result<Response<ForwardResponse>, Status> {
+        record_latency!(take_forward_request_metrics());
         let req = request.into_inner();
         let resp = self.node.forward(req).await?;
         Ok(Response::new(resp))

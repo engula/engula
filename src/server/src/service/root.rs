@@ -15,7 +15,8 @@
 use engula_api::{server::v1::*, v1::*};
 use tonic::{Request, Response, Status};
 
-use crate::{root::Watcher, Error, Result, Server};
+use super::metrics::*;
+use crate::{record_latency, root::Watcher, Error, Result, Server};
 
 #[tonic::async_trait]
 impl root_server::Root for Server {
@@ -25,6 +26,7 @@ impl root_server::Root for Server {
         &self,
         req: Request<AdminRequest>,
     ) -> std::result::Result<Response<AdminResponse>, Status> {
+        record_latency!(take_admin_request_metrics());
         let req = req.into_inner();
         let res = self.handle_admin(req).await?;
         Ok(Response::new(res))
@@ -34,6 +36,7 @@ impl root_server::Root for Server {
         &self,
         req: Request<WatchRequest>,
     ) -> std::result::Result<Response<Self::WatchStream>, Status> {
+        record_latency!(take_watch_request_metrics());
         let req = req.into_inner();
         let watcher = self
             .wrap(self.root.watch(req.cur_group_epochs).await)
@@ -45,6 +48,7 @@ impl root_server::Root for Server {
         &self,
         request: Request<JoinNodeRequest>,
     ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
+        record_latency!(take_join_request_metrics());
         let request = request.into_inner();
         let capacity = request
             .capacity
@@ -63,6 +67,7 @@ impl root_server::Root for Server {
         &self,
         request: Request<ReportRequest>,
     ) -> std::result::Result<Response<ReportResponse>, Status> {
+        record_latency!(take_report_request_metrics());
         let request = request.into_inner();
         self.wrap(self.root.report(request.updates).await).await?;
         Ok(Response::new(ReportResponse {}))
@@ -72,6 +77,7 @@ impl root_server::Root for Server {
         &self,
         request: Request<AllocReplicaRequest>,
     ) -> std::result::Result<Response<AllocReplicaResponse>, Status> {
+        record_latency!(take_alloc_replica_request_metrics());
         let req = request.into_inner();
         let replicas = self
             .wrap(

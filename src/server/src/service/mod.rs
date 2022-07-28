@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 pub mod admin;
+mod metrics;
 pub mod node;
 pub mod raft;
 pub mod root;
