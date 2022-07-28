@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cordon;
 mod health;
 mod metadata;
 mod metrics;
@@ -24,8 +25,16 @@ use crate::Server;
 pub fn make_admin_service(server: Server) -> AdminService {
     let router = Router::empty()
         .route("/metrics", self::metrics::MetricsHandle)
-        .route("/metadata", self::metadata::MetadataHandle::new(server))
-        .route("/health", self::health::HealthHandle);
+        .route(
+            "/metadata",
+            self::metadata::MetadataHandle::new(server.to_owned()),
+        )
+        .route("/health", self::health::HealthHandle)
+        .route(
+            "/cordon",
+            self::cordon::NodeCordonHandle::new(server.to_owned()),
+        )
+        .route("/uncordon", self::cordon::NodeUncordonHandle::new(server));
     let api = Router::nest("/admin", router);
     AdminService::new(api)
 }

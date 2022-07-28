@@ -274,6 +274,11 @@ impl Root {
         Ok(())
     }
 
+    pub async fn evit(&self, _node_id: u64) -> Result<()> {
+        let _schema = self.schema()?;
+        Ok(())
+    }
+
     pub async fn info(&self) -> Result<String> {
         let schema = self.schema()?;
         let nodes = schema.list_node().await?;

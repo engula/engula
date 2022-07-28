@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +30,11 @@ pub(super) struct MetricsHandle;
 
 #[crate::async_trait]
 impl super::service::HttpHandle for MetricsHandle {
-    async fn call(&self, _: &str) -> crate::Result<http::Response<String>> {
+    async fn call(
+        &self,
+        _: &str,
+        _: &HashMap<String, String>,
+    ) -> crate::Result<http::Response<String>> {
         METRICS_RPC_REQUESTS_TOTAL.inc();
 
         let encoder = TextEncoder::new();
