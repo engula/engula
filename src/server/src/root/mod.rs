@@ -274,9 +274,99 @@ impl Root {
         Ok(())
     }
 
-    pub async fn evit(&self, _node_id: u64) -> Result<()> {
-        let _schema = self.schema()?;
+    pub async fn cordon_node(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(current_status, NodeStatus::Active) {
+            return Err(crate::Error::InvalidArgument(
+                "node already cordoned".into(),
+            ));
+        }
+        node_desc.status = NodeStatus::Cordoned as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
         Ok(())
+    }
+
+    pub async fn uncordon_node(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(
+            current_status,
+            NodeStatus::Cordoned | NodeStatus::Drained | NodeStatus::Decommissioned
+        ) {
+            return Err(crate::Error::InvalidArgument(
+                "node status unsupport uncordon".into(),
+            ));
+        }
+
+        node_desc.status = NodeStatus::Active as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+        Ok(())
+    }
+
+    pub async fn begin_drain(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(current_status, NodeStatus::Cordoned) {
+            return Err(crate::Error::InvalidArgument(
+                "only in cordoned status node can be drain".into(),
+            ));
+        }
+
+        node_desc.status = NodeStatus::Draining as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+
+        // TODO: setup a shed_leader task.
+        // self.scheduler.setup_task(task)
+
+        Ok(())
+    }
+
+    pub async fn end_drain(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(current_status, NodeStatus::Draining) {
+            return Err(crate::Error::InvalidArgument(
+                "only in cordoned status node can be drain".into(),
+            ));
+        }
+
+        node_desc.status = NodeStatus::Drained as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+
+        Ok(())
+    }
+
+    pub async fn node_status(&self, node_id: u64) -> Result<NodeStatus> {
+        let schema = self.schema()?;
+        let node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+
+        Ok(current_status)
     }
 
     pub async fn info(&self) -> Result<String> {

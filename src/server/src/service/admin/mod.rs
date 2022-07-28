@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cordon;
 mod health;
 mod metadata;
 mod metrics;
+mod node;
 mod service;
 
 pub use self::service::AdminService;
@@ -30,11 +30,13 @@ pub fn make_admin_service(server: Server) -> AdminService {
             self::metadata::MetadataHandle::new(server.to_owned()),
         )
         .route("/health", self::health::HealthHandle)
+        .route("/cordon", self::node::CordonHandle::new(server.to_owned()))
         .route(
-            "/cordon",
-            self::cordon::NodeCordonHandle::new(server.to_owned()),
+            "/uncordon",
+            self::node::UncordonHandle::new(server.to_owned()),
         )
-        .route("/uncordon", self::cordon::NodeUncordonHandle::new(server));
+        .route("/drain", self::node::DrainHandle::new(server.to_owned()))
+        .route("/node_status", self::node::StatusHandle::new(server));
     let api = Router::nest("/admin", router);
     AdminService::new(api)
 }

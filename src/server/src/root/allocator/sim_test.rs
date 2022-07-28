@@ -52,6 +52,7 @@ fn sim_boostrap_join_node_balance() {
                 replica_count: 1,
                 leader_count: 1,
             }),
+            status: NodeStatus::Active as i32,
         }]);
         p.set_replica_states(vec![ReplicaState {
             replica_id: 1,
@@ -77,6 +78,7 @@ fn sim_boostrap_join_node_balance() {
                     replica_count: 0,
                     leader_count: 0,
                 }),
+                status: NodeStatus::Active as i32,
             },
             NodeDesc {
                 id: 3,
@@ -86,6 +88,7 @@ fn sim_boostrap_join_node_balance() {
                     replica_count: 0,
                     leader_count: 0,
                 }),
+                status: NodeStatus::Active as i32,
             },
         ]);
         p.set_nodes(nodes);
@@ -229,6 +232,7 @@ fn sim_boostrap_join_node_balance() {
                 replica_count: 0,
                 leader_count: 0,
             }),
+            status: NodeStatus::Active as i32,
         }]);
         p.set_nodes(nodes);
         p.display();

@@ -20,6 +20,16 @@ message NodeDesc {
   uint64 id = 1;
   string addr = 2;
   NodeCapacity capacity = 3;
+  NodeStatus status = 4;
+}
+
+enum NodeStatus {
+  ACTIVE = 0;
+  CORDONED = 1;
+  DRAINING = 2;
+  DRAINED = 3;
+  DECOMMISSIONING = 4;
+  DECOMMISSIONED = 5;
 }
 
 message NodeCapacity {
