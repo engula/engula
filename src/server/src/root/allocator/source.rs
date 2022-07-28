@@ -22,11 +22,19 @@ use engula_api::server::v1::*;
 use super::RootShared;
 use crate::{root::liveness::Liveness, Result};
 
+pub enum NodeFilter {
+    All,
+    #[allow(dead_code)]
+    Alive,
+    Schedulable,
+    NotDecommissioned,
+}
+
 #[crate::async_trait]
 pub trait AllocSource {
     async fn refresh_all(&self) -> Result<()>;
 
-    fn nodes(&self, only_alive: bool) -> Vec<NodeDesc>;
+    fn nodes(&self, filter: NodeFilter) -> Vec<NodeDesc>;
 
     fn groups(&self) -> HashMap<u64, GroupDesc>;
 
@@ -78,14 +86,25 @@ impl AllocSource for SysAllocSource {
         self.reload_replica_status().await
     }
 
-    fn nodes(&self, only_alive: bool) -> Vec<NodeDesc> {
-        let mut nodes = { self.nodes.lock().unwrap().clone() };
-        if only_alive {
-            nodes = nodes
+    fn nodes(&self, filter: NodeFilter) -> Vec<NodeDesc> {
+        let all_nodes = { self.nodes.lock().unwrap().clone() };
+        let nodes = match filter {
+            NodeFilter::All => all_nodes,
+            NodeFilter::Alive => all_nodes
                 .into_iter()
                 .filter(|n| !self.liveness.get(&n.id).is_dead())
-                .collect::<Vec<_>>();
-        }
+                .collect::<Vec<_>>(),
+            NodeFilter::Schedulable => all_nodes
+                .into_iter()
+                .filter(|n| {
+                    n.status == NodeStatus::Active as i32 && !self.liveness.get(&n.id).is_dead()
+                })
+                .collect::<Vec<_>>(),
+            NodeFilter::NotDecommissioned => all_nodes
+                .into_iter()
+                .filter(|n| n.status != NodeStatus::Decommissioned as i32)
+                .collect::<Vec<_>>(),
+        };
         nodes
     }
 

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use self::{
     policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
-    policy_shard_cnt::ShardCountPolicy,
+    policy_shard_cnt::ShardCountPolicy, source::NodeFilter,
 };
 use super::RootShared;
 use crate::{bootstrap::REPLICA_PER_GROUP, Result};
@@ -155,7 +155,9 @@ impl<T: AllocSource> Allocator<T> {
 
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes(false).len() < self.config.replicas_per_group {
+        if self.alloc_source.nodes(NodeFilter::NotDecommissioned).len()
+            < self.config.replicas_per_group
+        {
             // group alloctor start work after node_count > replicas_per_group.
             return Ok(GroupAction::Noop);
         }
@@ -206,7 +208,7 @@ impl<T: AllocSource> Allocator<T> {
 
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes(false).len() < self.config.replicas_per_group {
+        if self.alloc_source.nodes(NodeFilter::All).len() < self.config.replicas_per_group {
             return Ok(Vec::new());
         }
 
@@ -258,7 +260,7 @@ impl<T: AllocSource> Allocator<T> {
         // 2 remove groups from unmatch cpu-quota nodes.
         // 3. remove groups with lowest migration cost.
         self.alloc_source
-            .nodes(false)
+            .nodes(NodeFilter::NotDecommissioned)
             .iter()
             .take(want_remove)
             .map(|n| n.id)
@@ -268,7 +270,7 @@ impl<T: AllocSource> Allocator<T> {
     fn desired_groups(&self) -> usize {
         let total_cpus = self
             .alloc_source
-            .nodes(false)
+            .nodes(NodeFilter::NotDecommissioned)
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().cpu_nums)
             .fold(0_f64, |acc, x| acc + x);
