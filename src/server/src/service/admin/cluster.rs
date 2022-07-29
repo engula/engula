@@ -134,7 +134,7 @@ impl super::service::HttpHandle for StatusHandle {
         let status = self.server.root.node_status(node_id).await?;
         Ok(http::Response::builder()
             .status(http::StatusCode::OK)
-            .body(json!({ "node_id": node_id, "node_status": status as i32 }).to_string())
+            .body(json!({ "node_id": node_id, "node_status": format!("{:?}", status).to_uppercase() }).to_string())
             .unwrap())
     }
 }
