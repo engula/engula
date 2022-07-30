@@ -185,7 +185,7 @@ pub async fn retrive_snapshot(
         replica_id: target_replica.id,
         snapshot_id,
     };
-    let resp = client.retrive_snapshot(request).await?;
+    let resp = client.retrieve_snapshot(request).await?;
     Ok(resp.into_inner())
 }
 

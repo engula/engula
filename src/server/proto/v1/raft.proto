@@ -22,7 +22,7 @@ import "v1/metadata.proto";
 
 service Raft {
   rpc SendMessage(stream RaftMessage) returns (RaftDone) {}
-  rpc RetriveSnapshot(SnapshotRequest) returns (stream SnapshotChunk) {}
+  rpc RetrieveSnapshot(SnapshotRequest) returns (stream SnapshotChunk) {}
 }
 
 message RaftMessage {

@@ -24,7 +24,7 @@ use crate::{
 
 #[tonic::async_trait]
 impl raft_server::Raft for Server {
-    type RetriveSnapshotStream = SnapshotChunkStream;
+    type RetrieveSnapshotStream = SnapshotChunkStream;
 
     async fn send_message(
         &self,
@@ -63,7 +63,7 @@ impl raft_server::Raft for Server {
         Ok(Response::new(RaftDone {}))
     }
 
-    async fn retrive_snapshot(
+    async fn retrieve_snapshot(
         &self,
         request: Request<SnapshotRequest>,
     ) -> Result<Response<SnapshotChunkStream>, Status> {
