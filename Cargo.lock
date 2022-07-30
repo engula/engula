@@ -516,6 +516,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "engula-bench"
+version = "0.4.0"
+dependencies = [
+ "atty",
+ "clap",
+ "config",
+ "engula-client",
+ "engula-server",
+ "lazy_static",
+ "num_cpus",
+ "paste",
+ "prometheus",
+ "rand 0.8.5",
+ "serde",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "engula-client"
 version = "0.4.0"
 dependencies = [

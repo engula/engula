@@ -24,6 +24,7 @@ pub struct ShutdownNotifier {
     core: Arc<Mutex<Core>>,
 }
 
+#[derive(Clone)]
 pub struct Shutdown {
     core: Arc<Mutex<Core>>,
 }
