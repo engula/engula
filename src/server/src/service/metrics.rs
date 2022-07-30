@@ -206,7 +206,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref RAFT_SERVICE_SNAPSHOT_REQUEST_TOTAL: IntCounter = register_int_counter!(
-        "raft_service_snapshot _request_total",
+        "raft_service_snapshot_request_total",
         "The total snapshot requests of raft service",
     )
     .unwrap();
