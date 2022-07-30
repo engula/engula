@@ -19,6 +19,7 @@ use tracing::{error, warn};
 use crate::{
     raftgroup::snap::send::{send_snapshot, SnapshotChunkStream},
     serverpb::v1::*,
+    service::metrics::*,
     Server,
 };
 
@@ -34,6 +35,9 @@ impl raft_server::Raft for Server {
         while let Some(next_msg) = in_stream.next().await {
             match next_msg {
                 Ok(msg) => {
+                    RAFT_SERVICE_MSG_REQUEST_TOTAL.inc();
+                    RAFT_SERVICE_MSG_BATCH_SIZE.observe(msg.messages.len() as f64);
+
                     let target_replica_id = match msg.to_replica.as_ref() {
                         None => {
                             error!("receive messages {:?} without to replica", msg);
@@ -67,6 +71,8 @@ impl raft_server::Raft for Server {
         &self,
         request: Request<SnapshotRequest>,
     ) -> Result<Response<SnapshotChunkStream>, Status> {
+        RAFT_SERVICE_SNAPSHOT_REQUEST_TOTAL.inc();
+
         let request = request.into_inner();
         let snap_mgr = self.node.raft_manager().snapshot_manager();
 

@@ -199,6 +199,24 @@ simple_root_method!(admin);
 simple_root_method!(join);
 simple_root_method!(alloc_replica);
 
+lazy_static! {
+    pub static ref RAFT_SERVICE_MSG_REQUEST_TOTAL: IntCounter = register_int_counter!(
+        "raft_service_msg_request_total",
+        "The total msg requests of raft service",
+    )
+    .unwrap();
+    pub static ref RAFT_SERVICE_SNAPSHOT_REQUEST_TOTAL: IntCounter = register_int_counter!(
+        "raft_service_snapshot _request_total",
+        "The total snapshot requests of raft service",
+    )
+    .unwrap();
+    pub static ref RAFT_SERVICE_MSG_BATCH_SIZE: Histogram = register_histogram!(
+        "raft_service_msg_batch_size",
+        "The batch size of msg requests of raft service",
+    )
+    .unwrap();
+}
+
 #[macro_export]
 macro_rules! record_latency {
     ($metrics: expr) => {
