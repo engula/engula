@@ -608,6 +608,7 @@ impl Schema {
                 replica_count: 1,
                 leader_count: 0,
             }),
+            status: NodeStatus::Active as i32,
         });
 
         batch.put_group(GroupDesc {

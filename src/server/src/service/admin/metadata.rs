@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use tonic::codegen::*;
 
 use crate::Server;
@@ -28,7 +30,11 @@ impl MetadataHandle {
 
 #[crate::async_trait]
 impl super::service::HttpHandle for MetadataHandle {
-    async fn call(&self, path: &str) -> crate::Result<http::Response<String>> {
+    async fn call(
+        &self,
+        path: &str,
+        _: &HashMap<String, String>,
+    ) -> crate::Result<http::Response<String>> {
         let info = match self.server.root.info().await {
             Ok(info) => info,
             Err(e @ crate::Error::NotRootLeader(..)) => {

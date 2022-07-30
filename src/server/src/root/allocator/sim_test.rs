@@ -23,7 +23,9 @@ use std::{
 use engula_api::server::v1::*;
 
 use super::*;
-use crate::{bootstrap::REPLICA_PER_GROUP, runtime::ExecutorOwner};
+use crate::{
+    bootstrap::REPLICA_PER_GROUP, root::allocator::source::NodeFilter, runtime::ExecutorOwner,
+};
 
 #[test]
 fn sim_boostrap_join_node_balance() {
@@ -52,6 +54,7 @@ fn sim_boostrap_join_node_balance() {
                 replica_count: 1,
                 leader_count: 1,
             }),
+            status: NodeStatus::Active as i32,
         }]);
         p.set_replica_states(vec![ReplicaState {
             replica_id: 1,
@@ -67,7 +70,7 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("2. two node joined");
-        let mut nodes = p.nodes(false);
+        let mut nodes = p.nodes(NodeFilter::All);
         nodes.extend_from_slice(&[
             NodeDesc {
                 id: 2,
@@ -77,6 +80,7 @@ fn sim_boostrap_join_node_balance() {
                     replica_count: 0,
                     leader_count: 0,
                 }),
+                status: NodeStatus::Active as i32,
             },
             NodeDesc {
                 id: 3,
@@ -86,6 +90,7 @@ fn sim_boostrap_join_node_balance() {
                     replica_count: 0,
                     leader_count: 0,
                 }),
+                status: NodeStatus::Active as i32,
             },
         ]);
         p.set_nodes(nodes);
@@ -220,7 +225,7 @@ fn sim_boostrap_join_node_balance() {
         }
 
         println!("6. node 4 joined");
-        let mut nodes = p.nodes(false);
+        let mut nodes = p.nodes(NodeFilter::All);
         nodes.extend_from_slice(&[NodeDesc {
             id: 4,
             addr: "".into(),
@@ -229,6 +234,7 @@ fn sim_boostrap_join_node_balance() {
                 replica_count: 0,
                 leader_count: 0,
             }),
+            status: NodeStatus::Active as i32,
         }]);
         p.set_nodes(nodes);
         p.display();
@@ -439,7 +445,7 @@ impl AllocSource for MockInfoProvider {
         Ok(())
     }
 
-    fn nodes(&self, _only_alive: bool) -> Vec<NodeDesc> {
+    fn nodes(&self, _: NodeFilter) -> Vec<NodeDesc> {
         let nodes = self.nodes.lock().unwrap();
         nodes.to_owned()
     }
@@ -492,7 +498,7 @@ impl MockInfoProvider {
         }
 
         // test only fix node.replica logic
-        let mut nodes = self.nodes(false);
+        let mut nodes = self.nodes(NodeFilter::All);
         for n in nodes.iter_mut() {
             let mut cap = n.capacity.take().unwrap();
             cap.replica_count = node_replicas.get(&n.id).unwrap().len() as u64;
@@ -514,7 +520,7 @@ impl MockInfoProvider {
         let mut replicas = self.replicas.lock().unwrap();
 
         // test only, maintain leader count in node.
-        let mut nodes = self.nodes(false);
+        let mut nodes = self.nodes(NodeFilter::All);
         let groups = self.groups();
         let mut node_leader = HashMap::new();
         for r in &rs {

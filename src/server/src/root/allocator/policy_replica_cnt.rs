@@ -21,7 +21,7 @@ use std::{
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use tracing::trace;
 
-use super::*;
+use super::{source::NodeFilter, *};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 pub struct ReplicaCountPolicy<T: AllocSource> {
@@ -38,7 +38,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         existing_replica_nodes: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
-        let mut candidate_nodes = self.alloc_source.nodes(true);
+        let mut candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
         // skip the nodes already have group replicas.
         candidate_nodes.retain(|n| !existing_replica_nodes.iter().any(|rn| *rn == n.id));
@@ -54,8 +54,8 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
     }
 
     pub fn compute_balance(&self) -> Result<Vec<ReplicaAction>> {
-        let mean_cnt = self.mean_replica_count();
-        let candidate_nodes = self.alloc_source.nodes(true);
+        let mean_cnt = self.mean_replica_count(NodeFilter::Schedulable);
+        let candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
         let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
         trace!(
@@ -67,7 +67,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if *status != BalanceStatus::Overfull {
                 break;
             }
-            if let Some(action) = self.rebalance_target(src_node, &ranked_candidates) {
+            if let Some(action) = self.rebalance_target(src_node, &ranked_candidates, mean_cnt) {
                 return Ok(vec![action]);
             }
         }
@@ -79,8 +79,8 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         &self,
         src: &NodeDesc,
         ranked_nodes: &[(NodeDesc, BalanceStatus)],
+        mean: f64,
     ) -> Option<ReplicaAction> {
-        let mean = self.mean_replica_count();
         let mut groups = self
             .alloc_source
             .groups()
@@ -145,8 +145,8 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             })
     }
 
-    fn mean_replica_count(&self) -> f64 {
-        let nodes = self.alloc_source.nodes(true);
+    fn mean_replica_count(&self, filter: NodeFilter) -> f64 {
+        let nodes = self.alloc_source.nodes(filter);
         let total_replicas = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().replica_count)

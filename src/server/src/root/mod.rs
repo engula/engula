@@ -52,8 +52,8 @@ use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{self, TaskPriority},
     serverpb::v1::{
-        reconcile_task::Task, CreateCollectionShardStep, CreateCollectionShards, GroupShards,
-        NodeIdent, ReconcileTask,
+        reconcile_task::{self, Task},
+        *,
     },
     Config, Error, Provider, Result,
 };
@@ -272,6 +272,99 @@ impl Root {
         }
 
         Ok(())
+    }
+
+    pub async fn cordon_node(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(current_status, NodeStatus::Active) {
+            return Err(crate::Error::InvalidArgument(
+                "node already cordoned".into(),
+            ));
+        }
+        node_desc.status = NodeStatus::Cordoned as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+        Ok(())
+    }
+
+    pub async fn uncordon_node(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(
+            current_status,
+            NodeStatus::Cordoned | NodeStatus::Drained | NodeStatus::Decommissioned
+        ) {
+            return Err(crate::Error::InvalidArgument(
+                "node status unsupport uncordon".into(),
+            ));
+        }
+
+        node_desc.status = NodeStatus::Active as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+        Ok(())
+    }
+
+    pub async fn begin_drain(&self, node_id: u64) -> Result<()> {
+        let schema = self.schema()?;
+
+        if self.current_node_id() == node_id {
+            info!("try to drain root leader and move root leadership out first");
+            self.scheduler
+                .setup_task(ReconcileTask {
+                    task: Some(reconcile_task::Task::ShedRoot(ShedRootLeaderTask {
+                        node_id,
+                    })),
+                })
+                .await;
+            return Err(crate::Error::InvalidArgument(
+                "node is root leader, try again later".into(),
+            ));
+        }
+
+        let mut node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+        if !matches!(current_status, NodeStatus::Cordoned) {
+            return Err(crate::Error::InvalidArgument(
+                "only in cordoned status node can be drain".into(),
+            ));
+        }
+
+        node_desc.status = NodeStatus::Draining as i32;
+        schema.update_node(node_desc).await?; // TODO: cas
+
+        self.scheduler
+            .setup_task(ReconcileTask {
+                task: Some(reconcile_task::Task::ShedLeader(ShedLeaderTask { node_id })),
+            })
+            .await;
+
+        Ok(())
+    }
+
+    pub async fn node_status(&self, node_id: u64) -> Result<NodeStatus> {
+        let schema = self.schema()?;
+        let node_desc = schema
+            .get_node(node_id)
+            .await?
+            .ok_or_else(|| crate::Error::InvalidArgument("node not found".into()))?;
+
+        let current_status = NodeStatus::from_i32(node_desc.status).unwrap();
+
+        Ok(current_status)
     }
 
     pub async fn info(&self) -> Result<String> {

@@ -26,7 +26,11 @@ use tonic::{
 
 #[crate::async_trait]
 pub(super) trait HttpHandle: Send + Sync {
-    async fn call(&self, path: &str) -> crate::Result<http::Response<String>>;
+    async fn call(
+        &self,
+        path: &str,
+        params: &HashMap<String, String>,
+    ) -> crate::Result<http::Response<String>>;
 }
 
 pub(super) struct Router {
@@ -62,8 +66,17 @@ where
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         let inner = self.inner.clone();
+        let query_params = req
+            .uri()
+            .query()
+            .map(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .into_owned()
+                    .collect()
+            })
+            .unwrap_or_else(HashMap::new);
         let path = req.uri().path().to_owned();
-        Box::pin(async move { inner.call(path).await })
+        Box::pin(async move { inner.call(&path, query_params).await })
     }
 }
 
@@ -111,9 +124,10 @@ impl Router {
 
     pub async fn call(
         &self,
-        path: String,
+        path: &str,
+        params: HashMap<String, String>,
     ) -> Result<http::Response<BoxBody>, std::convert::Infallible> {
-        let handle = match self.handles.get(&path) {
+        let handle = match self.handles.get(path) {
             Some(handle) => handle,
             None => {
                 return Ok(http::Response::builder()
@@ -123,7 +137,7 @@ impl Router {
             }
         };
 
-        let resp = match handle.call(&path).await {
+        let resp = match handle.call(path, &params).await {
             Ok(resp) => resp.map(boxed),
             Err(e) => http::Response::builder()
                 .status(http::StatusCode::INTERNAL_SERVER_ERROR)

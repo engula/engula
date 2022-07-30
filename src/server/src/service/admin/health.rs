@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use tonic::codegen::*;
 
 pub(super) struct HealthHandle;
 
 #[crate::async_trait]
 impl super::service::HttpHandle for HealthHandle {
-    async fn call(&self, _: &str) -> crate::Result<http::Response<String>> {
+    async fn call(
+        &self,
+        _: &str,
+        _: &HashMap<String, String>,
+    ) -> crate::Result<http::Response<String>> {
         Ok(http::Response::builder()
             .status(http::StatusCode::OK)
             .body("Ok\n".to_owned())

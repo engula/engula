@@ -17,7 +17,7 @@ use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 use engula_api::server::v1::{NodeDesc, RaftRole, ReplicaDesc, ReplicaRole};
 use tracing::trace;
 
-use super::{AllocSource, BalanceStatus, LeaderAction, TransferLeader};
+use super::{source::NodeFilter, AllocSource, BalanceStatus, LeaderAction, TransferLeader};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
 
 pub struct LeaderCountPolicy<T: AllocSource> {
@@ -41,8 +41,8 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
     }
 
     pub fn compute_balance(&self) -> Result<LeaderAction> {
-        let mean = self.mean_leader_count();
-        let candidate_nodes = self.alloc_source.nodes(true);
+        let mean = self.mean_leader_count(NodeFilter::Schedulable);
+        let candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
         let ranked_nodes = Self::rank_nodes_for_leader(candidate_nodes, mean);
         trace!(
             scored_nodes = ?ranked_nodes.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().leader_count, s)).collect::<Vec<_>>(),
@@ -173,8 +173,8 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         BalanceStatus::Balanced
     }
 
-    fn mean_leader_count(&self) -> f64 {
-        let nodes = self.alloc_source.nodes(true);
+    fn mean_leader_count(&self, filter: NodeFilter) -> f64 {
+        let nodes = self.alloc_source.nodes(filter);
         let total_leaders = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().leader_count)
