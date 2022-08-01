@@ -573,6 +573,8 @@ impl ReplicaNodes {
 // bootstrap schema.
 impl Schema {
     pub async fn try_bootstrap_root(&mut self, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
+        let _timer = super::metrics::BOOTSTRAP_DURATION_SECONDS.start_timer();
+
         if let Some(exist_cluster_id) = self.cluster_id().await? {
             if exist_cluster_id != cluster_id {
                 return Err(Error::ClusterNotMatch);
