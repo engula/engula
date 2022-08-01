@@ -14,6 +14,7 @@
 
 pub mod engine;
 mod job;
+mod metrics;
 pub mod migrate;
 pub mod replica;
 pub mod resolver;

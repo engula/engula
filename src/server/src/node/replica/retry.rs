@@ -20,7 +20,10 @@ use engula_api::{
 };
 
 use super::{ExecCtx, Replica};
-use crate::{node::migrate::MigrateController, Error, Result};
+use crate::{
+    node::{metrics::NODE_RETRY_TOTAL, migrate::MigrateController},
+    Error, Result,
+};
 
 /// A wrapper function that detects and completes retries as quickly as possible.
 pub async fn execute(
@@ -76,6 +79,7 @@ async fn execute_internal(
             }
             Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
                 // sleep and retry.
+                NODE_RETRY_TOTAL.inc();
                 crate::runtime::time::sleep(Duration::from_micros(200)).await;
             }
             Err(Error::EpochNotMatch(desc)) => {
@@ -83,6 +87,7 @@ async fn execute_internal(
                     debug_assert_ne!(desc.epoch, exec_ctx.epoch);
                     exec_ctx.epoch = desc.epoch;
                     freshed_descriptor = Some(desc);
+                    NODE_RETRY_TOTAL.inc();
                     continue;
                 }
 
