@@ -192,7 +192,9 @@ fn load_config() -> Result<AppConfig> {
     use ::config::{Config, Environment, File};
 
     let cmd = Command::parse();
-    let mut builder = Config::builder().set_default("addrs", vec!["127.0.0.1:21805"])?;
+    let mut builder = Config::builder()
+        .add_source(Config::try_from(&AppConfig::default()).unwrap())
+        .set_default("addrs", vec!["127.0.0.1:21805"])?;
     if let Some(conf) = cmd.conf {
         builder = builder.add_source(File::with_name(&conf));
     }
