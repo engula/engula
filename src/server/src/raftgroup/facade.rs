@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
+
 use engula_api::server::v1::ChangeReplicas;
 use futures::channel::{mpsc, oneshot};
 
 use super::{
+    metrics::*,
     worker::{RaftGroupState, Request},
     ReadPolicy,
 };
 use crate::{
+    record_latency,
     serverpb::v1::{EvalResult, RaftMessage},
     Result,
 };
@@ -48,6 +52,7 @@ impl RaftNodeFacade {
     ///
     /// TODO(walter) support return user defined error.
     pub async fn propose(&mut self, eval_result: EvalResult) -> Result<()> {
+        let start_at = Instant::now();
         let (sender, receiver) = oneshot::channel();
 
         let request = Request::Propose {
@@ -56,19 +61,19 @@ impl RaftNodeFacade {
         };
 
         self.send(request)?;
-        receiver.await?
+        take_propose_metrics(start_at, receiver.await?)
     }
 
     /// Execute reading operations with the specified read policy.
     pub async fn read(&mut self, policy: ReadPolicy) -> Result<()> {
-        let (sender, receiver) = oneshot::channel();
         if matches!(policy, ReadPolicy::Relaxed) {
-            sender.send(Ok(())).unwrap_or_default();
+            Ok(())
         } else {
+            record_latency!(take_read_metrics(policy));
+            let (sender, receiver) = oneshot::channel();
             self.send(Request::Read { policy, sender })?;
+            receiver.await?
         }
-
-        receiver.await?
     }
 
     /// Step raft messages.
@@ -77,10 +82,12 @@ impl RaftNodeFacade {
     }
 
     pub fn transfer_leader(&mut self, transferee: u64) -> Result<()> {
+        RAFTGROUP_TRANSFER_LEADER_TOTAL.inc();
         self.send(Request::Transfer { transferee })
     }
 
     pub async fn change_config(&mut self, change: ChangeReplicas) -> Result<()> {
+        RAFTGROUP_CONFIG_CHANGE_TOTAL.inc();
         let (sender, receiver) = oneshot::channel();
 
         let request = Request::ChangeConfig { change, sender };
@@ -104,6 +111,7 @@ impl RaftNodeFacade {
     }
 
     pub fn report_unreachable(&mut self, target_id: u64) {
+        RAFTGROUP_UNREACHABLE_TOTAL.inc();
         self.send(Request::Unreachable { target_id })
             .unwrap_or_default()
     }

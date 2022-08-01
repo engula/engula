@@ -26,6 +26,7 @@ use tracing::{debug, warn};
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
+    metrics::*,
     node::RaftNode,
     snap::{apply::apply_snapshot, SnapManager},
     transport::{Channel, TransportManager},
@@ -267,6 +268,7 @@ where
                 self.handle_request(request)?;
             }
 
+            RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
             let mut template = AdvanceImpl {
                 replica_id: self.desc.id,
                 group_id: self.group_id,

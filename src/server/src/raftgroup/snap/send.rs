@@ -22,6 +22,7 @@ use std::{
 
 use super::{SnapManager, SnapshotGuard};
 use crate::{
+    raftgroup::metrics::*,
     serverpb::v1::{snapshot_chunk, SnapshotChunk},
     Error, Result,
 };
@@ -46,6 +47,7 @@ pub async fn send_snapshot(
         }
     };
 
+    RAFTGROUP_SEND_SNAPSHOT_TOTAL.inc();
     Ok(SnapshotChunkStream::new(snapshot_info))
 }
 
@@ -83,6 +85,7 @@ impl SnapshotChunkStream {
                     }
                 }
                 chunk_data.truncate(num_read);
+                RAFTGROUP_SEND_SNAPSHOT_BYTES_TOTAL.inc_by(num_read as u64);
                 let value = snapshot_chunk::Value::ChunkData(chunk_data);
                 Some(Ok(SnapshotChunk { value: Some(value) }))
             }
