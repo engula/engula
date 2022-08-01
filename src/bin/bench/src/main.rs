@@ -66,14 +66,14 @@ fn main() -> Result<()> {
     };
 
     let (send, recv) = mpsc::channel();
-    ctx.runtime.spawn(async move {
+    let handle = ctx.runtime.spawn(async move {
         notifier.ctrl_c().await;
         info!("receive CTRL-C, exit");
         send.send(()).unwrap_or_default();
     });
 
     info!("spawn {} workers", cfg.worker.num_worker);
-    spawn_reporter(&ctx, cfg.clone());
+    let report_waiter = spawn_reporter(&ctx, cfg.clone());
 
     let num_op = cfg.operation / cfg.worker.num_worker;
     for i in 0..cfg.worker.num_worker {
@@ -88,7 +88,11 @@ fn main() -> Result<()> {
     info!("all workers are spawned, wait ...");
 
     let wait_group = ctx.wait_group;
-    ctx.runtime.block_on(async move { wait_group.wait().await });
+    ctx.runtime.block_on(async move {
+        wait_group.wait().await;
+        handle.abort();
+        report_waiter.wait().await;
+    });
 
     Ok(())
 }
@@ -156,9 +160,10 @@ async fn open_collection(cfg: &AppConfig) -> Result<Collection> {
     Ok(co)
 }
 
-fn spawn_reporter(ctx: &Context, cfg: AppConfig) {
+fn spawn_reporter(ctx: &Context, cfg: AppConfig) -> WaitGroup {
     let shutdown = ctx.shutdown.clone();
-    let wait_group = ctx.wait_group.clone();
+    let wait_group = WaitGroup::new();
+    let cloned_wait_group = wait_group.clone();
     ctx.runtime.spawn(async move {
         select! {
             _ = shutdown => {},
@@ -167,6 +172,7 @@ fn spawn_reporter(ctx: &Context, cfg: AppConfig) {
         report();
         drop(wait_group);
     });
+    cloned_wait_group
 }
 
 async fn reporter_main(cfg: AppConfig) {
@@ -200,7 +206,7 @@ fn load_config() -> Result<AppConfig> {
     }
     let cfg = builder
         .add_source(
-            Environment::with_prefix("APP")
+            Environment::with_prefix("EB")
                 .try_parsing(true)
                 .separator("_")
                 .list_separator(" "),
