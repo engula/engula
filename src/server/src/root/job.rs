@@ -202,11 +202,11 @@ impl Root {
 
         let mut changed_group_states = HashSet::new();
         for state in &resp.replica_states {
-            if let Some(ex) = schema
+            if let Some(pre_state) = schema
                 .get_replica_state(state.group_id, state.replica_id)
                 .await?
             {
-                if state.term <= ex.term {
+                if state.term < pre_state.term {
                     continue;
                 }
             }
