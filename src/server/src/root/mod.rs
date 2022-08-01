@@ -779,7 +779,7 @@ impl Root {
                     .get_replica_state(u.group_id, update_replica_state.replica_id)
                     .await?
                 {
-                    Some(pre_rs) if pre_rs.term >= update_replica_state.term => None,
+                    Some(pre_rs) if pre_rs.term > update_replica_state.term => None,
                     _ => u.replica_state,
                 }
             } else {
