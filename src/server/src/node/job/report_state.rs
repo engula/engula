@@ -21,7 +21,7 @@ use engula_client::RootClient;
 use futures::{channel::mpsc, StreamExt};
 use tracing::warn;
 
-use crate::{runtime::TaskPriority, Provider};
+use crate::{node::metrics::take_report_metrics, record_latency, runtime::TaskPriority, Provider};
 
 #[derive(Clone)]
 pub struct StateChannel {
@@ -47,6 +47,7 @@ async fn report_state_worker(
 ) {
     while let Some(updates) = wait_state_updates(&mut receiver).await {
         let req = ReportRequest { updates };
+        record_latency!(take_report_metrics());
         report_state_updates(&root_client, req).await;
     }
 }

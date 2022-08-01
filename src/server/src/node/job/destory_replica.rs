@@ -17,7 +17,8 @@ use std::sync::Arc;
 use tracing::error;
 
 use crate::{
-    node::{GroupEngine, StateEngine},
+    node::{metrics::*, GroupEngine, StateEngine},
+    record_latency,
     runtime::TaskPriority,
     serverpb::v1::ReplicaLocalState,
     Provider, Result,
@@ -43,6 +44,7 @@ async fn destory_replica(
     state_engine: StateEngine,
     raw_db: Arc<rocksdb::DB>,
 ) -> Result<()> {
+    record_latency!(take_destory_replica_metrics());
     GroupEngine::destory(group_id, raw_db).await?;
     state_engine
         .save_replica_state(group_id, replica_id, ReplicaLocalState::Tombstone)
