@@ -22,10 +22,12 @@ use super::{SnapManager, SNAP_DATA};
 use crate::{
     raftgroup::{
         fsm::SnapshotBuilder,
+        metrics::*,
         snap::{SNAP_META, SNAP_TEMP},
         worker::Request,
         StateMachine,
     },
+    record_latency,
     runtime::{Executor, TaskPriority},
     serverpb::v1::{SnapshotFile, SnapshotMeta},
     Result,
@@ -62,6 +64,7 @@ pub(super) async fn create_snapshot(
     snap_mgr: &SnapManager,
     builder: Box<dyn SnapshotBuilder>,
 ) -> Result<Vec<u8>> {
+    record_latency!(take_create_snapshot_metrics());
     let snap_dir = snap_mgr.create(replica_id);
     info!(
         "replica {replica_id} begin create snapshot at {}",

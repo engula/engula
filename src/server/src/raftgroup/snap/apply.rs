@@ -14,7 +14,10 @@
 use raft::prelude::Snapshot;
 
 use super::{SnapManager, SNAP_DATA};
-use crate::raftgroup::{applier::Applier, StateMachine};
+use crate::{
+    raftgroup::{applier::Applier, metrics::*, StateMachine},
+    record_latency,
+};
 
 pub fn apply_snapshot<M: StateMachine>(
     replica_id: u64,
@@ -22,6 +25,7 @@ pub fn apply_snapshot<M: StateMachine>(
     applier: &mut Applier<M>,
     snapshot: &Snapshot,
 ) {
+    record_latency!(take_apply_snapshot_metrics());
     let snap_id = &snapshot.data;
     let snap_info = snap_mgr
         .lock_snap(replica_id, snap_id)

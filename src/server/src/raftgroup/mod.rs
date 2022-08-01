@@ -14,6 +14,7 @@
 mod applier;
 mod facade;
 mod fsm;
+mod metrics;
 mod node;
 pub mod snap;
 mod storage;
@@ -72,7 +73,7 @@ pub struct RaftConfig {
 }
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ReadPolicy {
     /// Do nothing
     Relaxed,

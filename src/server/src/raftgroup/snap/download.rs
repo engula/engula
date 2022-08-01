@@ -26,7 +26,8 @@ use tracing::{debug, error, info};
 
 use super::SnapManager;
 use crate::{
-    raftgroup::{retrive_snapshot, worker::Request, TransportManager},
+    raftgroup::{metrics::*, retrive_snapshot, worker::Request, TransportManager},
+    record_latency,
     runtime::{Executor, TaskPriority},
     serverpb::v1::{snapshot_chunk, SnapshotChunk, SnapshotFile, SnapshotMeta},
     Error, Result,
@@ -62,7 +63,10 @@ impl SnapshotBuilder {
         match chunk.value {
             Some(snapshot_chunk::Value::File(file)) => self.switch_file(file).await,
             Some(snapshot_chunk::Value::ChunkData(data)) => match self.file.as_mut() {
-                Some(file) => file.write_all(&data).await,
+                Some(file) => {
+                    RAFTGROUP_DOWNLOAD_SNAPSHOT_BYTES_TOTAL.inc_by(data.len() as u64);
+                    file.write_all(&data).await
+                }
                 None => Err(Error::InvalidData("missing file meta".to_string())),
             },
             Some(snapshot_chunk::Value::Meta(meta)) => {
@@ -186,6 +190,7 @@ async fn download_snap(
     from_replica: ReplicaDesc,
     msg: &Message,
 ) -> Result<Vec<u8>> {
+    record_latency!(take_download_snapshot_metrics());
     assert!(msg.has_snapshot() && !msg.get_snapshot().is_empty());
     let snapshot = msg.get_snapshot();
     let snapshot_id = snapshot.data.clone();
