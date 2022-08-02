@@ -16,6 +16,7 @@ use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
 use engula_client::{GroupClient, NodeClient};
+use prometheus::HistogramTimer;
 use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
 
@@ -198,6 +199,7 @@ impl ReconcileScheduler {
         metrics::RECONCILE_SCHEDULER_TASK_QUEUE_SIZE.observe(task.len() as f64);
         let mut cursor = task.cursor_front_mut();
         while let Some(task) = cursor.current() {
+            let _timer = Self::record_exec(task);
             let rs = self.ctx.handle_task(task).await;
             match rs {
                 Ok((true /* ack */, immediately_next)) => {
@@ -214,6 +216,59 @@ impl ReconcileScheduler {
             }
         }
         nowait_next
+    }
+
+    fn record_exec(task: &mut ReconcileTask) -> HistogramTimer {
+        match task.task.as_ref().unwrap() {
+            Task::CreateGroup(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL.create_group.inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .create_group
+                    .start_timer()
+            }
+            Task::ReallocateReplica(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL
+                    .reallocate_replica
+                    .inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .reallocate_replica
+                    .start_timer()
+            }
+            Task::MigrateShard(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL.migrate_shard.inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .migrate_shard
+                    .start_timer()
+            }
+            Task::TransferGroupLeader(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL.transfer_leader.inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .transfer_leader
+                    .start_timer()
+            }
+            Task::CreateCollectionShards(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL
+                    .create_collection_shards
+                    .inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .create_collection_shards
+                    .start_timer()
+            }
+            Task::ShedLeader(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL
+                    .shed_group_leaders
+                    .inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .shed_group_leaders
+                    .start_timer()
+            }
+            Task::ShedRoot(_) => {
+                metrics::RECONCILE_HANDLE_TASK_TOTAL.shed_root_leader.inc();
+                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                    .shed_root_leader
+                    .start_timer()
+            }
+        }
     }
 
     fn record_retry(task: &mut ReconcileTask) {
@@ -285,16 +340,11 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL.create_group.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .create_group
-            .start_timer();
         loop {
-            match CreateGroupTaskStep::from_i32(task.step).unwrap() {
+            let step = CreateGroupTaskStep::from_i32(task.step).unwrap();
+            let _timer = record_create_group_step(&step);
+            match step {
                 CreateGroupTaskStep::GroupInit => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .init
-                        .start_timer();
                     let schema = self.shared.schema()?;
                     let nodes = self
                         .alloc
@@ -324,9 +374,6 @@ impl ScheduleContext {
                     }
                 }
                 CreateGroupTaskStep::GroupCreating => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .create
-                        .start_timer();
                     let mut wait_create = task.wait_create.to_owned();
                     let group_desc = task.group_desc.as_ref().unwrap().to_owned();
                     let mut undo = Vec::new();
@@ -371,9 +418,6 @@ impl ScheduleContext {
                     }
                 }
                 CreateGroupTaskStep::GroupRollbacking => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .rollback
-                        .start_timer();
                     let mut wait_clean = task.wait_cleanup.to_owned();
                     loop {
                         let r = wait_clean.pop();
@@ -396,9 +440,6 @@ impl ScheduleContext {
                 }
                 CreateGroupTaskStep::GroupAbort => return Ok((true, false)),
                 CreateGroupTaskStep::GroupFinish => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .finish
-                        .start_timer();
                     self.heartbeat_queue
                         .try_schedule(
                             task.invoked_nodes
@@ -413,6 +454,32 @@ impl ScheduleContext {
                 }
             }
         }
+
+        fn record_create_group_step(step: &CreateGroupTaskStep) -> Option<HistogramTimer> {
+            match step {
+                CreateGroupTaskStep::GroupInit => Some(
+                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
+                        .init
+                        .start_timer(),
+                ),
+                CreateGroupTaskStep::GroupCreating => Some(
+                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
+                        .create
+                        .start_timer(),
+                ),
+                CreateGroupTaskStep::GroupRollbacking => Some(
+                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
+                        .rollback
+                        .start_timer(),
+                ),
+                CreateGroupTaskStep::GroupFinish => None,
+                CreateGroupTaskStep::GroupAbort => Some(
+                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
+                        .finish
+                        .start_timer(),
+                ),
+            }
+        }
     }
 
     async fn handle_reallocate_replica(
@@ -422,18 +489,11 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL
-            .reallocate_replica
-            .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .reallocate_replica
-            .start_timer();
         loop {
-            match ReallocateReplicaTaskStep::from_i32(task.step).unwrap() {
+            let step = ReallocateReplicaTaskStep::from_i32(task.step).unwrap();
+            let _timer = record_reconcile_step(&step);
+            match step {
                 ReallocateReplicaTaskStep::CreatingDestReplica => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .create_dest_replica
-                        .start_timer();
                     let schema = self.shared.schema()?;
                     let node_id = task.dest_node.as_ref().unwrap().id;
                     let r = self.try_add_replica(schema, task.group, node_id).await;
@@ -451,9 +511,6 @@ impl ScheduleContext {
                     };
                 }
                 ReallocateReplicaTaskStep::AddDestLearner => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .add_dest_learner
-                        .start_timer();
                     let group = task.group;
                     let replica = task.dest_replica.as_ref().unwrap();
                     let dest_node = task.dest_node.as_ref().unwrap().id;
@@ -470,9 +527,6 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::ReplaceDestVoter => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .replica_dest_voter
-                        .start_timer();
                     let group = task.group;
                     let replica = task.dest_replica.as_ref().unwrap();
                     let dest_node = task.dest_node.as_ref().unwrap().id;
@@ -489,9 +543,6 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::ShedSourceLeader => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .shed_src_leader
-                        .start_timer();
                     let group = task.group;
                     let replica = task.src_replica;
                     let r = self.try_shed_leader(group, replica).await;
@@ -507,9 +558,6 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceMembership => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .remove_src_membership
-                        .start_timer();
                     let group = task.group;
                     let replica = task.src_replica;
                     let r = self.try_remove_membership(group, replica).await;
@@ -525,9 +573,6 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceReplica => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .remove_src_replica
-                        .start_timer();
                     let r = self.try_remove_replica(task.group, task.src_replica).await;
                     if let Err(err) = &r {
                         warn!(group = task.group, replica = task.src_replica, err = ?err, "remove source replica from group fail, retry in next tick");
@@ -543,9 +588,6 @@ impl ScheduleContext {
 
                 ReallocateReplicaTaskStep::ReallocateAbort => return Ok((true, false)),
                 ReallocateReplicaTaskStep::ReallocateFinish => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
-                        .finish
-                        .start_timer();
                     self.heartbeat_queue
                         .try_schedule(
                             vec![
@@ -563,6 +605,47 @@ impl ScheduleContext {
                 }
             }
         }
+
+        fn record_reconcile_step(step: &ReallocateReplicaTaskStep) -> Option<HistogramTimer> {
+            match step {
+                ReallocateReplicaTaskStep::CreatingDestReplica => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .create_dest_replica
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::AddDestLearner => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .add_dest_learner
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::ReplaceDestVoter => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .replica_dest_voter
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::ShedSourceLeader => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .shed_src_leader
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::RemoveSourceMembership => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .remove_src_membership
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::RemoveSourceReplica => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .remove_src_replica
+                        .start_timer(),
+                ),
+                ReallocateReplicaTaskStep::ReallocateFinish => None,
+                ReallocateReplicaTaskStep::ReallocateAbort => Some(
+                    metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
+                        .finish
+                        .start_timer(),
+                ),
+            }
+        }
     }
 
     async fn handle_migrate_shard(
@@ -572,10 +655,6 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL.migrate_shard.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .migrate_shard
-            .start_timer();
         let r = self
             .try_migrate_shard(task.src_group, task.dest_group, task.shard)
             .await;
@@ -593,10 +672,6 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL.transfer_leader.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .transfer_leader
-            .start_timer();
         let r = self
             .try_transfer_leader(task.group, task.target_replica)
             .await;
@@ -627,18 +702,11 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL
-            .create_collection_shards
-            .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .create_collection_shards
-            .start_timer();
         loop {
-            match CreateCollectionShardStep::from_i32(task.step).unwrap() {
+            let step = CreateCollectionShardStep::from_i32(task.step).unwrap();
+            let _timer = record_create_collection_step(&step);
+            match step {
                 CreateCollectionShardStep::CollectionCreating => {
-                    let _timer = metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
-                        .create
-                        .start_timer();
                     let mut wait_cleanup = Vec::new();
                     let mut wait_create = task.wait_create.to_owned();
                     loop {
@@ -672,13 +740,29 @@ impl ScheduleContext {
                 }
                 CreateCollectionShardStep::CollectionRollbacking => {
                     // TODO: remove the shard in wait_cleanup.
-                    let _timer = metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
-                        .rollback
-                        .start_timer();
                     task.step = CreateCollectionShardStep::CollectionAbort.into();
                 }
                 CreateCollectionShardStep::CollectionFinish
                 | CreateCollectionShardStep::CollectionAbort => return Ok((true, false)),
+            }
+        }
+
+        fn record_create_collection_step(
+            step: &CreateCollectionShardStep,
+        ) -> Option<HistogramTimer> {
+            match step {
+                CreateCollectionShardStep::CollectionCreating => Some(
+                    metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
+                        .create
+                        .start_timer(),
+                ),
+                CreateCollectionShardStep::CollectionRollbacking => Some(
+                    metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
+                        .rollback
+                        .start_timer(),
+                ),
+                CreateCollectionShardStep::CollectionFinish
+                | CreateCollectionShardStep::CollectionAbort => None,
             }
         }
     }
@@ -690,12 +774,6 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL
-            .shed_group_leaders
-            .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .shed_group_leaders
-            .start_timer();
         let node = shed.node_id;
         loop {
             let schema = self.shared.schema()?;
@@ -771,10 +849,6 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
-        metrics::RECONCILE_HANDLE_TASK_TOTAL.shed_root_leader.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-            .shed_root_leader
-            .start_timer();
         let node = task.node_id;
         let schema = self.shared.schema()?;
         let root_group = schema.get_group(ROOT_GROUP_ID).await?.unwrap();
