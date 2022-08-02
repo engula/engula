@@ -40,7 +40,7 @@ impl MetricsHandle {
         let collector_shard = Arc::new(RootCollectorShared::new("", server));
         match &prometheus::register(Box::new(RootCollector::new(collector_shard.to_owned()))) {
             Err(err) if matches!(err, prometheus::Error::AlreadyReg) => {}
-            r @ _ => {
+            r => {
                 r.as_ref().unwrap();
             }
         }
