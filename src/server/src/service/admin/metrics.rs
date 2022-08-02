@@ -38,7 +38,12 @@ pub(super) struct MetricsHandle {
 impl MetricsHandle {
     pub fn new(server: Server) -> Self {
         let collector_shard = Arc::new(RootCollectorShared::new("", server));
-        prometheus::register(Box::new(RootCollector::new(collector_shard.to_owned()))).unwrap();
+        match &prometheus::register(Box::new(RootCollector::new(collector_shard.to_owned()))) {
+            Err(err) if matches!(err, prometheus::Error::AlreadyReg) => {}
+            r @ _ => {
+                r.as_ref().unwrap();
+            }
+        }
         Self { collector_shard }
     }
 }
