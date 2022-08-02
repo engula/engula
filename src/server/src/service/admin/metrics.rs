@@ -14,7 +14,7 @@ use std::collections::HashMap;
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use lazy_static::lazy_static;
-use prometheus::{self, register_int_counter, IntCounter, TextEncoder};
+use prometheus::{core::Collector, process_collector::ProcessCollector, *};
 use tonic::codegen::*;
 
 lazy_static! {
@@ -24,6 +24,7 @@ lazy_static! {
         "Number of QPS for /admin/metrics",
     )
     .unwrap();
+    pub static ref PROCESS_COLLECTOR: ProcessCollector = ProcessCollector::for_self();
 }
 
 pub(super) struct MetricsHandle;
@@ -38,7 +39,8 @@ impl super::service::HttpHandle for MetricsHandle {
         METRICS_RPC_REQUESTS_TOTAL.inc();
 
         let encoder = TextEncoder::new();
-        let metric_families = prometheus::gather();
+        let mut metric_families = prometheus::gather();
+        metric_families.extend(PROCESS_COLLECTOR.collect());
         let content = encoder
             .encode_to_string(&metric_families)
             .map_err(|e| crate::Error::InvalidData(e.to_string()))?;
