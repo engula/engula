@@ -18,8 +18,8 @@ use prometheus_static_metric::make_static_metric;
 
 // root status.
 lazy_static! {
-    pub static ref LEADER_STATE: IntGauge = register_int_gauge!(
-        "root_service_node_as_leader_gauge",
+    pub static ref LEADER_STATE_INFO: IntGauge = register_int_gauge!(
+        "root_service_node_as_leader_info",
         "the node as root leader count"
     )
     .unwrap();
@@ -33,8 +33,8 @@ lazy_static! {
         "the duration of bootstrap root service"
     )
     .unwrap();
-    pub static ref BOOTSTRAP_FAIL_COUNT: IntCounter = register_int_counter!(
-        "root_boostrap_fail_count",
+    pub static ref BOOTSTRAP_FAIL_TOTAL: IntCounter = register_int_counter!(
+        "root_boostrap_fail_total",
         "the count of boostrap root fail"
     )
     .unwrap();
@@ -116,49 +116,52 @@ lazy_static! {
     .unwrap();
     pub static ref RECONCILE_HANDLE_TASK_TOTAL: ReconcileScheduleHandleTaskTotal =
         ReconcileScheduleHandleTaskTotal::from(&RECONCILE_HANDLE_TASK_TOTAL_VEC);
-    pub static ref RECONCILE_CHECK_DURATION: Histogram = register_histogram!(
-        "root_reconcile_scheduler_check_task_duration",
+    pub static ref RECONCILE_CHECK_DURATION_SECONDS: Histogram = register_histogram!(
+        "root_reconcile_scheduler_check_task_duration_seconds",
         "the duration of scheduler check and prepare tasks",
     )
     .unwrap();
-    pub static ref RECONCILE_HANDL_TASK_DURATION_VEC: HistogramVec = register_histogram_vec!(
-        "root_reconcile_scheduler_task_handle_duration",
-        "the total handle duration of root reconcile scheduler",
-        &["type"]
-    )
-    .unwrap();
-    pub static ref RECONCILE_HANDL_TASK_DURATION: ReconcileScheduleHandleTaskDuration =
-        ReconcileScheduleHandleTaskDuration::from(&RECONCILE_HANDL_TASK_DURATION_VEC);
-    pub static ref RECONCILE_CREATE_GROUP_STEP_DURATION_VEC: HistogramVec =
+    pub static ref RECONCILE_HANDL_TASK_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
-            "root_reconcile_scheduler_create_group_step_duration",
+            "root_reconcile_scheduler_task_handle_duration_seconds",
+            "the total handle duration of root reconcile scheduler",
+            &["type"]
+        )
+        .unwrap();
+    pub static ref RECONCILE_HANDL_TASK_DURATION_SECONDS: ReconcileScheduleHandleTaskDuration =
+        ReconcileScheduleHandleTaskDuration::from(&RECONCILE_HANDL_TASK_DURATION_SECONDS_VEC);
+    pub static ref RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS_VEC: HistogramVec =
+        register_histogram_vec!(
+            "root_reconcile_scheduler_create_group_step_duration_seconds",
             "the step create_group handle duration of root reconcile scheduler",
             &["type"]
         )
         .unwrap();
-    pub static ref RECONCILE_CREATE_GROUP_STEP_DURATION: ReconcileScheduleCreateGroupStepDuration =
-        ReconcileScheduleCreateGroupStepDuration::from(&RECONCILE_CREATE_GROUP_STEP_DURATION_VEC);
-    pub static ref RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_VEC: HistogramVec =
+    pub static ref RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS: ReconcileScheduleCreateGroupStepDuration =
+        ReconcileScheduleCreateGroupStepDuration::from(
+            &RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS_VEC
+        );
+    pub static ref RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
-            "root_reconcile_scheduler_reallocate_replica_step_duration",
+            "root_reconcile_scheduler_reallocate_replica_step_duration_seconds",
             "the step reallocate replica handle duration of root reconcile scheduler",
             &["type"]
         )
         .unwrap();
-    pub static ref RECONCILE_REALLOCATE_REPLICA_STEP_DURATION: ReconcileScheduleReallocateReplicaStepDuration =
+    pub static ref RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS: ReconcileScheduleReallocateReplicaStepDuration =
         ReconcileScheduleReallocateReplicaStepDuration::from(
-            &RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_VEC
+            &RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS_VEC
         );
-    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION_VEC: HistogramVec =
+    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
-            "root_reconcile_scheduler_create_collection_step_duration",
+            "root_reconcile_scheduler_create_collection_step_duration_seconds",
             "the step create_ collection shards handle duration of root reconcile scheduler",
             &["type"]
         )
         .unwrap();
     pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION: ReconcileScheduleCreateCollectionStepDuration =
         ReconcileScheduleCreateCollectionStepDuration::from(
-            &RECONCILE_CREATE_COLLECTION_STEP_DURATION_VEC
+            &RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS_VEC
         );
     pub static ref RECONCILE_RETRYL_TASK_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
         "root_reconcile_scheduler_task_retry_total",

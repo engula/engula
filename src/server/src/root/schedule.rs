@@ -93,7 +93,7 @@ impl ReconcileScheduler {
     }
 
     pub async fn check(&self, max_try_per_tick: u64) -> Result<bool> {
-        let _timer = super::metrics::RECONCILE_CHECK_DURATION.start_timer();
+        let _timer = super::metrics::RECONCILE_CHECK_DURATION_SECONDS.start_timer();
         let group_action = self.ctx.alloc.compute_group_action().await?;
         if let GroupAction::Add(cnt) = group_action {
             for _ in 0..cnt {
@@ -286,13 +286,13 @@ impl ScheduleContext {
         bool, /* immediately step next tick */
     )> {
         metrics::RECONCILE_HANDLE_TASK_TOTAL.create_group.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .create_group
             .start_timer();
         loop {
             match CreateGroupTaskStep::from_i32(task.step).unwrap() {
                 CreateGroupTaskStep::GroupInit => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION
+                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
                         .init
                         .start_timer();
                     let schema = self.shared.schema()?;
@@ -324,7 +324,7 @@ impl ScheduleContext {
                     }
                 }
                 CreateGroupTaskStep::GroupCreating => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION
+                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
                         .create
                         .start_timer();
                     let mut wait_create = task.wait_create.to_owned();
@@ -371,7 +371,7 @@ impl ScheduleContext {
                     }
                 }
                 CreateGroupTaskStep::GroupRollbacking => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION
+                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
                         .rollback
                         .start_timer();
                     let mut wait_clean = task.wait_cleanup.to_owned();
@@ -396,7 +396,7 @@ impl ScheduleContext {
                 }
                 CreateGroupTaskStep::GroupAbort => return Ok((true, false)),
                 CreateGroupTaskStep::GroupFinish => {
-                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION
+                    let _timer = metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
                         .finish
                         .start_timer();
                     self.heartbeat_queue
@@ -425,13 +425,13 @@ impl ScheduleContext {
         metrics::RECONCILE_HANDLE_TASK_TOTAL
             .reallocate_replica
             .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .reallocate_replica
             .start_timer();
         loop {
             match ReallocateReplicaTaskStep::from_i32(task.step).unwrap() {
                 ReallocateReplicaTaskStep::CreatingDestReplica => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .create_dest_replica
                         .start_timer();
                     let schema = self.shared.schema()?;
@@ -451,7 +451,7 @@ impl ScheduleContext {
                     };
                 }
                 ReallocateReplicaTaskStep::AddDestLearner => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .add_dest_learner
                         .start_timer();
                     let group = task.group;
@@ -470,7 +470,7 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::ReplaceDestVoter => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .replica_dest_voter
                         .start_timer();
                     let group = task.group;
@@ -489,7 +489,7 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::ShedSourceLeader => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .shed_src_leader
                         .start_timer();
                     let group = task.group;
@@ -507,7 +507,7 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceMembership => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .remove_src_membership
                         .start_timer();
                     let group = task.group;
@@ -525,7 +525,7 @@ impl ScheduleContext {
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceReplica => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .remove_src_replica
                         .start_timer();
                     let r = self.try_remove_replica(task.group, task.src_replica).await;
@@ -543,7 +543,7 @@ impl ScheduleContext {
 
                 ReallocateReplicaTaskStep::ReallocateAbort => return Ok((true, false)),
                 ReallocateReplicaTaskStep::ReallocateFinish => {
-                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION
+                    let _timer = metrics::RECONCILE_REALLOCATE_REPLICA_STEP_DURATION_SECONDS
                         .finish
                         .start_timer();
                     self.heartbeat_queue
@@ -573,7 +573,7 @@ impl ScheduleContext {
         bool, /* immediately step next tick */
     )> {
         metrics::RECONCILE_HANDLE_TASK_TOTAL.migrate_shard.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .migrate_shard
             .start_timer();
         let r = self
@@ -594,7 +594,7 @@ impl ScheduleContext {
         bool, /* immediately step next tick */
     )> {
         metrics::RECONCILE_HANDLE_TASK_TOTAL.transfer_leader.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .transfer_leader
             .start_timer();
         let r = self
@@ -630,7 +630,7 @@ impl ScheduleContext {
         metrics::RECONCILE_HANDLE_TASK_TOTAL
             .create_collection_shards
             .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .create_collection_shards
             .start_timer();
         loop {
@@ -693,7 +693,7 @@ impl ScheduleContext {
         metrics::RECONCILE_HANDLE_TASK_TOTAL
             .shed_group_leaders
             .inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .shed_group_leaders
             .start_timer();
         let node = shed.node_id;
@@ -772,7 +772,7 @@ impl ScheduleContext {
         bool, /* immediately step next tick */
     )> {
         metrics::RECONCILE_HANDLE_TASK_TOTAL.shed_root_leader.inc();
-        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION
+        let _timer = metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
             .shed_root_leader
             .start_timer();
         let node = task.node_id;

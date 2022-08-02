@@ -225,7 +225,7 @@ impl Root {
                 .try_bootstrap_root(local_addr, self.shared.node_ident.cluster_id.clone())
                 .await
             {
-                metrics::BOOTSTRAP_FAIL_COUNT.inc();
+                metrics::BOOTSTRAP_FAIL_TOTAL.inc();
                 error!(err = ?err, "boostrap error");
                 panic!("boostrap cluster failure")
             }
@@ -238,7 +238,7 @@ impl Root {
                 schema: Arc::new(schema.to_owned()),
             });
         }
-        self::metrics::LEADER_STATE.set(1);
+        self::metrics::LEADER_STATE_INFO.set(1);
 
         self.heartbeat_queue.enable(true).await;
 
@@ -276,7 +276,7 @@ impl Root {
             *core = None;
         }
 
-        self::metrics::LEADER_STATE.set(0);
+        self::metrics::LEADER_STATE_INFO.set(0);
 
         Ok(())
     }
