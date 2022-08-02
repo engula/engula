@@ -44,7 +44,7 @@ use tracing::{error, info, trace, warn};
 pub(crate) use self::schema::*;
 pub use self::{
     allocator::RootConfig,
-    collector::{RootCollector, RootCollectorShared},
+    collector::RootCollector,
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{

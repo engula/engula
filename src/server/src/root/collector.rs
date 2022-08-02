@@ -33,11 +33,12 @@ make_static_metric! {
     }
 }
 
+#[derive(Clone)]
 pub struct RootCollector {
     shared: Arc<RootCollectorShared>,
 }
 
-pub struct RootCollectorShared {
+struct RootCollectorShared {
     server: Server,
     descs: Vec<core::Desc>,
 
@@ -51,7 +52,7 @@ pub struct RootCollectorShared {
 }
 
 impl RootCollectorShared {
-    pub fn new(namespace: &str, server: Server) -> Self {
+    fn new(namespace: &str, server: Server) -> Self {
         let mut descs = Vec::new();
         let nodes = {
             let nodes_vec = IntGaugeVec::new(
@@ -97,14 +98,21 @@ impl RootCollectorShared {
             is_root_leader,
         }
     }
+}
+
+impl RootCollector {
+    pub fn new(namespace: &str, server: Server) -> Self {
+        let shared = Arc::new(RootCollectorShared::new(namespace, server));
+        Self { shared }
+    }
 
     pub async fn try_refresh(&self) {
-        let root = self.server.root.to_owned();
+        let root = self.shared.server.root.to_owned();
         if let Ok(info) = root.info().await {
-            self.is_root_leader.store(true, Ordering::Relaxed);
+            self.shared.is_root_leader.store(true, Ordering::Relaxed);
             // nodes count & status.
-            self.nodes.all.set(info.nodes.len() as i64);
-            self.nodes.alive.set(
+            self.shared.nodes.all.set(info.nodes.len() as i64);
+            self.shared.nodes.alive.set(
                 info.nodes
                     .iter()
                     .filter(|n| {
@@ -115,7 +123,7 @@ impl RootCollectorShared {
                     })
                     .count() as i64,
             );
-            self.nodes.schedulable.set(
+            self.shared.nodes.schedulable.set(
                 info.nodes
                     .iter()
                     .filter(|n| {
@@ -125,34 +133,31 @@ impl RootCollectorShared {
             );
 
             // groups count.
-            self.groups.set(info.groups.len() as i64);
-            self.shard_counts.reset();
+            self.shared.groups.set(info.groups.len() as i64);
+            self.shared.shard_counts.reset();
             for g in &info.groups {
-                self.shard_counts
+                self.shared
+                    .shard_counts
                     .with_label_values(&[&g.id.to_string()])
                     .set(g.shards.len() as i64);
             }
 
             // replica cnt & leader cnt.
-            self.replica_counts.reset();
-            self.leader_counts.reset();
+            self.shared.replica_counts.reset();
+            self.shared.leader_counts.reset();
             for n in &info.nodes {
-                self.replica_counts
+                self.shared
+                    .replica_counts
                     .with_label_values(&[&n.id.to_string()])
                     .set(n.replicas.len() as i64);
-                self.leader_counts
+                self.shared
+                    .leader_counts
                     .with_label_values(&[&n.id.to_string()])
                     .set(n.leaders.len() as i64);
             }
         } else {
-            self.is_root_leader.store(false, Ordering::Relaxed);
+            self.shared.is_root_leader.store(false, Ordering::Relaxed);
         }
-    }
-}
-
-impl RootCollector {
-    pub fn new(shared: Arc<RootCollectorShared>) -> Self {
-        Self { shared }
     }
 }
 

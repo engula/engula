@@ -17,10 +17,7 @@ use lazy_static::lazy_static;
 use prometheus::{self, register_int_counter, IntCounter, TextEncoder};
 use tonic::codegen::*;
 
-use crate::{
-    root::{RootCollector, RootCollectorShared},
-    Server,
-};
+use crate::{root::RootCollector, Server};
 
 lazy_static! {
     // A special metric for testing metrics pulling.
@@ -32,19 +29,25 @@ lazy_static! {
 }
 
 pub(super) struct MetricsHandle {
-    collector_shard: Arc<RootCollectorShared>,
+    collector: RootCollector,
 }
 
 impl MetricsHandle {
     pub fn new(server: Server) -> Self {
-        let collector_shard = Arc::new(RootCollectorShared::new("", server));
-        match &prometheus::register(Box::new(RootCollector::new(collector_shard.to_owned()))) {
+        let collector = RootCollector::new("", server);
+        match &prometheus::register(Box::new(collector.clone())) {
             Err(err) if matches!(err, prometheus::Error::AlreadyReg) => {}
             r => {
                 r.as_ref().unwrap();
             }
         }
-        Self { collector_shard }
+        Self { collector }
+    }
+}
+
+impl std::ops::Drop for MetricsHandle {
+    fn drop(&mut self) {
+        let _ = prometheus::unregister(Box::new(self.collector.clone()));
     }
 }
 
@@ -56,7 +59,7 @@ impl super::service::HttpHandle for MetricsHandle {
         _: &HashMap<String, String>,
     ) -> crate::Result<http::Response<String>> {
         METRICS_RPC_REQUESTS_TOTAL.inc();
-        self.collector_shard.try_refresh().await;
+        self.collector.try_refresh().await;
         let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
         let content = encoder
