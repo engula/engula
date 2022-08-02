@@ -36,7 +36,7 @@ impl super::service::HttpHandle for MetadataHandle {
         _: &HashMap<String, String>,
     ) -> crate::Result<http::Response<String>> {
         let info = match self.server.root.info().await {
-            Ok(info) => info,
+            Ok(info) => serde_json::to_string(&info).unwrap(),
             Err(e @ crate::Error::NotRootLeader(..)) => {
                 let root_desc = self.server.node.get_root().await;
                 let node = root_desc.root_nodes.get(0);

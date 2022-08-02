@@ -206,7 +206,9 @@ impl Root {
                 .get_replica_state(state.group_id, state.replica_id)
                 .await?
             {
-                if state.term < pre_state.term {
+                if state.term < pre_state.term
+                    || (state.term == pre_state.term && state.role == pre_state.role)
+                {
                     continue;
                 }
             }

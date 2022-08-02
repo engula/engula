@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod allocator;
+mod collector;
 mod job;
 mod liveness;
 mod metrics;
@@ -43,10 +44,12 @@ use tracing::{error, info, trace, warn};
 pub(crate) use self::schema::*;
 pub use self::{
     allocator::RootConfig,
+    collector::{RootCollector, RootCollectorShared},
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{
-    allocator::SysAllocSource, schedule::ReconcileScheduler, schema::ReplicaNodes, store::RootStore,
+    allocator::SysAllocSource, diagnosis::Metadata, schedule::ReconcileScheduler,
+    schema::ReplicaNodes, store::RootStore,
 };
 use crate::{
     bootstrap::{SHARD_MAX, SHARD_MIN},
@@ -374,7 +377,16 @@ impl Root {
         Ok(current_status)
     }
 
-    pub async fn info(&self) -> Result<String> {
+    pub async fn nodes(&self) -> Option<u64> {
+        if let Ok(schema) = self.shared.schema() {
+            if let Ok(nodes) = schema.list_node().await {
+                return Some(nodes.len() as u64);
+            }
+        }
+        None
+    }
+
+    pub async fn info(&self) -> Result<Metadata> {
         let schema = self.schema()?;
         let nodes = schema.list_node().await?;
         let groups = schema.list_group().await?;
@@ -390,13 +402,11 @@ impl Root {
 
         use diagnosis::*;
 
-        let info = Metadata {
+        Ok(Metadata {
             nodes: nodes
                 .iter()
-                .map(|n| Node {
-                    id: n.id,
-                    addr: n.addr.to_owned(),
-                    replicas: replicas
+                .map(|n| {
+                    let replicas = replicas
                         .iter()
                         .filter(|(r, _)| r.node_id == n.id)
                         .map(|(r, g)| NodeReplica {
@@ -409,7 +419,19 @@ impl Root {
                                 .map(|s| s.role)
                                 .unwrap_or(-1),
                         })
-                        .collect::<Vec<_>>(),
+                        .collect::<Vec<_>>();
+                    let leaders = replicas
+                        .iter()
+                        .cloned()
+                        .filter(|r| r.raft_role == RaftRole::Leader as i32)
+                        .collect::<Vec<_>>();
+                    Node {
+                        id: n.id,
+                        addr: n.addr.to_owned(),
+                        replicas,
+                        leaders,
+                        status: n.status,
+                    }
                 })
                 .collect::<Vec<_>>(),
             databases: dbs
@@ -485,8 +507,7 @@ impl Root {
                 })
                 .collect::<Vec<_>>(),
             balanced,
-        };
-        Ok(serde_json::to_string(&info).unwrap())
+        })
     }
 
     async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
@@ -779,7 +800,13 @@ impl Root {
                     .get_replica_state(u.group_id, update_replica_state.replica_id)
                     .await?
                 {
-                    Some(pre_rs) if pre_rs.term > update_replica_state.term => None,
+                    Some(pre_rs)
+                        if pre_rs.term > update_replica_state.term
+                            || (pre_rs.term == update_replica_state.term
+                                && pre_rs.role == update_replica_state.role) =>
+                    {
+                        None
+                    }
                     _ => u.replica_state,
                 }
             } else {
@@ -1181,9 +1208,11 @@ pub mod diagnosis {
         pub addr: String,
         pub id: u64,
         pub replicas: Vec<NodeReplica>,
+        pub leaders: Vec<NodeReplica>,
+        pub status: i32,
     }
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Clone)]
     pub struct NodeReplica {
         pub group: u64,
         pub id: u64,

@@ -24,7 +24,10 @@ use crate::Server;
 
 pub fn make_admin_service(server: Server) -> AdminService {
     let router = Router::empty()
-        .route("/metrics", self::metrics::MetricsHandle)
+        .route(
+            "/metrics",
+            self::metrics::MetricsHandle::new(server.to_owned()),
+        )
         .route(
             "/metadata",
             self::metadata::MetadataHandle::new(server.to_owned()),
