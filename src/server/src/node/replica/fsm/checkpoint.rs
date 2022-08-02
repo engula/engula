@@ -14,6 +14,7 @@
 use std::path::Path;
 
 use engula_api::server::v1::GroupDesc;
+use tracing::{debug, error};
 
 use crate::{
     node::{engine::RawIterator, replica::ReplicaConfig, GroupEngine},
@@ -64,15 +65,21 @@ async fn write_partial_to_file(
     use rocksdb::{Options, SstFileWriter};
 
     let opts = Options::default();
-    let mut writer = SstFileWriter::create(&opts);
-    writer.open(base_dir.join(format!("{}.sst", file_no)))?;
-
+    let file = base_dir.join(format!("{}.sst", file_no));
+    let mut writer: Option<SstFileWriter> = None;
     let mut index = 0;
     for (key, value) in iter.by_ref() {
+        if writer.is_none() {
+            debug!("create sst file: {}", file.display());
+            let raw_writer = SstFileWriter::create(&opts);
+            raw_writer.open(&file)?;
+            writer = Some(raw_writer);
+        }
+
+        let writer = writer.as_mut().unwrap();
         writer.put(key, value)?;
         if writer.file_size() >= cfg.snap_file_size {
-            writer.finish()?;
-            return Ok(Some(()));
+            break;
         }
 
         index += 1;
@@ -81,11 +88,20 @@ async fn write_partial_to_file(
         }
     }
 
-    Ok(None)
+    if let Some(mut writer) = writer {
+        writer.finish()?;
+        Ok(Some(()))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
     if !snap_dir.is_dir() {
+        error!(
+            "apply snapshot {}: snap dir is not a directory",
+            snap_dir.display()
+        );
         return Err(Error::InvalidArgument(format!(
             "{} is not a directory",
             snap_dir.display()
@@ -96,16 +112,37 @@ pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
     for entry in snap_dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.ends_with(".sst") {
+        if is_sst_file(&path) {
+            debug!("apply snapshot with sst file {}", path.display());
             files.push(path.file_name().unwrap().to_owned());
         }
     }
+
+    if files.is_empty() {
+        error!("apply snapshot {}: snap dir is empty", snap_dir.display());
+        return Err(Error::InvalidArgument(format!(
+            "{} is empty",
+            snap_dir.display()
+        )));
+    }
+
+    debug!(
+        "apply snapshot {} found {} sst files",
+        snap_dir.display(),
+        files.len()
+    );
 
     files.sort_unstable();
     let files = files.into_iter().map(|f| snap_dir.join(f)).collect();
     engine.ingest(files)?;
 
     Ok(())
+}
+
+#[inline]
+fn is_sst_file<P: AsRef<Path>>(path: P) -> bool {
+    let path = path.as_ref();
+    path.is_file() && path.extension().map(|ext| ext == "sst").unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -195,6 +232,33 @@ mod tests {
             let data = snap_dir.join("DATA");
             let builder = GroupSnapshotBuilder::new(cfg, engine);
             builder.checkpoint(&data).await.unwrap();
+        });
+    }
+
+    // This tests aims to fix bugs:
+    //
+    // `RocksDb(Error { message: "Invalid argument: external_files[0] is empty" })`
+    // `RocksDb(Error { message: "Corruption: file is too short (0 bytes) to be an sstable:
+    // /tmp/xxx/snap/DATA/0.sst" })`
+    #[test]
+    fn apply_empty_snapshot() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        executor.block_on(async {
+            let tmp_dir = TempDir::new("apply_empty_snapshot").unwrap().into_path();
+            let db_dir = tmp_dir.join("db");
+            let snap_dir = tmp_dir.join("snap");
+            let engine = create_engine(&db_dir, 1, 1).await;
+
+            let cfg = ReplicaConfig {
+                snap_file_size: 64 * 1024,
+                ..Default::default()
+            };
+            std::fs::create_dir_all(&snap_dir).unwrap();
+            let data = snap_dir.join("DATA");
+            let builder = GroupSnapshotBuilder::new(cfg, engine.clone());
+            builder.checkpoint(&data).await.unwrap();
+            apply_snapshot(&engine, &data).unwrap();
         });
     }
 }
