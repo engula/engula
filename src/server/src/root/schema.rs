@@ -28,6 +28,7 @@ use engula_api::{
     v1::{collection_desc, CollectionDesc, DatabaseDesc, DeleteRequest, PutRequest},
 };
 use engula_client::GroupClient;
+use futures::lock::Mutex;
 use prost::Message;
 use tracing::{info, warn};
 
@@ -78,6 +79,15 @@ lazy_static::lazy_static! {
         (SYSTEM_NODE_COLLECTION_ID, SYSTEM_NODE_COLLECTION_SHARD),
         (SYSTEM_GROUP_COLLECTION_ID, SYSTEM_GROUP_COLLECTION_SHARD),
         (SYSTEM_REPLICA_STATE_COLLECTION_ID, SYSTEM_REPLICA_STATE_COLLECTION_SHARD),
+    ]);
+    pub static ref ID_GEN_LOCKS: HashMap<String, Mutex<()>> = HashMap::from([
+        (META_CLUSTER_ID_KEY.to_owned(), Mutex::new(())),
+        (META_COLLECTION_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_DATABASE_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_GROUP_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_NODE_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_REPLICA_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_SHARD_ID_KEY.to_owned(),  Mutex::new(())),
     ]);
 }
 
@@ -823,7 +833,11 @@ impl Schema {
     }
 
     async fn next_id(&self, id_type: &str) -> Result<u64> {
-        // TODO(zojw): replace with INC.
+        let _mutex = ID_GEN_LOCKS
+            .get(id_type)
+            .expect("id gen lock not found")
+            .lock()
+            .await;
         let id = self
             .get_meta(id_type.as_bytes())
             .await?
