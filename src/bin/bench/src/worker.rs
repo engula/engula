@@ -50,7 +50,7 @@ impl Generator {
     pub fn next_op(&mut self) -> NextOp {
         let v = self.rng.gen_range(0..100) as f64 / 100.0;
         let key = self.next_key();
-        if v <= self.cfg.data.read {
+        if v <= self.cfg.data.write {
             let value = self.next_bytes(self.cfg.data.value.clone());
             NextOp::Put { key, value }
         } else {

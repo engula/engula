@@ -65,8 +65,8 @@ impl Default for DataConfig {
         DataConfig {
             inserted: 10000,
             limited: 10000,
-            read: 0.0,
-            write: 1.0,
+            read: 0.5,
+            write: 0.5,
             value: 10..11,
         }
     }
