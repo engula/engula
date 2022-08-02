@@ -379,7 +379,7 @@ where
                     msg,
                 );
             } else {
-                self.raft_node.step(msg).unwrap();
+                self.raft_node.step(msg)?;
             }
         }
         Ok(())
