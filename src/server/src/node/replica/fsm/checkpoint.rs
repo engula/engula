@@ -36,6 +36,7 @@ impl GroupSnapshotBuilder {
 #[crate::async_trait]
 impl SnapshotBuilder for GroupSnapshotBuilder {
     async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
+        std::fs::create_dir_all(base_dir)?;
         let mut iter = self.engine.raw_iter()?;
         for i in 0.. {
             if write_partial_to_file(&self.cfg, &mut iter, base_dir, i)
@@ -105,4 +106,95 @@ pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
     engine.ingest(files)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, sync::Arc};
+
+    use engula_api::server::v1::{
+        shard_desc::{Partition, RangePartition},
+        GroupDesc, ShardDesc,
+    };
+    use tempdir::TempDir;
+
+    use super::*;
+    use crate::{
+        node::{engine::WriteBatch, GroupEngine},
+        runtime::ExecutorOwner,
+    };
+
+    async fn create_engine(dir: &Path, group_id: u64, shard_id: u64) -> GroupEngine {
+        use crate::bootstrap::open_engine;
+
+        let db = open_engine(dir).unwrap();
+        let db = Arc::new(db);
+
+        let desc = GroupDesc {
+            id: group_id,
+            ..Default::default()
+        };
+        GroupEngine::create(db.clone(), &desc).await.unwrap();
+        let group_engine = GroupEngine::open(group_id, db).await.unwrap().unwrap();
+
+        let mut wb = WriteBatch::default();
+        group_engine.set_group_desc(
+            &mut wb,
+            &GroupDesc {
+                id: group_id,
+                shards: vec![ShardDesc {
+                    id: shard_id,
+                    collection_id: 1,
+                    partition: Some(Partition::Range(RangePartition {
+                        start: vec![],
+                        end: vec![],
+                    })),
+                }],
+                ..Default::default()
+            },
+        );
+        group_engine.commit(wb, false).unwrap();
+
+        group_engine
+    }
+
+    fn put_data(engine: &GroupEngine, shard_id: u64, prefix: &str, num: usize) {
+        let mut wb = WriteBatch::default();
+        for i in 0..num {
+            let key = format!("{prefix}-{i}");
+            let value = vec![0; 1024];
+            engine
+                .put(&mut wb, shard_id, key.as_bytes(), &value, 0)
+                .unwrap();
+        }
+        engine.commit(wb, false).unwrap();
+    }
+
+    // This test aims to fix bug:
+    //
+    // `RocksDb(Error { message: "IO error: No such file or directory: While open a file for
+    // appending: /tmp/xxx/snap/DATA/0.sst: No such file or directory" })`
+    #[test]
+    fn checkpoint_create_dir() {
+        let executor_owner = ExecutorOwner::new(1);
+        let executor = executor_owner.executor();
+        executor.block_on(async {
+            let tmp_dir = TempDir::new("checkpoint_create_dir").unwrap().into_path();
+            let db_dir = tmp_dir.join("db");
+            let snap_dir = tmp_dir.join("snap");
+            let engine = create_engine(&db_dir, 1, 1).await;
+
+            // insert 128KB data.
+            put_data(&engine, 1, "key", 128);
+
+            let cfg = ReplicaConfig {
+                snap_file_size: 64 * 1024,
+                ..Default::default()
+            };
+            std::fs::create_dir_all(&snap_dir).unwrap();
+            let data = snap_dir.join("DATA");
+            let builder = GroupSnapshotBuilder::new(cfg, engine);
+            builder.checkpoint(&data).await.unwrap();
+        });
+    }
 }

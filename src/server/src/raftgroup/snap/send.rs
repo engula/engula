@@ -20,6 +20,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use tracing::debug;
+
 use super::{SnapManager, SnapshotGuard};
 use crate::{
     raftgroup::metrics::*,
@@ -93,7 +95,7 @@ impl SnapshotChunkStream {
             None if self.file_index < self.info.meta.files.len() => {
                 let file_meta = &self.info.meta.files[self.file_index];
                 let path = self.info.base_dir.join(OsStr::from_bytes(&file_meta.name)); // Eg: `DATA/1.sst`.
-                tracing::debug!(
+                debug!(
                     "send file {} to remote, crc32 {}, size {}",
                     path.display(),
                     file_meta.crc32,
