@@ -15,6 +15,7 @@ use std::{collections::HashMap, thread, time::Duration};
 
 use engula_server::{
     node::replica::{ReplicaConfig, ReplicaTestingKnobs},
+    raftgroup::RaftTestingKnobs,
     runtime::{ExecutorOwner, ShutdownNotifier},
     Config, NodeConfig, RaftConfig, RootConfig,
 };
@@ -29,6 +30,7 @@ pub struct TestContext {
     root_dir: TempDir,
     root_cfg: RootConfig,
     replica_knobs: ReplicaTestingKnobs,
+    raft_knobs: RaftTestingKnobs,
     disable_group_promoting: bool,
 
     tick_interval_ms: u64,
@@ -45,6 +47,7 @@ impl TestContext {
             root_dir,
             disable_group_promoting: false,
             replica_knobs: ReplicaTestingKnobs::default(),
+            raft_knobs: RaftTestingKnobs::default(),
             root_cfg: RootConfig::default(),
             tick_interval_ms: 50,
             notifiers: HashMap::default(),
@@ -65,6 +68,10 @@ impl TestContext {
 
     pub fn mut_replica_testing_knobs(&mut self) -> &mut ReplicaTestingKnobs {
         &mut self.replica_knobs
+    }
+
+    pub fn mut_raft_testing_knobs(&mut self) -> &mut RaftTestingKnobs {
+        &mut self.raft_knobs
     }
 
     pub fn disable_replica_balance(&mut self) {
@@ -121,6 +128,7 @@ impl TestContext {
             },
             raft: RaftConfig {
                 tick_interval_ms: self.tick_interval_ms,
+                testing_knobs: self.raft_knobs.clone(),
                 ..Default::default()
             },
             root,
@@ -164,6 +172,7 @@ impl TestContext {
                 self.spawn_server(id as usize, &addr, false, vec![root_addr.clone()]);
                 node_client_with_retry(&addr).await;
             }
+            info!("spawn server {id} success");
         }
         nodes
     }

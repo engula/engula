@@ -22,7 +22,7 @@ mod bootstrap;
 mod discovery;
 mod error;
 pub mod node;
-mod raftgroup;
+pub mod raftgroup;
 mod root;
 pub mod runtime;
 pub mod serverpb;

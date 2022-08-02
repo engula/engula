@@ -43,6 +43,11 @@ use crate::{
     Provider, Result,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct RaftTestingKnobs {
+    pub force_new_peer_receiving_snapshot: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RaftConfig {
     /// The intervals of tick, in millis.
@@ -70,6 +75,9 @@ pub struct RaftConfig {
     ///
     /// Default: 10K
     pub max_inflight_msgs: usize,
+
+    #[serde(skip)]
+    pub testing_knobs: RaftTestingKnobs,
 }
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
@@ -173,6 +181,7 @@ impl Default for RaftConfig {
             election_tick: 3,
             max_size_per_msg: 64 * 1024 * 1024,
             max_inflight_msgs: 10 * 1000,
+            testing_knobs: RaftTestingKnobs::default(),
         }
     }
 }

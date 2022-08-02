@@ -109,7 +109,14 @@ impl Replica {
             .cloned()
             .map(eval::add_shard)
             .collect::<Vec<_>>();
-        write_initial_state(raft_mgr.engine(), replica_id, voters, eval_results).await?;
+        write_initial_state(
+            &raft_mgr.cfg,
+            raft_mgr.engine(),
+            replica_id,
+            voters,
+            eval_results,
+        )
+        .await?;
         Ok(())
     }
 

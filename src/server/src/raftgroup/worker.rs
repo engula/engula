@@ -365,7 +365,7 @@ where
     fn handle_msg(&mut self, raft_msg: RaftMessage) -> Result<()> {
         let from_replica = raft_msg.from_replica.unwrap();
         self.replica_cache.insert(from_replica.clone());
-        for mut msg in raft_msg.messages {
+        for msg in raft_msg.messages {
             if msg.get_msg_type() == MessageType::MsgSnapshot {
                 // TODO(walter) In order to avoid useless downloads, should check whether this
                 // snapshot will be accept.
@@ -378,11 +378,8 @@ where
                     from_replica.clone(),
                     msg,
                 );
-            } else if msg.get_msg_type() == MessageType::MsgSnapStatus {
-                msg.from = self.desc.id;
-                self.raft_node.step(msg)?;
             } else {
-                self.raft_node.step(msg)?;
+                self.raft_node.step(msg).unwrap();
             }
         }
         Ok(())
