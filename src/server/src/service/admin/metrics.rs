@@ -17,6 +17,8 @@ use lazy_static::lazy_static;
 use prometheus::{self, register_int_counter, IntCounter, TextEncoder};
 use tonic::codegen::*;
 
+use crate::{root::RootCollector, Server};
+
 lazy_static! {
     // A special metric for testing metrics pulling.
     pub static ref METRICS_RPC_REQUESTS_TOTAL: IntCounter = register_int_counter!(
@@ -26,7 +28,28 @@ lazy_static! {
     .unwrap();
 }
 
-pub(super) struct MetricsHandle;
+pub(super) struct MetricsHandle {
+    collector: RootCollector,
+}
+
+impl MetricsHandle {
+    pub fn new(server: Server) -> Self {
+        let collector = RootCollector::new("", server);
+        match &prometheus::register(Box::new(collector.clone())) {
+            Err(err) if matches!(err, prometheus::Error::AlreadyReg) => {}
+            r => {
+                r.as_ref().unwrap();
+            }
+        }
+        Self { collector }
+    }
+}
+
+impl std::ops::Drop for MetricsHandle {
+    fn drop(&mut self) {
+        let _ = prometheus::unregister(Box::new(self.collector.clone()));
+    }
+}
 
 #[crate::async_trait]
 impl super::service::HttpHandle for MetricsHandle {
@@ -36,7 +59,7 @@ impl super::service::HttpHandle for MetricsHandle {
         _: &HashMap<String, String>,
     ) -> crate::Result<http::Response<String>> {
         METRICS_RPC_REQUESTS_TOTAL.inc();
-
+        self.collector.try_refresh().await;
         let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
         let content = encoder
