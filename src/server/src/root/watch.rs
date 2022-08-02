@@ -62,6 +62,7 @@ impl WatchHub {
             inner: watcher_inner.to_owned(),
         };
         inner.watchers.insert(watcher.id, watcher.to_owned());
+        super::metrics::WATCH_TABLE_SIZE.set(inner.watchers.len() as i64);
         (
             watcher,
             WatcherInitializer {
@@ -74,6 +75,7 @@ impl WatchHub {
     pub async fn remove_watcher(&self, id: u64) {
         let mut inner = self.inner.write().await;
         inner.watchers.remove(&id);
+        super::metrics::WATCH_TABLE_SIZE.set(inner.watchers.len() as i64);
     }
 
     pub async fn notify_updates(&self, updates: Vec<UpdateEvent>) {
@@ -105,6 +107,7 @@ impl WatchHub {
         inner
             .watchers
             .retain(|_, w| !w.inner.lock().unwrap().dropped);
+        super::metrics::WATCH_TABLE_SIZE.set(inner.watchers.len() as i64);
     }
 }
 
@@ -126,6 +129,7 @@ struct WatcherInner {
 
 impl Watcher {
     fn notify(&self, updates: &[UpdateEvent], deletes: &[DeleteEvent], err: Option<Error>) {
+        let _timer = super::metrics::WATCH_NOTIFY_DURATION_SECONDS.start_timer();
         let mut inner = self.inner.lock().unwrap();
         if inner.dropped {
             return;

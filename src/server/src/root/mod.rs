@@ -15,6 +15,7 @@
 mod allocator;
 mod job;
 mod liveness;
+mod metrics;
 mod schedule;
 mod schema;
 mod store;
@@ -195,8 +196,10 @@ impl Root {
     async fn run_heartbeat(&self) -> ! {
         loop {
             if let Ok(schema) = self.schema() {
+                let _timer = metrics::HEARTBEAT_STEP_DURATION_SECONDS.start_timer();
                 let nodes = self.heartbeat_queue.try_poll().await;
                 if !nodes.is_empty() {
+                    metrics::HEARTBEAT_TASK_QUEUE_SIZE.observe(nodes.len() as f64);
                     if let Err(err) = self.send_heartbeat(schema.to_owned(), &nodes).await {
                         warn!(err = ?err, "send heartbeat meet error");
                     }
@@ -222,6 +225,7 @@ impl Root {
                 .try_bootstrap_root(local_addr, self.shared.node_ident.cluster_id.clone())
                 .await
             {
+                metrics::BOOTSTRAP_FAIL_TOTAL.inc();
                 error!(err = ?err, "boostrap error");
                 panic!("boostrap cluster failure")
             }
@@ -234,6 +238,7 @@ impl Root {
                 schema: Arc::new(schema.to_owned()),
             });
         }
+        self::metrics::LEADER_STATE_INFO.set(1);
 
         self.heartbeat_queue.enable(true).await;
 
@@ -270,6 +275,8 @@ impl Root {
             let mut core = self.shared.core.lock().unwrap();
             *core = None;
         }
+
+        self::metrics::LEADER_STATE_INFO.set(0);
 
         Ok(())
     }
@@ -758,29 +765,48 @@ impl Root {
         let mut update_events = Vec::new();
         let mut changed_group_states = Vec::new();
         for u in updates {
-            if u.group_desc.is_some() {
-                // TODO: check & handle remove replicas from group
-            }
+            let group_desc = if let Some(update_group) = &u.group_desc {
+                match schema.get_group(u.group_id).await? {
+                    Some(pre_group) if pre_group.epoch >= update_group.epoch => None,
+                    _ => u.group_desc,
+                }
+            } else {
+                None
+            };
+
+            let replica_state = if let Some(update_replica_state) = &u.replica_state {
+                match schema
+                    .get_replica_state(u.group_id, update_replica_state.replica_id)
+                    .await?
+                {
+                    Some(pre_rs) if pre_rs.term > update_replica_state.term => None,
+                    _ => u.replica_state,
+                }
+            } else {
+                None
+            };
             schema
-                .update_group_replica(u.group_desc.to_owned(), u.replica_state.to_owned())
+                .update_group_replica(group_desc.to_owned(), replica_state.to_owned())
                 .await?;
-            if let Some(desc) = u.group_desc {
+            if let Some(desc) = group_desc {
                 info!(
                     group = desc.id,
                     desc = ?desc,
                     "update group_desc from node report"
                 );
+                metrics::ROOT_UPDATE_GROUP_DESC_TOTAL.report.inc();
                 update_events.push(UpdateEvent {
                     event: Some(update_event::Event::Group(desc)),
                 })
             }
-            if let Some(state) = u.replica_state {
+            if let Some(state) = replica_state {
                 info!(
                     group = state.group_id,
                     replica = state.replica_id,
                     state = ?state,
                     "update replica_state from node report"
                 );
+                metrics::ROOT_UPDATE_REPLICA_STATE_TOTAL.report.inc();
                 changed_group_states.push(state.group_id);
             }
         }
@@ -905,7 +931,9 @@ impl HeartbeatQueue {
             if let Some((scheduled_key, old_when)) =
                 core.node_scheduled.get(&node).map(ToOwned::to_owned)
             {
-                if when <= old_when {
+                if when < old_when {
+                    metrics::HEARTBEAT_RESCHEDULE_EARLY_INTERVAL_SECONDS
+                        .observe(old_when.saturating_duration_since(when).as_secs_f64());
                     core.delay.reset_at(&scheduled_key, when);
                     core.node_scheduled.insert(node, (scheduled_key, when));
                     trace!(node=node, when=?when, "update next heartbeat");

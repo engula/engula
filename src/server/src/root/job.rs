@@ -23,7 +23,10 @@ use tokio::time::Instant;
 use tracing::{info, trace, warn};
 
 use super::{HeartbeatTask, Root, Schema};
-use crate::{root::schema::ReplicaNodes, Result};
+use crate::{
+    root::{metrics, schema::ReplicaNodes},
+    Result,
+};
 
 impl Root {
     pub async fn send_heartbeat(&self, schema: Arc<Schema>, tasks: &[HeartbeatTask]) -> Result<()> {
@@ -67,18 +70,22 @@ impl Root {
             });
         }
 
-        let mut futs = Vec::new();
-        for n in &nodes {
-            trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-            let fut = self.try_send_heartbeat(
-                n.addr.to_owned(),
-                &piggybacks,
-                Duration::from_secs(self.cfg.heartbeat_timeout_sec),
-            );
-            futs.push(fut);
-        }
+        let resps = {
+            let _timer = metrics::HEARTBEAT_NODES_RPC_DURATION_SECONDS.start_timer();
+            metrics::HEARTBEAT_NODES_BATCH_SIZE.observe(nodes.len() as f64);
+            let mut futs = Vec::new();
+            for n in &nodes {
+                trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
+                let fut = self.try_send_heartbeat(
+                    n.addr.to_owned(),
+                    &piggybacks,
+                    Duration::from_secs(self.cfg.heartbeat_timeout_sec),
+                );
+                futs.push(fut);
+            }
+            join_all(futs).await
+        };
 
-        let resps = join_all(futs).await;
         let last_heartbeat = Instant::now();
         let mut heartbeat_tasks = Vec::new();
         for (i, resp) in resps.iter().enumerate() {
@@ -100,6 +107,9 @@ impl Root {
                     }
                 }
                 Err(err) => {
+                    super::metrics::HEARTBEAT_TASK_FAIL_TOTAL
+                        .with_label_values(&[&n.id.to_string()])
+                        .inc();
                     self.liveness.init_node_if_first_seen(n.id);
                     warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
@@ -140,10 +150,13 @@ impl Root {
     ) -> Result<()> {
         if let Some(ns) = &resp.node_stats {
             if let Some(mut node) = schema.get_node(node_id).await? {
+                let _timer =
+                    super::metrics::HEARTBEAT_HANDLE_NODE_STATS_DURATION_SECONDS.start_timer();
                 let new_group_count = ns.group_count as u64;
                 let new_leader_count = ns.leader_count as u64;
                 let mut cap = node.capacity.take().unwrap();
                 if new_group_count != cap.replica_count || new_leader_count != cap.leader_count {
+                    super::metrics::HEARTBEAT_UPDATE_NODE_STATS_TOTAL.inc();
                     cap.replica_count = new_group_count;
                     cap.leader_count = new_leader_count;
                     info!(
@@ -165,8 +178,8 @@ impl Root {
         schema: &Schema,
         resp: &CollectGroupDetailResponse,
     ) -> Result<()> {
+        let _timer = super::metrics::HEARTBEAT_HANDLE_GROUP_DETAIL_DURATION_SECONDS.start_timer();
         let mut update_events = Vec::new();
-
         for desc in &resp.group_descs {
             if let Some(ex) = schema.get_group(desc.id).await? {
                 if desc.epoch <= ex.epoch {
@@ -176,6 +189,7 @@ impl Root {
             schema
                 .update_group_replica(Some(desc.to_owned()), None)
                 .await?;
+            metrics::ROOT_UPDATE_GROUP_DESC_TOTAL.heartbeat.inc();
             info!(
                 group = desc.id,
                 desc = ?desc,
@@ -188,17 +202,18 @@ impl Root {
 
         let mut changed_group_states = HashSet::new();
         for state in &resp.replica_states {
-            if let Some(ex) = schema
+            if let Some(pre_state) = schema
                 .get_replica_state(state.group_id, state.replica_id)
                 .await?
             {
-                if state.term <= ex.term {
+                if state.term < pre_state.term {
                     continue;
                 }
             }
             schema
                 .update_group_replica(None, Some(state.to_owned()))
                 .await?;
+            metrics::ROOT_UPDATE_REPLICA_STATE_TOTAL.heartbeat.inc();
             info!(
                 group = state.group_id,
                 replica = state.replica_id,
