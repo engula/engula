@@ -84,6 +84,11 @@ impl SnapshotBuilder {
         let name = file_meta.name.clone();
         let str = OsString::from_vec(name.clone());
         let path = self.base_dir.join(str);
+        if let Some(parent) = path.parent() {
+            if !std::fs::try_exists(&parent)? {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
 
         self.file_name = name;
         self.file = Some(PartialFile::new(self.replica_id, &path, file_meta)?);

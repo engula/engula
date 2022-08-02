@@ -429,6 +429,30 @@ mod tests {
         }
     }
 
+    struct MultiFilesSnapshotBuilder {
+        index: u64,
+        content_1: Vec<u8>,
+        content_2: Vec<u8>,
+    }
+
+    #[crate::async_trait]
+    impl SnapshotBuilder for MultiFilesSnapshotBuilder {
+        async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
+            info!("create snapshot at: {}", base_dir.display());
+            std::fs::create_dir_all(&base_dir)?;
+            let file_1 = base_dir.join("1");
+            let file_2 = base_dir.join("2");
+            std::fs::write(file_1, &self.content_1)?;
+            std::fs::write(file_2, &self.content_2)?;
+            info!("write snapshot content");
+            let state = ApplyState {
+                index: self.index,
+                term: 0,
+            };
+            Ok((state, GroupDesc::default()))
+        }
+    }
+
     async fn build_snapshot(
         manager: &SnapManager,
         replica_id: u64,
@@ -514,6 +538,57 @@ mod tests {
             let data = snap.base_dir.join(SNAP_DATA);
             let received_content = std::fs::read_to_string(&data).unwrap();
             assert_eq!(received_content.as_bytes(), content.as_slice());
+        });
+    }
+
+    #[test]
+    fn send_and_save_snapshot_with_multi_files() {
+        let owner = ExecutorOwner::new(1);
+        let executor = owner.executor();
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("download-snapshot-multi-files").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id: u64 = 1;
+            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+
+            // Prepare snapshot
+            let content_1 = vec![1, 2, 3, 4, 5, 6, 7, 1];
+            let content_2 = vec![1, 2, 3, 4, 5, 6, 7, 2];
+
+            let builder: Box<dyn SnapshotBuilder> = Box::new(MultiFilesSnapshotBuilder {
+                index: 1,
+                content_1: content_1.clone(),
+                content_2: content_2.clone(),
+            });
+            let snap_id = create::create_snapshot(replica_id, &snap_manager, builder)
+                .await
+                .unwrap();
+
+            // Send snapshot on leader side.
+            let snapshot_chunk_stream = send::send_snapshot(&snap_manager, replica_id, snap_id)
+                .await
+                .unwrap();
+
+            // Save snapshot on follower side.
+            let new_snap_id =
+                download::save_snapshot(&snap_manager, replica_id + 1, snapshot_chunk_stream)
+                    .await
+                    .unwrap();
+
+            info!("new snap id is {new_snap_id:?}");
+
+            // Validate snapshot content.
+            let snap = snap_manager.lock_snap(replica_id + 1, &new_snap_id);
+            assert!(snap.is_some());
+            let snap = snap.unwrap();
+            let data = snap.base_dir.join(SNAP_DATA);
+            let file_1 = data.join("1");
+            let file_2 = data.join("2");
+            let received_content = std::fs::read_to_string(&file_1).unwrap();
+            assert_eq!(received_content.as_bytes(), content_1.as_slice());
+            let received_content = std::fs::read_to_string(&file_2).unwrap();
+            assert_eq!(received_content.as_bytes(), content_2.as_slice());
         });
     }
 
