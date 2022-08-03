@@ -227,6 +227,7 @@ pub fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
             }
             ReplicaRole::Learner => {
                 cs.learners.push(replica.id);
+                cs.learners_next.push(replica.id);
             }
             ReplicaRole::IncomingVoter => {
                 in_joint = true;
