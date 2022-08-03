@@ -14,7 +14,7 @@
 
 mod checkpoint;
 
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
 use engula_api::server::v1::{
     ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, MigrationDesc, ReplicaDesc,
@@ -349,20 +349,6 @@ impl ChangeReplicaKind {
     }
 }
 
-fn apply_leave_joint(local_id: u64, desc: &mut GroupDesc) {
-    let group_id = desc.id;
-    for replica in &mut desc.replicas {
-        let replica_id = replica.id;
-        let new_role = match ReplicaRole::from_i32(replica.role) {
-            Some(ReplicaRole::IncomingVoter) => ReplicaRole::Voter,
-            Some(ReplicaRole::DemotingVoter) => ReplicaRole::Learner,
-            _ => continue,
-        };
-        info!("group {group_id} replica {local_id} add {new_role:?} {replica_id} in leave joint");
-        replica.role = new_role.into();
-    }
-}
-
 fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeReplica) {
     let group_id = desc.id;
     let replica_id = change.replica_id;
@@ -371,7 +357,7 @@ fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeRepli
     check_not_in_joint_state(&exist);
     match ChangeReplicaType::from_i32(change.change_type) {
         Some(ChangeReplicaType::Add) => {
-            info!("group {group_id} replica {local_id} add Voter {replica_id}");
+            info!("group {group_id} replica {local_id} add voter {replica_id}");
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Voter.into();
             } else {
@@ -383,7 +369,7 @@ fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeRepli
             }
         }
         Some(ChangeReplicaType::AddLearner) => {
-            info!("group {group_id} replica {local_id} add Learner {replica_id}");
+            info!("group {group_id} replica {local_id} add learner {replica_id}");
             if let Some(replica) = exist {
                 replica.role = ReplicaRole::Learner.into();
             } else {
@@ -395,7 +381,7 @@ fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeRepli
             }
         }
         Some(ChangeReplicaType::Remove) => {
-            info!("group {group_id} replica {local_id} remove Voter {replica_id}");
+            info!("group {group_id} replica {local_id} remove voter {replica_id}");
             desc.replicas.drain_filter(|rep| rep.id == replica_id);
         }
         None => {
@@ -406,31 +392,103 @@ fn apply_simple_change(local_id: u64, desc: &mut GroupDesc, change: &ChangeRepli
 
 fn apply_enter_joint(local_id: u64, desc: &mut GroupDesc, changes: &[ChangeReplica]) {
     let group_id = desc.id;
+    let roles = group_role_digest(desc);
+    let mut outgoing_learners = HashSet::new();
     for change in changes {
         let replica_id = change.replica_id;
         let node_id = change.node_id;
         let exist = find_replica_mut(desc, replica_id);
         check_not_in_joint_state(&exist);
-        let role = match ChangeReplicaType::from_i32(change.change_type) {
-            Some(ChangeReplicaType::Add) => ReplicaRole::IncomingVoter,
-            Some(ChangeReplicaType::AddLearner) => ReplicaRole::Learner,
-            Some(ChangeReplicaType::Remove) => ReplicaRole::DemotingVoter,
-            None => {
-                panic!("such change replica operation isn't supported")
-            }
-        };
+        let exist_role = exist.as_ref().and_then(|r| ReplicaRole::from_i32(r.role));
+        let change = ChangeReplicaType::from_i32(change.change_type)
+            .expect("such change replica operation isn't supported");
 
-        info!("group {group_id} replica {local_id} add {role:?} {replica_id} in enter joint");
-        if let Some(replica) = exist {
-            replica.role = role.into();
-        } else {
-            desc.replicas.push(ReplicaDesc {
-                id: replica_id,
-                node_id,
-                role: role.into(),
-            });
+        match (exist_role, change) {
+            (Some(ReplicaRole::Learner), ChangeReplicaType::Add) => {
+                exist.unwrap().role = ReplicaRole::IncomingVoter as i32;
+            }
+            (Some(ReplicaRole::Voter), ChangeReplicaType::AddLearner) => {
+                exist.unwrap().role = ReplicaRole::DemotingVoter as i32;
+            }
+            (Some(ReplicaRole::Voter), ChangeReplicaType::Remove) => {
+                exist.unwrap().role = ReplicaRole::DemotingVoter as i32;
+            }
+            (None, ChangeReplicaType::Add) => {
+                desc.replicas.push(ReplicaDesc {
+                    id: replica_id,
+                    node_id,
+                    role: ReplicaRole::IncomingVoter as i32,
+                });
+            }
+            (None, ChangeReplicaType::AddLearner) => {
+                desc.replicas.push(ReplicaDesc {
+                    id: replica_id,
+                    node_id,
+                    role: ReplicaRole::Learner as i32,
+                });
+            }
+            (Some(ReplicaRole::Learner), ChangeReplicaType::Remove) => {
+                outgoing_learners.insert(replica_id);
+            }
+            (Some(ReplicaRole::Voter), ChangeReplicaType::Add)
+            | (Some(ReplicaRole::Learner), ChangeReplicaType::AddLearner)
+            | (None, ChangeReplicaType::Remove) => {}
+            _ => unreachable!(),
         }
     }
+
+    desc.replicas
+        .drain_filter(|r| outgoing_learners.contains(&r.id));
+
+    let changes = change_replicas_digest(changes);
+    info!("group {group_id} replica {local_id} enter join and {changes}, former {roles}");
+}
+
+fn apply_leave_joint(local_id: u64, desc: &mut GroupDesc) {
+    let group_id = desc.id;
+    for replica in &mut desc.replicas {
+        let role = match ReplicaRole::from_i32(replica.role) {
+            Some(ReplicaRole::IncomingVoter) => ReplicaRole::Voter,
+            Some(ReplicaRole::DemotingVoter) => ReplicaRole::Learner,
+            _ => continue,
+        };
+        replica.role = role as i32;
+    }
+
+    info!(
+        "group {group_id} replica {local_id} leave joint with {}",
+        group_role_digest(desc)
+    );
+}
+
+fn group_role_digest(desc: &GroupDesc) -> String {
+    let mut voters = vec![];
+    let mut learners = vec![];
+    for r in &desc.replicas {
+        match ReplicaRole::from_i32(r.role) {
+            Some(ReplicaRole::Voter | ReplicaRole::IncomingVoter | ReplicaRole::DemotingVoter) => {
+                voters.push(r.id)
+            }
+            Some(ReplicaRole::Learner) => learners.push(r.id),
+            _ => continue,
+        }
+    }
+    format!("voters {voters:?} learners {learners:?}")
+}
+
+fn change_replicas_digest(changes: &[ChangeReplica]) -> String {
+    let mut add_voters = vec![];
+    let mut remove_replicas = vec![];
+    let mut add_learners = vec![];
+    for cc in changes {
+        match ChangeReplicaType::from_i32(cc.change_type) {
+            Some(ChangeReplicaType::Add) => add_voters.push(cc.replica_id),
+            Some(ChangeReplicaType::AddLearner) => add_learners.push(cc.replica_id),
+            Some(ChangeReplicaType::Remove) => remove_replicas.push(cc.replica_id),
+            _ => continue,
+        }
+    }
+    format!("add voters {add_voters:?} learners {add_learners:?} remove {remove_replicas:?}")
 }
 
 fn find_replica_mut(desc: &mut GroupDesc, replica_id: u64) -> Option<&mut ReplicaDesc> {
@@ -446,5 +504,243 @@ fn check_not_in_joint_state(exist: &Option<&mut ReplicaDesc>) {
         ReplicaRole::IncomingVoter | ReplicaRole::DemotingVoter
     ) {
         panic!("execute conf change but still in joint state");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group_replicas(desc: &GroupDesc) -> Vec<(u64, ReplicaRole)> {
+        let mut result: Vec<(u64, ReplicaRole)> = desc
+            .replicas
+            .iter()
+            .map(|r| (r.id, ReplicaRole::from_i32(r.role).unwrap()))
+            .collect();
+
+        result.sort_unstable();
+        result
+    }
+
+    #[test]
+    fn simple_config_change() {
+        struct Test {
+            tips: &'static str,
+            change_type: ChangeReplicaType,
+            replica_id: u64,
+            expects: Vec<(u64, ReplicaRole)>,
+        }
+        let tests = vec![
+            Test {
+                tips: "1. add not exists voter",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 3,
+                expects: vec![
+                    (1, ReplicaRole::Learner),
+                    (2, ReplicaRole::Voter),
+                    (3, ReplicaRole::Voter),
+                ],
+            },
+            Test {
+                tips: "2. add exists voter",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "3. promote learner",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 1,
+                expects: vec![(1, ReplicaRole::Voter), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "4. add not exists learner",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 3,
+                expects: vec![
+                    (1, ReplicaRole::Learner),
+                    (2, ReplicaRole::Voter),
+                    (3, ReplicaRole::Learner),
+                ],
+            },
+            Test {
+                tips: "5. add exists learner",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 1,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "6. demote voter",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Learner)],
+            },
+            Test {
+                tips: "6. remove not exists",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 3,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "7. remove learner",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 1,
+                expects: vec![(2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "8. remove voter",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner)],
+            },
+        ];
+
+        let base_group_desc = GroupDesc {
+            id: 1,
+            epoch: 1,
+            shards: vec![],
+            replicas: vec![
+                ReplicaDesc {
+                    id: 1,
+                    node_id: 1,
+                    role: ReplicaRole::Learner as i32,
+                },
+                ReplicaDesc {
+                    id: 2,
+                    node_id: 2,
+                    role: ReplicaRole::Voter as i32,
+                },
+            ],
+        };
+
+        for Test {
+            tips,
+            change_type,
+            replica_id,
+            expects,
+        } in tests
+        {
+            let mut descriptor = base_group_desc.clone();
+            let change = ChangeReplica {
+                change_type: change_type as i32,
+                replica_id,
+                node_id: 123,
+            };
+            apply_simple_change(0, &mut descriptor, &change);
+            let replicas = group_replicas(&descriptor);
+            assert_eq!(replicas, expects, "{tips}");
+        }
+    }
+
+    #[test]
+    fn joint_config_change() {
+        struct Test {
+            tips: &'static str,
+            change_type: ChangeReplicaType,
+            replica_id: u64,
+            expects: Vec<(u64, ReplicaRole)>,
+        }
+
+        let base_group_desc = GroupDesc {
+            id: 1,
+            epoch: 1,
+            shards: vec![],
+            replicas: vec![
+                ReplicaDesc {
+                    id: 1,
+                    node_id: 1,
+                    role: ReplicaRole::Learner as i32,
+                },
+                ReplicaDesc {
+                    id: 2,
+                    node_id: 2,
+                    role: ReplicaRole::Voter as i32,
+                },
+            ],
+        };
+
+        let tests = vec![
+            Test {
+                tips: "1. add new voter",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 3,
+                expects: vec![
+                    (1, ReplicaRole::Learner),
+                    (2, ReplicaRole::Voter),
+                    (3, ReplicaRole::Voter),
+                ],
+            },
+            Test {
+                tips: "2. promote learner",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 1,
+                expects: vec![(1, ReplicaRole::Voter), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "3. add exists voter",
+                change_type: ChangeReplicaType::Add,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "4. add new learner",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 3,
+                expects: vec![
+                    (1, ReplicaRole::Learner),
+                    (2, ReplicaRole::Voter),
+                    (3, ReplicaRole::Learner),
+                ],
+            },
+            Test {
+                tips: "5. add exists learner",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 1,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "6. demote voter",
+                change_type: ChangeReplicaType::AddLearner,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Learner)],
+            },
+            Test {
+                tips: "7. remove voter",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 2,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Learner)],
+            },
+            Test {
+                tips: "8. remove learner",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 1,
+                expects: vec![(2, ReplicaRole::Voter)],
+            },
+            Test {
+                tips: "8. remove not exists voter",
+                change_type: ChangeReplicaType::Remove,
+                replica_id: 3,
+                expects: vec![(1, ReplicaRole::Learner), (2, ReplicaRole::Voter)],
+            },
+        ];
+
+        for Test {
+            tips,
+            change_type,
+            replica_id,
+            expects,
+        } in tests
+        {
+            let mut descriptor = base_group_desc.clone();
+            let change = ChangeReplica {
+                change_type: change_type as i32,
+                replica_id,
+                node_id: 123,
+            };
+            apply_enter_joint(0, &mut descriptor, &[change]);
+            apply_leave_joint(0, &mut descriptor);
+            let replicas = group_replicas(&descriptor);
+            assert_eq!(replicas, expects, "{tips}");
+        }
     }
 }
