@@ -14,7 +14,7 @@
 use std::path::Path;
 
 use engula_api::server::v1::GroupDesc;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     node::{engine::RawIterator, replica::ReplicaConfig, GroupEngine},
@@ -96,10 +96,10 @@ async fn write_partial_to_file(
     }
 }
 
-pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
+pub fn apply_snapshot(engine: &GroupEngine, replica_id: u64, snap_dir: &Path) -> Result<()> {
     if !snap_dir.is_dir() {
         error!(
-            "apply snapshot {}: snap dir is not a directory",
+            "replica {replica_id} apply snapshot {}: snap dir is not a directory",
             snap_dir.display()
         );
         return Err(Error::InvalidArgument(format!(
@@ -113,13 +113,19 @@ pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if is_sst_file(&path) {
-            debug!("apply snapshot with sst file {}", path.display());
+            debug!(
+                "replica {replica_id} apply snapshot with sst file {}",
+                path.display()
+            );
             files.push(path.file_name().unwrap().to_owned());
         }
     }
 
     if files.is_empty() {
-        error!("apply snapshot {}: snap dir is empty", snap_dir.display());
+        error!(
+            "replica {replica_id} apply snapshot {}: snap dir is empty",
+            snap_dir.display()
+        );
         return Err(Error::InvalidArgument(format!(
             "{} is empty",
             snap_dir.display()
@@ -127,7 +133,7 @@ pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
     }
 
     debug!(
-        "apply snapshot {} found {} sst files",
+        "replica {replica_id} apply snapshot {} found {} sst files",
         snap_dir.display(),
         files.len()
     );
@@ -135,6 +141,12 @@ pub fn apply_snapshot(engine: &GroupEngine, snap_dir: &Path) -> Result<()> {
     files.sort_unstable();
     let files = files.into_iter().map(|f| snap_dir.join(f)).collect();
     engine.ingest(files)?;
+
+    info!(
+        "replica {replica_id} apply snapshot {}, apply state {:?}",
+        snap_dir.display(),
+        engine.flushed_apply_state()
+    );
 
     Ok(())
 }
@@ -258,7 +270,7 @@ mod tests {
             let data = snap_dir.join("DATA");
             let builder = GroupSnapshotBuilder::new(cfg, engine.clone());
             builder.checkpoint(&data).await.unwrap();
-            apply_snapshot(&engine, &data).unwrap();
+            apply_snapshot(&engine, 1, &data).unwrap();
         });
     }
 }

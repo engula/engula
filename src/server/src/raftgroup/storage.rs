@@ -24,7 +24,7 @@ use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Command, Engine, LogBatch, MessageExt};
 use tracing::{debug, error};
 
-use super::{node::WriteTask, snap::SnapManager};
+use super::{node::WriteTask, snap::SnapManager, RaftConfig};
 use crate::{
     serverpb::v1::{EntryId, EvalResult, RaftLocalState},
     Result,
@@ -68,6 +68,7 @@ pub struct Storage {
 
 impl Storage {
     pub async fn open(
+        cfg: &RaftConfig,
         replica_id: u64,
         applied_index: u64,
         conf_state: ConfState,
@@ -86,6 +87,11 @@ impl Storage {
 
         let cache = if applied_index < last_index {
             // There exists some entries haven't been applied.
+            let mut applied_index = applied_index;
+            if cfg.testing_knobs.force_new_peer_receiving_snapshot && applied_index == 0 {
+                applied_index = 5;
+            }
+
             debug!(
                 "replica {} fetch uncommitted entries in range [{}, {})",
                 replica_id,
@@ -155,6 +161,7 @@ impl Storage {
             self.cache = EntryCache::new();
             self.first_index = metadata.index;
             self.last_index = metadata.index;
+            self.local_state = raft_local_state;
         }
 
         if !write_task.entries.is_empty() {
@@ -457,13 +464,21 @@ impl EntryCache {
 /// applied when raft is restarted.
 #[allow(clippy::field_reassign_with_default)]
 pub async fn write_initial_state(
+    cfg: &RaftConfig,
     engine: &Engine,
     replica_id: u64,
     mut voters: Vec<(u64, u64)>,
     initial_eval_results: Vec<EvalResult>,
 ) -> Result<()> {
     let mut initial_entries = vec![];
-    let mut last_index: u64 = 0;
+    let mut initial_index = 0;
+    if cfg.testing_knobs.force_new_peer_receiving_snapshot
+        && !(voters.is_empty() && initial_eval_results.is_empty())
+    {
+        initial_index = 5;
+    }
+
+    let mut last_index: u64 = initial_index;
     if !voters.is_empty() {
         voters.sort_unstable();
 
@@ -504,7 +519,10 @@ pub async fn write_initial_state(
     let mut hard_state = HardState::default();
     let local_state = RaftLocalState {
         replica_id,
-        ..Default::default()
+        last_truncated: Some(EntryId {
+            index: initial_index,
+            term: 0,
+        }),
     };
     if !initial_entries.is_empty() {
         // Due to the limitations of the raft-rs implementation, 0 cannot be used here as the term
@@ -653,14 +671,21 @@ mod tests {
         };
         let engine = Arc::new(Engine::open(cfg).unwrap());
 
-        write_initial_state(engine.as_ref(), 1, vec![], vec![])
+        write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
             .await
             .unwrap();
 
         let snap_mgr = SnapManager::new(dir.path().join("snap"));
-        let mut storage = Storage::open(1, 0, ConfState::default(), engine.clone(), snap_mgr)
-            .await
-            .unwrap();
+        let mut storage = Storage::open(
+            &RaftConfig::default(),
+            1,
+            0,
+            ConfState::default(),
+            engine.clone(),
+            snap_mgr,
+        )
+        .await
+        .unwrap();
         insert_entries(engine.clone(), &mut storage, mocked_entries(None)).await;
         validate_term(&storage, mocked_entries(None));
         validate_entries(&storage, mocked_entries(None));

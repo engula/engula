@@ -309,7 +309,7 @@ impl StateMachine for GroupStateMachine {
     }
 
     fn apply_snapshot(&mut self, snap_dir: &Path) -> Result<()> {
-        checkpoint::apply_snapshot(&self.group_engine, snap_dir)?;
+        checkpoint::apply_snapshot(&self.group_engine, self.info.replica_id, snap_dir)?;
         self.observer
             .on_descriptor_updated(self.group_engine.descriptor());
         let apply_state = self.flushed_apply_state();

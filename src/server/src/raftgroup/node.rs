@@ -45,6 +45,7 @@ pub struct PostReady {
     number: u64,
 
     persisted_messages: Vec<Message>,
+    snap_index: Option<u64>,
 }
 
 pub(super) trait AdvanceTemplate {
@@ -96,6 +97,7 @@ where
 
         let conf_state = super::conf_state_from_group_descriptor(&state_machine.descriptor());
         let mut storage = Storage::open(
+            cfg,
             replica_id,
             applied,
             conf_state,
@@ -215,9 +217,21 @@ where
 
     #[inline]
     pub fn step(&mut self, msg: Message) -> std::result::Result<(), raft::Error> {
-        match self.raw_node.step(msg) {
-            Ok(()) | Err(raft::Error::StepPeerNotFound) => Ok(()),
-            Err(e) => Err(e),
+        if msg.get_msg_type() == MessageType::MsgSnapStatus {
+            self.raw_node.report_snapshot(
+                msg.from,
+                if msg.reject {
+                    SnapshotStatus::Failure
+                } else {
+                    SnapshotStatus::Finish
+                },
+            );
+            Ok(())
+        } else {
+            match self.raw_node.step(msg) {
+                Ok(()) | Err(raft::Error::StepPeerNotFound) => Ok(()),
+                Err(e) => Err(e),
+            }
         }
     }
 
@@ -309,6 +323,9 @@ where
         }
 
         self.raw_node.on_persist_ready(post_ready.number);
+        if let Some(snap_index) = post_ready.snap_index {
+            self.raw_node.advance_apply_to(snap_index);
+        }
     }
 
     #[inline]
@@ -391,9 +408,15 @@ where
 
 impl PostReady {
     pub fn new(ready: &mut Ready) -> Self {
+        let snap_index = if ready.snapshot().is_empty() {
+            None
+        } else {
+            Some(ready.snapshot().get_metadata().get_index())
+        };
         PostReady {
             number: ready.number(),
             persisted_messages: ready.take_persisted_messages(),
+            snap_index,
         }
     }
 }
