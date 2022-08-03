@@ -119,6 +119,10 @@ impl Storage {
             last_index + 1,
         );
 
+        if let Some(truncated) = local_state.last_truncated.clone() {
+            assert_eq!(truncated.index + 1, first_index);
+        }
+
         Ok(Storage {
             replica_id,
 
@@ -159,7 +163,7 @@ impl Storage {
                 )
                 .unwrap();
             self.cache = EntryCache::new();
-            self.first_index = metadata.index;
+            self.first_index = metadata.index + 1;
             self.last_index = metadata.index;
             self.local_state = raft_local_state;
         }

@@ -16,7 +16,7 @@ use engula_api::server::v1::RaftRole;
 use futures::channel::oneshot;
 use raft::{prelude::*, ConfChangeI, StateRole, Storage as RaftStorage};
 use raft_engine::LogBatch;
-use tracing::trace;
+use tracing::{info, trace};
 
 use super::{
     applier::{Applier, ReplicaCache},
@@ -448,12 +448,28 @@ where
     if let Some(info) = snap_mgr.latest_snap(replica_id) {
         let apply_state = info.meta.apply_state.as_ref().unwrap();
         if applier.flushed_index() < apply_state.index {
+            info!(
+                "replica {replica_id} apply fresh snapshot index {} term {}, local applied index {}",
+                apply_state.index, apply_state.term,
+                applier.flushed_index()
+            );
             apply_snapshot(replica_id, snap_mgr, applier, &info.to_raft_snapshot());
         }
 
-        if !storage.range().contains(&apply_state.index)
-            || storage.term(apply_state.index).unwrap() < apply_state.term
+        // Two cases:
+        // 1. out of range
+        // 2. term mismatch
+        //
+        // Don't need to check `storage.truncated_index() == apply_state.index`.
+        if storage.truncated_index() < apply_state.index
+            && (!storage.range().contains(&apply_state.index)
+                || storage.term(apply_state.index).unwrap() < apply_state.term)
         {
+            info!(
+                "replica {replica_id} reset storage with snapshot index {}, term {}",
+                apply_state.index, apply_state.term
+            );
+
             let task = WriteTask {
                 snapshot: Some(info.to_raft_snapshot()),
                 ..Default::default()
@@ -464,4 +480,262 @@ where
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, sync::Arc};
+
+    use engula_api::server::v1::GroupDesc;
+    use raft_engine::*;
+
+    use super::*;
+    use crate::{
+        raftgroup::write_initial_state,
+        runtime::ExecutorOwner,
+        serverpb::v1::{ApplyState, SnapshotMeta},
+        RaftConfig,
+    };
+
+    struct SimpleStateMachine {
+        current_snapshot: Option<PathBuf>,
+        flushed_index: u64,
+    }
+    impl StateMachine for SimpleStateMachine {
+        #[allow(unused)]
+        fn apply(
+            &mut self,
+            index: u64,
+            term: u64,
+            entry: crate::raftgroup::ApplyEntry,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn apply_snapshot(&mut self, snap_dir: &std::path::Path) -> crate::Result<()> {
+            self.current_snapshot = Some(snap_dir.to_owned());
+            Ok(())
+        }
+
+        fn snapshot_builder(&self) -> Box<dyn crate::raftgroup::SnapshotBuilder> {
+            todo!()
+        }
+
+        fn descriptor(&self) -> engula_api::server::v1::GroupDesc {
+            todo!()
+        }
+
+        fn flushed_index(&self) -> u64 {
+            self.flushed_index
+        }
+    }
+
+    fn create_snapshot(snap_mgr: &SnapManager, replica_id: u64, index: u64, term: u64) -> PathBuf {
+        let snap_dir = snap_mgr.create(replica_id);
+        snap_mgr.install(
+            replica_id,
+            &snap_dir,
+            &SnapshotMeta {
+                apply_state: Some(ApplyState { index, term }),
+                group_desc: Some(GroupDesc::default()),
+                ..Default::default()
+            },
+        );
+        snap_dir
+    }
+
+    #[test]
+    fn recover_snapshot() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async {
+            use raft_engine::Config;
+
+            let dir = tempdir::TempDir::new("raftgroup-recover-snapshot").unwrap();
+            let cfg = Config {
+                dir: dir.path().join("db").to_str().unwrap().to_owned(),
+                ..Default::default()
+            };
+            let engine = Arc::new(Engine::open(cfg).unwrap());
+
+            write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+                .await
+                .unwrap();
+
+            let snap_dir = dir.path().join("snap");
+            let snap_mgr = SnapManager::new(snap_dir.clone());
+            let mut storage = Storage::open(
+                &RaftConfig::default(),
+                1,
+                0,
+                ConfState::default(),
+                engine.clone(),
+                snap_mgr.clone(),
+            )
+            .await
+            .unwrap();
+            let state_machine = SimpleStateMachine {
+                flushed_index: 1,
+                current_snapshot: None,
+            };
+            let mut applier = Applier::new(1, state_machine);
+
+            // 1. recover nothing
+            try_recover_snapshot(1, &snap_mgr, &engine, &mut storage, &mut applier)
+                .await
+                .unwrap();
+            assert!(applier.mut_state_machine().current_snapshot.is_none());
+
+            // 2. recovery snapshot
+            let snap = create_snapshot(&snap_mgr, 1, 123, 1);
+
+            try_recover_snapshot(1, &snap_mgr, &engine, &mut storage, &mut applier)
+                .await
+                .unwrap();
+            assert!(
+                matches!(applier.mut_state_machine().current_snapshot.clone(),
+                Some(v) if v == snap.join("DATA")),
+                "expect {}, got {:?}",
+                snap.display(),
+                applier
+                    .mut_state_machine()
+                    .current_snapshot
+                    .as_ref()
+                    .map(|v| v.display())
+            );
+        });
+    }
+
+    #[test]
+    fn recover_with_staled_snapshot() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async {
+            use raft_engine::Config;
+
+            let dir = tempdir::TempDir::new("raftgroup-recover-staled-snapshot").unwrap();
+            let cfg = Config {
+                dir: dir.path().join("db").to_str().unwrap().to_owned(),
+                ..Default::default()
+            };
+            let engine = Arc::new(Engine::open(cfg).unwrap());
+
+            write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+                .await
+                .unwrap();
+
+            let snap_dir = dir.path().join("snap");
+            let snap_mgr = SnapManager::new(snap_dir.clone());
+            let mut storage = Storage::open(
+                &RaftConfig::default(),
+                1,
+                0,
+                ConfState::default(),
+                engine.clone(),
+                snap_mgr.clone(),
+            )
+            .await
+            .unwrap();
+            let state_machine = SimpleStateMachine {
+                flushed_index: 123,
+                current_snapshot: None,
+            };
+            let mut applier = Applier::new(1, state_machine);
+
+            insert_entries(
+                engine.clone(),
+                &mut storage,
+                (1..100).into_iter().map(|i| (i, 1)).collect(),
+            )
+            .await;
+            storage.compact_to(51);
+
+            // create staled snapshot.
+            create_snapshot(&snap_mgr, 1, 10, 1);
+
+            try_recover_snapshot(1, &snap_mgr, &engine, &mut storage, &mut applier)
+                .await
+                .unwrap();
+            assert!(applier.mut_state_machine().current_snapshot.is_none());
+            assert_eq!(storage.truncated_index(), 50);
+        });
+    }
+
+    async fn insert_entries(engine: Arc<Engine>, storage: &mut Storage, entries: Vec<(u64, u64)>) {
+        let entries: Vec<Entry> = entries
+            .into_iter()
+            .map(|(idx, term)| {
+                let mut e = Entry::default();
+                e.set_index(idx);
+                e.set_term(term);
+                e
+            })
+            .collect();
+
+        let mut lb = LogBatch::default();
+        let wt = WriteTask::with_entries(entries);
+        storage.write(&mut lb, &wt).unwrap();
+        engine.write(&mut lb, false).unwrap();
+    }
+
+    // Snapshot has been applied, but the storage haven't reset.
+    #[test]
+    fn partial_recover_snapshot() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async {
+            use raft_engine::Config;
+
+            let dir = tempdir::TempDir::new("raftgroup-partial-recover-snapshot").unwrap();
+            let cfg = Config {
+                dir: dir.path().join("db").to_str().unwrap().to_owned(),
+                ..Default::default()
+            };
+            let engine = Arc::new(Engine::open(cfg).unwrap());
+
+            write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+                .await
+                .unwrap();
+
+            let snap_dir = dir.path().join("snap");
+            let snap_mgr = SnapManager::new(snap_dir.clone());
+            let mut storage = Storage::open(
+                &RaftConfig::default(),
+                1,
+                0,
+                ConfState::default(),
+                engine.clone(),
+                snap_mgr.clone(),
+            )
+            .await
+            .unwrap();
+            let state_machine = SimpleStateMachine {
+                flushed_index: 123,
+                current_snapshot: None,
+            };
+            let mut applier = Applier::new(1, state_machine);
+
+            create_snapshot(&snap_mgr, 1, 123, 123);
+
+            // case 1: snapshot exceeds log storage range.
+            try_recover_snapshot(1, &snap_mgr, &engine, &mut storage, &mut applier)
+                .await
+                .unwrap();
+            assert!(applier.mut_state_machine().current_snapshot.is_none());
+            assert_eq!(storage.truncated_index(), 123);
+
+            // case 2: snapshot term is bigger.
+            insert_entries(
+                engine.clone(),
+                &mut storage,
+                vec![(124, 123), (125, 123), (126, 123)],
+            )
+            .await;
+            applier.mut_state_machine().flushed_index = 125;
+            create_snapshot(&snap_mgr, 1, 125, 124);
+
+            try_recover_snapshot(1, &snap_mgr, &engine, &mut storage, &mut applier)
+                .await
+                .unwrap();
+            assert!(applier.mut_state_machine().current_snapshot.is_none());
+            assert_eq!(storage.truncated_index(), 125);
+        });
+    }
 }
