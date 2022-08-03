@@ -496,19 +496,17 @@ impl ScheduleContext {
                 ReallocateReplicaTaskStep::CreatingDestReplica => {
                     let schema = self.shared.schema()?;
                     let node_id = task.dest_node.as_ref().unwrap().id;
-                    let r = self.try_add_replica(schema, task.group, node_id).await;
-                    if let Err(err) = &r {
-                        error!(group = task.group, node = node_id, err = ?err, "create replica for transfer dest replica error, abort reallocate");
-                        {
+                    let r = self.try_add_dest_replica(schema, task.group, node_id).await;
+                    match r {
+                        Ok(dest_replica) => {
+                            task.dest_replica = Some(dest_replica);
+                            task.step = ReallocateReplicaTaskStep::AddDestLearner.into()
+                        }
+                        Err(err) => {
+                            error!(group = task.group, node = node_id, err = ?err, "create replica for transfer dest replica error, abort reallocate");
                             task.step = ReallocateReplicaTaskStep::ReallocateAbort.into();
                         }
-                    } else {
-                        let dest_replica = r.unwrap();
-                        {
-                            task.dest_replica = Some(dest_replica);
-                            task.step = ReallocateReplicaTaskStep::AddDestLearner.into();
-                        }
-                    };
+                    }
                 }
                 ReallocateReplicaTaskStep::AddDestLearner => {
                     let group = task.group;
@@ -545,16 +543,26 @@ impl ScheduleContext {
                 ReallocateReplicaTaskStep::ShedSourceLeader => {
                     let group = task.group;
                     let replica = task.src_replica;
-                    let r = self.try_shed_leader(group, replica).await;
-                    if let Err(err) = &r {
-                        warn!(group = group, replica = replica, err = ?err, "shed leader in source replica fail, retry in next tick");
-                        metrics::RECONCILE_RETRYL_TASK_TOTAL
-                            .reallocate_replica
-                            .inc();
-                        continue;
-                    }
-                    {
-                        task.step = ReallocateReplicaTaskStep::RemoveSourceMembership.into();
+                    let r = self.try_shed_leader_before_remove(group, replica).await;
+                    match r {
+                        Ok(_) => {
+                            task.step = ReallocateReplicaTaskStep::RemoveSourceMembership.into();
+                        }
+                        Err(crate::Error::AbortScheduleTask(reason)) => {
+                            warn!(
+                                group = group,
+                                replica = replica,
+                                reason = reason,
+                                "abort reallocate replica task"
+                            );
+                            task.step = ReallocateReplicaTaskStep::ReallocateAbort.into();
+                        }
+                        Err(err) => {
+                            warn!(group = group, replica = replica, err = ?err, "shed leader in source replica fail, retry in next tick");
+                            metrics::RECONCILE_RETRYL_TASK_TOTAL
+                                .reallocate_replica
+                                .inc();
+                        }
                     }
                 }
                 ReallocateReplicaTaskStep::RemoveSourceMembership => {
@@ -574,18 +582,27 @@ impl ScheduleContext {
                 }
                 ReallocateReplicaTaskStep::RemoveSourceReplica => {
                     let r = self.try_remove_replica(task.group, task.src_replica).await;
-                    if let Err(err) = &r {
-                        warn!(group = task.group, replica = task.src_replica, err = ?err, "remove source replica from group fail, retry in next tick");
-                        metrics::RECONCILE_RETRYL_TASK_TOTAL
-                            .reallocate_replica
-                            .inc();
-                        continue;
-                    }
-                    {
-                        task.step = ReallocateReplicaTaskStep::ReallocateFinish.into();
+                    match r {
+                        Ok(_) => {
+                            task.step = ReallocateReplicaTaskStep::ReallocateFinish.into();
+                        }
+                        Err(crate::Error::AbortScheduleTask(reason)) => {
+                            warn!(
+                                group = task.group,
+                                replica = task.src_replica,
+                                reason = reason,
+                                "abort remove source replica from group fail"
+                            );
+                            task.step = ReallocateReplicaTaskStep::ReallocateAbort.into();
+                        }
+                        Err(err) => {
+                            warn!(group = task.group, replica = task.src_replica, err = ?err, "remove source replica from group fail, retry in next tick");
+                            metrics::RECONCILE_RETRYL_TASK_TOTAL
+                                .reallocate_replica
+                                .inc();
+                        }
                     }
                 }
-
                 ReallocateReplicaTaskStep::ReallocateAbort => return Ok((true, false)),
                 ReallocateReplicaTaskStep::ReallocateFinish => {
                     self.heartbeat_queue
@@ -658,11 +675,23 @@ impl ScheduleContext {
         let r = self
             .try_migrate_shard(task.src_group, task.dest_group, task.shard)
             .await;
-        if let Err(err) = r {
-            error!(shard = task.shard, src_group = task.src_group, dest_group = task.dest_group, err = ?&err, "migrate shard fail");
-            return Err(err);
+        match r {
+            Ok(_) => Ok((true, false)),
+            Err(crate::Error::AbortScheduleTask(reason)) => {
+                warn!(
+                    shard = task.shard,
+                    src_group = task.src_group,
+                    dest_group = task.dest_group,
+                    reason = reason,
+                    "abort migrate shard"
+                );
+                Ok((true, false))
+            }
+            Err(err) => {
+                warn!(shard = task.shard, src_group = task.src_group, dest_group = task.dest_group, err = ?&err, "migrate shard fail, retry later");
+                Err(err)
+            }
         }
-        Ok((true, false))
     }
 
     async fn handle_transfer_leader(
@@ -884,12 +913,9 @@ impl ScheduleContext {
         Ok(client)
     }
 
-    async fn get_group_leader(&self, group_id: u64) -> Result<GroupDesc> {
+    async fn get_group_leader(&self, group_id: u64) -> Result<Option<GroupDesc>> {
         let schema = self.shared.schema()?;
-        let group = schema
-            .get_group(group_id)
-            .await?
-            .ok_or(crate::Error::GroupNotFound(group_id))?;
+        let group = schema.get_group(group_id).await?;
         Ok(group)
     }
 
@@ -906,17 +932,16 @@ impl ScheduleContext {
         Ok(())
     }
 
-    async fn try_add_replica(
+    async fn try_add_dest_replica(
         &self,
         schema: Arc<Schema>,
         group_id: u64,
         target_node_id: u64,
     ) -> Result<ReplicaDesc> {
         let new_replica = schema.next_replica_id().await?;
-        let target_node = schema
-            .get_node(target_node_id.to_owned())
-            .await?
-            .ok_or(crate::Error::GroupNotFound(group_id))?;
+        let target_node = schema.get_node(target_node_id.to_owned()).await?.ok_or(
+            crate::Error::AbortScheduleTask("dest group has be destroyed"),
+        )?;
         self.get_node_client(target_node.addr.clone())
             .await?
             .create_replica(
@@ -954,19 +979,30 @@ impl ScheduleContext {
         Ok(())
     }
 
-    async fn try_shed_leader(&self, group_id: u64, remove_replica: u64) -> Result<()> {
+    async fn try_shed_leader_before_remove(
+        &self,
+        group_id: u64,
+        remove_replica: u64,
+    ) -> Result<()> {
         let schema = self.shared.schema()?;
 
         let replica_state = schema
             .get_replica_state(group_id, remove_replica)
             .await?
-            .ok_or(crate::Error::GroupNotFound(group_id))?;
+            .ok_or(crate::Error::AbortScheduleTask(
+                "shed leader replica has be destroyed",
+            ))?;
 
         if replica_state.role != RaftRole::Leader as i32 {
             return Ok(());
         }
 
-        let group = self.get_group_leader(group_id).await?;
+        let group =
+            self.get_group_leader(group_id)
+                .await?
+                .ok_or(crate::Error::AbortScheduleTask(
+                    "shed leader group has be destroyed",
+                ))?;
         if let Some(target_replica) = group.replicas.iter().find(|e| e.id != remove_replica) {
             // TODO: find least-leader node.
             info!(
@@ -979,7 +1015,7 @@ impl ScheduleContext {
             self.try_transfer_leader(group_id, target_replica.id)
                 .await?;
         }
-        Err(crate::Error::GroupNotFound(group_id))
+        Ok(())
     }
 
     async fn try_remove_membership(&self, group: u64, remove_replica: u64) -> Result<()> {
@@ -994,15 +1030,14 @@ impl ScheduleContext {
 
     async fn try_remove_replica(&self, group: u64, replica: u64) -> Result<()> {
         let schema = self.shared.schema()?;
-        let rs = schema
-            .get_replica_state(group, replica)
-            .await?
-            .ok_or(crate::Error::GroupNotFound(group))?;
+        let rs = schema.get_replica_state(group, replica).await?.ok_or(
+            crate::Error::AbortScheduleTask("source replica already has be destroyed"),
+        )?;
 
         let target_node = schema
             .get_node(rs.node_id.to_owned())
             .await?
-            .ok_or(crate::Error::GroupNotFound(group))?;
+            .ok_or(crate::Error::AbortScheduleTask("source node not exist"))?;
         self.get_node_client(target_node.addr.clone())
             .await?
             .remove_replica(
@@ -1028,12 +1063,15 @@ impl ScheduleContext {
     }
 
     async fn try_migrate_shard(&self, src_group: u64, target_group: u64, shard: u64) -> Result<()> {
-        let src_group = self.get_group_leader(src_group).await?;
-        let shard_desc = src_group
-            .shards
-            .iter()
-            .find(|s| s.id == shard)
-            .ok_or(crate::Error::GroupNotFound(src_group.id))?;
+        let src_group =
+            self.get_group_leader(src_group)
+                .await?
+                .ok_or(crate::Error::AbortScheduleTask(
+                    "migrate source group has be destroyed",
+                ))?;
+        let shard_desc = src_group.shards.iter().find(|s| s.id == shard).ok_or(
+            crate::Error::AbortScheduleTask("migrate shard has be moved out"),
+        )?;
 
         let mut group_client = GroupClient::new(
             target_group,

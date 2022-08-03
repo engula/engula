@@ -53,7 +53,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
             .iter()
             .filter(|(_, s)| *s == BalanceStatus::Overfull)
         {
-            if let Some(descision) = self.try_move_leader_from_node(n, &ranked_nodes, mean)? {
+            if let Some(descision) = self.try_descrease_node_leader_count(n, &ranked_nodes, mean)? {
                 match descision {
                     TransferDescision::TransferOnly {
                         group,
@@ -76,7 +76,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         Ok(LeaderAction::Noop)
     }
 
-    fn try_move_leader_from_node(
+    fn try_descrease_node_leader_count(
         &self,
         n: &NodeDesc,
         ranked_nodes: &[(NodeDesc, BalanceStatus)],
@@ -88,17 +88,24 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
             .iter()
             .filter(|(r, g)| *g != ROOT_GROUP_ID && r.role == ReplicaRole::Voter as i32)
         {
-            let replica_state = self
-                .alloc_source
-                .replica_state(&replica.id)
-                .ok_or(crate::Error::GroupNotFound(*group_id))?;
-            if replica_state.role != RaftRole::Leader as i32 {
+            let replica_state = self.alloc_source.replica_state(&replica.id);
+            if replica_state.is_none() {
+                // The replica existed in group_desc, but not found in replica_state, the reason(if
+                // no code bug) should be: 1. "group_desc update" has be taken
+                // effect, but "replica_state update" is delayed(e.g. report net fail and heartbeat
+                // still wait next turn)
+                //
+                // It's very low probability for a not exist replica_state be a leader, so we choose
+                // try other replicas here without waiting new replica_state update.
+                continue;
+            }
+            if replica_state.as_ref().unwrap().role != RaftRole::Leader as i32 {
                 continue;
             }
 
             let group = groups
                 .get(group_id)
-                .ok_or(crate::Error::GroupNotFound(*group_id))?;
+                .expect("group {group_id} inconsistent with node-group index");
             let exist_replica_in_nodes = group
                 .replicas
                 .iter()
