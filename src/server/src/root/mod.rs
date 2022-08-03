@@ -202,7 +202,7 @@ impl Root {
                 let _timer = metrics::HEARTBEAT_STEP_DURATION_SECONDS.start_timer();
                 let nodes = self.heartbeat_queue.try_poll().await;
                 if !nodes.is_empty() {
-                    metrics::HEARTBEAT_TASK_QUEUE_SIZE.observe(nodes.len() as f64);
+                    metrics::HEARTBEAT_TASK_QUEUE_SIZE.set(nodes.len() as i64);
                     if let Err(err) = self.send_heartbeat(schema.to_owned(), &nodes).await {
                         warn!(err = ?err, "send heartbeat meet error");
                     }

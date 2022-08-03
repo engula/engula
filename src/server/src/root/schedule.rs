@@ -57,8 +57,6 @@ impl ReconcileScheduler {
                 self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await;
                 return Duration::ZERO;
             }
-        } else {
-            metrics::RECONCILE_ALREADY_BALANCED_TOTAL.inc();
         }
         Duration::from_secs(self.ctx.cfg.schedule_interval_sec)
     }
@@ -97,6 +95,9 @@ impl ReconcileScheduler {
         let _timer = super::metrics::RECONCILE_CHECK_DURATION_SECONDS.start_timer();
         let group_action = self.ctx.alloc.compute_group_action().await?;
         if let GroupAction::Add(cnt) = group_action {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .cluster_groups
+                .set(0);
             for _ in 0..cnt {
                 self.setup_task(ReconcileTask {
                     task: Some(reconcile_task::Task::CreateGroup(CreateGroupTask {
@@ -109,6 +110,9 @@ impl ReconcileScheduler {
             }
             return Ok(true);
         }
+        metrics::RECONCILE_ALREADY_BALANCED_INFO
+            .cluster_groups
+            .set(1);
 
         let mut ractions = self.comput_replica_role_action().await?;
         let mut sactions = self.ctx.alloc.compute_shard_action().await?;
@@ -173,6 +177,15 @@ impl ReconcileScheduler {
     pub async fn comput_replica_role_action(&self) -> Result<Vec<ReplicaRoleAction>> {
         let mut actions = Vec::new();
         let replica_actions = self.ctx.alloc.compute_replica_action().await?;
+        if replica_actions.is_empty() {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_replica_count
+                .set(1);
+        } else {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_replica_count
+                .set(0);
+        }
         actions.extend_from_slice(
             &replica_actions
                 .iter()
@@ -181,6 +194,15 @@ impl ReconcileScheduler {
                 .collect::<Vec<_>>(),
         );
         let leader_actions = self.ctx.alloc.compute_leader_action().await?;
+        if leader_actions.is_empty() {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_leader_count
+                .set(1);
+        } else {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_leader_count
+                .set(0);
+        }
         actions.extend_from_slice(
             &leader_actions
                 .iter()
@@ -196,7 +218,7 @@ impl ReconcileScheduler {
     async fn advance_tasks(&self) -> bool {
         let mut task = self.tasks.lock().await;
         let mut nowait_next = !task.is_empty();
-        metrics::RECONCILE_SCHEDULER_TASK_QUEUE_SIZE.observe(task.len() as f64);
+        metrics::RECONCILE_SCHEDULER_TASK_QUEUE_SIZE.set(task.len() as i64);
         let mut cursor = task.cursor_front_mut();
         while let Some(task) = cursor.current() {
             let _timer = Self::record_exec(task);

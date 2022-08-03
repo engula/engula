@@ -72,7 +72,7 @@ impl Root {
 
         let resps = {
             let _timer = metrics::HEARTBEAT_NODES_RPC_DURATION_SECONDS.start_timer();
-            metrics::HEARTBEAT_NODES_BATCH_SIZE.observe(nodes.len() as f64);
+            metrics::HEARTBEAT_NODES_BATCH_SIZE.set(nodes.len() as i64);
             let mut futs = Vec::new();
             for n in &nodes {
                 trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");

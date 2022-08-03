@@ -21,7 +21,7 @@ use self::{
     policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
     policy_shard_cnt::ShardCountPolicy, source::NodeFilter,
 };
-use super::RootShared;
+use super::{metrics, RootShared};
 use crate::{bootstrap::REPLICA_PER_GROUP, Result};
 
 #[cfg(test)]
@@ -208,15 +208,18 @@ impl<T: AllocSource> Allocator<T> {
 
         self.alloc_source.refresh_all().await?;
 
-        if self.alloc_source.nodes(NodeFilter::All).len() < self.config.replicas_per_group {
-            return Ok(Vec::new());
+        if self.alloc_source.nodes(NodeFilter::All).len() >= self.config.replicas_per_group {
+            let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
+            if !actions.is_empty() {
+                metrics::RECONCILE_ALREADY_BALANCED_INFO
+                    .group_shard_count
+                    .set(0);
+                return Ok(actions);
+            }
         }
-
-        let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
-        if !actions.is_empty() {
-            return Ok(actions);
-        }
-
+        metrics::RECONCILE_ALREADY_BALANCED_INFO
+            .group_shard_count
+            .set(1);
         Ok(Vec::new())
     }
 
