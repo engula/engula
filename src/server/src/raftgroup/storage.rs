@@ -137,6 +137,13 @@ impl Storage {
 
     /// Apply [`WriteTask`] to [`LogBatch`], and save some states to storage.
     pub fn write(&mut self, batch: &mut LogBatch, write_task: &WriteTask) -> Result<()> {
+        if let Some(hs) = &write_task.hard_state {
+            batch
+                .put_message(self.replica_id, keys::HARD_STATE_KEY.to_owned(), hs)
+                .unwrap();
+            self.hard_state = hs.clone();
+        }
+
         if let Some(snapshot) = &write_task.snapshot {
             assert!(
                 write_task.entries.is_empty(),
@@ -158,25 +165,26 @@ impl Storage {
                     &raft_local_state,
                 )
                 .unwrap();
+            self.hard_state.set_commit(metadata.index);
+            batch
+                .put_message(
+                    self.replica_id,
+                    keys::HARD_STATE_KEY.to_owned(),
+                    &self.hard_state,
+                )
+                .unwrap();
             self.cache = EntryCache::new();
             self.first_index = metadata.index;
             self.last_index = metadata.index;
             self.local_state = raft_local_state;
-        }
-
-        if !write_task.entries.is_empty() {
+        } else if !write_task.entries.is_empty() {
             batch
                 .add_entries::<MessageExtTyped>(self.replica_id, &write_task.entries)
                 .unwrap();
             self.cache.append(&write_task.entries);
             self.last_index = write_task.entries.last().unwrap().index;
         }
-        if let Some(hs) = &write_task.hard_state {
-            batch
-                .put_message(self.replica_id, keys::HARD_STATE_KEY.to_owned(), hs)
-                .unwrap();
-            self.hard_state = hs.clone();
-        }
+
         Ok(())
     }
 
@@ -213,6 +221,19 @@ impl Storage {
             &local_state,
         )
         .unwrap();
+
+        // Since the commit field of HardState is lazily updated, it must also be consistent with
+        // the log range.
+        if self.first_index > self.hard_state.commit {
+            self.hard_state.commit = self.first_index;
+            lb.put_message(
+                self.replica_id,
+                keys::LOCAL_STATE_KEY.to_owned(),
+                &self.hard_state,
+            )
+            .unwrap();
+        }
+
         self.local_state = local_state;
         lb
     }
@@ -662,6 +683,58 @@ mod tests {
         ));
     }
 
+    async fn raft_storage_apply_snapshot() {
+        let dir = TempDir::new("raft-storage-apply-snapshot").unwrap();
+
+        let cfg = Config {
+            dir: dir.path().join("db").to_str().unwrap().to_owned(),
+            ..Default::default()
+        };
+        let engine = Arc::new(Engine::open(cfg).unwrap());
+
+        write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+            .await
+            .unwrap();
+
+        let snap_mgr = SnapManager::new(dir.path().join("snap"));
+        let mut storage = Storage::open(
+            &RaftConfig::default(),
+            1,
+            0,
+            ConfState::default(),
+            engine.clone(),
+            snap_mgr,
+        )
+        .await
+        .unwrap();
+        insert_entries(engine.clone(), &mut storage, mocked_entries(None)).await;
+        validate_term(&storage, mocked_entries(None));
+        validate_entries(&storage, mocked_entries(None));
+        let first_index = mocked_entries(None).first().unwrap().0;
+        let last_index = mocked_entries(None).last().unwrap().0;
+        validate_range(&storage, first_index, last_index);
+
+        let snap_index = 123;
+        let snap_term = 123;
+        let mut task = WriteTask::with_entries(vec![]);
+        task.snapshot = Some(Snapshot {
+            data: vec![],
+            metadata: Some(SnapshotMetadata {
+                conf_state: None,
+                index: snap_index,
+                term: snap_term,
+            }),
+        });
+
+        let mut lb = LogBatch::default();
+        storage.write(&mut lb, &task).unwrap();
+        assert_eq!(storage.hard_state.commit, snap_index);
+        assert_eq!(storage.truncated_index(), snap_index);
+        assert_eq!(storage.truncated_term(), snap_term);
+        assert_eq!(storage.first_index, snap_index);
+        assert_eq!(storage.last_index, snap_index);
+    }
+
     async fn raft_storage_inner() {
         let dir = TempDir::new("raft-storage").unwrap();
 
@@ -716,6 +789,7 @@ mod tests {
         validate_entries(&storage, mocked_entries(Some(3)));
         let first_index = compact_to;
         validate_range(&storage, first_index, last_index);
+        assert!(storage.hard_state.commit >= first_index);
 
         // Accesssing compacted entries should returns Error.
         let compacted_entry_index = mocked_entries(Some(1)).last().unwrap().0;
@@ -735,10 +809,18 @@ mod tests {
     }
 
     #[test]
-    fn raft_storage() {
+    fn raft_storage_basic() {
         let owner = ExecutorOwner::new(1);
         owner.executor().block_on(async move {
             raft_storage_inner().await;
+        });
+    }
+
+    #[test]
+    fn raft_storage_snapshot() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            raft_storage_apply_snapshot().await;
         });
     }
 }
