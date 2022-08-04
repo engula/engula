@@ -1055,13 +1055,15 @@ mod root_test {
         executor: Executor,
         node_ident: &NodeIdent,
     ) -> (Root, Node) {
-        use crate::bootstrap::build_provider;
+        use crate::bootstrap::{build_provider, write_initial_cluster_data};
 
-        let provider =
-            executor.block_on(async { build_provider(config, executor.clone()).await.unwrap() });
-        let root = Root::new(provider.clone(), node_ident, config.clone());
-        let node = Node::new(config.clone(), provider).unwrap();
-        (root, node)
+        executor.block_on(async {
+            let provider = build_provider(config, executor.clone()).await.unwrap();
+            let root = Root::new(provider.clone(), node_ident, config.clone());
+            let node = Node::new(config.clone(), provider).unwrap();
+            write_initial_cluster_data(&node, "").await.unwrap();
+            (root, node)
+        })
     }
 
     #[test]
@@ -1106,17 +1108,6 @@ mod root_test {
         let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
             node.bootstrap(&ident).await.unwrap();
-            node.create_replica(
-                3,
-                GroupDesc {
-                    id: ROOT_GROUP_ID,
-                    epoch: INITIAL_EPOCH,
-                    shards: vec![],
-                    replicas: vec![],
-                },
-            )
-            .await
-            .unwrap();
             root.bootstrap(&node).await.unwrap();
         });
     }
