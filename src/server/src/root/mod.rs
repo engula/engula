@@ -1032,10 +1032,7 @@ impl HeartbeatQueue {
 #[cfg(test)]
 mod root_test {
     use engula_api::{
-        server::v1::{
-            watch_response::{update_event, UpdateEvent},
-            GroupDesc,
-        },
+        server::v1::watch_response::{update_event, UpdateEvent},
         v1::DatabaseDesc,
     };
     use futures::StreamExt;
@@ -1043,7 +1040,7 @@ mod root_test {
 
     use super::Config;
     use crate::{
-        bootstrap::{bootstrap_cluster, INITIAL_EPOCH, ROOT_GROUP_ID},
+        bootstrap::bootstrap_cluster,
         node::Node,
         root::Root,
         runtime::{Executor, ExecutorOwner},
