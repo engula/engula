@@ -346,7 +346,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
     pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {
@@ -444,7 +444,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
     fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
