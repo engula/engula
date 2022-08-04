@@ -553,7 +553,7 @@ fn receive_forward_request_after_shard_migrated() {
         let mut group_client = c.group(group_id_2);
         let req = ForwardRequest {
             group_id: group_id_2,
-            shard_id: shard_id,
+            shard_id,
             forward_data: vec![ShardData {
                 key: b"a".to_vec(),
                 value: b"b".to_vec(),
