@@ -24,7 +24,10 @@ use tokio::sync::Mutex;
 use tonic::{transport::Channel, Code, Status, Streaming};
 use tracing::trace;
 
-use crate::{conn_manager::ConnManager, discovery::ServiceDiscovery, NodeClient, Result};
+use crate::{
+    conn_manager::ConnManager, discovery::ServiceDiscovery, error::retryable_rpc_err, NodeClient,
+    Result,
+};
 
 #[derive(thiserror::Error, Debug)]
 enum RootError {
@@ -487,39 +490,4 @@ where
             _ => Err(status.into()),
         },
     }
-}
-
-fn retryable_rpc_err(status: &tonic::Status) -> bool {
-    if status.code() == tonic::Code::Unavailable {
-        return true;
-    }
-    if status.code() == tonic::Code::Unknown {
-        if let Some(err) = find_source::<std::io::Error>(status) {
-            return retryable_io_err(err);
-        }
-    }
-    false
-}
-
-fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
-    use std::error::Error;
-    let mut cause = err.source();
-    while let Some(err) = cause {
-        if let Some(typed) = err.downcast_ref() {
-            return Some(typed);
-        }
-        cause = err.source();
-    }
-    None
-}
-
-fn retryable_io_err(err: &std::io::Error) -> bool {
-    use std::io::ErrorKind;
-    matches!(
-        err.kind(),
-        ErrorKind::ConnectionRefused
-            | ErrorKind::ConnectionReset
-            | ErrorKind::ConnectionAborted
-            | ErrorKind::BrokenPipe
-    )
 }

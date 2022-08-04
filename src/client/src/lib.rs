@@ -17,7 +17,7 @@
 mod app_client;
 mod conn_manager;
 mod discovery;
-mod error;
+pub mod error;
 mod group_client;
 mod node_client;
 mod retry;

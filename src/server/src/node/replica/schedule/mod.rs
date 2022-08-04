@@ -351,16 +351,24 @@ impl ScheduleContext {
 
     async fn advance_remove_replica_task(&mut self, task: &mut RemoveReplicaTask) -> bool {
         if let Some(replica) = task.replica.as_ref() {
-            if let Err(e) = self
+            match self
                 .remove_replica(replica, task.group.clone().unwrap_or_default())
                 .await
             {
-                warn!(
-                    group = self.group_id,
-                    replica = self.replica_id,
-                    "remove replica {replica:?}: {e}"
-                );
-                return false;
+                Ok(()) => {}
+                Err(engula_client::Error::Rpc(status))
+                    if engula_client::error::retryable_rpc_err(&status) =>
+                {
+                    return true;
+                }
+                Err(e) => {
+                    warn!(
+                        group = self.group_id,
+                        replica = self.replica_id,
+                        "remove replica {replica:?}: {e}"
+                    );
+                    return false;
+                }
             }
 
             if let Err(e) = self

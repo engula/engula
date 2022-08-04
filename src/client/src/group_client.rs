@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, io::ErrorKind, task::Poll, time::Duration};
+use std::{collections::HashMap, future::Future, task::Poll, time::Duration};
 
 use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
@@ -22,7 +22,9 @@ use futures::{FutureExt, StreamExt};
 use tonic::{Code, Status};
 use tracing::{debug, trace, warn};
 
-use crate::{ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router};
+use crate::{
+    error::retryable_rpc_err, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
+};
 
 pub struct RetryableShardChunkStreaming<'a> {
     shard_id: u64,
@@ -589,40 +591,6 @@ impl<'a> futures::Stream for RetryableShardChunkStreaming<'a> {
         futures::pin_mut!(future);
         future.poll_unpin(cx)
     }
-}
-
-fn retryable_rpc_err(status: &tonic::Status) -> bool {
-    if status.code() == tonic::Code::Unavailable {
-        return true;
-    }
-    if status.code() == tonic::Code::Unknown {
-        if let Some(err) = find_source::<std::io::Error>(status) {
-            return retryable_io_err(err);
-        }
-    }
-    false
-}
-
-fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
-    use std::error::Error;
-    let mut cause = err.source();
-    while let Some(err) = cause {
-        if let Some(typed) = err.downcast_ref() {
-            return Some(typed);
-        }
-        cause = err.source();
-    }
-    None
-}
-
-fn retryable_io_err(err: &std::io::Error) -> bool {
-    matches!(
-        err.kind(),
-        ErrorKind::ConnectionRefused
-            | ErrorKind::ConnectionReset
-            | ErrorKind::ConnectionAborted
-            | ErrorKind::BrokenPipe
-    )
 }
 
 fn is_executable(descriptor: &GroupDesc, request: &Request) -> bool {
