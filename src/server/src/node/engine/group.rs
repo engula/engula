@@ -450,7 +450,7 @@ impl GroupEngine {
             .shard_descs
             .get(&shard_id)
             .cloned()
-            .ok_or_else(|| Error::InvalidArgument(format!("no such shard {shard_id} exists")))
+            .ok_or(Error::ShardNotFound(shard_id))
     }
 
     #[inline]

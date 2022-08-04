@@ -509,7 +509,11 @@ impl GroupClient {
             let cloned_req = req.clone();
             async move { client.forward(cloned_req).await }
         };
-        self.invoke(op).await
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ..Default::default()
+        };
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn retryable_pull(

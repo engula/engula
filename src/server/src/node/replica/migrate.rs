@@ -189,8 +189,7 @@ impl Replica {
                 lease_state.leader_descriptor(),
             ))
         } else if !lease_state.is_migrating_shard(shard_id) {
-            let msg = format!("shard {} is not migrating", shard_id);
-            Err(Error::InvalidArgument(msg))
+            Err(Error::ShardNotFound(shard_id))
         } else {
             Ok(())
         }

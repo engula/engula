@@ -35,6 +35,9 @@ pub enum Error {
     ResourceExhausted(String),
 
     // internal errors
+    #[error("shard {0} not found")]
+    ShardNotFound(u64),
+
     #[error("invalid {0} data")]
     InvalidData(String),
 
@@ -145,6 +148,7 @@ impl From<Error> for tonic::Status {
             | Error::RocksDb(_)
             | Error::Raft(_)
             | Error::RaftEngine(_)
+            | Error::ShardNotFound(_)
             | Error::NoAvaliableGroup
             | Error::Rpc(_)) => Status::internal(err.to_string()),
         }
@@ -201,6 +205,7 @@ impl From<Error> for engula_api::server::v1::Error {
             | Error::InvalidData(_)
             | Error::DatabaseNotFound(_)
             | Error::AlreadyExists(_)
+            | Error::ShardNotFound(_)
             | Error::ClusterNotMatch
             | Error::NoAvaliableGroup
             | Error::Canceled
