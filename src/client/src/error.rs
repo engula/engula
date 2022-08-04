@@ -143,3 +143,44 @@ impl From<Error> for AppError {
         }
     }
 }
+
+pub fn find_io_error(status: &tonic::Status) -> Option<&std::io::Error> {
+    use tonic::Code;
+    if status.code() == Code::Unavailable || status.code() == Code::Unknown {
+        find_source::<std::io::Error>(status)
+    } else {
+        None
+    }
+}
+
+pub fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Option<&E> {
+    use std::error::Error;
+    let mut cause = err.source();
+    while let Some(err) = cause {
+        if let Some(typed) = err.downcast_ref() {
+            return Some(typed);
+        }
+        cause = err.source();
+    }
+    None
+}
+
+pub fn retryable_io_err(err: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+    )
+}
+
+pub fn retryable_rpc_err(status: &tonic::Status) -> bool {
+    if let Some(err) = find_io_error(status) {
+        retryable_io_err(err)
+    } else {
+        false
+    }
+}
