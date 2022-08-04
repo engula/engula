@@ -45,7 +45,7 @@ def row_panels(title, *panels):
     )
 
 
-def raw_counter(title, metric, unit, *group):
+def raw_counter(title, metric, unit, legend, *group):
     global datasource
 
     group = [*group]
@@ -53,14 +53,14 @@ def raw_counter(title, metric, unit, *group):
         target = Target(
             datasource=datasource,
             expr='sum(rate({}[1m])) by ({})'.format(metric, ','.join(group)),
-            legendFormat="{{ handler }}",
+            legendFormat="{{{{ {} }}}}".format(legend),
             refId='A',
         )
     else:
         target = Target(
             datasource=datasource,
             expr='rate({}[1m])'.format(metric),
-            legendFormat="{{ handler }}",
+            legendFormat="{{{{ {} }}}}".format(legend),
             refId='A',
         )
     return TimeSeries(
@@ -72,22 +72,58 @@ def raw_counter(title, metric, unit, *group):
     )
 
 
-def simple_total(title, metric, unit=NO_FORMAT):
-    return raw_counter(title, metric, unit)
+def raw_gauge_ts(title, metric, legend="instance"):
+    global datasource
+    if legend == "instance":
+        expr = '{}'.format(metric)
+    else:
+        expr = 'sum({}) by ({})'.format(metric, legend)
+    target = Target(
+        datasource=datasource,
+        expr=expr,
+        legendFormat='{{{{ {} }}}}'.format(legend),
+        refId='A',
+    )
+    return TimeSeries(
+        title=title,
+        dataSource=datasource,
+        targets=[target],
+        gridPos=next_pos(),
+    )
+
+
+def raw_gauge(title, metric):
+    global datasource
+    target = Target(
+        datasource=datasource,
+        expr='{}'.format(metric),
+        refId='A',
+    )
+    return GaugePanel(
+        title=title,
+        dataSource=datasource,
+        targets=[target],
+        gridPos=next_pos(),
+    )
+
+
+def simple_total(title, metric, legend="handler", unit=NO_FORMAT):
+    return raw_counter(title, metric, unit, legend)
 
 
 def raw_histogram(title, metric, unit, *group):
     global datasource
+    legend_prefix = ""
     le_group = ','.join(['le', *group])
     group = [*group]
     if len(group) > 0:
+        legend_prefix = '{{{{ {} }}}}-'.format(*group)
         group = ','.join(group)
         avg_target = Target(
             datasource=datasource,
-            expr=
-            'sum(rate({}_sum[1m])) by ({}) / sum(rate({}_count[1m])) by ({})'.
+            expr='sum(rate({}_sum[1m])) by ({}) / sum(rate({}_count[1m])) by ({})'.
             format(metric, group, metric, group),
-            legendFormat="avg",
+            legendFormat="{}avg".format(legend_prefix),
             refId='C',
         )
     else:
@@ -95,7 +131,7 @@ def raw_histogram(title, metric, unit, *group):
             datasource=datasource,
             expr='sum(rate({}_sum[1m])) / sum(rate({}_count[1m]))'.format(
                 metric, metric),
-            legendFormat="avg",
+            legendFormat="{}avg".format(legend_prefix),
             refId='C',
         )
     return TimeSeries(
@@ -106,14 +142,14 @@ def raw_histogram(title, metric, unit, *group):
                 datasource=datasource,
                 expr='histogram_quantile(0.99, sum(rate({}_bucket[1m])) by ({}))'
                 .format(metric, le_group),
-                legendFormat="99%",
+                legendFormat="{}99%".format(legend_prefix),
                 refId='A',
             ),
             Target(
                 datasource=datasource,
                 expr='histogram_quantile(0.95, sum(rate({}_bucket[1m])) by ({}))'
                 .format(metric, le_group),
-                legendFormat="95%",
+                legendFormat="{}95%".format(legend_prefix),
                 refId='B',
             ),
             avg_target,
@@ -131,8 +167,8 @@ def simple_histogram_size(title, metric):
     return raw_histogram(title, metric, NO_FORMAT)
 
 
-def vector_total(title, metric, group):
-    return raw_counter(title, metric, NO_FORMAT, group)
+def vector_total(title, metric, group, legend="handler"):
+    return raw_counter(title, metric, NO_FORMAT, legend, group)
 
 
 def vector_duration_seconds(title, metric, *group):
@@ -280,13 +316,87 @@ def root_service_panels():
             simple_duration_seconds(
                 '{} duration'.format(method),
                 'root_service_{}_request_duration_seconds'.format(method)))
-    return row_panels("Root services", *panels)
+    return row_panels("Root - Services", *panels)
+
+
+def root_cluster_overview_panels():
+    return row_panels(
+        "Root - Cluster Overview",
+        raw_gauge_ts("node count", "cluster_node_total", "type"),
+        raw_gauge_ts("group count", "cluster_group_total", "job"),
+        raw_gauge_ts("root reconcile cluster count-based balanced status",
+                     "root_reconcile_already_balanced_info", "type"),
+        raw_gauge_ts("node replica count",
+                     "cluster_node_replica_total", "node"),
+        raw_gauge_ts("node leader count", "cluster_node_leader_total", "node"),
+        raw_gauge_ts("group shard count",
+                     "cluster_group_shard_total", "group"),
+    )
+
+
+def root_misc_panels():
+    return row_panels(
+        "Root - Misc",
+        raw_gauge_ts("node as leader", "root_service_node_as_leader_info"),
+        simple_total("root bootstrap fail count",
+                     "root_boostrap_fail_total", "instance"),
+        simple_duration_seconds(
+            "root bootstrap duration", "root_bootstrap_duration_seconds"),
+        raw_gauge_ts("root watch table size", "root_watch_table_size", "job"),
+        simple_duration_seconds(
+            "root notify watcher duration", "root_watch_notify_duration_seconds"),
+    )
+
+
+def root_reconcile_panels():
+    return row_panels(
+        "Root - Reconcile",
+        simple_duration_seconds("root reconcile check and prepare task duration",
+                                "root_reconcile_scheduler_check_task_duration_seconds"),
+        simple_duration_seconds(
+            "root reconcile per tick execute duration", "root_reconcile_step_duration_seconds"),
+        raw_gauge_ts("root reconcile scheduler task queue size",
+                     "root_reconcile_scheduler_task_queue_size", "job"),
+        vector_total(
+            "root reconcile handle task count", "root_reconcile_scheduler_task_handle_total", "type", "type"),
+        vector_duration_seconds("root reconcile handle per task duration",
+                                "root_reconcile_scheduler_task_handle_duration_seconds", "type"),
+        vector_total("root reconcile retry count per task-type",
+                     "root_reconcile_scheduler_task_retry_total", "type", "type"),
+        vector_duration_seconds("root reconcile create new group per step duration",
+                                "root_reconcile_scheduler_create_group_step_duration_seconds", "type"),
+        vector_duration_seconds("root reconcile reallocate replica per step duration",
+                                "root_reconcile_scheduler_reallocate_replica_step_duration_seconds", "type"),
+        vector_duration_seconds("root reconcile create collection shards per step duration",
+                                "root_reconcile_scheduler_create_collection_step_duration_seconds", "type"),
+    )
+
+
+def root_hearbeart_report_panels():
+    return row_panels(
+        "Root - Hearbeat Report",
+        simple_duration_seconds("root heartbeat per tick duration",
+                                "root_heartbeat_step_duration_seconds"),
+        vector_total("root heartbeat fail count",
+                     "root_heartbeat_fail_total", "node", "node"),
+        simple_duration_seconds("root heartbeat rpc duration",
+                                "root_heartbeat_rpc_nodes_duration_seconds"),
+        simple_duration_seconds("root heartbeat handle group_detail duration",
+                                "root_heartbeat_handle_group_detail_seconds"),
+        simple_duration_seconds(
+            "root heartbeat handle node_stats duration", "root_heartbeat_handle_node_stats_seconds"),
+        simple_total("root heartbeat actually update node stats count",
+                     "root_heartbeat_update_node_stats_total"),
+        vector_total("root heartbeat or report actually update group desc count",
+                     "root_update_group_desc_total", "type", "type"),
+        vector_total("root heartbeat or report actually update replica state count",
+                     "root_update_replica_state_total", "type", "type"),
+    )
 
 
 dashboard = Dashboard(
     title="Engula Server",
-    description=
-    "Engula Server dashboard using the default Prometheus datasource",
+    description="Engula Server dashboard using the default Prometheus datasource",
     tags=['engula', 'server'],
     timezone="browser",
     panels=[
@@ -298,6 +408,10 @@ dashboard = Dashboard(
         raft_service_panels(),
         raft_group_panels(),
         raft_group_snapshot_panels(),
+        root_cluster_overview_panels(),
         root_service_panels(),
+        root_reconcile_panels(),
+        root_hearbeart_report_panels(),
+        root_misc_panels(),
     ],
 ).auto_panel_ids()
