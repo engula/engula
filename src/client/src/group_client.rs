@@ -77,10 +77,10 @@ impl GroupClient {
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
-        self.invoke_with_opt(op, InvokeOpt::default()).await
+        self.invoke_opt(op, InvokeOpt::default()).await
     }
 
-    async fn invoke_with_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
+    async fn invoke_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
     where
         F: Fn(u64, u64, u64, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
@@ -296,7 +296,7 @@ impl GroupClient {
             request: Some(request),
             accurate_epoch: false,
         };
-        self.invoke_with_opt(op, opt).await
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
@@ -346,7 +346,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_with_opt(op, opt).await
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {
@@ -444,7 +444,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_with_opt(op, opt).await
+        self.invoke_opt(op, opt).await
     }
 
     fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
@@ -490,7 +490,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_with_opt(op, opt).await
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
@@ -513,7 +513,7 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_with_opt(op, opt).await
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn retryable_pull(
