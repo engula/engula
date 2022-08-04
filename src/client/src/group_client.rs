@@ -342,8 +342,10 @@ impl GroupClient {
                 }
             }
         };
-        let mut opt = InvokeOpt::default();
-        opt.accurate_epoch = true;
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ..Default::default()
+        };
         self.invoke_opt(op, opt).await
     }
 
@@ -438,9 +440,10 @@ impl GroupClient {
                 }
             }
         };
-
-        let mut opt = InvokeOpt::default();
-        opt.accurate_epoch = true;
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ..Default::default()
+        };
         self.invoke_opt(op, opt).await
     }
 
