@@ -735,7 +735,7 @@ mod tests {
         assert_eq!(storage.hard_state.commit, snap_index);
         assert_eq!(storage.truncated_index(), snap_index);
         assert_eq!(storage.truncated_term(), snap_term);
-        assert_eq!(storage.first_index, snap_index);
+        assert_eq!(storage.first_index, snap_index + 1);
         assert_eq!(storage.last_index, snap_index);
     }
 
