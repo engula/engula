@@ -93,6 +93,18 @@ async fn execute_internal(
 
                 return Err(Error::EpochNotMatch(desc));
             }
+            Err(Error::ShardNotFound(shard_id)) => {
+                if exec_ctx.forward_shard_id.is_none() {
+                    panic!("shard {shard_id} is not found for serving request {request:?}");
+                }
+
+                // This is forwarding request and the target shard might be migrated to another
+                // group. Return `EpochNotMatch` in this case to enforce client retrying with fresh
+                // group descriptor.
+                //
+                // NOTES: the `accurate_epoch` should set to `true` for forwarding requests.
+                return Err(Error::EpochNotMatch(replica.descriptor()));
+            }
             Err(e) => return Err(e),
         }
     }

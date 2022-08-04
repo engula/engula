@@ -19,8 +19,8 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::{
-    server::v1::{group_request_union::Request, *},
-    v1::PutRequest,
+    server::v1::{group_request_union::Request, group_response_union::Response, *},
+    v1::{GetRequest, GetResponse, PutRequest},
 };
 use engula_client::RetryState;
 use tracing::{error, info, warn};
@@ -480,5 +480,121 @@ fn source_group_receive_many_accepting_shard_request() {
             handle.await.unwrap();
             break;
         }
+    });
+}
+
+#[test]
+fn receive_forward_request_after_shard_migrated() {
+    block_on_current(async {
+        let mut ctx =
+            TestContext::new("migration-test--receive-forward-request-after-shard-migrated");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(2).await;
+        let c = ClusterClient::new(nodes).await;
+        let node_1_id = 0;
+        let node_2_id = 1;
+        let group_id_1 = 100000;
+        let group_id_2 = 100001;
+        let replica_1 = 1000000;
+        let replica_2 = 2000000;
+        let shard_id = 10000000;
+
+        info!(
+            "create group {} at node {} with replica {} and shard {}",
+            group_id_1, node_1_id, replica_1, shard_id,
+        );
+
+        let shard_desc = ShardDesc {
+            id: shard_id,
+            collection_id: shard_id,
+            partition: Some(shard_desc::Partition::Range(
+                shard_desc::RangePartition::default(),
+            )),
+        };
+        let replica_desc_1 = ReplicaDesc {
+            id: replica_1,
+            node_id: node_1_id,
+            role: ReplicaRole::Voter as i32,
+        };
+        let group_desc_1 = GroupDesc {
+            id: group_id_1,
+            shards: vec![shard_desc.clone()],
+            replicas: vec![replica_desc_1.clone()],
+            ..Default::default()
+        };
+        c.create_replica(node_1_id, replica_1, group_desc_1.clone())
+            .await;
+
+        info!(
+            "create group {} at node {} with replica {}",
+            group_id_2, node_2_id, replica_2
+        );
+        let replica_desc_2 = ReplicaDesc {
+            id: replica_2,
+            node_id: node_2_id,
+            role: ReplicaRole::Voter as i32,
+        };
+        let group_desc_2 = GroupDesc {
+            id: group_id_2,
+            shards: vec![],
+            replicas: vec![replica_desc_2.clone()],
+            ..Default::default()
+        };
+        c.create_replica(node_2_id, replica_2, group_desc_2.clone())
+            .await;
+
+        info!(
+            "issue accept shard {} request to group {}",
+            shard_id, group_id_2
+        );
+
+        move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
+
+        let mut group_client = c.group(group_id_2);
+        let req = ForwardRequest {
+            group_id: group_id_2,
+            shard_id: shard_id,
+            forward_data: vec![ShardData {
+                key: b"a".to_vec(),
+                value: b"b".to_vec(),
+                version: 1,
+            }],
+            request: Some(GroupRequestUnion {
+                request: Some(Request::Put(ShardPutRequest {
+                    shard_id,
+                    put: Some(PutRequest {
+                        key: b"b".to_vec(),
+                        value: b"value".to_vec(),
+                    }),
+                })),
+            }),
+        };
+        group_client.forward(req).await.unwrap();
+        let resp = group_client
+            .request(&Request::Get(ShardGetRequest {
+                shard_id,
+                get: Some(GetRequest { key: b"a".to_vec() }),
+            }))
+            .await
+            .unwrap();
+        let value = match resp {
+            Response::Get(GetResponse { value }) => value,
+            _ => panic!("invalid response type, Get is required"),
+        };
+        // Ingest should failed because migration is finished.
+        assert!(value.is_none());
+
+        let resp = group_client
+            .request(&Request::Get(ShardGetRequest {
+                shard_id,
+                get: Some(GetRequest { key: b"b".to_vec() }),
+            }))
+            .await
+            .unwrap();
+        let value = match resp {
+            Response::Get(GetResponse { value }) => value,
+            _ => panic!("invalid response type, Get is required"),
+        };
+        assert!(matches!(value, Some(v) if v == b"value".to_vec()));
     });
 }

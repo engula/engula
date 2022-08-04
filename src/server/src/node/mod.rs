@@ -399,7 +399,13 @@ impl Node {
         let ingest_chunk = ShardChunk {
             data: request.forward_data,
         };
-        replica.ingest(request.shard_id, ingest_chunk, true).await?;
+        // replica.ingest(request.shard_id, ingest_chunk, true).await?;
+        match replica.ingest(request.shard_id, ingest_chunk, true).await {
+            Ok(_) | Err(Error::ShardNotFound(_)) => {
+                // Ingest success or shard is migrated.
+            }
+            Err(e) => return Err(e),
+        }
 
         debug_assert!(request.request.is_some());
         let group_request = GroupRequest {
