@@ -1032,7 +1032,10 @@ impl HeartbeatQueue {
 #[cfg(test)]
 mod root_test {
     use engula_api::{
-        server::v1::watch_response::{update_event, UpdateEvent},
+        server::v1::{
+            watch_response::{update_event, UpdateEvent},
+            GroupDesc,
+        },
         v1::DatabaseDesc,
     };
     use futures::StreamExt;
@@ -1040,7 +1043,7 @@ mod root_test {
 
     use super::Config;
     use crate::{
-        bootstrap::bootstrap_cluster,
+        bootstrap::{bootstrap_cluster, INITIAL_EPOCH, ROOT_GROUP_ID},
         node::Node,
         root::Root,
         runtime::{Executor, ExecutorOwner},
@@ -1052,15 +1055,13 @@ mod root_test {
         executor: Executor,
         node_ident: &NodeIdent,
     ) -> (Root, Node) {
-        use crate::bootstrap::{build_provider, write_initial_cluster_data};
+        use crate::bootstrap::build_provider;
 
-        executor.block_on(async {
-            let provider = build_provider(config, executor.clone()).await.unwrap();
-            let root = Root::new(provider.clone(), node_ident, config.clone());
-            let node = Node::new(config.clone(), provider).unwrap();
-            write_initial_cluster_data(&node, "").await.unwrap();
-            (root, node)
-        })
+        let provider =
+            executor.block_on(async { build_provider(config, executor.clone()).await.unwrap() });
+        let root = Root::new(provider.clone(), node_ident, config.clone());
+        let node = Node::new(config.clone(), provider).unwrap();
+        (root, node)
     }
 
     #[test]
@@ -1105,6 +1106,17 @@ mod root_test {
         let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
             node.bootstrap(&ident).await.unwrap();
+            node.create_replica(
+                3,
+                GroupDesc {
+                    id: ROOT_GROUP_ID,
+                    epoch: INITIAL_EPOCH,
+                    shards: vec![],
+                    replicas: vec![],
+                },
+            )
+            .await
+            .unwrap();
             root.bootstrap(&node).await.unwrap();
         });
     }

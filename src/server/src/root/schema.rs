@@ -275,7 +275,7 @@ impl Schema {
         let shard_id = Self::system_shard_id(SYSTEM_NODE_COLLECTION_ID); // System collection only have one shard.
         let mut snapshot = match engine.snapshot(shard_id, SnapshotMode::Prefix { key: &[] }) {
             Ok(snapshot) => snapshot,
-            Err(Error::InvalidArgument(v)) if v.starts_with("no such shard") => {
+            Err(Error::ShardNotFound(_)) => {
                 // This replica of root group haven't initialized.
                 return Ok(vec![]);
             }

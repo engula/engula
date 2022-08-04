@@ -235,7 +235,7 @@ async fn save_node_ident(
     Ok(node_ident)
 }
 
-pub(crate) async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
+async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     // Create the first raft group of cluster, this node is the only member of the raft group.
     let (shards, _) = Schema::init_shards();
 
