@@ -797,14 +797,23 @@ impl ScheduleContext {
                 CreateCollectionShardStep::CollectionCreating => {
                     let mut wait_cleanup = Vec::new();
                     let mut wait_create = task.wait_create.to_owned();
+                    let request_shard_count = wait_create.len();
+                    let groups = self
+                        .alloc
+                        .place_group_for_shard(request_shard_count)
+                        .await?;
+                    if groups.is_empty() {
+                        return Err(crate::Error::NoAvaliableGroup);
+                    }
+                    let mut idx = 0;
                     loop {
                         let desc = wait_create.pop();
                         if desc.is_none() {
                             break;
                         }
                         let desc = desc.as_ref().unwrap();
-                        let groups = self.alloc.place_group_for_shard(1).await?;
-                        let group = groups.get(0).ok_or(crate::Error::NoAvaliableGroup)?;
+                        let group = groups.get(idx % groups.len()).unwrap();
+                        idx += 1;
                         loop {
                             match self.try_create_shard(group.id, desc).await {
                                 Err(crate::Error::EpochNotMatch(group)) => {
