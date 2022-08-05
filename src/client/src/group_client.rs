@@ -321,7 +321,11 @@ impl GroupClient {
                 }
             }
         };
-        self.invoke(op).await
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ..Default::default()
+        };
+        self.invoke_opt(op, opt).await
     }
 
     pub async fn transfer_leader(&mut self, dest_replica: u64) -> Result<()> {
@@ -344,11 +348,7 @@ impl GroupClient {
                 }
             }
         };
-        let opt = InvokeOpt {
-            accurate_epoch: true,
-            ..Default::default()
-        };
-        self.invoke_opt(op, opt).await
+        self.invoke(op).await
     }
 
     pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {

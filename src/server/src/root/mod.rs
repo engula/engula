@@ -23,7 +23,7 @@ mod store;
 mod watch;
 
 use std::{
-    collections::{hash_map, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     task::Poll,
     time::Duration,
@@ -330,11 +330,14 @@ impl Root {
         if self.current_node_id() == node_id {
             info!("try to drain root leader and move root leadership out first");
             self.scheduler
-                .setup_task(ReconcileTask {
-                    task: Some(reconcile_task::Task::ShedRoot(ShedRootLeaderTask {
-                        node_id,
-                    })),
-                })
+                .setup_task(
+                    ReconcileTask {
+                        task: Some(reconcile_task::Task::ShedRoot(ShedRootLeaderTask {
+                            node_id,
+                        })),
+                    },
+                    None,
+                )
                 .await;
             return Err(crate::Error::InvalidArgument(
                 "node is root leader, try again later".into(),
@@ -357,9 +360,12 @@ impl Root {
         schema.update_node(node_desc).await?; // TODO: cas
 
         self.scheduler
-            .setup_task(ReconcileTask {
-                task: Some(reconcile_task::Task::ShedLeader(ShedLeaderTask { node_id })),
-            })
+            .setup_task(
+                ReconcileTask {
+                    task: Some(reconcile_task::Task::ShedLeader(ShedLeaderTask { node_id })),
+                },
+                None,
+            )
             .await;
 
         Ok(())
@@ -579,8 +585,6 @@ impl Root {
             .await?;
         trace!(database = ?database, collection = ?collection, collection_id = collection.id, "create collection");
 
-        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
-        // handle hearbeat resp).
         self.create_collection_shard(schema.to_owned(), collection.to_owned())
             .await?;
 
@@ -624,56 +628,35 @@ impl Root {
             }
         };
 
-        let request_shard_cnt = partitions.len();
-        let candidate_groups = match self.alloc.place_group_for_shard(request_shard_cnt).await {
-            Ok(candidates) => {
-                if candidates.is_empty() {
-                    error!(
-                        database = collection.db,
-                        collection = ?collection.name,
-                        "no avaliable group to alloc new shard, requested: {request_shard_cnt}",
-                    );
-                    return Err(Error::NoAvaliableGroup);
-                }
-                candidates
-            }
-            Err(err) => return Err(err),
-        };
-
-        let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
-        for (group_idx, partition) in partitions.into_iter().enumerate() {
+        let mut wait_create = Vec::with_capacity(partitions.len());
+        for partition in partitions {
             let id = schema.next_shard_id().await?;
-            let shard = ShardDesc {
+            wait_create.push(ShardDesc {
                 id,
                 collection_id: collection.id.to_owned(),
                 partition: Some(partition),
-            };
-            let group = candidate_groups
-                .get(group_idx % candidate_groups.len())
-                .unwrap();
-            match group_shards.entry(group.id.to_owned()) {
-                hash_map::Entry::Occupied(mut ent) => {
-                    ent.get_mut().push(shard);
-                }
-                hash_map::Entry::Vacant(ent) => {
-                    ent.insert(vec![shard]);
-                }
-            }
+            });
         }
 
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.scheduler
-            .setup_task(ReconcileTask {
-                task: Some(Task::CreateCollectionShards(CreateCollectionShards {
-                    wait_create: group_shards
-                        .into_iter()
-                        .map(|(group, shards)| GroupShards { group, shards })
-                        .collect::<Vec<_>>(),
-                    wait_cleanup: vec![],
-                    step: CreateCollectionShardStep::CollectionCreating as i32,
-                })),
-            })
+            .setup_task(
+                ReconcileTask {
+                    task: Some(Task::CreateCollectionShards(CreateCollectionShards {
+                        wait_create,
+                        wait_cleanup: vec![],
+                        step: CreateCollectionShardStep::CollectionCreating as i32,
+                    })),
+                },
+                Some(tx),
+            )
             .await;
 
+        if rx.await.unwrap().is_err() {
+            return Err(crate::Error::InvalidArgument(
+                "create collection fail".into(),
+            ));
+        }
         Ok(())
     }
 

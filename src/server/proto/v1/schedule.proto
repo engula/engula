@@ -131,7 +131,7 @@ message TransferGroupLeaderTask {
 }
 
 message CreateCollectionShards {
-  repeated GroupShards wait_create = 1;
+  repeated engula.server.v1.ShardDesc wait_create = 1;
   repeated engula.server.v1.ShardDesc wait_cleanup = 2;
   CreateCollectionShardStep step = 3;
 }
