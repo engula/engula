@@ -21,6 +21,7 @@
 mod bootstrap;
 mod discovery;
 mod error;
+mod schedule;
 pub mod node;
 pub mod raftgroup;
 mod root;
