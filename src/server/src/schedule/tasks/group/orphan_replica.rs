@@ -57,7 +57,7 @@ impl RemoveOrphanReplica {
 
         let remove_replica: Box<dyn Action> = Box::new(RemoveReplica {
             group: desc,
-            replica: replica,
+            replica,
         });
         let clear_replica_state: Box<dyn Action> = Box::new(ClearReplicaState {
             target_id: replica_id,

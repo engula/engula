@@ -21,11 +21,11 @@
 mod bootstrap;
 mod discovery;
 mod error;
-mod schedule;
 pub mod node;
 pub mod raftgroup;
 mod root;
 pub mod runtime;
+mod schedule;
 pub mod serverpb;
 mod service;
 

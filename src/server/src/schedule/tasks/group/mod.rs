@@ -13,7 +13,13 @@
 // limitations under the License.
 
 mod cure_group;
+mod descriptor;
 mod orphan_replica;
 mod promote;
+mod raft_state;
+mod replica_states;
 
-pub use self::{cure_group::CureGroup, orphan_replica::RemoveOrphanReplica, promote::PromoteGroup};
+pub use self::{
+    cure_group::CureGroup, descriptor::WatchGroupDescriptor, orphan_replica::RemoveOrphanReplica,
+    promote::PromoteGroup, raft_state::WatchRaftState, replica_states::WatchReplicaStates,
+};

@@ -13,8 +13,8 @@
 // limitations under the License.
 mod actions;
 mod event_source;
-mod scheduler;
 mod provider;
+mod scheduler;
 mod task;
 mod tasks;
 

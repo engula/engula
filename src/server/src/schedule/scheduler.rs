@@ -26,14 +26,12 @@ use tracing::debug;
 
 use super::{
     event_source::EventSource,
-    provider::group_providers_refresher,
     task::{Task, TaskState},
     tasks::GENERATED_TASK_ID,
 };
 use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::{replica::ReplicaConfig, Replica},
-    root::RemoteStore,
     runtime::{sync::WaitGroup, TaskPriority},
     schedule::provider::GroupProviders,
     Provider,
@@ -199,8 +197,8 @@ impl Scheduler {
             self.jobs.insert(
                 task_id,
                 Job {
-                    _start_at: now.clone(),
-                    advanced_at: now.clone(),
+                    _start_at: now,
+                    advanced_at: now,
                     task,
                 },
             );
@@ -322,7 +320,7 @@ impl TaskTimer {
             }
             if self
                 .timer_indexes
-                .get(&task_id)
+                .get(task_id)
                 .map(|t| *t == *timer_id)
                 .unwrap_or_default()
             {
@@ -341,30 +339,14 @@ pub(crate) fn setup_scheduler(
     replica: Arc<Replica>,
     wait_group: WaitGroup,
 ) {
-    let group_id = replica.replica_info().group_id;
-    let tag = &group_id.to_le_bytes();
-
     let group_providers = Arc::new(GroupProviders::new(
         replica.clone(),
         provider.router.clone(),
     ));
-    let root_store = RemoteStore::new(provider.clone());
 
+    let group_id = replica.replica_info().group_id;
+    let tag = &group_id.to_le_bytes();
     let executor = provider.executor.clone();
-    let cloned_wait_group = wait_group.clone();
-    let cloned_cfg = cfg.clone();
-    let cloned_replica = replica.clone();
-    let cloned_group_providers = group_providers.clone();
-    executor.spawn(Some(tag), TaskPriority::Low, async move {
-        group_providers_refresher(
-            cloned_cfg,
-            cloned_replica,
-            root_store,
-            cloned_group_providers,
-        )
-        .await;
-        drop(cloned_wait_group);
-    });
     executor.spawn(Some(tag), TaskPriority::Low, async move {
         scheduler_main(cfg, replica, provider, group_providers).await;
         drop(wait_group);
@@ -386,6 +368,7 @@ async fn scheduler_main(
         let providers: Vec<Arc<dyn EventSource>> = vec![
             group_providers.descriptor.clone(),
             group_providers.replica_states.clone(),
+            group_providers.raft_state.clone(),
         ];
         let mut scheduler =
             Scheduler::new(cfg.clone(), replica.clone(), provider.clone(), providers);
@@ -412,11 +395,15 @@ async fn allocate_group_tasks(
 ) {
     use super::tasks::*;
 
+    pending_tasks.push(Box::new(WatchReplicaStates::new(providers.clone())));
+    pending_tasks.push(Box::new(WatchRaftState::new(providers.clone())));
+    pending_tasks.push(Box::new(WatchGroupDescriptor::new(providers.clone())));
     pending_tasks.push(Box::new(PromoteGroup::new(providers.clone())));
     pending_tasks.push(Box::new(CureGroup::new(providers.clone())));
     pending_tasks.push(Box::new(RemoveOrphanReplica::new(providers)));
 }
 
+#[allow(clippy::ptr_arg)]
 async fn setup_root_tasks(_pending_tasks: &mut Vec<Box<dyn Task>>) {
     // TODO(walter) add root related scheduler tasks.
 }

@@ -15,17 +15,15 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use engula_api::server::v1::*;
 use engula_client::Router;
-use tracing::{debug, error, trace};
 
 use crate::{
-    node::{replica::ReplicaConfig, Replica},
+    node::Replica,
     raftgroup::RaftGroupState,
-    root::RemoteStore,
     schedule::{
         event_source::{CommonEventSource, EventSource},
         scheduler::EventWaker,
@@ -144,7 +142,7 @@ impl ReplicaStatesProvider {
         self.inner.lock().unwrap().replica_states.clone()
     }
 
-    fn update(&self, mut states: Vec<ReplicaState>) {
+    pub fn update(&self, mut states: Vec<ReplicaState>) {
         states.sort_by_key(|r| r.replica_id);
         let mut inner = self.inner.lock().unwrap();
         if inner.replica_states != states {
@@ -178,6 +176,7 @@ impl RaftStateProvider {
             inner.lost_peers.entry(id).or_insert_with(Instant::now);
         }
         inner.raft_state = state;
+        inner.core.fire();
     }
 
     pub fn lost_peers(&self) -> HashSet<u64> {
@@ -201,75 +200,3 @@ impl GroupProviders {
 inherit_event_source!(GroupDescProvider);
 inherit_event_source!(ReplicaStatesProvider);
 inherit_event_source!(RaftStateProvider);
-
-pub async fn group_providers_refresher(
-    cfg: ReplicaConfig,
-    replica: Arc<Replica>,
-    root_store: RemoteStore,
-    providers: Arc<GroupProviders>,
-) {
-    let info = replica.replica_info();
-    let group_id = info.group_id;
-    let replica_state_future = watch_replica_states(
-        cfg.clone(),
-        replica.clone(),
-        root_store.clone(),
-        providers.replica_states.clone(),
-    );
-    let group_descriptor_future =
-        watch_group_descriptor(replica.clone(), providers.descriptor.clone());
-    let raft_states_future = watch_raft_states(replica.clone(), providers.raft_state.clone());
-    futures::pin_mut!(replica_state_future);
-    futures::pin_mut!(group_descriptor_future);
-    futures::pin_mut!(raft_states_future);
-    loop {
-        crate::runtime::select! {
-            _ = &mut replica_state_future => {},
-            _ = &mut group_descriptor_future => {},
-            _ = &mut raft_states_future => {},
-            else => break,
-        };
-    }
-    debug!("group {group_id} providers refersher is shutdown");
-}
-
-pub async fn watch_replica_states(
-    cfg: ReplicaConfig,
-    replica: Arc<Replica>,
-    root_store: RemoteStore,
-    provider: Arc<ReplicaStatesProvider>,
-) {
-    let group_id = replica.replica_info().group_id;
-    while let Ok(Some(_)) = replica.on_leader("replica-states-watcher", false).await {
-        match root_store.list_replica_state(group_id).await {
-            Ok(states) => {
-                trace!("list replica states of group {group_id}: {:?}", states);
-                provider.update(states);
-            }
-            Err(e) => {
-                error!("watch replica states of group {group_id}: {e:?}");
-            }
-        }
-
-        if !cfg.testing_knobs.disable_orphan_replica_detecting_intervals {
-            crate::runtime::time::sleep(Duration::from_secs(31)).await;
-        }
-    }
-}
-
-pub async fn watch_group_descriptor(replica: Arc<Replica>, provider: Arc<GroupDescProvider>) {
-    while let Ok(Some(_)) = replica.on_leader("group-descriptor-watcher", false).await {
-        let desc = replica.descriptor();
-        provider.update(desc);
-        crate::runtime::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-pub async fn watch_raft_states(replica: Arc<Replica>, provider: Arc<RaftStateProvider>) {
-    while let Ok(Some(_)) = replica.on_leader("raft-state-watcher", false).await {
-        if let Some(states) = replica.raft_node().raft_group_state().await {
-            provider.update(states);
-        }
-        crate::runtime::time::sleep(Duration::from_secs(1)).await;
-    }
-}

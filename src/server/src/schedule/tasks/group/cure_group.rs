@@ -77,7 +77,7 @@ impl CureGroup {
         });
         let replace_voters_action: Box<dyn Action> = Box::new(ReplaceVoters {
             providers: self.providers.clone(),
-            incoming_voters: incoming_voters,
+            incoming_voters,
             demoting_voters: voters.values().cloned().collect(),
         });
         let remove_learners_action: Box<dyn Action> = Box::new(RemoveLearners {
