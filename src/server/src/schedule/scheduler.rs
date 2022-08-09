@@ -22,18 +22,14 @@ use std::{
 };
 
 use futures::Future;
-use tracing::debug;
 
 use super::{
     event_source::EventSource,
     task::{Task, TaskState},
-    tasks::GENERATED_TASK_ID,
+    tasks::{GroupLockTable, GENERATED_TASK_ID},
 };
 use crate::{
-    bootstrap::ROOT_GROUP_ID,
     node::{replica::ReplicaConfig, Replica},
-    runtime::{sync::WaitGroup, TaskPriority},
-    schedule::provider::GroupProviders,
     Provider,
 };
 
@@ -75,6 +71,7 @@ pub struct ScheduleContext<'a> {
     pub replica: Arc<Replica>,
     pub(crate) provider: Arc<Provider>,
     pub cfg: &'a ReplicaConfig,
+    pub group_lock_table: &'a mut GroupLockTable,
     next_task_id: &'a mut u64,
     pending_tasks: &'a mut Vec<Box<dyn Task>>,
 }
@@ -94,6 +91,7 @@ where
     next_task_id: u64,
     jobs: HashMap<u64, Job>,
     timer: TaskTimer,
+    group_lock_table: GroupLockTable,
 }
 
 struct Job {
@@ -104,7 +102,7 @@ struct Job {
 }
 
 impl Scheduler {
-    fn new(
+    pub(crate) fn new(
         cfg: ReplicaConfig,
         replica: Arc<Replica>,
         provider: Arc<Provider>,
@@ -129,16 +127,21 @@ impl Scheduler {
             next_task_id: GENERATED_TASK_ID,
             jobs: HashMap::default(),
             timer: TaskTimer::new(),
+            group_lock_table: GroupLockTable::new(),
         }
     }
 
     #[inline]
-    async fn wait_new_events(&mut self) {
+    pub async fn wait_new_events(&mut self) {
         self.timer.timeout(self.event_waiter.clone()).await;
     }
 
-    async fn advance(&mut self, current_term: u64, mut pending_tasks: Vec<Box<dyn Task>>) {
+    pub async fn advance(&mut self, current_term: u64, mut pending_tasks: Vec<Box<dyn Task>>) {
         let mut active_tasks = self.collect_active_tasks();
+        if active_tasks.is_empty() {
+            active_tasks = pending_tasks.iter().map(|t| t.id()).collect();
+            self.insert_tasks(std::mem::take(&mut pending_tasks));
+        }
         while !active_tasks.is_empty() {
             for task_id in active_tasks {
                 self.advance_task(current_term, task_id, &mut pending_tasks)
@@ -170,6 +173,7 @@ impl Scheduler {
                     execution_time: Instant::now().duration_since(job.advanced_at),
                     next_task_id: &mut self.next_task_id,
                     pending_tasks,
+                    group_lock_table: &mut self.group_lock_table,
                 };
                 match job.task.poll(&mut ctx).await {
                     TaskState::Pending(interval) => {
@@ -331,79 +335,4 @@ impl TaskTimer {
         }
         result
     }
-}
-
-pub(crate) fn setup_scheduler(
-    cfg: ReplicaConfig,
-    provider: Arc<Provider>,
-    replica: Arc<Replica>,
-    wait_group: WaitGroup,
-) {
-    let group_providers = Arc::new(GroupProviders::new(
-        replica.clone(),
-        provider.router.clone(),
-    ));
-
-    let group_id = replica.replica_info().group_id;
-    let tag = &group_id.to_le_bytes();
-    let executor = provider.executor.clone();
-    executor.spawn(Some(tag), TaskPriority::Low, async move {
-        scheduler_main(cfg, replica, provider, group_providers).await;
-        drop(wait_group);
-    });
-}
-
-async fn scheduler_main(
-    cfg: ReplicaConfig,
-    replica: Arc<Replica>,
-    provider: Arc<Provider>,
-    group_providers: Arc<GroupProviders>,
-) {
-    let info = replica.replica_info();
-    let group_id = info.group_id;
-    let replica_id = info.replica_id;
-    drop(info);
-
-    while let Ok(Some(current_term)) = replica.on_leader("scheduler", false).await {
-        let providers: Vec<Arc<dyn EventSource>> = vec![
-            group_providers.descriptor.clone(),
-            group_providers.replica_states.clone(),
-            group_providers.raft_state.clone(),
-        ];
-        let mut scheduler =
-            Scheduler::new(cfg.clone(), replica.clone(), provider.clone(), providers);
-        let mut pending_tasks = vec![];
-        allocate_group_tasks(&mut pending_tasks, group_providers.clone()).await;
-        if group_id == ROOT_GROUP_ID {
-            setup_root_tasks(&mut pending_tasks).await;
-        }
-        scheduler.advance(current_term, pending_tasks).await;
-        while let Ok(Some(term)) = replica.on_leader("scheduler", true).await {
-            if term != current_term {
-                break;
-            }
-            scheduler.wait_new_events().await;
-            scheduler.advance(current_term, vec![]).await;
-        }
-    }
-    debug!("group {group_id} replica {replica_id} scheduler is stopped");
-}
-
-async fn allocate_group_tasks(
-    pending_tasks: &mut Vec<Box<dyn Task>>,
-    providers: Arc<GroupProviders>,
-) {
-    use super::tasks::*;
-
-    pending_tasks.push(Box::new(WatchReplicaStates::new(providers.clone())));
-    pending_tasks.push(Box::new(WatchRaftState::new(providers.clone())));
-    pending_tasks.push(Box::new(WatchGroupDescriptor::new(providers.clone())));
-    pending_tasks.push(Box::new(PromoteGroup::new(providers.clone())));
-    pending_tasks.push(Box::new(CureGroup::new(providers.clone())));
-    pending_tasks.push(Box::new(RemoveOrphanReplica::new(providers)));
-}
-
-#[allow(clippy::ptr_arg)]
-async fn setup_root_tasks(_pending_tasks: &mut Vec<Box<dyn Task>>) {
-    // TODO(walter) add root related scheduler tasks.
 }

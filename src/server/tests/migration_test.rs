@@ -69,9 +69,10 @@ async fn move_shard(
             .await
         {
             warn!(
-                "accept shard {} from {src_group_id} to {dest_group_id}: {e:?}",
+                "accept shard {} from {src_group_id} to {dest_group_id} with src epoch {src_group_epoch}: {e:?}",
                 shard_desc.id
             );
+            tokio::time::sleep(Duration::from_millis(10)).await;
             continue;
         }
 

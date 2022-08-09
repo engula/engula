@@ -54,7 +54,7 @@ impl Task for WatchReplicaStates {
             }
         }
 
-        if !ctx
+        if ctx
             .cfg
             .testing_knobs
             .disable_orphan_replica_detecting_intervals

@@ -15,7 +15,8 @@ mod actions;
 mod event_source;
 mod provider;
 mod scheduler;
+mod setup;
 mod task;
 mod tasks;
 
-pub(crate) use self::scheduler::setup_scheduler;
+pub(crate) use self::setup::setup_scheduler;

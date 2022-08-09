@@ -16,8 +16,9 @@ use std::{sync::Arc, time::Duration};
 use engula_api::server::v1::*;
 use tracing::{debug, error, info};
 
+use super::ActionTaskWithLocks;
 use crate::schedule::{
-    actions::{AddLearners, ReplaceVoters},
+    actions::{AddLearners, CreateReplicas, ReplaceVoters},
     provider::GroupProviders,
     scheduler::ScheduleContext,
     task::{Task, TaskState},
@@ -37,7 +38,12 @@ impl PromoteGroup {
         }
     }
 
-    async fn setup(&self, num_acquire: usize, ctx: &mut ScheduleContext<'_>) -> bool {
+    async fn setup(
+        &self,
+        num_acquire: usize,
+        former_replica_id: u64,
+        ctx: &mut ScheduleContext<'_>,
+    ) -> bool {
         let group_id = ctx.group_id;
         let replica_id = ctx.replica_id;
 
@@ -51,6 +57,13 @@ impl PromoteGroup {
 
         let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
         let new_task_id = ctx.next_task_id();
+        let locks = ctx
+            .group_lock_table
+            .config_change(new_task_id, &[former_replica_id])
+            .expect("Check conflicts in before steps");
+        let create_replicas = Box::new(CreateReplicas {
+            replicas: replicas.clone(),
+        });
         let add_learners = Box::new(AddLearners {
             providers: self.providers.clone(),
             learners: replicas.clone(),
@@ -60,11 +73,11 @@ impl PromoteGroup {
             incoming_voters: replicas,
             demoting_voters: vec![],
         });
-        let promoting_task = Box::new(ActionTask::new(
+        let promoting_task = ActionTask::new(
             new_task_id,
-            vec![add_learners, replace_voters],
-        ));
-        ctx.delegate(promoting_task);
+            vec![create_replicas, add_learners, replace_voters],
+        );
+        ctx.delegate(Box::new(ActionTaskWithLocks::new(locks, promoting_task)));
 
         info!("group {group_id} replica {replica_id} promote group by add {incoming_peers:?}");
 
@@ -114,23 +127,26 @@ impl Task for PromoteGroup {
     }
 
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
-        let num_voters = self
-            .providers
-            .descriptor
-            .replicas()
-            .iter()
-            .filter(|r| {
-                r.role == ReplicaRole::Voter as i32 || r.role == ReplicaRole::IncomingVoter as i32
-            })
-            .count();
-        if num_voters > 1 {
+        if ctx.group_lock_table.has_config_change() {
+            return TaskState::Pending(Some(Duration::from_secs(1)));
+        }
+
+        let replicas = self.providers.descriptor.replicas();
+        if replicas.len() > 1 {
             return TaskState::Terminated;
+        } else if replicas.is_empty() {
+            return TaskState::Pending(Some(Duration::from_secs(1)));
+        }
+
+        let former_replica_id = replicas[0].id;
+        if ctx.group_lock_table.is_replica_locked(former_replica_id) {
+            return TaskState::Pending(Some(Duration::from_secs(1)));
         }
 
         let num_online_nodes = self.providers.node.num_online_nodes();
-        if num_voters < self.required_replicas && self.required_replicas <= num_online_nodes {
-            let num_acquire = self.required_replicas - num_voters;
-            self.setup(num_acquire, ctx).await;
+        if 1 < self.required_replicas && self.required_replicas <= num_online_nodes {
+            let num_acquire = self.required_replicas - 1;
+            self.setup(num_acquire, former_replica_id, ctx).await;
         }
 
         TaskState::Pending(Some(Duration::from_secs(10)))

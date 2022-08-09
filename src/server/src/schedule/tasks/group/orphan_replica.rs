@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -21,8 +21,10 @@ use std::{
 use engula_api::server::v1::*;
 use tracing::info;
 
+use super::ActionTaskWithLocks;
 use crate::schedule::{
-    actions::{Action, ClearReplicaState, RemoveReplica},
+    actions::{ClearReplicaState, RemoveReplica},
+    event_source::EventSource,
     provider::GroupProviders,
     scheduler::ScheduleContext,
     task::{Task, TaskState},
@@ -42,33 +44,58 @@ impl RemoveOrphanReplica {
         }
     }
 
-    async fn setup_removing_task(
+    async fn dismiss_orphan_replica(
         &mut self,
         ctx: &mut ScheduleContext<'_>,
-        replica_id: u64,
-        node_id: u64,
-        desc: GroupDesc,
+        replica: ReplicaDesc,
+        group: GroupDesc,
     ) {
-        let replica = ReplicaDesc {
-            id: replica_id,
-            node_id,
-            ..Default::default()
-        };
+        let target_id = replica.id;
+        let task_id = ctx.next_task_id();
+        if let Some(locks) = ctx.group_lock_table.lock(task_id, &[target_id]) {
+            let action_task = ActionTask::new(
+                task_id,
+                vec![
+                    Box::new(RemoveReplica { group, replica }),
+                    Box::new(ClearReplicaState { target_id }),
+                ],
+            );
+            ctx.delegate(Box::new(ActionTaskWithLocks::new(locks, action_task)));
+            self.orphan_replicas.remove(&target_id);
+        }
+    }
 
-        let remove_replica: Box<dyn Action> = Box::new(RemoveReplica {
-            group: desc,
-            replica,
-        });
-        let clear_replica_state: Box<dyn Action> = Box::new(ClearReplicaState {
-            target_id: replica_id,
-        });
+    fn apply_states(&mut self, replica_states: &[ReplicaState], desc: &GroupDesc) {
+        let replica_set = desc.replicas.iter().map(|r| r.id).collect::<HashSet<_>>();
+        self.orphan_replicas.retain(|k, _| !replica_set.contains(k));
+        for r in replica_states {
+            if !replica_set.contains(&r.replica_id) {
+                self.orphan_replicas
+                    .entry(r.replica_id)
+                    .or_insert_with(Instant::now);
+            }
+        }
+    }
 
-        let task = Box::new(ActionTask::new(
-            ctx.next_task_id(),
-            vec![remove_replica, clear_replica_state],
-        ));
-        ctx.delegate(task);
-        self.orphan_replicas.remove(&replica_id);
+    fn get_dismiss_replicas(&self, ctx: &mut ScheduleContext<'_>) -> HashSet<u64> {
+        if ctx
+            .cfg
+            .testing_knobs
+            .disable_orphan_replica_detecting_intervals
+        {
+            self.orphan_replicas
+                .keys()
+                .cloned()
+                .collect::<HashSet<u64>>()
+        } else {
+            let now = Instant::now();
+            let interval = Duration::from_secs(60);
+            self.orphan_replicas
+                .iter()
+                .filter(|(_, &instant)| instant + interval < now)
+                .map(|(&id, _)| id)
+                .collect::<HashSet<_>>()
+        }
     }
 }
 
@@ -79,39 +106,43 @@ impl Task for RemoveOrphanReplica {
     }
 
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
-        let now = Instant::now();
         let replica_states = self.providers.replica_states.replica_states();
         let desc = self.providers.descriptor.descriptor();
+        if desc.replicas.is_empty() {
+            self.providers.descriptor.watch(self.id());
+            return TaskState::Pending(None);
+        }
+
+        self.apply_states(&replica_states, &desc);
+        let dismiss_replicas = self.get_dismiss_replicas(ctx);
         for s in &replica_states {
-            let instant = match self.orphan_replicas.get(&s.replica_id) {
-                Some(instant) => instant,
-                None => continue,
-            };
-            if *instant + Duration::from_secs(60) > now
-                && !ctx
-                    .cfg
-                    .testing_knobs
-                    .disable_orphan_replica_detecting_intervals
+            if !dismiss_replicas.contains(&s.replica_id)
+                || ctx.group_lock_table.is_replica_locked(s.replica_id)
             {
                 continue;
             }
 
             let replica_id = s.replica_id;
             let group_id = s.group_id;
-            for r in &desc.replicas {
-                if r.id == replica_id {
-                    panic!(
-                        "replica {replica_id} belongs to group {group_id}, it must not a orphan replica",
-                    );
-                }
-            }
+            info!("group {group_id} find a orphan replica {replica_id}, try remove it",);
 
-            info!("group {group_id} find a orphan replica {replica_id}, try remove it");
-
-            self.setup_removing_task(ctx, replica_id, s.node_id, desc.clone())
+            let replica = ReplicaDesc {
+                id: replica_id,
+                node_id: s.node_id,
+                ..Default::default()
+            };
+            self.dismiss_orphan_replica(ctx, replica, desc.clone())
                 .await;
         }
 
-        TaskState::Pending(Some(Duration::from_secs(60)))
+        if ctx
+            .cfg
+            .testing_knobs
+            .disable_orphan_replica_detecting_intervals
+        {
+            TaskState::Pending(Some(Duration::from_millis(1)))
+        } else {
+            TaskState::Pending(Some(Duration::from_secs(60)))
+        }
     }
 }
