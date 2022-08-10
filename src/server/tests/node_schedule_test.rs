@@ -293,6 +293,3 @@ fn cure_group() {
             .await;
     });
 }
-
-#[test]
-fn promote_group() {}
