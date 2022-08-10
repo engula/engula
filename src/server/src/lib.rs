@@ -25,6 +25,7 @@ pub mod node;
 pub mod raftgroup;
 mod root;
 pub mod runtime;
+mod schedule;
 pub mod serverpb;
 mod service;
 

@@ -164,6 +164,7 @@ impl TestContext {
         keys.sort_unstable();
         for id in keys {
             let addr = nodes.get(&id).unwrap().clone();
+            info!("start server {id}");
             if id == 0 {
                 self.spawn_server(id as usize, &addr, true, vec![]);
                 node_client_with_retry(&addr).await;
@@ -172,7 +173,7 @@ impl TestContext {
                 self.spawn_server(id as usize, &addr, false, vec![root_addr.clone()]);
                 node_client_with_retry(&addr).await;
             }
-            info!("spawn server {id} success");
+            info!("start server {id} success");
         }
         nodes
     }

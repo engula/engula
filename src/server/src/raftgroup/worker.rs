@@ -81,6 +81,7 @@ pub struct PeerState {
     pub might_lost: bool,
 }
 
+#[derive(Default)]
 pub struct RaftGroupState {
     /// The hardstate of the raft, representing voted state.
     pub hs: HardState,

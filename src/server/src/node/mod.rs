@@ -290,7 +290,7 @@ impl Node {
         local_state: ReplicaLocalState,
         channel: StateChannel,
     ) -> Result<ReplicaContext> {
-        use self::replica::schedule;
+        use crate::schedule::setup_scheduler;
 
         let group_engine = open_group_engine(self.provider.raw_db.clone(), group_id).await?;
         let wait_group = WaitGroup::new();
@@ -322,7 +322,8 @@ impl Node {
         // Setup jobs
         self.migrate_ctrl
             .watch_state_changes(replica.clone(), receiver, wait_group.clone());
-        schedule::setup(
+
+        setup_scheduler(
             self.cfg.replica.clone(),
             self.provider.clone(),
             replica.clone(),

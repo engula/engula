@@ -16,7 +16,6 @@ mod eval;
 pub mod fsm;
 mod migrate;
 pub mod retry;
-pub mod schedule;
 mod state;
 
 use std::{
@@ -153,7 +152,7 @@ impl Replica {
 
 impl Replica {
     /// Execute group request and fill response.
-    pub(self) async fn execute(
+    pub(crate) async fn execute(
         &self,
         mut exec_ctx: ExecCtx,
         request: &Request,
