@@ -150,6 +150,19 @@ impl ClusterClient {
         panic!("group {group_id} is contains replica {replica_id}");
     }
 
+    pub async fn assert_group_not_contains_node(&self, group_id: u64, node_id: u64) {
+        for _ in 0..10000 {
+            if let Ok(state) = self.router.find_group(group_id) {
+                if !state.replicas.iter().any(|(_, r)| r.node_id == node_id) {
+                    return;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} is contains node {node_id}");
+    }
+
     pub async fn get_group_leader(&self, group_id: u64) -> Option<u64> {
         self.router
             .find_group(group_id)
@@ -205,6 +218,19 @@ impl ClusterClient {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("no such group {group_id} exists");
+    }
+
+    pub async fn assert_large_group_epoch(&self, group_id: u64, former_epoch: u64) -> u64 {
+        for _ in 0..1000 {
+            if let Some(epoch) = self.get_group_epoch(group_id) {
+                if epoch > former_epoch {
+                    return epoch;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group epoch still less than or equals to {former_epoch}");
     }
 
     pub fn group_contains_shard(&self, group_id: u64, shard_id: u64) -> bool {

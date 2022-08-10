@@ -149,18 +149,19 @@ impl LeaseStateObserver {
         };
         let mut lease_state = self.lease_state.lock().unwrap();
         let prev_role = lease_state.replica_state.role;
+        let epoch = lease_state.descriptor.epoch;
         lease_state.leader_id = leader_id;
         lease_state.replica_state = replica_state.clone();
         let desc = if role == RaftRole::Leader {
             info!(
-                "replica {} node {} become leader of group {} at term {term}",
+                "replica {} node {} become leader of group {} at term {term} epoch {epoch}",
                 self.info.replica_id, self.info.node_id, self.info.group_id
             );
             Some(lease_state.descriptor.clone())
         } else {
             if prev_role == RaftRole::Leader as i32 {
                 info!(
-                    "replica {} node {} resign as leader of group {} at term {term}",
+                    "replica {} node {} resign as leader of group {} at term {term} epoch {epoch}",
                     self.info.replica_id, self.info.node_id, self.info.group_id
                 );
             }

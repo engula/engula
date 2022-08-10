@@ -183,6 +183,16 @@ impl RaftStateProvider {
         let inner = self.inner.lock().unwrap();
         inner.lost_peers.keys().cloned().collect()
     }
+
+    pub fn matched_indexes(&self) -> HashMap<u64, u64> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .raft_state
+            .peers
+            .iter()
+            .map(|(&id, state)| (id, state.matched))
+            .collect()
+    }
 }
 
 impl GroupProviders {

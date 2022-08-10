@@ -92,7 +92,7 @@ async fn allocate_group_tasks(
     pending_tasks.push(Box::new(WatchRaftState::new(providers.clone())));
     pending_tasks.push(Box::new(WatchGroupDescriptor::new(providers.clone())));
     pending_tasks.push(Box::new(PromoteGroup::new(providers.clone())));
-    pending_tasks.push(Box::new(CureGroup::new(providers.clone())));
+    pending_tasks.push(Box::new(DurableGroup::new(providers.clone())));
     pending_tasks.push(Box::new(RemoveOrphanReplica::new(providers)));
 }
 

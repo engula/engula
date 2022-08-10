@@ -18,7 +18,7 @@ use std::{
     sync::Arc,
 };
 
-use engula_api::server::v1::{ChangeReplica, ChangeReplicaType, ChangeReplicas};
+use engula_api::server::v1::*;
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Command, Engine, LogBatch, MessageExt};
@@ -492,28 +492,34 @@ pub async fn write_initial_state(
     cfg: &RaftConfig,
     engine: &Engine,
     replica_id: u64,
-    mut voters: Vec<(u64, u64)>,
+    mut replicas: Vec<ReplicaDesc>,
     initial_eval_results: Vec<EvalResult>,
 ) -> Result<()> {
     let mut initial_entries = vec![];
     let mut initial_index = 0;
     if cfg.testing_knobs.force_new_peer_receiving_snapshot
-        && !(voters.is_empty() && initial_eval_results.is_empty())
+        && !(replicas.is_empty() && initial_eval_results.is_empty())
     {
         initial_index = 5;
     }
 
     let mut last_index: u64 = initial_index;
-    if !voters.is_empty() {
-        voters.sort_unstable();
+    if !replicas.is_empty() {
+        replicas.sort_unstable_by_key(|r| r.id);
 
         // The underlying `raft-rs` crate isn't allow empty configs enter joint state,
         // so have to add replicas one by one.
-        for (replica_id, node_id) in voters {
+        for replica in replicas {
+            let replica_id = replica.id;
+            let node_id = replica.node_id;
             last_index += 1;
             let change_replicas = ChangeReplicas {
                 changes: vec![ChangeReplica {
-                    change_type: ChangeReplicaType::Add.into(),
+                    change_type: if replica.role == ReplicaRole::Learner as i32 {
+                        ChangeReplicaType::AddLearner.into()
+                    } else {
+                        ChangeReplicaType::Add.into()
+                    },
                     replica_id,
                     node_id,
                 }],

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cure_group;
 mod descriptor;
+mod durable;
 mod orphan_replica;
 mod promote;
 mod raft_state;
@@ -22,7 +22,7 @@ mod replica_states;
 use std::collections::HashMap;
 
 pub use self::{
-    cure_group::CureGroup, descriptor::WatchGroupDescriptor, orphan_replica::RemoveOrphanReplica,
+    descriptor::WatchGroupDescriptor, durable::DurableGroup, orphan_replica::RemoveOrphanReplica,
     promote::PromoteGroup, raft_state::WatchRaftState, replica_states::WatchReplicaStates,
 };
 use super::ActionTask;
