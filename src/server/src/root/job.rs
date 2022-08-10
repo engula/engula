@@ -104,6 +104,9 @@ impl Root {
                             piggyback_response::Info::CollectGroupDetail(ref resp) => {
                                 self.handle_group_detail(&schema, resp).await?
                             }
+                            piggyback_response::Info::CollectScheduleState(_) => {
+                                todo!()
+                            }
                         }
                     }
                 }

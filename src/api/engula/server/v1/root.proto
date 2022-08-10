@@ -78,12 +78,17 @@ message JoinNodeResponse {
 message ReportRequest {
   message GroupUpdates {
     uint64 group_id = 1;
+
     /// The leader is responsible for reporting the `GroupDesc` when the
     /// `GroupDesc` changes.
     optional GroupDesc group_desc = 2;
 
     /// Each replica is responsible for reporting itself's volatile state.
     optional ReplicaState replica_state = 3;
+
+    /// The leader is responsible for reporting the `ScheduleState` when the
+    /// schedule state changes.
+    optional ScheduleState schedule_state = 4;
   }
 
   repeated GroupUpdates updates = 1;

@@ -124,3 +124,9 @@ message MigrationDesc {
   /// The epoch of dest group.
   uint64 dest_group_epoch = 5;
 }
+
+message ScheduleState {
+  uint64 group_id = 1;
+  repeated ReplicaDesc incoming_replicas = 2;
+  repeated ReplicaDesc outgoing_replicas = 3;
+}

@@ -248,6 +248,7 @@ impl ClusterClient {
             match resp.info.as_ref().unwrap() {
                 piggyback_response::Info::SyncRoot(_)
                 | piggyback_response::Info::CollectStats(_)
+                | piggyback_response::Info::CollectScheduleState(_)
                 | piggyback_response::Info::CollectGroupDetail(_) => {}
                 piggyback_response::Info::CollectMigrationState(resp) => {
                     return Ok(resp.clone());
@@ -281,6 +282,7 @@ impl ClusterClient {
             match resp.info.as_ref().unwrap() {
                 piggyback_response::Info::SyncRoot(_)
                 | piggyback_response::Info::CollectStats(_)
+                | piggyback_response::Info::CollectScheduleState(_)
                 | piggyback_response::Info::CollectMigrationState(_) => {}
                 piggyback_response::Info::CollectGroupDetail(resp) => {
                     for state in &resp.replica_states {
