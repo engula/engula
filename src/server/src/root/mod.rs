@@ -52,7 +52,7 @@ use self::{
     schema::ReplicaNodes, store::RootStore,
 };
 use crate::{
-    bootstrap::{SHARD_MAX, SHARD_MIN},
+    bootstrap::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{self, TaskPriority},
     serverpb::v1::{
@@ -821,6 +821,16 @@ impl Root {
                     desc = ?desc,
                     "update group_desc from node report"
                 );
+                if desc.id == ROOT_GROUP_ID {
+                    self.heartbeat_queue
+                        .try_schedule(
+                            vec![HeartbeatTask {
+                                node_id: self.current_node_id(),
+                            }],
+                            Instant::now(),
+                        )
+                        .await;
+                }
                 metrics::ROOT_UPDATE_GROUP_DESC_TOTAL.report.inc();
                 update_events.push(UpdateEvent {
                     event: Some(update_event::Event::Group(desc)),
