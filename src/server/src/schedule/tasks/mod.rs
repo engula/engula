@@ -18,7 +18,7 @@ mod group;
 pub use self::{
     action::ActionTask,
     group::{
-        CureGroup, GroupLockTable, PromoteGroup, RemoveOrphanReplica, WatchGroupDescriptor,
+        DurableGroup, GroupLockTable, PromoteGroup, RemoveOrphanReplica, WatchGroupDescriptor,
         WatchRaftState, WatchReplicaStates,
     },
 };

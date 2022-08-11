@@ -97,11 +97,6 @@ impl Replica {
         target_desc: &GroupDesc,
         raft_mgr: &RaftManager,
     ) -> Result<()> {
-        let voters = target_desc
-            .replicas
-            .iter()
-            .map(|r| (r.id, r.node_id))
-            .collect::<Vec<_>>();
         let eval_results = target_desc
             .shards
             .iter()
@@ -112,7 +107,7 @@ impl Replica {
             &raft_mgr.cfg,
             raft_mgr.engine(),
             replica_id,
-            voters,
+            target_desc.replicas.clone(),
             eval_results,
         )
         .await?;
