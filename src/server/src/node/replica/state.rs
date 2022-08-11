@@ -18,12 +18,17 @@ use std::{
     task::Waker,
 };
 
-use engula_api::server::v1::{GroupDesc, MigrationDesc, RaftRole, ReplicaDesc, ReplicaState};
+use engula_api::server::v1::{
+    GroupDesc, MigrationDesc, RaftRole, ReplicaDesc, ReplicaState, ScheduleState,
+};
 use futures::channel::mpsc;
 use tracing::info;
 
 use super::{fsm::StateMachineObserver, ReplicaInfo};
-use crate::{node::job::StateChannel, raftgroup::StateObserver, serverpb::v1::MigrationState};
+use crate::{
+    node::job::StateChannel, raftgroup::StateObserver, schedule::ScheduleStateObserver,
+    serverpb::v1::MigrationState,
+};
 
 pub struct LeaseState {
     pub leader_id: u64,
@@ -33,6 +38,7 @@ pub struct LeaseState {
     pub descriptor: GroupDesc,
     pub migration_state: Option<MigrationState>,
     pub migration_state_subscriber: mpsc::UnboundedSender<MigrationState>,
+    pub schedule_state: ScheduleState,
     pub leader_subscribers: HashMap<&'static str, Waker>,
 }
 
@@ -57,6 +63,7 @@ impl LeaseState {
             migration_state_subscriber,
             leader_id: 0,
             applied_term: 0,
+            schedule_state: ScheduleState::default(),
             replica_state: ReplicaState::default(),
             leader_subscribers: HashMap::default(),
         }
@@ -226,5 +233,15 @@ impl StateMachineObserver for LeaseStateObserver {
                     .unwrap_or_default();
             }
         }
+    }
+}
+
+impl ScheduleStateObserver for LeaseStateObserver {
+    fn on_schedule_state_updated(&self, schedule_state: ScheduleState) {
+        let cloned_schedule_state = schedule_state.clone();
+        let mut lease_state = self.lease_state.lock().unwrap();
+        lease_state.schedule_state = schedule_state;
+        self.state_channel
+            .broadcast_schedule_state(self.info.group_id, cloned_schedule_state);
     }
 }

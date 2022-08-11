@@ -27,6 +27,7 @@ use super::{
     event_source::EventSource,
     task::{Task, TaskState},
     tasks::{GroupLockTable, GENERATED_TASK_ID},
+    ScheduleStateObserver,
 };
 use crate::{
     node::{replica::ReplicaConfig, Replica},
@@ -85,6 +86,7 @@ where
     cfg: ReplicaConfig,
     replica: Arc<Replica>,
     provider: Arc<Provider>,
+    schedule_state_observer: Arc<dyn ScheduleStateObserver>,
 
     event_waiter: EventWaiter,
     event_sources: Vec<Arc<dyn EventSource>>,
@@ -108,6 +110,7 @@ impl Scheduler {
         replica: Arc<Replica>,
         provider: Arc<Provider>,
         event_sources: Vec<Arc<dyn EventSource>>,
+        schedule_state_observer: Arc<dyn ScheduleStateObserver>,
     ) -> Self {
         let info = replica.replica_info();
         let group_id = info.group_id;
@@ -121,6 +124,7 @@ impl Scheduler {
             replica_id,
             replica,
             provider,
+            schedule_state_observer,
             cfg,
 
             event_sources,
@@ -129,7 +133,7 @@ impl Scheduler {
             next_task_id: GENERATED_TASK_ID,
             jobs: HashMap::default(),
             timer: TaskTimer::new(),
-            group_lock_table: GroupLockTable::new(),
+            group_lock_table: GroupLockTable::new(group_id),
         }
     }
 
@@ -186,9 +190,14 @@ impl Scheduler {
                     }
                     TaskState::Terminated => {
                         self.jobs.remove(&task_id);
-                        return;
+                        break;
                     }
                 }
+            }
+
+            if let Some(schedule_state) = self.group_lock_table.take_updated_states() {
+                self.schedule_state_observer
+                    .on_schedule_state_updated(schedule_state);
             }
         }
     }

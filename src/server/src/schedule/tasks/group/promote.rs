@@ -59,7 +59,7 @@ impl PromoteGroup {
         let new_task_id = ctx.next_task_id();
         let locks = ctx
             .group_lock_table
-            .config_change(new_task_id, &[former_replica_id])
+            .config_change(new_task_id, &[former_replica_id], &replicas, &[])
             .expect("Check conflicts in before steps");
         let create_replicas = Box::new(CreateReplicas {
             replicas: replicas.clone(),

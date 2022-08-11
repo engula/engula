@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use engula_api::server::v1::{
-    report_request::GroupUpdates, GroupDesc, ReplicaState, ReportRequest,
+    report_request::GroupUpdates, GroupDesc, ReplicaState, ReportRequest, ScheduleState,
 };
 use engula_client::RootClient;
 use futures::{channel::mpsc, StreamExt};
@@ -104,9 +104,8 @@ impl StateChannel {
     pub fn broadcast_replica_state(&mut self, group_id: u64, replica_state: ReplicaState) {
         let update = GroupUpdates {
             group_id,
-            group_desc: None,
             replica_state: Some(replica_state),
-            schedule_state: None,
+            ..Default::default()
         };
         self.sender.start_send(update).unwrap_or_default();
     }
@@ -116,9 +115,18 @@ impl StateChannel {
         let update = GroupUpdates {
             group_id,
             group_desc: Some(group_desc),
-            replica_state: None,
-            schedule_state: None,
+            ..Default::default()
         };
         self.sender.start_send(update).unwrap_or_default();
+    }
+
+    #[inline]
+    pub fn broadcast_schedule_state(&self, group_id: u64, schedule_state: ScheduleState) {
+        let update = GroupUpdates {
+            group_id,
+            schedule_state: Some(schedule_state),
+            ..Default::default()
+        };
+        self.sender.clone().start_send(update).unwrap_or_default();
     }
 }

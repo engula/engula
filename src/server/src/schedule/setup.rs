@@ -14,8 +14,10 @@
 
 use std::sync::Arc;
 
+use engula_api::server::v1::ScheduleState;
 use tracing::debug;
 
+use super::ScheduleStateObserver;
 use crate::{
     node::{replica::ReplicaConfig, Replica},
     runtime::{sync::WaitGroup, TaskPriority},
@@ -33,6 +35,7 @@ pub(crate) fn setup_scheduler(
     provider: Arc<Provider>,
     replica: Arc<Replica>,
     move_replicas_provider: Arc<MoveReplicasProvider>,
+    schedule_state_observer: Arc<dyn ScheduleStateObserver>,
     wait_group: WaitGroup,
 ) {
     let group_providers = Arc::new(GroupProviders::new(
@@ -45,7 +48,14 @@ pub(crate) fn setup_scheduler(
     let tag = &group_id.to_le_bytes();
     let executor = provider.executor.clone();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
-        scheduler_main(cfg, replica, provider, group_providers).await;
+        scheduler_main(
+            cfg,
+            replica,
+            provider,
+            group_providers,
+            schedule_state_observer,
+        )
+        .await;
         drop(wait_group);
     });
 }
@@ -55,6 +65,7 @@ async fn scheduler_main(
     replica: Arc<Replica>,
     provider: Arc<Provider>,
     group_providers: Arc<GroupProviders>,
+    schedule_state_observer: Arc<dyn ScheduleStateObserver>,
 ) {
     let info = replica.replica_info();
     let group_id = info.group_id;
@@ -68,9 +79,18 @@ async fn scheduler_main(
             group_providers.raft_state.clone(),
             group_providers.move_replicas.clone(),
         ];
-        let mut scheduler =
-            Scheduler::new(cfg.clone(), replica.clone(), provider.clone(), providers);
+        let mut scheduler = Scheduler::new(
+            cfg.clone(),
+            replica.clone(),
+            provider.clone(),
+            providers,
+            schedule_state_observer.clone(),
+        );
         allocate_group_tasks(&mut scheduler, group_providers.clone()).await;
+
+        // After the schedule is initialized, the root needs to be notified to clear the expired
+        // state in memory.
+        schedule_state_observer.on_schedule_state_updated(ScheduleState::default());
         while let Ok(Some(term)) = replica.on_leader("scheduler", true).await {
             if term != current_term {
                 break;

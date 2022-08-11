@@ -22,6 +22,8 @@ mod watch_replica_states;
 
 use std::collections::HashMap;
 
+use engula_api::server::v1::{ReplicaDesc, ScheduleState};
+
 pub use self::{
     durable::DurableGroup, migration::ReplicaMigration, orphan_replica::RemoveOrphanReplica,
     promote::PromoteGroup, watch_descriptor::WatchGroupDescriptor,
@@ -33,10 +35,13 @@ use crate::schedule::{
     task::{Task, TaskState},
 };
 
-#[derive(Default)]
 pub struct GroupLockTable {
+    group_id: u64,
     config_change: Option</* task_id */ u64>,
     locked_replicas: HashMap</* replica_id */ u64, /* task_id */ u64>,
+
+    states_updated: bool,
+    states: HashMap<u64, ScheduleState>,
 }
 
 #[derive(Default)]
@@ -50,8 +55,14 @@ pub struct ActionTaskWithLocks {
 }
 
 impl GroupLockTable {
-    pub fn new() -> Self {
-        GroupLockTable::default()
+    pub fn new(group_id: u64) -> Self {
+        GroupLockTable {
+            group_id,
+            config_change: None,
+            locked_replicas: HashMap::new(),
+            states_updated: false,
+            states: HashMap::new(),
+        }
     }
 
     #[inline]
@@ -59,7 +70,13 @@ impl GroupLockTable {
         self.locked_replicas.contains_key(&replica_id)
     }
 
-    pub fn lock(&mut self, task_id: u64, replicas: &[u64]) -> Option<GroupLocks> {
+    pub fn lock(
+        &mut self,
+        task_id: u64,
+        replicas: &[u64],
+        incoming_replicas: &[ReplicaDesc],
+        outgoing_replicas: &[ReplicaDesc],
+    ) -> Option<GroupLocks> {
         if replicas
             .iter()
             .any(|r| self.locked_replicas.contains_key(r))
@@ -69,16 +86,31 @@ impl GroupLockTable {
             for r in replicas {
                 self.locked_replicas.insert(*r, task_id);
             }
+            let state = ScheduleState {
+                group_id: 0,
+                incoming_replicas: incoming_replicas.to_owned(),
+                outgoing_replicas: outgoing_replicas.to_owned(),
+            };
+            self.states_updated = true;
+            self.states.insert(task_id, state);
             Some(GroupLocks {
                 replicas: replicas.to_owned(),
             })
         }
     }
 
-    pub fn config_change(&mut self, task_id: u64, replicas: &[u64]) -> Option<GroupLocks> {
+    pub fn config_change(
+        &mut self,
+        task_id: u64,
+        replicas: &[u64],
+        incoming_replicas: &[ReplicaDesc],
+        outgoing_replicas: &[ReplicaDesc],
+    ) -> Option<GroupLocks> {
         if self.config_change.is_some() {
             None
-        } else if let Some(locks) = self.lock(task_id, replicas) {
+        } else if let Some(locks) =
+            self.lock(task_id, replicas, incoming_replicas, outgoing_replicas)
+        {
             self.config_change = Some(task_id);
             Some(locks)
         } else {
@@ -95,9 +127,34 @@ impl GroupLockTable {
         for r in locked.replicas {
             self.locked_replicas.remove(&r);
         }
+        if self.states.remove(&task_id).is_some() {
+            self.states_updated = true;
+        }
         if matches!(self.config_change, Some(v) if v == task_id) {
             self.config_change = None;
         }
+    }
+
+    pub fn take_updated_states(&mut self) -> Option<ScheduleState> {
+        if !self.states_updated {
+            return None;
+        }
+
+        self.states_updated = false;
+        let mut accumulated_state = ScheduleState {
+            group_id: self.group_id,
+            incoming_replicas: vec![],
+            outgoing_replicas: vec![],
+        };
+        for state in self.states.values() {
+            accumulated_state
+                .incoming_replicas
+                .extend(state.incoming_replicas.iter().cloned());
+            accumulated_state
+                .outgoing_replicas
+                .extend(state.outgoing_replicas.iter().cloned());
+        }
+        Some(accumulated_state)
     }
 }
 
