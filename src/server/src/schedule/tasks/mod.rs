@@ -18,16 +18,17 @@ mod group;
 pub use self::{
     action::ActionTask,
     group::{
-        DurableGroup, GroupLockTable, PromoteGroup, RemoveOrphanReplica, WatchGroupDescriptor,
-        WatchRaftState, WatchReplicaStates,
+        DurableGroup, GroupLockTable, PromoteGroup, RemoveOrphanReplica, ReplicaMigration,
+        WatchGroupDescriptor, WatchRaftState, WatchReplicaStates,
     },
 };
 
 pub const PROMOTE_GROUP_TASK_ID: u64 = 1;
 pub const CURE_GROUP_TASK_ID: u64 = 2;
 pub const REMOVE_ORPHAN_REPLICA_TASK_ID: u64 = 3;
-pub const WATCH_REPLICA_STATES_TASK_ID: u64 = 4;
-pub const WATCH_RAFT_STATE_TASK_ID: u64 = 5;
-pub const WATCH_GROUP_DESCRIPTOR_TASK_ID: u64 = 6;
+pub const REPLICA_MIGRATION_TASK_ID: u64 = 4;
+pub const WATCH_REPLICA_STATES_TASK_ID: u64 = 5;
+pub const WATCH_RAFT_STATE_TASK_ID: u64 = 6;
+pub const WATCH_GROUP_DESCRIPTOR_TASK_ID: u64 = 7;
 
 pub const GENERATED_TASK_ID: u64 = 10;

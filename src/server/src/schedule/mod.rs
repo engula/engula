@@ -19,4 +19,4 @@ mod setup;
 mod task;
 mod tasks;
 
-pub(crate) use self::setup::setup_scheduler;
+pub(crate) use self::{provider::MoveReplicasProvider, setup::setup_scheduler};

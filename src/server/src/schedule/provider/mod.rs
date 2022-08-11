@@ -13,4 +13,4 @@
 // limitations under the License.
 mod group;
 
-pub use self::group::{GroupDescProvider, GroupProviders, NodeProvider};
+pub use self::group::{GroupDescProvider, GroupProviders, MoveReplicasProvider, NodeProvider};

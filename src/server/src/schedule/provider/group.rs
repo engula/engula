@@ -20,6 +20,7 @@ use std::{
 
 use engula_api::server::v1::*;
 use engula_client::Router;
+use futures::channel::oneshot;
 
 use crate::{
     node::Replica,
@@ -28,6 +29,7 @@ use crate::{
         event_source::{CommonEventSource, EventSource},
         scheduler::EventWaker,
     },
+    Error, Result,
 };
 
 macro_rules! inherit_event_source {
@@ -56,6 +58,7 @@ pub struct GroupProviders {
     pub descriptor: Arc<GroupDescProvider>,
     pub replica_states: Arc<ReplicaStatesProvider>,
     pub raft_state: Arc<RaftStateProvider>,
+    pub move_replicas: Arc<MoveReplicasProvider>,
 }
 
 pub struct GroupDescProvider {
@@ -90,6 +93,24 @@ struct RaftStateProviderInner {
     core: CommonEventSource,
     raft_state: RaftGroupState,
     lost_peers: HashMap<u64, Instant>,
+}
+
+#[derive(Default)]
+pub struct MoveReplicasProvider {
+    inner: Mutex<MoveReplicasProviderInner>,
+}
+
+#[derive(Default)]
+struct MoveReplicasProviderInner {
+    core: CommonEventSource,
+    duty: Option<MoveReplicas>,
+}
+
+pub struct MoveReplicas {
+    pub epoch: u64,
+    pub incoming_replicas: Vec<ReplicaDesc>,
+    pub outgoing_replicas: Vec<ReplicaDesc>,
+    pub sender: oneshot::Sender<Result<()>>,
 }
 
 impl GroupDescProvider {
@@ -195,14 +216,55 @@ impl RaftStateProvider {
     }
 }
 
+impl MoveReplicasProvider {
+    pub fn new() -> Self {
+        MoveReplicasProvider::default()
+    }
+
+    pub fn assign(
+        &self,
+        epoch: u64,
+        incoming_replicas: Vec<ReplicaDesc>,
+        outgoing_replicas: Vec<ReplicaDesc>,
+    ) -> oneshot::Receiver<Result<()>> {
+        let (sender, receiver) = oneshot::channel();
+        let mut inner = self.inner.lock().unwrap();
+        if inner.duty.is_some() {
+            sender
+                .send(Err(Error::AlreadyExists("MoveReplicas task".to_owned())))
+                .unwrap_or_default();
+        } else {
+            inner.duty = Some(MoveReplicas {
+                epoch,
+                incoming_replicas,
+                outgoing_replicas,
+                sender,
+            });
+            inner.core.fire();
+        }
+
+        receiver
+    }
+
+    pub fn take(&self) -> Option<MoveReplicas> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.duty.take()
+    }
+}
+
 impl GroupProviders {
-    pub fn new(replica: Arc<Replica>, router: Router) -> Self {
+    pub fn new(
+        replica: Arc<Replica>,
+        router: Router,
+        move_replicas: Arc<MoveReplicasProvider>,
+    ) -> Self {
         let desc = replica.descriptor();
         GroupProviders {
             node: Arc::new(NodeProvider::new(router)),
             descriptor: Arc::new(GroupDescProvider::new(desc)),
             replica_states: Arc::new(ReplicaStatesProvider::new()),
             raft_state: Arc::new(RaftStateProvider::new()),
+            move_replicas,
         }
     }
 }
@@ -210,3 +272,4 @@ impl GroupProviders {
 inherit_event_source!(GroupDescProvider);
 inherit_event_source!(ReplicaStatesProvider);
 inherit_event_source!(RaftStateProvider);
+inherit_event_source!(MoveReplicasProvider);

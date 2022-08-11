@@ -12,18 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod descriptor;
 mod durable;
+mod migration;
 mod orphan_replica;
 mod promote;
-mod raft_state;
-mod replica_states;
+mod watch_descriptor;
+mod watch_raft_state;
+mod watch_replica_states;
 
 use std::collections::HashMap;
 
 pub use self::{
-    descriptor::WatchGroupDescriptor, durable::DurableGroup, orphan_replica::RemoveOrphanReplica,
-    promote::PromoteGroup, raft_state::WatchRaftState, replica_states::WatchReplicaStates,
+    durable::DurableGroup, migration::ReplicaMigration, orphan_replica::RemoveOrphanReplica,
+    promote::PromoteGroup, watch_descriptor::WatchGroupDescriptor,
+    watch_raft_state::WatchRaftState, watch_replica_states::WatchReplicaStates,
 };
 use super::ActionTask;
 use crate::schedule::{

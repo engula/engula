@@ -145,13 +145,6 @@ impl node_server::Node for Server {
         }))
     }
 
-    async fn move_replicas(
-        &self,
-        _request: Request<MoveReplicasRequest>,
-    ) -> Result<Response<MoveReplicasResponse>, Status> {
-        todo!()
-    }
-
     async fn migrate(
         &self,
         request: Request<MigrateRequest>,

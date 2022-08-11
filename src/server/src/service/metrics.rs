@@ -27,6 +27,7 @@ make_static_metric! {
             batch_write,
             accept_shard,
             create_shard,
+            move_replicas,
             change_replicas,
         }
     }
@@ -40,6 +41,7 @@ make_static_metric! {
             batch_write,
             accept_shard,
             create_shard,
+            move_replicas,
             change_replicas,
         }
     }
@@ -105,6 +107,10 @@ pub fn take_group_request_metrics(request: &GroupRequest) -> Option<&'static His
         Some(Request::Transfer(_)) => {
             NODE_SERVICE_GROUP_REQUEST_TOTAL.transfer.inc();
             Some(&NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS.transfer)
+        }
+        Some(Request::MoveReplicas(_)) => {
+            NODE_SERVICE_GROUP_REQUEST_TOTAL.move_replicas.inc();
+            Some(&NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS.move_replicas)
         }
         None => None,
     }

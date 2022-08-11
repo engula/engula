@@ -34,9 +34,6 @@ service Node {
   rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 
-  /// MoveReplicas delegates the replicas migration task to group leader.
-  rpc MoveReplicas(MoveReplicasRequest) returns (MoveReplicasResponse) {}
-
   rpc Migrate(MigrateRequest) returns (MigrateResponse) {}
   rpc Pull(PullRequest) returns (stream ShardChunk) {}
   rpc Forward(ForwardRequest) returns (ForwardResponse) {}
@@ -82,6 +79,12 @@ message GroupRequestUnion {
     /// Transfer leadership to another replicas. This request is executed as a notice, so
     /// the response doesn't reflect the actual execution result of transferring.
     TransferRequest transfer = 9;
+
+    /// MoveReplicas delegates the replicas migration task to group leader.
+    ///
+    /// Response once the group leader accepts the moving replicas request. When there exists
+    /// some conflicts, such as group is in joint, `Error::AlreadyExists` is returned.
+    MoveReplicasRequest move_replicas = 10;
   }
 }
 
@@ -96,6 +99,7 @@ message GroupResponseUnion {
     ChangeReplicasResponse change_replicas = 7;
     AcceptShardResponse accept_shard = 8;
     TransferResponse transfer = 9;
+    MoveReplicasResponse move_replicas = 10;
   }
 }
 
@@ -292,10 +296,8 @@ message CollectMigrationStateResponse {
 }
 
 message MoveReplicasRequest {
-  uint64 group_id = 1;
-  uint64 epoch = 2;
-  repeated ReplicaDesc incoming_voters = 3;
-  repeated ReplicaDesc outgoing_voters = 4;
+  repeated ReplicaDesc incoming_voters = 1;
+  repeated ReplicaDesc outgoing_voters = 2;
 }
 
 message MoveReplicasResponse {

@@ -35,6 +35,7 @@ use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
     raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy},
+    schedule::MoveReplicasProvider,
     serverpb::v1::*,
     Error, Result,
 };
@@ -70,6 +71,9 @@ enum MetaAclGuard<'a> {
 /// ExecCtx contains the required infos during request execution.
 #[derive(Default, Clone)]
 pub struct ExecCtx {
+    pub group_id: u64,
+    pub replica_id: u64,
+
     /// This is a forward request and here is the migrating shard.
     pub forward_shard_id: Option<u64>,
     /// The epoch of `GroupDesc` carried in this request.
@@ -87,6 +91,7 @@ where
     group_engine: GroupEngine,
     raft_node: RaftNodeFacade,
     lease_state: Arc<Mutex<LeaseState>>,
+    move_replicas_provider: Arc<MoveReplicasProvider>,
     meta_acl: Arc<tokio::sync::RwLock<()>>,
 }
 
@@ -120,12 +125,14 @@ impl Replica {
         lease_state: Arc<Mutex<LeaseState>>,
         raft_node: RaftNodeFacade,
         group_engine: GroupEngine,
+        move_replicas_provider: Arc<MoveReplicasProvider>,
     ) -> Self {
         Replica {
             info,
             group_engine,
             raft_node,
             lease_state,
+            move_replicas_provider,
             meta_acl: Arc::default(),
         }
     }
@@ -232,7 +239,10 @@ impl Replica {
 impl Replica {
     #[inline]
     async fn take_acl_guard<'a>(&'a self, request: &'a Request) -> MetaAclGuard<'a> {
-        if is_change_meta_request(request) {
+        // `Request::MoveReplicas` is very special, it doesn't modify the metadata directly,
+        // instead, it does some config changes asynchronously, so there's no need for a write lock
+        // here.
+        if is_change_meta_request(request) && !matches!(request, Request::MoveReplicas(_)) {
             self.take_write_acl_guard().await
         } else {
             self.take_read_acl_guard().await
@@ -290,6 +300,15 @@ impl Replica {
                 let resp = ChangeReplicasResponse {};
                 (None, Response::ChangeReplicas(resp))
             }
+            Request::MoveReplicas(req) => {
+                let schedule_state =
+                    eval::move_replicas(exec_ctx, self.move_replicas_provider.as_ref(), req)
+                        .await?;
+                let resp = MoveReplicasResponse {
+                    schedule_state: Some(schedule_state),
+                };
+                (None, Response::MoveReplicas(resp))
+            }
             Request::AcceptShard(req) => {
                 let eval_result = eval::accept_shard(self.info.group_id, exec_ctx.epoch, req).await;
                 let resp = AcceptShardResponse {};
@@ -321,6 +340,8 @@ impl Replica {
 
     fn check_request_early(&self, exec_ctx: &mut ExecCtx, req: &Request) -> Result<()> {
         let group_id = self.info.group_id;
+        exec_ctx.group_id = group_id;
+        exec_ctx.replica_id = self.info.replica_id;
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_raft_leader() {
             Err(Error::NotLeader(
@@ -443,6 +464,7 @@ pub(self) fn is_change_meta_request(request: &Request) -> bool {
         Request::ChangeReplicas(_)
         | Request::CreateShard(_)
         | Request::AcceptShard(_)
+        | Request::MoveReplicas(_)
         | Request::Transfer(_) => true,
         Request::Get(_)
         | Request::Put(_)

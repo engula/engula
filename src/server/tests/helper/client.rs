@@ -182,6 +182,30 @@ impl ClusterClient {
         None
     }
 
+    pub async fn get_group_any_follower(&self, group_id: u64) -> Option<ReplicaDesc> {
+        if let Some(leader_id) = self.get_group_leader(group_id).await {
+            if let Ok(state) = self.router.find_group(group_id) {
+                for (_, replica) in state.replicas {
+                    if replica.id != leader_id {
+                        return Some(replica);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub async fn must_group_any_follower(&self, group_id: u64) -> ReplicaDesc {
+        for _ in 0..1000 {
+            if let Some(replica) = self.get_group_any_follower(group_id).await {
+                return replica;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("group {group_id} does not have a follower");
+    }
+
     pub async fn assert_group_leader(&self, group_id: u64) -> u64 {
         for _ in 0..10000 {
             if let Some(leader) = self.get_group_leader(group_id).await {

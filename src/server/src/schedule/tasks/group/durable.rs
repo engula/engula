@@ -348,7 +348,6 @@ impl Task for DurableGroup {
             }
         }
 
-        info!("replica stats: {:?}", stats);
         self.handle_replica_stats(ctx, stats).await
     }
 }

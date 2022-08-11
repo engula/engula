@@ -27,6 +27,31 @@ fn init() {
     tracing_subscriber::fmt::init();
 }
 
+async fn create_group(c: &ClusterClient, group_id: u64, nodes: Vec<u64>) {
+    let replicas = nodes
+        .iter()
+        .cloned()
+        .map(|node_id| {
+            let replica_id = group_id * 10 + node_id;
+            ReplicaDesc {
+                id: replica_id,
+                node_id,
+                role: ReplicaRole::Voter as i32,
+            }
+        })
+        .collect::<Vec<_>>();
+    let group_desc = GroupDesc {
+        id: group_id,
+        shards: vec![],
+        replicas: replicas.clone(),
+        ..Default::default()
+    };
+    for replica in replicas {
+        c.create_replica(replica.node_id, replica.id, group_desc.clone())
+            .await;
+    }
+}
+
 #[test]
 fn add_replica() {
     block_on_current(async {
@@ -191,5 +216,40 @@ fn cure_group() {
 
         info!("wait curing group {group_id}");
         c.assert_group_not_contains_member(group_id, 103).await;
+    });
+}
+
+#[test]
+fn move_replica() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("group-test--move-replica");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(4).await;
+        let c = ClusterClient::new(nodes.clone()).await;
+        let group_id = 10;
+        let mut node_id_list = nodes.keys().cloned().collect::<Vec<_>>();
+        let node_id = node_id_list.pop().unwrap();
+        create_group(&c, group_id, node_id_list).await;
+
+        info!("issue moving replicas request");
+        c.assert_group_leader(group_id).await;
+        let follower = c.must_group_any_follower(group_id).await;
+        let follower_id = follower.id;
+        let mut group = c.group(group_id);
+        group
+            .move_replicas(
+                vec![ReplicaDesc {
+                    id: 123123,
+                    node_id,
+                    role: ReplicaRole::Voter as i32,
+                }],
+                vec![follower],
+            )
+            .await
+            .unwrap();
+
+        c.assert_group_not_contains_member(group_id, follower_id)
+            .await;
+        c.assert_group_contains_member(group_id, 123123).await;
     });
 }
