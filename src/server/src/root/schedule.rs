@@ -268,14 +268,6 @@ impl ReconcileScheduler {
                     .transfer_leader
                     .start_timer()
             }
-            Task::CreateCollectionShards(_) => {
-                metrics::RECONCILE_HANDLE_TASK_TOTAL
-                    .create_collection_shards
-                    .inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-                    .create_collection_shards
-                    .start_timer()
-            }
             Task::ShedLeader(_) => {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL
                     .shed_group_leaders
@@ -303,9 +295,6 @@ impl ReconcileScheduler {
             Task::TransferGroupLeader(_) => {
                 metrics::RECONCILE_RETRYL_TASK_TOTAL.transfer_leader.inc()
             }
-            Task::CreateCollectionShards(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL
-                .create_collection_shards
-                .inc(),
             Task::ShedLeader(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL
                 .shed_group_leaders
                 .inc(),
@@ -345,10 +334,6 @@ impl ScheduleContext {
             Task::MigrateShard(migrate_shard) => self.handle_migrate_shard(migrate_shard).await,
             Task::TransferGroupLeader(transfer_leader) => {
                 self.handle_transfer_leader(transfer_leader).await
-            }
-            Task::CreateCollectionShards(create_collection_shards) => {
-                self.handle_create_collection_shards(create_collection_shards)
-                    .await
             }
             Task::ShedLeader(shed_leader) => self.handle_shed_leader(shed_leader).await,
             Task::ShedRoot(shed_root) => self.handle_shed_root(shed_root).await,
@@ -746,78 +731,6 @@ impl ScheduleContext {
         Ok((true, true))
     }
 
-    async fn handle_create_collection_shards(
-        &self,
-        task: &mut CreateCollectionShards,
-    ) -> Result<(
-        bool, /* ack current */
-        bool, /* immediately step next tick */
-    )> {
-        loop {
-            let step = CreateCollectionShardStep::from_i32(task.step).unwrap();
-            let _timer = record_create_collection_step(&step);
-            match step {
-                CreateCollectionShardStep::CollectionCreating => {
-                    let mut wait_cleanup = Vec::new();
-                    let mut wait_create = task.wait_create.to_owned();
-                    loop {
-                        let mut desc = wait_create.pop();
-                        if desc.is_none() {
-                            break;
-                        }
-                        let group_shards = desc.take().unwrap();
-                        // TODO: maybe batch request support refresh epoch in server-side to avoid
-                        // loop?
-                        for desc in group_shards.to_owned().shards {
-                            if let Err(err) = self.try_create_shard(group_shards.group, &desc).await
-                            {
-                                error!(group=group_shards.group, shard=desc.id, err=?err, "create collection shard error and try to rollback");
-                                {
-                                    task.step =
-                                        CreateCollectionShardStep::CollectionRollbacking.into();
-                                }
-                                return Err(err);
-                            }
-                            wait_cleanup.push(desc.to_owned());
-                            {
-                                task.wait_create = wait_create.to_owned();
-                                task.wait_cleanup = wait_cleanup.to_owned();
-                            }
-                        }
-                    }
-                    {
-                        task.step = CreateCollectionShardStep::CollectionFinish.into();
-                    }
-                }
-                CreateCollectionShardStep::CollectionRollbacking => {
-                    // TODO: remove the shard in wait_cleanup.
-                    task.step = CreateCollectionShardStep::CollectionAbort.into();
-                }
-                CreateCollectionShardStep::CollectionFinish
-                | CreateCollectionShardStep::CollectionAbort => return Ok((true, false)),
-            }
-        }
-
-        fn record_create_collection_step(
-            step: &CreateCollectionShardStep,
-        ) -> Option<HistogramTimer> {
-            match step {
-                CreateCollectionShardStep::CollectionCreating => Some(
-                    metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
-                        .create
-                        .start_timer(),
-                ),
-                CreateCollectionShardStep::CollectionRollbacking => Some(
-                    metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION
-                        .rollback
-                        .start_timer(),
-                ),
-                CreateCollectionShardStep::CollectionFinish
-                | CreateCollectionShardStep::CollectionAbort => None,
-            }
-        }
-    }
-
     async fn handle_shed_leader(
         &self,
         shed: &mut ShedLeaderTask,
@@ -1104,16 +1017,6 @@ impl ScheduleContext {
             .accept_shard(src_group.id, src_group.epoch, shard_desc)
             .await?;
         // TODO: handle src_group epoch not match?
-        Ok(())
-    }
-
-    async fn try_create_shard(&self, group_id: u64, desc: &ShardDesc) -> Result<()> {
-        let mut group_client = GroupClient::new(
-            group_id,
-            self.shared.provider.router.clone(),
-            self.shared.provider.conn_manager.clone(),
-        );
-        group_client.create_shard(desc).await?;
         Ok(())
     }
 }

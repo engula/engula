@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod allocator;
+mod bg_job;
 mod collector;
 mod job;
 mod liveness;
@@ -22,12 +23,7 @@ mod schema;
 mod store;
 mod watch;
 
-use std::{
-    collections::{hash_map, HashMap, HashSet},
-    sync::{Arc, Mutex},
-    task::Poll,
-    time::Duration,
-};
+use std::{collections::*, sync::*, task::Poll, time::Duration};
 
 use engula_api::{
     server::v1::{report_request::GroupUpdates, watch_response::*, *},
@@ -48,17 +44,14 @@ pub use self::{
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{
-    allocator::SysAllocSource, diagnosis::Metadata, schedule::ReconcileScheduler,
+    allocator::SysAllocSource, bg_job::Jobs, diagnosis::Metadata, schedule::ReconcileScheduler,
     schema::ReplicaNodes, store::RootStore,
 };
 use crate::{
     bootstrap::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{self, TaskPriority},
-    serverpb::v1::{
-        reconcile_task::{self, Task},
-        *,
-    },
+    serverpb::v1::{background_job::Job, reconcile_task, *},
     Config, Error, Provider, Result,
 };
 
@@ -70,6 +63,7 @@ pub struct Root {
     liveness: Arc<liveness::Liveness>,
     scheduler: Arc<ReconcileScheduler>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    jobs: Arc<Jobs>,
 }
 
 pub struct RootShared {
@@ -108,6 +102,7 @@ impl Root {
         )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
+        let jobs = Arc::new(Jobs::new(shared.to_owned(), alloc.to_owned()));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let sched_ctx = schedule::ScheduleContext::new(
             shared.clone(),
@@ -123,6 +118,7 @@ impl Root {
             liveness,
             scheduler,
             heartbeat_queue,
+            jobs,
         }
     }
 
@@ -141,6 +137,13 @@ impl Root {
             .executor
             .spawn(None, TaskPriority::Middle, async move {
                 root.run_heartbeat().await;
+            });
+        let root = self.clone();
+        self.shared
+            .provider
+            .executor
+            .spawn(None, TaskPriority::Low, async move {
+                root.run_background_jobs().await;
             });
         let replica_table = node.replica_table().clone();
         let root = self.clone();
@@ -212,6 +215,21 @@ impl Root {
         }
     }
 
+    async fn run_background_jobs(&self) -> ! {
+        loop {
+            if self.schema().is_ok() {
+                if let Err(err) = self.jobs.advance_jobs().await {
+                    warn!(err=?err, "run background job meet err");
+                    runtime::time::sleep(Duration::from_secs(3)).await;
+                    continue;
+                }
+                self.jobs.wait_more_jobs().await;
+            } else {
+                runtime::time::sleep(Duration::from_secs(20)).await;
+            };
+        }
+    }
+
     async fn step_leader(
         &self,
         local_addr: &str,
@@ -244,6 +262,7 @@ impl Root {
         self::metrics::LEADER_STATE_INFO.set(1);
 
         self.heartbeat_queue.enable(true).await;
+        self.jobs.on_step_leader().await?;
 
         let node_id = self.shared.node_ident.node_id;
         info!(
@@ -272,6 +291,7 @@ impl Root {
 
         // After that, RootCore needs to be set to None before returning.
         self.heartbeat_queue.enable(false).await;
+        self.jobs.on_drop_leader();
         {
             self.liveness.reset();
 
@@ -384,6 +404,35 @@ impl Root {
             }
         }
         None
+    }
+
+    pub async fn job_state(&self) -> Result<String> {
+        use serde_json::json;
+        fn to_json(j: &BackgroundJob) -> serde_json::Value {
+            match j.job.as_ref().unwrap() {
+                Job::CreateCollection(c) => {
+                    let state = format!(
+                        "{:?}",
+                        CreateCollectionJobStatus::from_i32(c.status).unwrap()
+                    );
+                    let wait_create = c.wait_create.len();
+                    let wait_cleanup = c.wait_cleanup.len();
+                    json!({
+                        "name": c.collection_name,
+                        "status": state,
+                        "wait_create": wait_create,
+                        "wait_cleanup": wait_cleanup,
+                    })
+                }
+            }
+        }
+
+        let schema = self.schema()?;
+        let ongoing_jobs = schema.list_job().await?;
+        let history_jobs = schema.list_history_job().await?;
+        let ongoing = ongoing_jobs.iter().map(to_json).collect::<Vec<_>>();
+        let history = history_jobs.iter().map(to_json).collect::<Vec<_>>();
+        Ok(json!({"ongoing": ongoing, "history": history}).to_string())
     }
 
     pub async fn info(&self) -> Result<Metadata> {
@@ -563,7 +612,7 @@ impl Root {
             .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
 
         let collection = schema
-            .create_collection(CollectionDesc {
+            .prepare_create_collection(CollectionDesc {
                 name: name.to_owned(),
                 db: db.id,
                 partition: partition.map(|p| match p {
@@ -577,11 +626,9 @@ impl Root {
                 ..Default::default()
             })
             .await?;
-        trace!(database = ?database, collection = ?collection, collection_id = collection.id, "create collection");
+        trace!(database = ?database, collection = ?collection, collection_id = collection.id, "prepare create collection");
 
-        // TODO: compensating task to cleanup shard create success but batch_write failure(maybe in
-        // handle hearbeat resp).
-        self.create_collection_shard(schema.to_owned(), collection.to_owned())
+        self.do_create_collection(schema.to_owned(), collection.to_owned())
             .await?;
 
         self.watcher_hub()
@@ -593,86 +640,67 @@ impl Root {
         Ok(collection)
     }
 
-    async fn create_collection_shard(
+    async fn do_create_collection(
         &self,
         schema: Arc<Schema>,
         collection: CollectionDesc,
     ) -> Result<()> {
-        let partition =
-            collection
+        let wait_create = {
+            let partition = collection
                 .partition
-                .unwrap_or(co_desc::Partition::Hash(co_desc::HashPartition {
+                .as_ref()
+                .unwrap_or(&co_desc::Partition::Hash(co_desc::HashPartition {
                     slots: 1,
                 }));
 
-        let partitions = match partition {
-            co_desc::Partition::Hash(hash_partition) => {
-                let mut ps = Vec::with_capacity(hash_partition.slots as usize);
-                for id in 0..hash_partition.slots {
-                    ps.push(shard_desc::Partition::Hash(shard_desc::HashPartition {
-                        slot_id: id as u32,
-                        slots: hash_partition.slots.to_owned(),
-                    }));
+            let partitions = match partition {
+                co_desc::Partition::Hash(hash_partition) => {
+                    let mut ps = Vec::with_capacity(hash_partition.slots as usize);
+                    for id in 0..hash_partition.slots {
+                        ps.push(shard_desc::Partition::Hash(shard_desc::HashPartition {
+                            slot_id: id as u32,
+                            slots: hash_partition.slots.to_owned(),
+                        }));
+                    }
+                    ps
                 }
-                ps
-            }
-            co_desc::Partition::Range(_) => {
-                vec![shard_desc::Partition::Range(shard_desc::RangePartition {
-                    start: SHARD_MIN.to_owned(),
-                    end: SHARD_MAX.to_owned(),
-                })]
-            }
-        };
-
-        let request_shard_cnt = partitions.len();
-        let candidate_groups = match self.alloc.place_group_for_shard(request_shard_cnt).await {
-            Ok(candidates) => {
-                if candidates.is_empty() {
-                    error!(
-                        database = collection.db,
-                        collection = ?collection.name,
-                        "no avaliable group to alloc new shard, requested: {request_shard_cnt}",
-                    );
-                    return Err(Error::NoAvaliableGroup);
+                co_desc::Partition::Range(_) => {
+                    vec![shard_desc::Partition::Range(shard_desc::RangePartition {
+                        start: SHARD_MIN.to_owned(),
+                        end: SHARD_MAX.to_owned(),
+                    })]
                 }
-                candidates
-            }
-            Err(err) => return Err(err),
-        };
-
-        let mut group_shards: HashMap<u64, Vec<ShardDesc>> = HashMap::new();
-        for (group_idx, partition) in partitions.into_iter().enumerate() {
-            let id = schema.next_shard_id().await?;
-            let shard = ShardDesc {
-                id,
-                collection_id: collection.id.to_owned(),
-                partition: Some(partition),
             };
-            let group = candidate_groups
-                .get(group_idx % candidate_groups.len())
-                .unwrap();
-            match group_shards.entry(group.id.to_owned()) {
-                hash_map::Entry::Occupied(mut ent) => {
-                    ent.get_mut().push(shard);
-                }
-                hash_map::Entry::Vacant(ent) => {
-                    ent.insert(vec![shard]);
-                }
-            }
-        }
 
-        self.scheduler
-            .setup_task(ReconcileTask {
-                task: Some(Task::CreateCollectionShards(CreateCollectionShards {
-                    wait_create: group_shards
-                        .into_iter()
-                        .map(|(group, shards)| GroupShards { group, shards })
-                        .collect::<Vec<_>>(),
-                    wait_cleanup: vec![],
-                    step: CreateCollectionShardStep::CollectionCreating as i32,
-                })),
-            })
-            .await;
+            let mut wait_create = Vec::new();
+            for partition in partitions {
+                let id = schema.next_shard_id().await?;
+                let shard = ShardDesc {
+                    id,
+                    collection_id: collection.id.to_owned(),
+                    partition: Some(partition),
+                };
+                wait_create.push(shard);
+            }
+            wait_create
+        };
+
+        self.jobs
+            .submit(
+                BackgroundJob {
+                    job: Some(Job::CreateCollection(CreateCollectionJob {
+                        database: collection.db,
+                        collection_name: collection.name.to_owned(),
+                        wait_create,
+                        status: CreateCollectionJobStatus::CreateCollectionCreating as i32,
+                        desc: Some(collection.to_owned()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+                true,
+            )
+            .await?;
 
         Ok(())
     }

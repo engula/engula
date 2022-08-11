@@ -14,6 +14,7 @@
 
 mod cluster;
 mod health;
+mod job;
 mod metadata;
 mod metrics;
 mod service;
@@ -28,6 +29,7 @@ pub fn make_admin_service(server: Server) -> AdminService {
             "/metrics",
             self::metrics::MetricsHandle::new(server.to_owned()),
         )
+        .route("/job", self::job::JobHandle::new(server.to_owned()))
         .route(
             "/metadata",
             self::metadata::MetadataHandle::new(server.to_owned()),

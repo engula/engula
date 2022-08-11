@@ -39,6 +39,7 @@ use crate::{
         engine::{SnapshotMode, LOCAL_COLLECTION_ID},
         GroupEngine,
     },
+    serverpb::v1::BackgroundJob,
     Error, Provider, Result,
 };
 
@@ -62,6 +63,12 @@ const SYSTEM_GROUP_COLLECTION_SHARD: u64 = SYSTEM_NODE_COLLECTION_SHARD + 1;
 const SYSTEM_REPLICA_STATE_COLLECTION: &str = "replica_state";
 const SYSTEM_REPLICA_STATE_COLLECTION_ID: u64 = SYSTEM_GROUP_COLLECTION_ID + 1;
 const SYSTEM_REPLICA_STATE_COLLECTION_SHARD: u64 = SYSTEM_GROUP_COLLECTION_SHARD + 1;
+const SYSTEM_JOB_COLLECTION: &str = "job";
+const SYSTEM_JOB_COLLECTION_ID: u64 = SYSTEM_REPLICA_STATE_COLLECTION_ID + 1;
+const SYSTEM_JOB_COLLECTION_SHARD: u64 = SYSTEM_REPLICA_STATE_COLLECTION_SHARD + 1;
+const SYSTEM_JOB_HISTORY_COLLECTION: &str = "job_history";
+const SYSTEM_JOB_HISTORY_COLLECTION_ID: u64 = SYSTEM_JOB_COLLECTION_ID + 1;
+const SYSTEM_JOB_HISTORY_COLLECTION_SHARD: u64 = SYSTEM_JOB_COLLECTION_SHARD + 1;
 
 const META_CLUSTER_ID_KEY: &str = "cluster_id";
 const META_COLLECTION_ID_KEY: &str = "collection_id";
@@ -70,6 +77,7 @@ const META_GROUP_ID_KEY: &str = "group_id";
 const META_NODE_ID_KEY: &str = "node_id";
 const META_REPLICA_ID_KEY: &str = "replica_id";
 const META_SHARD_ID_KEY: &str = "shard_id";
+const META_JOB_ID_KEY: &str = "job_id";
 
 lazy_static::lazy_static! {
     pub static ref SYSTEM_COLLECTION_SHARD: BTreeMap<u64, u64> = BTreeMap::from([
@@ -79,6 +87,8 @@ lazy_static::lazy_static! {
         (SYSTEM_NODE_COLLECTION_ID, SYSTEM_NODE_COLLECTION_SHARD),
         (SYSTEM_GROUP_COLLECTION_ID, SYSTEM_GROUP_COLLECTION_SHARD),
         (SYSTEM_REPLICA_STATE_COLLECTION_ID, SYSTEM_REPLICA_STATE_COLLECTION_SHARD),
+        (SYSTEM_JOB_COLLECTION_ID, SYSTEM_JOB_COLLECTION_SHARD),
+        (SYSTEM_JOB_HISTORY_COLLECTION_ID, SYSTEM_JOB_HISTORY_COLLECTION_SHARD),
     ]);
     pub static ref ID_GEN_LOCKS: HashMap<String, Mutex<()>> = HashMap::from([
         (META_CLUSTER_ID_KEY.to_owned(), Mutex::new(())),
@@ -88,6 +98,7 @@ lazy_static::lazy_static! {
         (META_NODE_ID_KEY.to_owned(),  Mutex::new(())),
         (META_REPLICA_ID_KEY.to_owned(),  Mutex::new(())),
         (META_SHARD_ID_KEY.to_owned(),  Mutex::new(())),
+        (META_JOB_ID_KEY.to_owned(), Mutex::new(())),
     ]);
 }
 
@@ -168,16 +179,20 @@ impl Schema {
         Ok(databases)
     }
 
-    pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
+    pub async fn prepare_create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
         if self.get_collection(desc.db, &desc.name).await?.is_some() {
             return Err(Error::AlreadyExists(format!(
                 "collection {}",
                 desc.name.to_owned()
             )));
         }
-
         let mut desc = desc.to_owned();
         desc.id = self.next_id(META_COLLECTION_ID_KEY).await?;
+        Ok(desc)
+    }
+
+    pub async fn create_collection(&self, desc: CollectionDesc) -> Result<CollectionDesc> {
+        assert!(self.get_collection(desc.db, &desc.name).await?.is_none());
         self.batch_write(
             PutBatchBuilder::default()
                 .put_collection(desc.to_owned())
@@ -560,6 +575,74 @@ impl Schema {
 
         Ok((updates, deletes))
     }
+
+    pub async fn append_job(&self, desc: BackgroundJob) -> Result<BackgroundJob> {
+        let mut desc = desc.to_owned();
+        desc.id = self.next_id(META_JOB_ID_KEY).await?;
+        self.batch_write(PutBatchBuilder::default().put_job(desc.to_owned()).build())
+            .await?;
+        Ok(desc)
+    }
+
+    pub async fn remove_job(&self, job: &BackgroundJob) -> Result<()> {
+        self.batch_write(
+            PutBatchBuilder::default()
+                .put_job_history(job.to_owned())
+                .build(),
+        )
+        .await?;
+        self.delete(SYSTEM_JOB_COLLECTION_ID, &job.id.to_le_bytes())
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_job(&self, desc: BackgroundJob) -> Result<bool> {
+        if self
+            .get(SYSTEM_JOB_COLLECTION_ID, &desc.id.to_be_bytes())
+            .await?
+            .is_none()
+        {
+            // TODO: replace this with storage put_condition operation.
+            return Ok(false);
+        }
+        self.batch_write(PutBatchBuilder::default().put_job(desc).build())
+            .await?;
+        Ok(true)
+    }
+
+    pub async fn list_job(&self) -> Result<Vec<BackgroundJob>> {
+        let vals = self.list(SYSTEM_JOB_COLLECTION_ID).await?;
+        let mut jobs = Vec::with_capacity(vals.len());
+        for val in vals {
+            let job = BackgroundJob::decode(&*val)
+                .map_err(|_| Error::InvalidData("backgroud job".into()))?;
+            jobs.push(job.to_owned());
+        }
+        Ok(jobs)
+    }
+
+    pub async fn list_history_job(&self) -> Result<Vec<BackgroundJob>> {
+        let vals = self.list(SYSTEM_JOB_HISTORY_COLLECTION_ID).await?;
+        let mut jobs = Vec::with_capacity(vals.len());
+        for val in vals {
+            let job = BackgroundJob::decode(&*val)
+                .map_err(|_| Error::InvalidData("backgroud job".into()))?;
+            jobs.push(job.to_owned());
+        }
+        Ok(jobs)
+    }
+
+    pub async fn get_job_history(&self, id: &u64) -> Result<Option<BackgroundJob>> {
+        let val = self
+            .get(SYSTEM_JOB_HISTORY_COLLECTION_ID, &id.to_le_bytes())
+            .await?;
+        if val.is_none() {
+            return Ok(None);
+        }
+        let job = BackgroundJob::decode(&*val.unwrap())
+            .map_err(|_| Error::InvalidData("backgroud job".into()))?;
+        Ok(Some(job))
+    }
 }
 
 pub struct ReplicaNodes(pub Vec<NodeDesc>);
@@ -682,7 +765,7 @@ impl Schema {
                 })),
             })
         }
-        (desc, SYSTEM_REPLICA_STATE_COLLECTION_SHARD + 1)
+        (desc, SYSTEM_JOB_HISTORY_COLLECTION_SHARD + 1)
     }
 
     pub fn system_shard_id(collection_id: u64) -> u64 {
@@ -764,9 +847,29 @@ impl Schema {
                 collection_desc::RangePartition {},
             )),
         };
-        batch.put_collection(replica_state_collection.to_owned());
+        batch.put_collection(replica_state_collection);
 
-        replica_state_collection.id + 1 // TODO: reserve more collection id for furture?
+        let job_collection = CollectionDesc {
+            id: SYSTEM_JOB_COLLECTION_ID,
+            name: SYSTEM_JOB_COLLECTION.to_owned(),
+            db: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
+        };
+        batch.put_collection(job_collection);
+
+        let job_history_collection = CollectionDesc {
+            id: SYSTEM_JOB_HISTORY_COLLECTION_ID,
+            name: SYSTEM_JOB_HISTORY_COLLECTION.to_owned(),
+            db: SYSTEM_DATABASE_ID,
+            partition: Some(collection_desc::Partition::Range(
+                collection_desc::RangePartition {},
+            )),
+        };
+        batch.put_collection(job_history_collection.to_owned());
+
+        job_history_collection.id + 1 // TODO: reserve more collection id for furture?
     }
 
     fn init_meta_collection(
@@ -800,6 +903,7 @@ impl Schema {
             META_SHARD_ID_KEY.into(),
             next_shard_id.to_le_bytes().to_vec(),
         );
+        batch.put_meta(META_JOB_ID_KEY.into(), INITAL_JOB_ID.to_le_bytes().to_vec());
     }
 }
 
@@ -984,6 +1088,24 @@ impl PutBatchBuilder {
         self.put(
             SYSTEM_COLLECTION_COLLECTION_ID,
             collection_key(desc.db, &desc.name),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+
+    fn put_job(&mut self, desc: BackgroundJob) -> &mut Self {
+        self.put(
+            SYSTEM_JOB_COLLECTION_ID,
+            desc.id.to_le_bytes().to_vec(),
+            desc.encode_to_vec(),
+        );
+        self
+    }
+
+    fn put_job_history(&mut self, desc: BackgroundJob) -> &mut Self {
+        self.put(
+            SYSTEM_JOB_HISTORY_COLLECTION_ID,
+            desc.id.to_le_bytes().to_vec(),
             desc.encode_to_vec(),
         );
         self
