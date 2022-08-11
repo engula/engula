@@ -34,6 +34,9 @@ service Node {
   rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse) {}
   rpc RootHeartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
 
+  /// MoveReplicas delegates the replicas migration task to group leader.
+  rpc MoveReplicas(MoveReplicasRequest) returns (MoveReplicasResponse) {}
+
   rpc Migrate(MigrateRequest) returns (MigrateResponse) {}
   rpc Pull(PullRequest) returns (stream ShardChunk) {}
   rpc Forward(ForwardRequest) returns (ForwardResponse) {}
@@ -204,7 +207,8 @@ message PiggybackRequest {
     SyncRootRequest sync_root = 1;
     CollectStatsRequest collect_stats = 2;
     CollectGroupDetailRequest collect_group_detail = 3;
-    CollectMigrationStateRequest collect_migration_state = 4;
+    CollectScheduleStateRequest collect_schedule_state = 4;
+    CollectMigrationStateRequest collect_migration_state = 5;
   }
 }
 
@@ -213,7 +217,8 @@ message PiggybackResponse {
     SyncRootResponse sync_root = 1;
     CollectStatsResponse collect_stats = 2;
     CollectGroupDetailResponse collect_group_detail = 3;
-    CollectMigrationStateResponse collect_migration_state = 4;
+    CollectScheduleStateResponse collect_schedule_state = 4;
+    CollectMigrationStateResponse collect_migration_state = 5;
   }
 }
 
@@ -266,6 +271,12 @@ message CollectGroupDetailResponse {
   repeated GroupDesc group_descs = 2;
 }
 
+message CollectScheduleStateRequest {}
+
+message CollectScheduleStateResponse {
+  repeated ScheduleState schedule_states = 1;
+}
+
 message CollectMigrationStateRequest { uint64 group = 1; }
 
 message CollectMigrationStateResponse {
@@ -278,6 +289,17 @@ message CollectMigrationStateResponse {
 
   State state = 1;
   MigrationDesc desc = 2;
+}
+
+message MoveReplicasRequest {
+  uint64 group_id = 1;
+  uint64 epoch = 2;
+  repeated ReplicaDesc incoming_voters = 3;
+  repeated ReplicaDesc outgoing_voters = 4;
+}
+
+message MoveReplicasResponse {
+  ScheduleState schedule_state = 1;
 }
 
 message PullRequest {

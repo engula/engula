@@ -106,6 +106,7 @@ impl StateChannel {
             group_id,
             group_desc: None,
             replica_state: Some(replica_state),
+            schedule_state: None,
         };
         self.sender.start_send(update).unwrap_or_default();
     }
@@ -116,6 +117,7 @@ impl StateChannel {
             group_id,
             group_desc: Some(group_desc),
             replica_state: None,
+            schedule_state: None,
         };
         self.sender.start_send(update).unwrap_or_default();
     }

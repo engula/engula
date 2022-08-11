@@ -130,6 +130,9 @@ impl node_server::Node for Server {
                         self.node.collect_migration_state(&req).await,
                     )
                 }
+                piggyback_request::Info::CollectScheduleState(_req) => {
+                    todo!()
+                }
             };
             piggybacks_resps.push(PiggybackResponse { info: Some(info) });
         }
@@ -140,6 +143,13 @@ impl node_server::Node for Server {
             root_epoch: root.epoch,
             piggybacks: piggybacks_resps,
         }))
+    }
+
+    async fn move_replicas(
+        &self,
+        _request: Request<MoveReplicasRequest>,
+    ) -> Result<Response<MoveReplicasResponse>, Status> {
+        todo!()
     }
 
     async fn migrate(
