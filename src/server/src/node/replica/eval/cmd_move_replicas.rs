@@ -21,7 +21,7 @@ pub async fn move_replicas(
     ctx: &ExecCtx,
     provider: &MoveReplicasProvider,
     req: &MoveReplicasRequest,
-) -> Result<ScheduleState> {
+) -> Result<()> {
     let incoming_voters = req.incoming_voters.clone();
     let outgoing_voters = req.outgoing_voters.clone();
 
@@ -37,6 +37,5 @@ pub async fn move_replicas(
         .assign(ctx.epoch, incoming_voters, outgoing_voters)
         .await??;
 
-    // FIXME: load schedule state of replica
-    Ok(ScheduleState::default())
+    Ok(())
 }
