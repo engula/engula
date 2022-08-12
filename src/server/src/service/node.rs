@@ -130,8 +130,10 @@ impl node_server::Node for Server {
                         self.node.collect_migration_state(&req).await,
                     )
                 }
-                piggyback_request::Info::CollectScheduleState(_req) => {
-                    todo!()
+                piggyback_request::Info::CollectScheduleState(req) => {
+                    piggyback_response::Info::CollectScheduleState(
+                        self.node.collect_schedule_state(&req).await,
+                    )
                 }
             };
             piggybacks_resps.push(PiggybackResponse { info: Some(info) });

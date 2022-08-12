@@ -623,6 +623,27 @@ impl Node {
         resp
     }
 
+    pub async fn collect_schedule_state(
+        &self,
+        _req: &CollectScheduleStateRequest,
+    ) -> CollectScheduleStateResponse {
+        let mut resp = CollectScheduleStateResponse {
+            schedule_states: vec![],
+        };
+
+        for group_id in self.serving_group_id_list().await {
+            if let Some(replica) = self.replica_route_table.find(group_id) {
+                if !replica.replica_info().is_terminated()
+                    && replica.replica_state().role == RaftRole::Leader as i32
+                {
+                    resp.schedule_states.push(replica.schedule_state());
+                }
+            }
+        }
+
+        resp
+    }
+
     #[inline]
     async fn serving_group_id_list(&self) -> Vec<u64> {
         let node_state = self.node_state.lock().await;
