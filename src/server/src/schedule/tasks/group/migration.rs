@@ -57,9 +57,8 @@ impl Task for ReplicaMigration {
                 &move_replicas.incoming_replicas,
                 &[],
             ) {
-                let create_replicas_action = CreateReplicas {
-                    replicas: move_replicas.incoming_replicas.clone(),
-                };
+                let create_replicas_action =
+                    CreateReplicas::new(move_replicas.incoming_replicas.clone());
                 let add_learners_action = AddLearners {
                     providers: self.providers.clone(),
                     learners: move_replicas.incoming_replicas.clone(),
