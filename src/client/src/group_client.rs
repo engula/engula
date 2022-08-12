@@ -396,6 +396,28 @@ impl GroupClient {
         self.invoke(op).await
     }
 
+    pub async fn move_replicas(
+        &mut self,
+        incoming_voters: Vec<ReplicaDesc>,
+        outgoing_voters: Vec<ReplicaDesc>,
+    ) -> Result<ScheduleState> {
+        let req = Request::MoveReplicas(MoveReplicasRequest {
+            incoming_voters,
+            outgoing_voters,
+        });
+        let resp = match self.request(&req).await? {
+            Response::MoveReplicas(resp) => resp,
+            _ => {
+                return Err(Error::Internal(
+                    "invalid response type, `MoveReplicas` is required".into(),
+                ))
+            }
+        };
+        resp.schedule_state.ok_or_else(|| {
+            Error::Internal("invalid response type, `schedule_state` is required".into())
+        })
+    }
+
     pub async fn add_learner(&mut self, replica: u64, node: u64) -> Result<()> {
         let op = |group_id, epoch, node_id, client: NodeClient| {
             let req = RequestBatchBuilder::new(node_id)

@@ -42,6 +42,7 @@ use crate::{
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
     raftgroup::{RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
+    schedule::MoveReplicasProvider,
     serverpb::v1::*,
     Config, Error, Provider, Result,
 };
@@ -314,7 +315,14 @@ impl Node {
         .await?;
 
         let replica_id = info.replica_id;
-        let replica = Replica::new(info, lease_state, raft_node.clone(), group_engine);
+        let move_replicas_provider = Arc::new(MoveReplicasProvider::new());
+        let replica = Replica::new(
+            info,
+            lease_state,
+            raft_node.clone(),
+            group_engine,
+            move_replicas_provider.clone(),
+        );
         let replica = Arc::new(replica);
         self.replica_route_table.update(replica.clone());
         self.raft_route_table.update(replica_id, raft_node);
@@ -327,6 +335,7 @@ impl Node {
             self.cfg.replica.clone(),
             self.provider.clone(),
             replica.clone(),
+            move_replicas_provider,
             wait_group.clone(),
         );
 

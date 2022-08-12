@@ -88,6 +88,7 @@ where
 
     event_waiter: EventWaiter,
     event_sources: Vec<Arc<dyn EventSource>>,
+    incoming_tasks: Vec<u64>,
     next_task_id: u64,
     jobs: HashMap<u64, Job>,
     timer: TaskTimer,
@@ -124,6 +125,7 @@ impl Scheduler {
 
             event_sources,
             event_waiter,
+            incoming_tasks: vec![],
             next_task_id: GENERATED_TASK_ID,
             jobs: HashMap::default(),
             timer: TaskTimer::new(),
@@ -132,27 +134,24 @@ impl Scheduler {
     }
 
     #[inline]
-    pub async fn wait_new_events(&mut self) {
-        self.timer.timeout(self.event_waiter.clone()).await;
+    async fn wait_new_events(&mut self) {
+        if self.incoming_tasks.is_empty() {
+            let waiter = self.event_waiter.clone();
+            self.timer.timeout(waiter).await;
+        }
     }
 
-    pub async fn advance(&mut self, current_term: u64, mut pending_tasks: Vec<Box<dyn Task>>) {
-        let mut active_tasks = self.collect_active_tasks();
-        if active_tasks.is_empty() {
-            active_tasks = pending_tasks.iter().map(|t| t.id()).collect();
-            self.insert_tasks(std::mem::take(&mut pending_tasks));
-        }
-        while !active_tasks.is_empty() {
-            for task_id in active_tasks {
-                self.advance_task(current_term, task_id, &mut pending_tasks)
-                    .await;
-                crate::runtime::yield_now().await;
-            }
+    pub async fn advance(&mut self, current_term: u64) {
+        self.wait_new_events().await;
 
-            // Poll the new tasks immediately.
-            active_tasks = pending_tasks.iter().map(|t| t.id()).collect();
-            self.insert_tasks(std::mem::take(&mut pending_tasks));
+        let mut pending_tasks: Vec<Box<dyn Task>> = vec![];
+        for task_id in self.collect_active_tasks() {
+            self.advance_task(current_term, task_id, &mut pending_tasks)
+                .await;
+            crate::runtime::yield_now().await;
         }
+
+        self.install_tasks(std::mem::take(&mut pending_tasks));
     }
 
     async fn advance_task(
@@ -194,10 +193,11 @@ impl Scheduler {
         }
     }
 
-    fn insert_tasks(&mut self, tasks: Vec<Box<dyn Task>>) {
+    pub fn install_tasks(&mut self, tasks: Vec<Box<dyn Task>>) {
         let now = Instant::now();
         for task in tasks {
             let task_id = task.id();
+            self.incoming_tasks.push(task_id);
             self.jobs.insert(
                 task_id,
                 Job {
@@ -214,6 +214,7 @@ impl Scheduler {
         for source in &mut self.event_sources {
             active_tasks.extend(source.active_tasks().iter());
         }
+        active_tasks.extend(std::mem::take(&mut self.incoming_tasks).iter());
         active_tasks
     }
 }
