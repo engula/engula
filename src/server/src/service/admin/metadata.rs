@@ -43,6 +43,9 @@ impl super::service::HttpHandle for MetadataHandle {
                 if node.is_none() {
                     return Err(e);
                 }
+                if node.as_ref().unwrap().id == self.server.root.current_node_id() {
+                    return Err(e);
+                }
                 let resp = http::Response::builder()
                     .status(http::StatusCode::PERMANENT_REDIRECT)
                     .header(
