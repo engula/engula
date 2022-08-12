@@ -195,6 +195,7 @@ impl From<Error> for engula_api::server::v1::Error {
             Error::ServiceIsBusy(_) => panic!("ServiceIsBusy only used inside node"),
             Error::GroupNotReady(_) => panic!("GroupNotReady only used inside node"),
             Error::AbortScheduleTask(_) => panic!("AbortScheduleTask only used inside node"),
+            Error::AlreadyExists(msg) => v1::Error::status(Code::AlreadyExists.into(), msg),
 
             err @ (Error::Transport(_)
             | Error::ResourceExhausted(_)
@@ -204,7 +205,6 @@ impl From<Error> for engula_api::server::v1::Error {
             | Error::Io(_)
             | Error::InvalidData(_)
             | Error::DatabaseNotFound(_)
-            | Error::AlreadyExists(_)
             | Error::ShardNotFound(_)
             | Error::ClusterNotMatch
             | Error::NoAvaliableGroup

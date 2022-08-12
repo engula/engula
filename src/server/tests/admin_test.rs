@@ -165,12 +165,12 @@ fn collection_key(database_id: u64, collection_name: &str) -> Vec<u8> {
 
 async fn curr_metadata(nodes: Vec<String>) -> diagnosis::Metadata {
     let root_addr = find_root(nodes).await;
-    reqwest::get(format!("http://{root_addr}/admin/metadata"))
+    let resp = reqwest::get(format!("http://{root_addr}/admin/metadata"))
         .await
-        .unwrap()
-        .json::<diagnosis::Metadata>()
-        .await
-        .unwrap()
+        .unwrap();
+    let content = resp.bytes().await.unwrap();
+    let json_res = serde_json::from_slice(&content);
+    json_res.unwrap_or_else(|_| panic!("decode json fail: {:?}", content))
 }
 
 async fn find_root(nodes: Vec<String>) -> String {

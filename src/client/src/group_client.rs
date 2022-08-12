@@ -265,7 +265,7 @@ impl GroupClient {
             }
             e => {
                 // FIXME(walter) performance
-                warn!(err = ?e, "group client issue rpc");
+                warn!(err = ?e, send_epoch = self.epoch, "group client issue rpc");
                 Err(e)
             }
         }
