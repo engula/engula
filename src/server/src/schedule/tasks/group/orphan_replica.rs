@@ -59,8 +59,8 @@ impl RemoveOrphanReplica {
             let action_task = ActionTask::new(
                 task_id,
                 vec![
-                    Box::new(RemoveReplica { group, replica }),
-                    Box::new(ClearReplicaState { target_id }),
+                    Box::new(RemoveReplica::new(group, replica)),
+                    Box::new(ClearReplicaState::new(target_id)),
                 ],
             );
             ctx.delegate(Box::new(ActionTaskWithLocks::new(locks, action_task)));

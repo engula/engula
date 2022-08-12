@@ -22,7 +22,6 @@ pub(crate) use self::{
 };
 use super::scheduler::ScheduleContext;
 
-#[allow(unused)]
 #[derive(Debug)]
 pub enum ActionState {
     Pending(Option<Duration>),
@@ -30,8 +29,21 @@ pub enum ActionState {
     Done,
 }
 
+/// An abstraction which used to describe a independent behavior and it's terminated states.
+///
+/// The working model of `Action`s are issuing requests and polling metadata changes. For example,
+/// adding learners and promoting them to voters requires the addition learners catch up leader's
+/// committed entries, so the `setup` should add the learners into raft group and `poll` should wait
+/// until the learners catch up log entries.
 #[crate::async_trait]
 pub trait Action: Send {
-    async fn setup(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState;
-    async fn poll(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState;
+    #[allow(unused)]
+    async fn setup(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
+        ActionState::Done
+    }
+
+    #[allow(unused)]
+    async fn poll(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
+        ActionState::Done
+    }
 }

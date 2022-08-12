@@ -101,9 +101,7 @@ impl DurableGroup {
             .config_change(task_id, &peers, &incoming_voters, &[])
             .expect("Check conflicts in before steps");
         let outgoing_voters = outgoing_voters.values().cloned().collect::<Vec<_>>();
-        let create_replicas_action = Box::new(CreateReplicas {
-            replicas: incoming_voters.clone(),
-        });
+        let create_replicas_action = Box::new(CreateReplicas::new(incoming_voters.clone()));
         let add_learners_action = Box::new(AddLearners {
             providers: self.providers.clone(),
             learners: incoming_voters.clone(),

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use engula_api::server::v1::*;
 use tracing::{debug, info, warn};
 
@@ -20,11 +22,14 @@ use crate::{root::RemoteStore, schedule::scheduler::ScheduleContext, Provider};
 
 pub(crate) struct CreateReplicas {
     pub replicas: Vec<ReplicaDesc>,
+    interval_ms: u64,
+    retry_count: usize,
 }
 
 pub(crate) struct RemoveReplica {
     pub group: GroupDesc,
     pub replica: ReplicaDesc,
+    retry_count: usize,
 }
 
 pub(crate) struct ClearReplicaState {
@@ -32,6 +37,14 @@ pub(crate) struct ClearReplicaState {
 }
 
 impl CreateReplicas {
+    pub fn new(replicas: Vec<ReplicaDesc>) -> Self {
+        CreateReplicas {
+            replicas,
+            interval_ms: 50,
+            retry_count: 0,
+        }
+    }
+
     async fn create_replica(
         &self,
         group_id: u64,
@@ -55,26 +68,46 @@ impl Action for CreateReplicas {
         let group_id = ctx.group_id;
         let replica_id = ctx.replica_id;
 
-        for r in &self.replicas {
-            if let Err(e) = self
+        while let Some(r) = self.replicas.last() {
+            match self
                 .create_replica(group_id, r, ctx.provider.as_ref())
                 .await
             {
-                warn!("group {group_id} replica {replica_id} task {task_id} create replicas {r:?}: {e}");
-                return ActionState::Pending(None);
+                Ok(()) => {
+                    self.retry_count = 0;
+                    self.interval_ms = 50;
+                    self.replicas.pop();
+                }
+                Err(engula_client::Error::Rpc(status))
+                    if engula_client::error::retryable_rpc_err(&status)
+                        && self.retry_count < 30 =>
+                {
+                    debug!("group {group_id} replica {replica_id} task {task_id} create replica {r:?}: {status}");
+                    self.retry_count += 1;
+                    self.interval_ms = std::cmp::min(self.interval_ms * 2, 1000);
+                    return ActionState::Pending(Some(Duration::from_millis(self.interval_ms)));
+                }
+                Err(e) => {
+                    warn!("group {group_id} replica {replica_id} task {task_id} abort creating replica {r:?}: {e}");
+                    return ActionState::Aborted;
+                }
             }
         }
 
         info!("group {group_id} replica {replica_id} task {task_id} create replicas success");
         ActionState::Done
     }
-
-    async fn poll(&mut self, _task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
-        ActionState::Done
-    }
 }
 
 impl RemoveReplica {
+    pub fn new(group: GroupDesc, replica: ReplicaDesc) -> Self {
+        RemoveReplica {
+            group,
+            replica,
+            retry_count: 0,
+        }
+    }
+
     async fn remove_replica(
         &self,
         r: &ReplicaDesc,
@@ -99,28 +132,27 @@ impl Action for RemoveReplica {
             .await
         {
             Ok(()) => {
-                info!(
-                    "group {group_id} replica {replica_id} task {task_id} remove replica success"
-                );
-                ActionState::Done
+                info!("group {group_id} replica {replica_id} task {task_id} remove replica {replica:?} success");
+                return ActionState::Done;
             }
             Err(engula_client::Error::Rpc(status))
-                if engula_client::error::retryable_rpc_err(&status) =>
+                if engula_client::error::retryable_rpc_err(&status) && self.retry_count < 3 =>
             {
                 debug!("group {group_id} replica {replica_id} task {task_id} remove replica {replica:?}: {status}");
-                ActionState::Pending(None)
+                self.retry_count += 1;
+                ActionState::Pending(Some(Duration::from_secs(30)))
             }
             Err(e) => {
-                warn!(
-                    "group {group_id} replica {replica_id} task {task_id} remove replica {replica:?}: {e}"
-                );
-                ActionState::Pending(None)
+                warn!("group {group_id} replica {replica_id} task {task_id} abort removing replica {replica:?}: {e}");
+                ActionState::Aborted
             }
         }
     }
+}
 
-    async fn poll(&mut self, _task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
-        ActionState::Done
+impl ClearReplicaState {
+    pub fn new(target_id: u64) -> Self {
+        ClearReplicaState { target_id }
     }
 }
 
@@ -130,18 +162,14 @@ impl Action for ClearReplicaState {
         let group_id = ctx.group_id;
         let replica_id = ctx.replica_id;
         let target_id = self.target_id;
+
         let root_store = RemoteStore::new(ctx.provider.clone());
         if let Err(e) = root_store.clear_replica_state(group_id, target_id).await {
-            warn!("group {group_id} replica {replica_id} task {task_id} clear replica state of {target_id}: {e}");
-            return ActionState::Pending(None);
+            warn!("group {group_id} replica {replica_id} task {task_id} abort clearing replica {target_id} state: {e}");
+            ActionState::Aborted
+        } else {
+            info!("group {group_id} replica {replica_id} task {task_id} clear replica {target_id} state success");
+            ActionState::Done
         }
-
-        info!("group {group_id} replica {replica_id} task {task_id} clear replica state success");
-
-        ActionState::Done
-    }
-
-    async fn poll(&mut self, _task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
-        ActionState::Done
     }
 }
