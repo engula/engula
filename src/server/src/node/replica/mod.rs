@@ -234,6 +234,11 @@ impl Replica {
     pub fn migration_state(&self) -> Option<MigrationState> {
         self.lease_state.lock().unwrap().migration_state.clone()
     }
+
+    #[inline]
+    pub fn schedule_state(&self) -> ScheduleState {
+        self.lease_state.lock().unwrap().schedule_state.clone()
+    }
 }
 
 impl Replica {
@@ -301,11 +306,9 @@ impl Replica {
                 (None, Response::ChangeReplicas(resp))
             }
             Request::MoveReplicas(req) => {
-                let schedule_state =
-                    eval::move_replicas(exec_ctx, self.move_replicas_provider.as_ref(), req)
-                        .await?;
+                eval::move_replicas(exec_ctx, self.move_replicas_provider.as_ref(), req).await?;
                 let resp = MoveReplicasResponse {
-                    schedule_state: Some(schedule_state),
+                    schedule_state: Some(self.schedule_state()),
                 };
                 (None, Response::MoveReplicas(resp))
             }

@@ -308,7 +308,7 @@ impl Node {
             &self.raft_mgr,
             info.clone(),
             lease_state.clone(),
-            channel,
+            channel.clone(),
             group_engine.clone(),
             wait_group.clone(),
         )
@@ -316,6 +316,11 @@ impl Node {
 
         let replica_id = info.replica_id;
         let move_replicas_provider = Arc::new(MoveReplicasProvider::new());
+        let schedule_state_observer = Arc::new(LeaseStateObserver::new(
+            info.clone(),
+            lease_state.clone(),
+            channel,
+        ));
         let replica = Replica::new(
             info,
             lease_state,
@@ -336,6 +341,7 @@ impl Node {
             self.provider.clone(),
             replica.clone(),
             move_replicas_provider,
+            schedule_state_observer,
             wait_group.clone(),
         );
 

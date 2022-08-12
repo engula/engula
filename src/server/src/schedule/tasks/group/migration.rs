@@ -51,7 +51,12 @@ impl Task for ReplicaMigration {
             let peers = replicas.iter().map(|v| v.id).collect::<Vec<_>>();
             let task_id = ctx.next_task_id();
             // TODO: verify task pre-conditions.
-            if let Some(locks) = ctx.group_lock_table.config_change(task_id, &peers) {
+            if let Some(locks) = ctx.group_lock_table.config_change(
+                task_id,
+                &peers,
+                &move_replicas.incoming_replicas,
+                &[],
+            ) {
                 let create_replicas_action = CreateReplicas {
                     replicas: move_replicas.incoming_replicas.clone(),
                 };
