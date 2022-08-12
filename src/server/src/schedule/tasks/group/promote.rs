@@ -61,9 +61,7 @@ impl PromoteGroup {
             .group_lock_table
             .config_change(new_task_id, &[former_replica_id], &replicas, &[])
             .expect("Check conflicts in before steps");
-        let create_replicas = Box::new(CreateReplicas {
-            replicas: replicas.clone(),
-        });
+        let create_replicas = Box::new(CreateReplicas::new(replicas.clone()));
         let add_learners = Box::new(AddLearners {
             providers: self.providers.clone(),
             learners: replicas.clone(),

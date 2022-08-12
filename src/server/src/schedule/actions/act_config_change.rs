@@ -54,9 +54,10 @@ impl Action for AddLearners {
         let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
         if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!("group {group_id} replica {replica_id} task {task_id} add learners: {e}");
-            // TODO(walter) add fire condition.
-            ActionState::Pending(None)
+            warn!(
+                "group {group_id} replica {replica_id} task {task_id} abort adding learners: {e}"
+            );
+            ActionState::Aborted
         } else {
             info!("group {group_id} replica {replica_id} task {task_id} add learners success");
             self.providers.descriptor.watch(task_id);
@@ -100,8 +101,10 @@ impl Action for RemoveLearners {
         let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
         if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!("group {group_id} replica {replica_id} task {task_id} remove learners: {e}");
-            ActionState::Pending(None)
+            warn!(
+                "group {group_id} replica {replica_id} task {task_id} abort removing learners: {e}"
+            );
+            ActionState::Aborted
         } else {
             info!("group {group_id} replica {replica_id} task {task_id} remove learners success");
             self.providers.descriptor.watch(task_id);
@@ -141,8 +144,10 @@ impl Action for ReplaceVoters {
         let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
         if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!("group {group_id} replica {replica_id} task {task_id} replace voters: {e}");
-            ActionState::Pending(None)
+            warn!(
+                "group {group_id} replica {replica_id} task {task_id} abort replacing voters: {e}"
+            );
+            ActionState::Aborted
         } else {
             info!("group {group_id} replica {replica_id} task {task_id} replace voters success");
             self.providers.descriptor.watch(task_id);
