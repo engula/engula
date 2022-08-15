@@ -529,7 +529,9 @@ impl JobCore {
             let mut res_locks = self.res_locks.lock().unwrap();
             res_locks.clear();
             for job in &jobs {
-                res_locks.insert(res_key(job));
+                if let Some(key) = res_key(job) {
+                    res_locks.insert(key);
+                }
             }
         }
         Ok(())
@@ -555,11 +557,12 @@ impl JobCore {
 
     pub async fn append(&self, job: BackgroundJob) -> Result<BackgroundJob> {
         let schema = self.root_shared.schema()?;
-        let res_key = res_key(&job);
-        if !self.try_lock_res(res_key) {
-            return Err(crate::Error::AlreadyExists(
-                "job for target resource already exist".into(),
-            ));
+        if let Some(res_key) = res_key(&job) {
+            if !self.try_lock_res(res_key) {
+                return Err(crate::Error::AlreadyExists(
+                    "job for target resource already exist".into(),
+                ));
+            }
         }
         let job = schema.append_job(job).await?;
         {
@@ -584,8 +587,9 @@ impl JobCore {
                 waker.wake();
             }
         }
-        let res_key = res_key(&job);
-        self.unlock_res(&res_key);
+        if let Some(res_key) = res_key(&job) {
+            self.unlock_res(&res_key);
+        }
         Ok(())
     }
 
@@ -644,7 +648,15 @@ impl JobCore {
                     _ => unreachable!(),
                 }
             }
-            _ => unreachable!(),
+            background_job::Job::CreateOneGroup(job) => {
+                match CreateOneGroupStatus::from_i32(job.status).unwrap() {
+                    CreateOneGroupStatus::CreateOneGroupFinish => Ok(()),
+                    CreateOneGroupStatus::CreateOneGroupAbort => {
+                        Err(crate::Error::InvalidArgument(format!("create group fail",)))
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
@@ -669,13 +681,13 @@ impl JobCore {
     }
 }
 
-fn res_key(job: &BackgroundJob) -> Vec<u8> {
+fn res_key(job: &BackgroundJob) -> Option<Vec<u8>> {
     match job.job.as_ref().unwrap() {
         background_job::Job::CreateCollection(job) => {
             let mut key = job.database.to_le_bytes().to_vec();
             key.extend_from_slice(job.collection_name.as_bytes());
-            key
+            Some(key)
         }
-        background_job::Job::CreateOneGroup(_) => unreachable!(),
+        background_job::Job::CreateOneGroup(_) => None,
     }
 }
