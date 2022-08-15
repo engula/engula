@@ -277,7 +277,7 @@ impl<T: AllocSource> Allocator<T> {
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().cpu_nums)
             .fold(0_f64, |acc, x| acc + x);
-        (total_cpus / self.config.replicas_per_group as f64).ceil() as usize
+        total_cpus as usize
     }
 
     fn current_groups(&self) -> usize {

@@ -665,7 +665,12 @@ impl ReplicaNodes {
 
 // bootstrap schema.
 impl Schema {
-    pub async fn try_bootstrap_root(&mut self, addr: &str, cluster_id: Vec<u8>) -> Result<()> {
+    pub async fn try_bootstrap_root(
+        &mut self,
+        addr: &str,
+        cfg_cpu_nums: u32,
+        cluster_id: Vec<u8>,
+    ) -> Result<()> {
         let _timer = super::metrics::BOOTSTRAP_DURATION_SECONDS.start_timer();
 
         if let Some(exist_cluster_id) = self.cluster_id().await? {
@@ -695,11 +700,16 @@ impl Schema {
             name: SYSTEM_DATABASE_NAME.to_owned(),
         });
 
+        let cpu_nums = if cfg_cpu_nums == 0 {
+            num_cpus::get() as f64
+        } else {
+            cfg_cpu_nums as f64
+        };
         batch.put_node(NodeDesc {
             id: FIRST_NODE_ID,
             addr: addr.into(),
             capacity: Some(NodeCapacity {
-                cpu_nums: num_cpus::get() as f64,
+                cpu_nums,
                 replica_count: 1,
                 leader_count: 0,
             }),

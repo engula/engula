@@ -50,7 +50,7 @@ fn sim_boostrap_join_node_balance() {
             id: 1,
             addr: "".into(),
             capacity: Some(NodeCapacity {
-                cpu_nums: 4.0,
+                cpu_nums: 2.0,
                 replica_count: 1,
                 leader_count: 1,
             }),
@@ -76,7 +76,7 @@ fn sim_boostrap_join_node_balance() {
                 id: 2,
                 addr: "".into(),
                 capacity: Some(NodeCapacity {
-                    cpu_nums: 4.0,
+                    cpu_nums: 2.0,
                     replica_count: 0,
                     leader_count: 0,
                 }),
@@ -86,7 +86,7 @@ fn sim_boostrap_join_node_balance() {
                 id: 3,
                 addr: "".into(),
                 capacity: Some(NodeCapacity {
-                    cpu_nums: 4.0,
+                    cpu_nums: 2.0,
                     replica_count: 0,
                     leader_count: 0,
                 }),
@@ -230,7 +230,7 @@ fn sim_boostrap_join_node_balance() {
             id: 4,
             addr: "".into(),
             capacity: Some(NodeCapacity {
-                cpu_nums: 4.0,
+                cpu_nums: 2.0,
                 replica_count: 0,
                 leader_count: 0,
             }),
@@ -321,21 +321,25 @@ fn sim_boostrap_join_node_balance() {
                 }
             }
         }
-        let racts = a.compute_replica_action().await.unwrap();
-        assert!(!racts.is_empty());
-        for act in &racts {
-            match act {
-                ReplicaAction::Migrate(ReallocateReplica {
-                    group,
-                    source_node: _,
-                    source_replica,
-                    target_node,
-                }) => {
-                    println!(
-                        "move group {} replica {} to {}",
-                        group, source_replica, target_node.id
-                    );
-                    p.move_replica(*source_replica, target_node.id)
+        loop {
+            let racts = a.compute_replica_action().await.unwrap();
+            if racts.is_empty() {
+                break;
+            }
+            for act in &racts {
+                match act {
+                    ReplicaAction::Migrate(ReallocateReplica {
+                        group,
+                        source_node: _,
+                        source_replica,
+                        target_node,
+                    }) => {
+                        println!(
+                            "move group {} replica {} to {}",
+                            group, source_replica, target_node.id
+                        );
+                        p.move_replica(*source_replica, target_node.id)
+                    }
                 }
             }
         }

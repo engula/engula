@@ -138,7 +138,14 @@ async fn bootstrap_or_join_cluster(
     Ok(if config.init {
         bootstrap_cluster(node, &config.addr).await?
     } else {
-        try_join_cluster(node, &config.addr, config.join_list.clone(), root_client).await?
+        try_join_cluster(
+            node,
+            &config.addr,
+            config.join_list.clone(),
+            config.cpu_nums,
+            root_client,
+        )
+        .await?
     })
 }
 
@@ -146,6 +153,7 @@ async fn try_join_cluster(
     node: &Node,
     local_addr: &str,
     join_list: Vec<String>,
+    cpu_nums: u32,
     root_client: &RootClient,
 ) -> Result<NodeIdent> {
     info!("try join a bootstrapted cluster");
@@ -161,8 +169,13 @@ async fn try_join_cluster(
         ));
     }
 
+    let cpu_nums = if cpu_nums == 0 {
+        num_cpus::get() as f64
+    } else {
+        cpu_nums as f64
+    };
     let capacity = NodeCapacity {
-        cpu_nums: num_cpus::get() as f64,
+        cpu_nums,
         ..Default::default()
     };
 
