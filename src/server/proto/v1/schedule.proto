@@ -124,7 +124,10 @@ message ShedRootLeaderTask { uint64 node_id = 1; }
 
 message BackgroundJob {
   uint64 id = 1;
-  oneof job { CreateCollectionJob create_collection = 2; }
+  oneof job {
+    CreateCollectionJob create_collection = 2;
+    CreateOneGroupJob create_one_group = 3;
+  }
 }
 
 message CreateCollectionJob {
@@ -143,4 +146,22 @@ enum CreateCollectionJobStatus {
   CREATE_COLLECTION_WRITE_DESC = 2;
   CREATE_COLLECTION_FINISH = 3;
   CREATE_COLLECTION_ABORT = 4;
+}
+
+message CreateOneGroupJob {
+  uint64 request_replica_cnt = 1;
+  engula.server.v1.GroupDesc group_desc = 2;
+  repeated engula.server.v1.NodeDesc wait_create = 3;
+  repeated engula.server.v1.ReplicaDesc wait_cleanup = 4;
+  CreateOneGroupStatus status = 5;
+  uint64 create_retry = 6;
+  repeated uint64 invoked_nodes = 7;
+}
+
+enum CreateOneGroupStatus {
+  CREATE_ONE_GROUP_INIT = 0;
+  CREATE_ONE_GROUP_CREATING = 1;
+  CREATE_ONE_GROUP_ROLLBACKING = 2;
+  CREATE_ONE_GROUP_FINISH = 3;
+  CREATE_ONE_GROUP_ABORT = 4;
 }

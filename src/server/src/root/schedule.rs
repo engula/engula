@@ -36,6 +36,7 @@ pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    jobs: Arc<Jobs>,
     cfg: RootConfig,
 }
 
@@ -98,14 +99,20 @@ impl ReconcileScheduler {
                 .cluster_groups
                 .set(0);
             for _ in 0..cnt {
-                self.setup_task(ReconcileTask {
-                    task: Some(reconcile_task::Task::CreateGroup(CreateGroupTask {
-                        request_replica_cnt: self.ctx.alloc.replicas_per_group() as u64,
-                        step: CreateGroupTaskStep::GroupInit as i32,
-                        ..Default::default()
-                    })),
-                })
-                .await;
+                self.ctx
+                    .jobs
+                    .submit(
+                        BackgroundJob {
+                            job: Some(Job::CreateOneGroup(CreateOneGroupJob {
+                                request_replica_cnt: self.ctx.alloc.replicas_per_group() as u64,
+                                status: CreateOneGroupStatus::CreateOneGroupInit as i32,
+                                ..Default::default()
+                            })),
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                    .await?;
             }
             return Ok(true);
         }
@@ -306,12 +313,14 @@ impl ScheduleContext {
         shared: Arc<RootShared>,
         alloc: Arc<Allocator<SysAllocSource>>,
         heartbeat_queue: Arc<HeartbeatQueue>,
+        jobs: Arc<Jobs>,
         cfg: RootConfig,
     ) -> Self {
         Self {
             shared,
             alloc,
             heartbeat_queue,
+            jobs,
             cfg,
         }
     }
