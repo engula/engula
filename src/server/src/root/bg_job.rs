@@ -25,7 +25,7 @@ use prometheus::HistogramTimer;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
-use super::{allocator::*, HeartbeatQueue, HeartbeatTask, RootShared};
+use super::{allocator::*, HeartbeatQueue, HeartbeatTask, RootShared, Schema};
 use crate::{bootstrap::INITIAL_EPOCH, root::metrics, serverpb::v1::*, Result};
 
 pub struct Jobs {
@@ -103,7 +103,9 @@ impl Jobs {
     ) -> Result<()> {
         let mut create_collection = create_collection.to_owned();
         loop {
-            match CreateCollectionJobStatus::from_i32(create_collection.status).unwrap() {
+            let status = CreateCollectionJobStatus::from_i32(create_collection.status).unwrap();
+            let _timer = Self::record_create_collection_step(&status);
+            match status {
                 CreateCollectionJobStatus::CreateCollectionCreating => {
                     self.handle_wait_create_shard(job.id, &mut create_collection)
                         .await?;
@@ -224,6 +226,32 @@ impl Jobs {
             .await?;
         Ok(())
     }
+
+    fn record_create_collection_step(step: &CreateCollectionJobStatus) -> Option<HistogramTimer> {
+        match step {
+            CreateCollectionJobStatus::CreateCollectionCreating => Some(
+                metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS
+                    .create
+                    .start_timer(),
+            ),
+            CreateCollectionJobStatus::CreateCollectionRollbacking => Some(
+                metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS
+                    .rollback
+                    .start_timer(),
+            ),
+            CreateCollectionJobStatus::CreateCollectionWriteDesc => Some(
+                metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS
+                    .write_desc
+                    .start_timer(),
+            ),
+            CreateCollectionJobStatus::CreateCollectionFinish
+            | CreateCollectionJobStatus::CreateCollectionAbort => Some(
+                metrics::RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS
+                    .finish
+                    .start_timer(),
+            ),
+        }
+    }
 }
 
 impl Jobs {
@@ -259,12 +287,37 @@ impl Jobs {
         }
     }
 
+    async fn check_is_already_meet_requirement(
+        &self,
+        job_id: u64,
+        create_group: &mut CreateOneGroupJob,
+        schema: Arc<Schema>,
+    ) -> Result<bool> {
+        let groups = schema.list_group().await?;
+        if groups.len() < create_group.request_replica_cnt as usize {
+            return Ok(false);
+        }
+        warn!(
+            group = create_group.group_desc.as_ref().unwrap().id,
+            "cluster group count already meet requirement, so abort group creation."
+        );
+        create_group.status = CreateOneGroupStatus::CreateOneGroupRollbacking as i32;
+        self.save_create_group(job_id, create_group).await?;
+        Ok(true)
+    }
+
     async fn handle_init_create_group_replicas(
         &self,
         job_id: u64,
         create_group: &mut CreateOneGroupJob,
     ) -> Result<()> {
         let schema = self.core.root_shared.schema()?;
+        if self
+            .check_is_already_meet_requirement(job_id, create_group, schema.to_owned())
+            .await?
+        {
+            return Ok(());
+        }
         let nodes = self
             .core
             .alloc
@@ -297,6 +350,13 @@ impl Jobs {
         job_id: u64,
         create_group: &mut CreateOneGroupJob,
     ) -> Result<()> {
+        let schema = self.core.root_shared.schema()?;
+        if self
+            .check_is_already_meet_requirement(job_id, create_group, schema)
+            .await?
+        {
+            return Ok(());
+        }
         let mut wait_create = create_group.wait_create.to_owned();
         let group_desc = create_group.group_desc.as_ref().unwrap().to_owned();
         let mut undo = Vec::new();
@@ -652,7 +712,7 @@ impl JobCore {
                 match CreateOneGroupStatus::from_i32(job.status).unwrap() {
                     CreateOneGroupStatus::CreateOneGroupFinish => Ok(()),
                     CreateOneGroupStatus::CreateOneGroupAbort => {
-                        Err(crate::Error::InvalidArgument(format!("create group fail",)))
+                        Err(crate::Error::InvalidArgument("create group fail".into()))
                     }
                     _ => unreachable!(),
                 }

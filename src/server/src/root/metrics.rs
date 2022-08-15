@@ -86,7 +86,9 @@ make_static_metric! {
     pub struct ReconcileScheduleCreateCollectionStepDuration: Histogram {
         "type" => {
             create,
+            write_desc,
             rollback,
+            finish,
         }
     }
     pub struct ReconcileScheduleBalanceInfo: IntGauge {
@@ -169,7 +171,7 @@ lazy_static! {
             &["type"]
         )
         .unwrap();
-    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION: ReconcileScheduleCreateCollectionStepDuration =
+    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS: ReconcileScheduleCreateCollectionStepDuration =
         ReconcileScheduleCreateCollectionStepDuration::from(
             &RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS_VEC
         );
