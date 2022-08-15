@@ -15,7 +15,7 @@
 mod allocator;
 mod bg_job;
 mod collector;
-mod job;
+mod heartbeat;
 mod liveness;
 mod metrics;
 mod schedule;
