@@ -15,14 +15,14 @@
 use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
-use engula_client::{GroupClient, NodeClient};
+use engula_client::GroupClient;
 use prometheus::HistogramTimer;
 use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
 
 use super::{allocator::*, metrics, *};
 use crate::{
-    bootstrap::{INITIAL_EPOCH, ROOT_GROUP_ID},
+    bootstrap::ROOT_GROUP_ID,
     serverpb::v1::{reconcile_task::Task, *},
     Result,
 };
@@ -247,12 +247,6 @@ impl ReconcileScheduler {
 
     fn record_exec(task: &mut ReconcileTask) -> HistogramTimer {
         match task.task.as_ref().unwrap() {
-            Task::CreateGroup(_) => {
-                metrics::RECONCILE_HANDLE_TASK_TOTAL.create_group.inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
-                    .create_group
-                    .start_timer()
-            }
             Task::ReallocateReplica(_) => {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL
                     .reallocate_replica
@@ -292,7 +286,6 @@ impl ReconcileScheduler {
 
     fn record_retry(task: &mut ReconcileTask) {
         match task.task.as_ref().unwrap() {
-            Task::CreateGroup(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL.create_group.inc(),
             Task::ReallocateReplica(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL
                 .reallocate_replica
                 .inc(),
@@ -334,7 +327,6 @@ impl ScheduleContext {
     )> {
         info!(task=?task, "handle reconcile task");
         match task.task.as_mut().unwrap() {
-            Task::CreateGroup(create_group) => self.handle_create_group(create_group).await,
             Task::ReallocateReplica(reallocate_replica) => {
                 self.handle_reallocate_replica(reallocate_replica).await
             }
@@ -344,155 +336,6 @@ impl ScheduleContext {
             }
             Task::ShedLeader(shed_leader) => self.handle_shed_leader(shed_leader).await,
             Task::ShedRoot(shed_root) => self.handle_shed_root(shed_root).await,
-        }
-    }
-
-    async fn handle_create_group(
-        &self,
-        task: &mut CreateGroupTask,
-    ) -> Result<(
-        bool, /* ack current */
-        bool, /* immediately step next tick */
-    )> {
-        loop {
-            let step = CreateGroupTaskStep::from_i32(task.step).unwrap();
-            let _timer = record_create_group_step(&step);
-            match step {
-                CreateGroupTaskStep::GroupInit => {
-                    let schema = self.shared.schema()?;
-                    let nodes = self
-                        .alloc
-                        .allocate_group_replica(vec![], task.request_replica_cnt as usize)
-                        .await?;
-                    let group_id = schema.next_group_id().await?;
-                    let mut replicas = Vec::new();
-                    for n in &nodes {
-                        let replica_id = schema.next_replica_id().await?;
-                        replicas.push(ReplicaDesc {
-                            id: replica_id,
-                            node_id: n.id,
-                            role: ReplicaRole::Voter.into(),
-                        });
-                    }
-                    let group_desc = GroupDesc {
-                        id: group_id,
-                        epoch: INITIAL_EPOCH,
-                        shards: vec![],
-                        replicas,
-                    };
-                    {
-                        task.group_desc = Some(group_desc);
-                        task.invoked_nodes = nodes.iter().map(|n| n.id).collect();
-                        task.wait_create = nodes;
-                        task.step = CreateGroupTaskStep::GroupCreating.into();
-                    }
-                }
-                CreateGroupTaskStep::GroupCreating => {
-                    let mut wait_create = task.wait_create.to_owned();
-                    let group_desc = task.group_desc.as_ref().unwrap().to_owned();
-                    let mut undo = Vec::new();
-                    loop {
-                        let n = wait_create.pop();
-                        if n.is_none() {
-                            break;
-                        }
-                        let n = n.unwrap();
-                        let replica = group_desc
-                            .replicas
-                            .iter()
-                            .find(|r| r.node_id == n.id)
-                            .unwrap();
-                        if let Err(err) = self
-                            .try_create_replica(&n.addr, &replica.id, group_desc.to_owned())
-                            .await
-                        {
-                            let retried = task.create_retry;
-                            if retried < self.cfg.max_create_group_retry_before_rollback {
-                                warn!(node=n.id, replica=replica.id, group=group_desc.id, retried = retried, err = ?err, "create replica for new group error, retry in next");
-                                {
-                                    task.create_retry += 1;
-                                }
-                                metrics::RECONCILE_RETRYL_TASK_TOTAL.create_group.inc();
-                            } else {
-                                warn!(node=n.id, replica=replica.id, group=group_desc.id, err = ?err, "create replica for new group error, start rollback");
-                                {
-                                    task.step = CreateGroupTaskStep::GroupRollbacking.into();
-                                }
-                            };
-                            continue;
-                        }
-                        undo.push(replica.to_owned());
-                        {
-                            task.wait_create = wait_create.to_owned();
-                            task.wait_cleanup = undo.to_owned();
-                        }
-                    }
-                    {
-                        task.step = CreateGroupTaskStep::GroupFinish.into();
-                    }
-                }
-                CreateGroupTaskStep::GroupRollbacking => {
-                    let mut wait_clean = task.wait_cleanup.to_owned();
-                    loop {
-                        let r = wait_clean.pop();
-                        if r.is_none() {
-                            break;
-                        }
-                        let group = task.group_desc.as_ref().unwrap().id;
-                        let r = r.unwrap();
-                        if let Err(err) = self.try_remove_replica(group, r.id).await {
-                            error!(err = ?err, replica=r.id, "rollback temp replica of new group fail and retry later");
-                            {
-                                task.wait_cleanup = wait_clean.to_owned();
-                            }
-                            return Err(err);
-                        }
-                    }
-                    {
-                        task.step = CreateGroupTaskStep::GroupAbort.into();
-                    }
-                }
-                CreateGroupTaskStep::GroupAbort => return Ok((true, false)),
-                CreateGroupTaskStep::GroupFinish => {
-                    self.heartbeat_queue
-                        .try_schedule(
-                            task.invoked_nodes
-                                .iter()
-                                .cloned()
-                                .map(|node_id| HeartbeatTask { node_id })
-                                .collect(),
-                            Instant::now(),
-                        )
-                        .await;
-                    return Ok((true, true));
-                }
-            }
-        }
-
-        fn record_create_group_step(step: &CreateGroupTaskStep) -> Option<HistogramTimer> {
-            match step {
-                CreateGroupTaskStep::GroupInit => Some(
-                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .init
-                        .start_timer(),
-                ),
-                CreateGroupTaskStep::GroupCreating => Some(
-                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .create
-                        .start_timer(),
-                ),
-                CreateGroupTaskStep::GroupRollbacking => Some(
-                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .rollback
-                        .start_timer(),
-                ),
-                CreateGroupTaskStep::GroupFinish => None,
-                CreateGroupTaskStep::GroupAbort => Some(
-                    metrics::RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS
-                        .finish
-                        .start_timer(),
-                ),
-            }
         }
     }
 
@@ -770,33 +613,10 @@ impl ScheduleContext {
 }
 
 impl ScheduleContext {
-    async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
-        let client = self
-            .shared
-            .provider
-            .conn_manager
-            .get_node_client(addr)
-            .await?;
-        Ok(client)
-    }
-
     async fn get_group_leader(&self, group_id: u64) -> Result<Option<GroupDesc>> {
         let schema = self.shared.schema()?;
         let group = schema.get_group(group_id).await?;
         Ok(group)
-    }
-
-    async fn try_create_replica(
-        &self,
-        addr: &str,
-        replica_id: &u64,
-        group: GroupDesc,
-    ) -> Result<()> {
-        self.get_node_client(addr.to_owned())
-            .await?
-            .create_replica(replica_id.to_owned(), group)
-            .await?;
-        Ok(())
     }
 
     async fn try_shed_leader_before_remove(
@@ -853,30 +673,6 @@ impl ScheduleContext {
             .move_replicas(vec![incoming_replica], vec![outgoing_replica])
             .await?;
         Ok(current_state)
-    }
-
-    async fn try_remove_replica(&self, group: u64, replica: u64) -> Result<()> {
-        let schema = self.shared.schema()?;
-        let rs = schema.get_replica_state(group, replica).await?.ok_or(
-            crate::Error::AbortScheduleTask("source replica already has be destroyed"),
-        )?;
-
-        let target_node = schema
-            .get_node(rs.node_id.to_owned())
-            .await?
-            .ok_or(crate::Error::AbortScheduleTask("source node not exist"))?;
-        self.get_node_client(target_node.addr.clone())
-            .await?
-            .remove_replica(
-                replica.to_owned(),
-                GroupDesc {
-                    id: group,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        schema.remove_replica_state(group, replica).await?;
-        Ok(())
     }
 
     async fn try_transfer_leader(&self, group: u64, target_replica: u64) -> Result<()> {

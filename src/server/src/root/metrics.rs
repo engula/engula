@@ -45,13 +45,12 @@ lazy_static! {
 make_static_metric! {
     pub struct ReconcileScheduleHandleTaskTotal: IntCounter {
         "type" => {
-            create_group,
             reallocate_replica,
             migrate_shard,
             transfer_leader,
-            create_collection_shards,
             shed_group_leaders,
             shed_root_leader,
+            create_group,
         }
     }
     pub struct ReconcileScheduleHandleTaskDuration: Histogram {
