@@ -293,8 +293,13 @@ impl Jobs {
         create_group: &mut CreateOneGroupJob,
         schema: Arc<Schema>,
     ) -> Result<bool> {
-        let groups = schema.list_group().await?;
-        if groups.len() < create_group.request_replica_cnt as usize {
+        if create_group.group_desc.is_none() {
+            return Ok(false);
+        }
+        let replicas = schema
+            .group_replica_states(create_group.group_desc.as_ref().unwrap().id)
+            .await?;
+        if replicas.len() < create_group.request_replica_cnt as usize {
             return Ok(false);
         }
         warn!(

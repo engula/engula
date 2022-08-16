@@ -648,7 +648,7 @@ impl ScheduleContext {
             info!(
                 group = group.id,
                 replica = remove_replica,
-                "attemp remove leader replica, so transfer leader to {} in node {}",
+                "attempt remove leader replica, so transfer leader to {} in node {}",
                 target_replica.id,
                 target_replica.node_id,
             );

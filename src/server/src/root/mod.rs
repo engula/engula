@@ -926,7 +926,7 @@ impl Root {
         }
         info!(
             group = group_id,
-            "attemp allocate {requested_cnt} replicas for exist group"
+            "attempt allocate {requested_cnt} replicas for exist group"
         );
 
         let nodes = self
@@ -937,6 +937,7 @@ impl Root {
             )
             .await?;
         if nodes.len() != requested_cnt as usize {
+            warn!("non enough nodes to allocate replicas, exist nodes: {}, requested: {requested_cnt}", nodes.len());
             return Err(Error::ResourceExhausted("no enough nodes".to_owned()));
         }
 
