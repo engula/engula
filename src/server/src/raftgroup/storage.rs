@@ -385,6 +385,7 @@ impl raft::Storage for Storage {
             }
 
             self.create_snapshot.set(true);
+            self.is_creating_snapshot.set(true);
         }
 
         Err(raft::Error::Store(
