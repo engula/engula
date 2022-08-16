@@ -13,11 +13,11 @@ engula-api = { version = "0.4", path = "../api" }
 crc32fast = "1.3.2"
 derivative = "2.2.0"
 futures = "0.3.21"
-prost = "0.10.3"
+prost = "0.11.0"
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
 tokio-stream = { version = "0.1.8", features = ["net"] }
-tonic = "0.7.2"
+tonic = "0.8.0"
 tracing = "0.1"
 
 [dev-dependencies]

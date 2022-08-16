@@ -9,9 +9,9 @@ description = "The Engula API."
 
 [dependencies]
 crc32fast = "1.3.2"
-tonic = "0.7.2"
-prost = "0.10.3"
-prost-types = "0.10.1"
+tonic = "0.8.0"
+prost = "0.11.0"
+prost-types = "0.11.1"
 
 [build-dependencies]
-tonic-build = "0.7.2"
+tonic-build = "0.8.0"
