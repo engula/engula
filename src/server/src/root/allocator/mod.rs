@@ -226,13 +226,13 @@ impl<T: AllocSource> Allocator<T> {
     /// Allocate new replica in one group.
     pub async fn allocate_group_replica(
         &self,
-        existing_replicas: Vec<u64>,
+        existing_replica_nodes: Vec<u64>,
         wanted_count: usize,
     ) -> Result<Vec<NodeDesc>> {
         self.alloc_source.refresh_all().await?;
 
         ReplicaCountPolicy::with(self.alloc_source.to_owned())
-            .allocate_group_replica(existing_replicas, wanted_count)
+            .allocate_group_replica(existing_replica_nodes, wanted_count)
     }
 
     /// Find a group to place shard.

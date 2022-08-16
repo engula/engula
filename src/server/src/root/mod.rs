@@ -15,7 +15,7 @@
 mod allocator;
 mod bg_job;
 mod collector;
-mod job;
+mod heartbeat;
 mod liveness;
 mod metrics;
 mod schedule;
@@ -102,12 +102,17 @@ impl Root {
         )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
-        let jobs = Arc::new(Jobs::new(shared.to_owned(), alloc.to_owned()));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
+        let jobs = Arc::new(Jobs::new(
+            shared.to_owned(),
+            alloc.to_owned(),
+            heartbeat_queue.to_owned(),
+        ));
         let sched_ctx = schedule::ScheduleContext::new(
             shared.clone(),
             alloc.clone(),
             heartbeat_queue.clone(),
+            jobs.to_owned(),
             cfg.root.to_owned(),
         );
         let scheduler = Arc::new(schedule::ReconcileScheduler::new(sched_ctx));
@@ -418,10 +423,17 @@ impl Root {
                     let wait_create = c.wait_create.len();
                     let wait_cleanup = c.wait_cleanup.len();
                     json!({
+                        "type": "create collection",
                         "name": c.collection_name,
                         "status": state,
                         "wait_create": wait_create,
                         "wait_cleanup": wait_cleanup,
+                    })
+                }
+                Job::CreateOneGroup(_c) => {
+                    // TODO:!!!!
+                    json!({
+                        "type": "create group",
                     })
                 }
             }
@@ -914,7 +926,7 @@ impl Root {
         }
         info!(
             group = group_id,
-            "attemp allocate {requested_cnt} replicas for exist group"
+            "attempt allocate {requested_cnt} replicas for exist group"
         );
 
         let nodes = self
@@ -925,6 +937,7 @@ impl Root {
             )
             .await?;
         if nodes.len() != requested_cnt as usize {
+            warn!("non enough nodes to allocate replicas, exist nodes: {}, requested: {requested_cnt}", nodes.len());
             return Err(Error::ResourceExhausted("no enough nodes".to_owned()));
         }
 

@@ -45,13 +45,12 @@ lazy_static! {
 make_static_metric! {
     pub struct ReconcileScheduleHandleTaskTotal: IntCounter {
         "type" => {
-            create_group,
             reallocate_replica,
             migrate_shard,
             transfer_leader,
-            create_collection_shards,
             shed_group_leaders,
             shed_root_leader,
+            create_group,
         }
     }
     pub struct ReconcileScheduleHandleTaskDuration: Histogram {
@@ -87,7 +86,9 @@ make_static_metric! {
     pub struct ReconcileScheduleCreateCollectionStepDuration: Histogram {
         "type" => {
             create,
+            write_desc,
             rollback,
+            finish,
         }
     }
     pub struct ReconcileScheduleBalanceInfo: IntGauge {
@@ -170,7 +171,7 @@ lazy_static! {
             &["type"]
         )
         .unwrap();
-    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION: ReconcileScheduleCreateCollectionStepDuration =
+    pub static ref RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS: ReconcileScheduleCreateCollectionStepDuration =
         ReconcileScheduleCreateCollectionStepDuration::from(
             &RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS_VEC
         );
