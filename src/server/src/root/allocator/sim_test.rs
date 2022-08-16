@@ -33,7 +33,8 @@ fn sim_boostrap_join_node_balance() {
     let executor = executor_owner.executor();
     executor.block_on(async {
         let p = Arc::new(MockInfoProvider::new());
-        let a = Allocator::new(p.clone(), RootConfig::default());
+        let d = Arc::new(DeltaStats::default());
+        let a = Allocator::new(p.clone(), d.clone(), RootConfig::default());
 
         println!("1. boostrap and no need rebalance");
         p.set_groups(vec![GroupDesc {

@@ -44,8 +44,8 @@ pub use self::{
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{
-    allocator::SysAllocSource, bg_job::Jobs, diagnosis::Metadata, schedule::ReconcileScheduler,
-    schema::ReplicaNodes, store::RootStore,
+    allocator::SysAllocSource, bg_job::Jobs, diagnosis::Metadata, heartbeat::DeltaStats,
+    schedule::ReconcileScheduler, schema::ReplicaNodes, store::RootStore,
 };
 use crate::{
     bootstrap::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
@@ -63,6 +63,7 @@ pub struct Root {
     liveness: Arc<liveness::Liveness>,
     scheduler: Arc<ReconcileScheduler>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    delta_stats: Arc<DeltaStats>,
     jobs: Arc<Jobs>,
 }
 
@@ -92,6 +93,7 @@ impl Root {
     pub(crate) fn new(provider: Arc<Provider>, node_ident: &NodeIdent, cfg: Config) -> Self {
         let local_addr = cfg.addr.clone();
         let cfg_cpu_nums = cfg.cpu_nums;
+        let delta_stats = Arc::new(DeltaStats::default());
         let shared = Arc::new(RootShared {
             provider,
             local_addr,
@@ -104,7 +106,11 @@ impl Root {
             cfg.root.liveness_threshold_sec,
         )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
-        let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
+        let alloc = Arc::new(allocator::Allocator::new(
+            info,
+            delta_stats.clone(),
+            cfg.root.to_owned(),
+        ));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let jobs = Arc::new(Jobs::new(
             shared.to_owned(),
@@ -126,6 +132,7 @@ impl Root {
             liveness,
             scheduler,
             heartbeat_queue,
+            delta_stats,
             jobs,
         }
     }
@@ -279,6 +286,7 @@ impl Root {
         }
         self::metrics::LEADER_STATE_INFO.set(1);
 
+        self.delta_stats.reset();
         self.heartbeat_queue.enable(true).await;
         self.jobs.on_step_leader().await?;
 
@@ -310,6 +318,7 @@ impl Root {
         // After that, RootCore needs to be set to None before returning.
         self.heartbeat_queue.enable(false).await;
         self.jobs.on_drop_leader();
+        self.delta_stats.reset();
         {
             self.liveness.reset();
 
