@@ -2,6 +2,7 @@ root_dir = "/tmp/engula"
 addr = "127.0.0.1:21805"
 init = false
 join_list = []
+cpu_nums = 0
 
 [node]
 shard_chunk_size = 67108864

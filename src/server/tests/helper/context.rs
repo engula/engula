@@ -99,7 +99,7 @@ impl TestContext {
 
     #[allow(dead_code)]
     pub fn spawn_server(&mut self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
-        self.spawn_server_with_cfg(idx, addr, init, join_list, self.root_cfg.clone());
+        self.spawn_server_with_cfg(idx, addr, 2, init, join_list, self.root_cfg.clone());
     }
 
     #[allow(dead_code)]
@@ -107,6 +107,7 @@ impl TestContext {
         &mut self,
         idx: usize,
         addr: &str,
+        cpu_nums: u32,
         init: bool,
         join_list: Vec<String>,
         root: RootConfig,
@@ -117,6 +118,7 @@ impl TestContext {
         let cfg = Config {
             root_dir,
             addr,
+            cpu_nums,
             init,
             join_list,
             node: NodeConfig {

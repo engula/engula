@@ -70,6 +70,7 @@ pub struct RootShared {
     provider: Arc<Provider>,
     node_ident: NodeIdent,
     local_addr: String,
+    cfg_cpu_nums: u32,
     core: Mutex<Option<RootCore>>,
     watcher_hub: Arc<WatchHub>,
 }
@@ -90,9 +91,11 @@ struct RootCore {
 impl Root {
     pub(crate) fn new(provider: Arc<Provider>, node_ident: &NodeIdent, cfg: Config) -> Self {
         let local_addr = cfg.addr.clone();
+        let cfg_cpu_nums = cfg.cpu_nums;
         let shared = Arc::new(RootShared {
             provider,
             local_addr,
+            cfg_cpu_nums,
             core: Mutex::new(None),
             node_ident: node_ident.to_owned(),
             watcher_hub: Default::default(),
@@ -187,7 +190,12 @@ impl Root {
             // Wait the current root replica becomes a leader.
             if let Ok(Some(_)) = root_replica.on_leader("root", false).await {
                 match self
-                    .step_leader(&self.shared.local_addr, root_replica, &mut bootstrapped)
+                    .step_leader(
+                        &self.shared.local_addr,
+                        self.shared.cfg_cpu_nums,
+                        root_replica,
+                        &mut bootstrapped,
+                    )
                     .await
                 {
                     Ok(()) | Err(Error::NotLeader(..)) => {
@@ -238,6 +246,7 @@ impl Root {
     async fn step_leader(
         &self,
         local_addr: &str,
+        cfg_cpu_nums: u32,
         root_replica: Arc<Replica>,
         bootstrapped: &mut bool,
     ) -> Result<()> {
@@ -248,7 +257,11 @@ impl Root {
         // leadership change does not need to check for whether bootstrap or not.
         if !*bootstrapped {
             if let Err(err) = schema
-                .try_bootstrap_root(local_addr, self.shared.node_ident.cluster_id.clone())
+                .try_bootstrap_root(
+                    local_addr,
+                    cfg_cpu_nums,
+                    self.shared.node_ident.cluster_id.clone(),
+                )
                 .await
             {
                 metrics::BOOTSTRAP_FAIL_TOTAL.inc();

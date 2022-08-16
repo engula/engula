@@ -53,6 +53,8 @@ pub struct Config {
 
     pub addr: String,
 
+    pub cpu_nums: u32,
+
     pub init: bool,
 
     pub join_list: Vec<String>,
