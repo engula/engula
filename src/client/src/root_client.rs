@@ -347,6 +347,19 @@ impl AdminRequestBuilder {
         }
     }
 
+    pub fn delete_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::DeleteCollection(
+                    DeleteCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
+                    },
+                )),
+            }),
+        }
+    }
+
     pub fn list_collection(parent: String) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
@@ -411,6 +424,17 @@ impl AdminResponseExtractor {
         }) = resp.response
         {
             response.collection
+        } else {
+            None
+        }
+    }
+
+    pub fn delete_collection(resp: AdminResponse) -> Option<()> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::DeleteCollection(_)),
+        }) = resp.response
+        {
+            Some(())
         } else {
             None
         }

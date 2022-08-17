@@ -106,6 +106,7 @@ message BackgroundJob {
   oneof job {
     CreateCollectionJob create_collection = 2;
     CreateOneGroupJob create_one_group = 3;
+    PurgeCollectionJob purge_collection = 4;
   }
 }
 
@@ -143,4 +144,10 @@ enum CreateOneGroupStatus {
   CREATE_ONE_GROUP_ROLLBACKING = 2;
   CREATE_ONE_GROUP_FINISH = 3;
   CREATE_ONE_GROUP_ABORT = 4;
+}
+
+message PurgeCollectionJob {
+  uint64 database_id = 1;
+  uint64 collection_id = 2;
+  string collection_name = 3;
 }

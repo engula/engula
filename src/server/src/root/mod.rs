@@ -459,6 +459,11 @@ impl Root {
                         "type": "create group",
                     })
                 }
+                Job::PurgeCollection(_p) => {
+                    json!({
+                        "type": "purge collection",
+                    })
+                }
             }
         }
 
@@ -748,11 +753,25 @@ impl Root {
             .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
         let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
-            let id = collection.id;
+            let collection_id = collection.id;
+            let collection_name = collection.name.to_owned();
+            self.jobs
+                .submit(
+                    BackgroundJob {
+                        job: Some(Job::PurgeCollection(PurgeCollectionJob {
+                            database_id: db.id,
+                            collection_id,
+                            collection_name,
+                        })),
+                        ..Default::default()
+                    },
+                    false,
+                )
+                .await?;
             schema.delete_collection(collection).await?;
             self.watcher_hub()
                 .notify_deletes(vec![DeleteEvent {
-                    event: Some(delete_event::Event::Collection(id)),
+                    event: Some(delete_event::Event::Collection(collection_id)),
                 }])
                 .await;
         }

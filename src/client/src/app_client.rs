@@ -155,13 +155,29 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
-            None => Err(AppError::NotFound(format!("collection {}", name))),
+            None => Err(AppError::NotFound(format!("collection {name}"))),
             Some(co_desc) => Ok(Collection {
                 rpc_timeout: self.rpc_timeout,
                 db_desc,
                 co_desc,
                 client: client.clone(),
             }),
+        }
+    }
+
+    pub async fn delete_collection(&self, name: String) -> AppResult<()> {
+        let client = self.client.clone();
+        let db_desc = self.desc.clone();
+        let root_client = client.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::delete_collection(
+                db_desc.name.clone(),
+                name.clone(),
+            ))
+            .await?;
+        match AdminResponseExtractor::delete_collection(resp) {
+            None => Err(AppError::NotFound(format!("collection {name}"))),
+            Some(_) => Ok(()),
         }
     }
 

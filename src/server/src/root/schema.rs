@@ -222,6 +222,20 @@ impl Schema {
         Ok(Some(desc))
     }
 
+    pub async fn get_collection_shards(&self, collection_id: u64) -> Result<Vec<(u64, ShardDesc)>> {
+        let groups = self.list_group().await?;
+        let group_shards = groups
+            .iter()
+            .flat_map(|g| {
+                g.shards
+                    .iter()
+                    .filter(|s| s.collection_id == collection_id)
+                    .map(|s| (g.id, s.to_owned()))
+            })
+            .collect::<Vec<_>>();
+        Ok(group_shards)
+    }
+
     pub async fn update_collection(&self, _desc: CollectionDesc) -> Result<()> {
         todo!()
     }
@@ -229,7 +243,7 @@ impl Schema {
     pub async fn delete_collection(&self, collection: CollectionDesc) -> Result<()> {
         self.delete(
             SYSTEM_COLLECTION_COLLECTION_ID,
-            &collection.id.to_le_bytes(),
+            &collection_key(collection.db, &collection.name),
         )
         .await
     }
