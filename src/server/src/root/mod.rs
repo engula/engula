@@ -464,6 +464,11 @@ impl Root {
                         "type": "purge collection",
                     })
                 }
+                Job::PurgeDatabase(_) => {
+                    json!({
+                        "type": "purge database",
+                    })
+                }
             }
         }
 
@@ -629,7 +634,22 @@ impl Root {
     }
 
     pub async fn delete_database(&self, name: &str) -> Result<()> {
-        let id = self.schema()?.delete_database(name).await?;
+        let db = self.get_database(name).await?;
+        if db.is_none() {
+            return Err(Error::DatabaseNotFound(name.to_owned()));
+        }
+        let db = db.unwrap();
+        self.jobs
+            .submit(
+                BackgroundJob {
+                    job: Some(Job::PurgeDatabase(PurgeDatabaseJob { database_id: db.id })),
+                    ..Default::default()
+                },
+                false,
+            )
+            .await?;
+        let schema = self.schema()?;
+        let id = schema.delete_database(&db).await?;
         self.watcher_hub()
             .notify_deletes(vec![DeleteEvent {
                 event: Some(delete_event::Event::Database(id)),

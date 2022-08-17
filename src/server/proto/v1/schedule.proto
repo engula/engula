@@ -107,6 +107,7 @@ message BackgroundJob {
     CreateCollectionJob create_collection = 2;
     CreateOneGroupJob create_one_group = 3;
     PurgeCollectionJob purge_collection = 4;
+    PurgeDatabaseJob purge_database = 5;
   }
 }
 
@@ -151,3 +152,5 @@ message PurgeCollectionJob {
   uint64 collection_id = 2;
   string collection_name = 3;
 }
+
+message PurgeDatabaseJob { uint64 database_id = 1; }

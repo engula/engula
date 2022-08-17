@@ -156,13 +156,8 @@ impl Schema {
         todo!()
     }
 
-    pub async fn delete_database(&self, name: &str) -> Result<u64> {
-        let db = self.get_database(name).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(name.to_owned()));
-        }
-        let db = db.unwrap();
-        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
+    pub async fn delete_database(&self, db: &DatabaseDesc) -> Result<u64> {
+        self.delete(SYSTEM_DATABASE_COLLECTION_ID, db.name.as_bytes())
             .await?;
         Ok(db.id)
     }
@@ -257,6 +252,14 @@ impl Schema {
             collections.push(c);
         }
         Ok(collections)
+    }
+
+    pub async fn list_database_collections(&self, database: u64) -> Result<Vec<CollectionDesc>> {
+        let collections = self.list_collection().await?;
+        Ok(collections
+            .into_iter()
+            .filter(|c| c.db == database)
+            .collect::<Vec<_>>())
     }
 
     pub async fn add_node(&self, desc: NodeDesc) -> Result<NodeDesc> {

@@ -26,7 +26,12 @@ use tokio::time::Instant;
 use tracing::{error, info, warn};
 
 use super::{allocator::*, HeartbeatQueue, HeartbeatTask, RootShared, Schema};
-use crate::{bootstrap::INITIAL_EPOCH, root::metrics, serverpb::v1::*, Result};
+use crate::{
+    bootstrap::INITIAL_EPOCH,
+    root::metrics,
+    serverpb::v1::{background_job::Job, *},
+    Result,
+};
 
 pub struct Jobs {
     core: JobCore,
@@ -93,6 +98,9 @@ impl Jobs {
             }
             background_job::Job::PurgeCollection(purge_collection) => {
                 self.handle_purge_collection(job, purge_collection).await
+            }
+            background_job::Job::PurgeDatabase(purge_database) => {
+                self.handle_purge_database(job, purge_database).await
             }
         };
         info!("backgroud job: {job:?}, handle result: {r:?}");
@@ -517,6 +525,39 @@ impl Jobs {
         self.core.finish(job.to_owned()).await?;
         Ok(())
     }
+
+    async fn handle_purge_database(
+        &self,
+        job: &BackgroundJob,
+        purge_database: &PurgeDatabaseJob,
+    ) -> Result<()> {
+        let schema = self.core.root_shared.schema()?;
+        let mut collections = schema
+            .list_database_collections(purge_database.database_id)
+            .await?;
+        loop {
+            if let Some(co) = collections.pop() {
+                let job = BackgroundJob {
+                    job: Some(Job::PurgeCollection(PurgeCollectionJob {
+                        database_id: co.db,
+                        collection_id: co.id,
+                        collection_name: co.name.to_owned(),
+                    })),
+                    ..Default::default()
+                };
+                match self.submit(job, false).await {
+                    Ok(_) => {}
+                    Err(crate::Error::AlreadyExists(_)) => {}
+                    Err(err) => return Err(err),
+                };
+                schema.delete_collection(co).await?;
+                continue;
+            }
+            break;
+        }
+        self.core.finish(job.to_owned()).await?;
+        Ok(())
+    }
 }
 
 impl Jobs {
@@ -792,6 +833,6 @@ fn res_key(job: &BackgroundJob) -> Option<Vec<u8>> {
             key.extend_from_slice(job.collection_name.as_bytes());
             Some(key)
         }
-        background_job::Job::CreateOneGroup(_) => None,
+        background_job::Job::CreateOneGroup(_) | background_job::Job::PurgeDatabase(_) => None,
     }
 }

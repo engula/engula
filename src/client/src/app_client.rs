@@ -75,12 +75,23 @@ impl Client {
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
-            None => Err(AppError::NotFound(format!("database {}", name))),
+            None => Err(AppError::NotFound(format!("database {name}"))),
             Some(desc) => Ok(Database {
                 rpc_timeout: self.inner.opts.timeout,
                 desc,
                 client: self.clone(),
             }),
+        }
+    }
+
+    pub async fn delete_database(&self, name: String) -> AppResult<()> {
+        let root_client = self.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::delete_database(name.clone()))
+            .await?;
+        match AdminResponseExtractor::delete_database(resp) {
+            Some(()) => Ok(()),
+            None => Err(AppError::NotFound(format!("database {name}"))),
         }
     }
 

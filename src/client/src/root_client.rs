@@ -309,6 +309,16 @@ impl AdminRequestBuilder {
         }
     }
 
+    pub fn delete_database(name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::DeleteDatabase(
+                    DeleteDatabaseRequest { name },
+                )),
+            }),
+        }
+    }
+
     pub fn list_database() -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
@@ -391,6 +401,17 @@ impl AdminResponseExtractor {
         }) = resp.response
         {
             response.database
+        } else {
+            None
+        }
+    }
+
+    pub fn delete_database(resp: AdminResponse) -> Option<()> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::DeleteDatabase(_)),
+        }) = resp.response
+        {
+            Some(())
         } else {
             None
         }
