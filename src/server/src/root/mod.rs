@@ -1146,8 +1146,9 @@ impl OngoingStats {
     ) {
         if !state_updates.is_empty() {
             let mut inner = self.sched_stats.lock().unwrap();
-            inner.replace_state(state_updates);
-            inner.rebuild_view();
+            if inner.replace_state(state_updates) {
+                inner.rebuild_view();
+            }
         }
         if job_updates.is_some() {
             let mut inner = self.job_stats.lock().unwrap();
