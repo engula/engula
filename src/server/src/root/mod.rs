@@ -1110,6 +1110,7 @@ impl HeartbeatQueue {
 }
 
 struct GroupDelta {
+    epoch: u64,
     incoming: Vec<ReplicaDesc>,
     outgoing: Vec<ReplicaDesc>,
 }
@@ -1185,16 +1186,32 @@ impl OngoingStats {
 }
 
 impl SchedStats {
-    fn replace_state(&mut self, updates: &[ScheduleState]) {
+    fn replace_state(&mut self, updates: &[ScheduleState]) -> bool {
+        let mut updated = false;
         for state in updates {
-            self.raw_group_delta.insert(
-                state.group_id,
-                GroupDelta {
-                    incoming: state.incoming_replicas.to_owned(),
-                    outgoing: state.outgoing_replicas.to_owned(),
-                },
-            );
+            match self.raw_group_delta.entry(state.group_id) {
+                hash_map::Entry::Occupied(mut ent) => {
+                    let delta = ent.get_mut();
+                    if delta.epoch < state.epoch {
+                        *delta = GroupDelta {
+                            epoch: state.epoch,
+                            incoming: state.incoming_replicas.to_owned(),
+                            outgoing: state.outgoing_replicas.to_owned(),
+                        };
+                        updated = true;
+                    }
+                }
+                hash_map::Entry::Vacant(ent) => {
+                    ent.insert(GroupDelta {
+                        epoch: state.epoch,
+                        incoming: state.incoming_replicas.to_owned(),
+                        outgoing: state.outgoing_replicas.to_owned(),
+                    });
+                    updated = true;
+                }
+            }
         }
+        updated
     }
 
     fn rebuild_view(&mut self) {
