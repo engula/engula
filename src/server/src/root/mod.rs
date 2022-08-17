@@ -639,6 +639,11 @@ impl Root {
             return Err(Error::DatabaseNotFound(name.to_owned()));
         }
         let db = db.unwrap();
+        if db.id == SYSTEM_DATABASE_ID {
+            return Err(Error::InvalidArgument(
+                "unsupport delete system database".into(),
+            ));
+        }
         self.jobs
             .submit(
                 BackgroundJob {
@@ -773,6 +778,11 @@ impl Root {
             .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
         let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
+            if collection.id < USER_COLLECTION_INIT_ID {
+                return Err(Error::InvalidArgument(
+                    "unsupport delete system collection".into(),
+                ));
+            }
             let collection_id = collection.id;
             let collection_name = collection.name.to_owned();
             self.jobs

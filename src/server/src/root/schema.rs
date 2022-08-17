@@ -44,7 +44,7 @@ use crate::{
 };
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
-const SYSTEM_DATABASE_ID: u64 = 1;
+pub const SYSTEM_DATABASE_ID: u64 = 1;
 const SYSTEM_COLLECTION_COLLECTION: &str = "collection";
 const SYSTEM_COLLECTION_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
 const SYSTEM_COLLECTION_COLLECTION_SHARD: u64 = 1;
@@ -69,6 +69,8 @@ const SYSTEM_JOB_COLLECTION_SHARD: u64 = SYSTEM_REPLICA_STATE_COLLECTION_SHARD +
 const SYSTEM_JOB_HISTORY_COLLECTION: &str = "job_history";
 const SYSTEM_JOB_HISTORY_COLLECTION_ID: u64 = SYSTEM_JOB_COLLECTION_ID + 1;
 const SYSTEM_JOB_HISTORY_COLLECTION_SHARD: u64 = SYSTEM_JOB_COLLECTION_SHARD + 1;
+
+pub const USER_COLLECTION_INIT_ID: u64 = SYSTEM_JOB_HISTORY_COLLECTION_ID + 1;
 
 const META_CLUSTER_ID_KEY: &str = "cluster_id";
 const META_COLLECTION_ID_KEY: &str = "collection_id";
@@ -701,16 +703,11 @@ impl Schema {
 
         let mut batch = PutBatchBuilder::default();
 
-        let next_collection_id = Self::init_system_collections(&mut batch);
+        Self::init_system_collections(&mut batch);
 
         let (shards, next_shard_id) = Schema::init_shards();
 
-        Self::init_meta_collection(
-            &mut batch,
-            next_collection_id,
-            next_shard_id,
-            cluster_id.to_owned(),
-        );
+        Self::init_meta_collection(&mut batch, next_shard_id, cluster_id.to_owned());
 
         batch.put_database(DatabaseDesc {
             id: SYSTEM_DATABASE_ID.to_owned(),
@@ -815,7 +812,7 @@ impl Schema {
         self.next_id(META_SHARD_ID_KEY).await
     }
 
-    fn init_system_collections(batch: &mut PutBatchBuilder) -> u64 {
+    fn init_system_collections(batch: &mut PutBatchBuilder) {
         let self_collection = CollectionDesc {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
@@ -894,17 +891,10 @@ impl Schema {
                 collection_desc::RangePartition {},
             )),
         };
-        batch.put_collection(job_history_collection.to_owned());
-
-        job_history_collection.id + 1 // TODO: reserve more collection id for furture?
+        batch.put_collection(job_history_collection);
     }
 
-    fn init_meta_collection(
-        batch: &mut PutBatchBuilder,
-        next_collection_id: u64,
-        next_shard_id: u64,
-        cluster_id: Vec<u8>,
-    ) {
+    fn init_meta_collection(batch: &mut PutBatchBuilder, next_shard_id: u64, cluster_id: Vec<u8>) {
         batch.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id);
         batch.put_meta(
             META_DATABASE_ID_KEY.into(),
@@ -912,7 +902,7 @@ impl Schema {
         );
         batch.put_meta(
             META_COLLECTION_ID_KEY.into(),
-            next_collection_id.to_le_bytes().to_vec(),
+            USER_COLLECTION_INIT_ID.to_le_bytes().to_vec(),
         );
         batch.put_meta(
             META_GROUP_ID_KEY.into(),
