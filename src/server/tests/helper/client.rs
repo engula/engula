@@ -20,8 +20,8 @@ use std::{
 
 use engula_api::{server::v1::*, v1::CollectionDesc};
 use engula_client::{
-    ConnManager, EngulaClient, GroupClient, NodeClient, RootClient, Router, RouterGroupState,
-    StaticServiceDiscovery,
+    ClientOptions, ConnManager, EngulaClient, GroupClient, NodeClient, RootClient, Router,
+    RouterGroupState, StaticServiceDiscovery,
 };
 use engula_server::{runtime, Result};
 
@@ -72,7 +72,9 @@ impl ClusterClient {
 
     pub async fn app_client(&self) -> EngulaClient {
         let addrs = self.nodes.values().cloned().collect::<Vec<_>>();
-        EngulaClient::connect(addrs).await.unwrap()
+        EngulaClient::new(ClientOptions::default(), addrs)
+            .await
+            .unwrap()
     }
 
     pub async fn group_members(&self, group_id: u64) -> Vec<(u64, i32)> {

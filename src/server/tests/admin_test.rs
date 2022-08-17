@@ -19,7 +19,7 @@ mod helper;
 use std::time::Duration;
 
 use engula_api::v1::{CollectionDesc, DatabaseDesc};
-use engula_client::{EngulaClient, NodeClient, Partition};
+use engula_client::{ClientOptions, EngulaClient, NodeClient, Partition};
 use engula_server::diagnosis;
 use tracing::info;
 
@@ -72,7 +72,9 @@ fn admin_basic() {
         let nodes = ctx.bootstrap_servers(node_count).await;
         let addrs = nodes.values().cloned().collect::<Vec<_>>();
 
-        let c = EngulaClient::connect(addrs.to_owned()).await.unwrap();
+        let c = EngulaClient::new(ClientOptions::default(), addrs.to_owned())
+            .await
+            .unwrap();
         let sys_db = c.open_database("__system__".to_owned()).await.unwrap();
         let sys_db_col = sys_db.open_collection("database".to_owned()).await.unwrap();
         let sys_col_col = sys_db

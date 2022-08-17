@@ -24,6 +24,7 @@ use crate::{Error, NodeClient, Result};
 
 #[derive(Clone, Debug)]
 pub struct ConnManager {
+    connect_timeout: Option<Duration>,
     core: Arc<Mutex<Core>>,
 }
 
@@ -43,6 +44,12 @@ impl ConnManager {
         ConnManager::default()
     }
 
+    pub fn with_connect_timeout(timeout: Duration) -> Self {
+        let mut mgr = ConnManager::new();
+        mgr.connect_timeout = Some(timeout);
+        mgr
+    }
+
     // TODO(walter) add tags
     pub async fn get(&self, addr: String) -> Result<Channel> {
         let mut core = self.core.lock().unwrap();
@@ -52,7 +59,13 @@ impl ConnManager {
         }
 
         let channel = match Endpoint::new(format!("http://{}", addr)) {
-            Ok(endpoint) => endpoint.connect_lazy(),
+            Ok(endpoint) => {
+                if let Some(connect_timeout) = self.connect_timeout {
+                    endpoint.connect_timeout(connect_timeout).connect_lazy()
+                } else {
+                    endpoint.connect_lazy()
+                }
+            }
             Err(e) => return Err(Error::Internal(Box::new(e))),
         };
         let info = ChannelInfo {
@@ -89,7 +102,10 @@ impl Default for ConnManager {
         tokio::spawn(async move {
             recycle_conn_main(cloned_core).await;
         });
-        ConnManager { core }
+        ConnManager {
+            core,
+            connect_timeout: None,
+        }
     }
 }
 

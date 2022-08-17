@@ -12,37 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
-
-use tracing::trace;
+use std::time::{Duration, Instant};
 
 use crate::{Error, Result};
 
 pub struct RetryState {
-    cnt: u64,
-    interval: Duration,
+    interval_ms: u64,
+    deadline: Option<Instant>,
 }
 
 impl Default for RetryState {
     fn default() -> Self {
-        RetryState::new(30, Duration::from_millis(200))
+        RetryState::new(None)
     }
 }
 
 impl RetryState {
-    pub fn new(cnt: u64, interval: Duration) -> Self {
-        Self { cnt, interval }
+    pub fn new(timeout: Option<Duration>) -> Self {
+        RetryState {
+            interval_ms: 8,
+            deadline: timeout.and_then(|d| Instant::now().checked_add(d)),
+        }
+    }
+
+    #[inline]
+    pub fn timeout(&self) -> Option<Duration> {
+        self.deadline
+            .map(|d| d.saturating_duration_since(Instant::now()))
     }
 
     pub async fn retry(&mut self, err: Error) -> Result<()> {
         match err {
             Error::NotFound(_) | Error::EpochNotMatch(_) => {
-                self.cnt -= 1;
-                trace!("retry state cnt {}", self.cnt);
-                if self.cnt == 0 {
-                    return Err(Error::DeadlineExceeded("timeout".into()));
+                let mut interval = Duration::from_millis(self.interval_ms);
+                if let Some(deadline) = self.deadline {
+                    if let Some(duration) = deadline.checked_duration_since(Instant::now()) {
+                        interval = std::cmp::min(interval, duration);
+                    } else {
+                        return Err(Error::DeadlineExceeded("timeout".into()));
+                    }
                 }
-                tokio::time::sleep(self.interval).await;
+                tokio::time::sleep(interval).await;
+                self.interval_ms = std::cmp::min(self.interval_ms * 2, 250);
                 Ok(())
             }
             Error::NotLeader(..) | Error::GroupNotFound(_) | Error::NotRootLeader(..) => {

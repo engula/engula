@@ -86,7 +86,7 @@ impl From<tonic::Status> for Error {
         match status.code() {
             Code::Ok => panic!("invalid argument"),
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
-            Code::DeadlineExceeded => Error::DeadlineExceeded(status.message().into()),
+            Code::Cancelled => Error::DeadlineExceeded(status.message().into()),
             Code::AlreadyExists => Error::AlreadyExists(status.message().into()),
             Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
@@ -146,7 +146,7 @@ impl From<Error> for AppError {
 
 pub fn find_io_error(status: &tonic::Status) -> Option<&std::io::Error> {
     use tonic::Code;
-    if status.code() == Code::Unavailable || status.code() == Code::Unknown {
+    if status.code() == Code::Unknown {
         find_source::<std::io::Error>(status)
     } else {
         None
@@ -178,7 +178,10 @@ pub fn retryable_io_err(err: &std::io::Error) -> bool {
 }
 
 pub fn retryable_rpc_err(status: &tonic::Status) -> bool {
-    if let Some(err) = find_io_error(status) {
+    use tonic::Code;
+    if status.code() == Code::Unavailable {
+        true
+    } else if let Some(err) = find_io_error(status) {
         retryable_io_err(err)
     } else {
         false

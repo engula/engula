@@ -541,10 +541,12 @@ name = "engula-client"
 version = "0.4.0"
 dependencies = [
  "crc32fast",
+ "ctor",
  "derivative",
  "engula-api",
  "futures",
  "prost",
+ "socket2",
  "thiserror",
  "tokio",
  "tokio-stream",

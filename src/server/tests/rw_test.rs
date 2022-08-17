@@ -17,7 +17,7 @@
 mod helper;
 
 use engula_api::server::v1::ReplicaRole;
-use engula_client::{EngulaClient, Partition};
+use engula_client::{ClientOptions, EngulaClient, Partition};
 use tracing::info;
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
@@ -38,7 +38,9 @@ fn single_node_server() {
         node_client_with_retry(&node_1_addr).await;
 
         let addrs = vec![node_1_addr];
-        let client = EngulaClient::connect(addrs).await.unwrap();
+        let client = EngulaClient::new(ClientOptions::default(), addrs)
+            .await
+            .unwrap();
         let db = client.create_database("test_db".to_string()).await.unwrap();
         let co = db
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))

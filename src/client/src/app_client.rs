@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
@@ -25,6 +25,16 @@ use crate::{
     Router,
 };
 
+#[derive(Debug, Clone, Default)]
+pub struct ClientOptions {
+    /// The duration of connection timeout, an error is issued if establish connection is not
+    /// finished after so many milliseconds.
+    pub connect_timeout: Option<Duration>,
+
+    /// The duration of RPC over this client, in milliseconds.
+    pub timeout: Option<Duration>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Client {
     inner: Arc<ClientInner>,
@@ -32,19 +42,26 @@ pub struct Client {
 
 #[derive(Debug, Clone)]
 struct ClientInner {
+    opts: ClientOptions,
     root_client: RootClient,
     router: Router,
     conn_manager: ConnManager,
 }
 
 impl Client {
-    pub async fn connect(addrs: Vec<String>) -> AppResult<Self> {
-        let conn_manager = ConnManager::new();
+    pub async fn new(opts: ClientOptions, addrs: Vec<String>) -> AppResult<Self> {
+        let conn_manager = if let Some(connect_timeout) = opts.connect_timeout {
+            ConnManager::with_connect_timeout(connect_timeout)
+        } else {
+            ConnManager::new()
+        };
+
         let discovery = Arc::new(StaticServiceDiscovery::new(addrs.clone()));
         let root_client = RootClient::new(discovery, conn_manager.clone());
         let router = Router::new(root_client.clone()).await;
         Ok(Self {
             inner: Arc::new(ClientInner {
+                opts,
                 root_client,
                 router,
                 conn_manager,
@@ -60,6 +77,7 @@ impl Client {
         match AdminResponseExtractor::create_database(resp) {
             None => Err(AppError::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
+                rpc_timeout: self.inner.opts.timeout,
                 desc,
                 client: self.clone(),
             }),
@@ -74,6 +92,7 @@ impl Client {
         Ok(AdminResponseExtractor::list_database(resp)
             .into_iter()
             .map(|desc| Database {
+                rpc_timeout: self.inner.opts.timeout,
                 desc,
                 client: self.clone(),
             })
@@ -88,6 +107,7 @@ impl Client {
         match AdminResponseExtractor::get_database(resp) {
             None => Err(AppError::NotFound(format!("database {}", name))),
             Some(desc) => Ok(Database {
+                rpc_timeout: self.inner.opts.timeout,
                 desc,
                 client: self.clone(),
             }),
@@ -97,6 +117,7 @@ impl Client {
 
 #[derive(Debug, Clone)]
 pub struct Database {
+    rpc_timeout: Option<Duration>,
     desc: DatabaseDesc,
     client: Client,
 }
@@ -136,6 +157,7 @@ impl Database {
         match AdminResponseExtractor::create_collection(resp) {
             None => Err(AppError::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
+                rpc_timeout: self.rpc_timeout,
                 db_desc,
                 co_desc,
                 client: client.clone(),
@@ -154,6 +176,7 @@ impl Database {
         Ok(AdminResponseExtractor::list_collection(resp)
             .into_iter()
             .map(|co_desc| Collection {
+                rpc_timeout: self.rpc_timeout,
                 db_desc: self.desc.to_owned(),
                 co_desc,
                 client: client.clone(),
@@ -174,6 +197,7 @@ impl Database {
         match AdminResponseExtractor::get_collection(resp) {
             None => Err(AppError::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
+                rpc_timeout: self.rpc_timeout,
                 db_desc,
                 co_desc,
                 client: client.clone(),
@@ -189,6 +213,7 @@ impl Database {
 
 #[derive(Debug, Clone)]
 pub struct Collection {
+    rpc_timeout: Option<Duration>,
     #[allow(unused)]
     db_desc: DatabaseDesc,
     co_desc: CollectionDesc,
@@ -197,10 +222,10 @@ pub struct Collection {
 
 impl Collection {
     pub async fn delete(&self, key: Vec<u8>) -> AppResult<()> {
-        let mut retry_state = RetryState::default();
+        let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
-            match self.delete_inner(&key).await {
+            match self.delete_inner(&key, retry_state.timeout()).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     retry_state.retry(err).await?;
@@ -210,10 +235,10 @@ impl Collection {
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> AppResult<()> {
-        let mut retry_state = RetryState::default();
+        let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
-            match self.put_inner(&key, &value).await {
+            match self.put_inner(&key, &value, retry_state.timeout()).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     retry_state.retry(err).await?;
@@ -223,10 +248,10 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> AppResult<Option<Vec<u8>>> {
-        let mut retry_state = RetryState::default();
+        let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
-            match self.get_inner(&key).await {
+            match self.get_inner(&key, retry_state.timeout()).await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
                     retry_state.retry(err).await?;
@@ -235,7 +260,7 @@ impl Collection {
         }
     }
 
-    async fn delete_inner(&self, key: &[u8]) -> crate::Result<()> {
+    async fn delete_inner(&self, key: &[u8], timeout: Option<Duration>) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
         let mut client = GroupClient::new(
@@ -249,11 +274,19 @@ impl Collection {
                 key: key.to_owned(),
             }),
         });
+        if let Some(duration) = timeout {
+            client.set_timeout(duration);
+        }
         client.request(&req).await?;
         Ok(())
     }
 
-    async fn put_inner(&self, key: &[u8], value: &[u8]) -> crate::Result<()> {
+    async fn put_inner(
+        &self,
+        key: &[u8],
+        value: &[u8],
+        timeout: Option<Duration>,
+    ) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
         let mut client = GroupClient::new(
@@ -268,11 +301,18 @@ impl Collection {
                 value: value.to_owned(),
             }),
         });
+        if let Some(duration) = timeout {
+            client.set_timeout(duration);
+        }
         client.request(&req).await?;
         Ok(())
     }
 
-    async fn get_inner(&self, key: &[u8]) -> crate::Result<Option<Vec<u8>>> {
+    async fn get_inner(
+        &self,
+        key: &[u8],
+        timeout: Option<Duration>,
+    ) -> crate::Result<Option<Vec<u8>>> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
         let mut client = GroupClient::new(
@@ -286,6 +326,9 @@ impl Collection {
                 key: key.to_owned(),
             }),
         });
+        if let Some(duration) = timeout {
+            client.set_timeout(duration);
+        }
         match client.request(&req).await? {
             Response::Get(GetResponse { value }) => Ok(value),
             _ => Err(crate::Error::Internal(wrap(
@@ -303,6 +346,15 @@ impl Collection {
         self.co_desc.clone()
     }
 }
+
+// impl Default for ClientOptions {
+//     fn default() -> Self {
+//         ClientOptions {
+//             connect_timeout_ms: 200,
+//             timeout_ms: 500,
+//         }
+//     }
+// }
 
 #[inline]
 fn wrap(msg: &str) -> Box<dyn std::error::Error + Sync + Send + 'static> {
