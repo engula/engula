@@ -260,7 +260,8 @@ impl Root {
     }
 
     async fn handle_schedule_state(&self, resp: &CollectScheduleStateResponse) -> Result<()> {
-        self.ongoing_stats.handle_update(&resp.schedule_states, None);
+        self.ongoing_stats
+            .handle_update(&resp.schedule_states, None);
         Ok(())
     }
 }

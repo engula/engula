@@ -121,6 +121,7 @@ impl Root {
             shared.clone(),
             alloc.clone(),
             heartbeat_queue.clone(),
+            ongoing_stats.clone(),
             jobs.to_owned(),
             cfg.root.to_owned(),
         );
@@ -844,6 +845,7 @@ impl Root {
         // mock report doesn't work.
         // return Ok(());
 
+        let ongoing_stats = self.ongoing_stats.clone();
         let schema = self.schema()?;
         let mut update_events = Vec::new();
         let mut changed_group_states = Vec::new();
@@ -877,6 +879,11 @@ impl Root {
             schema
                 .update_group_replica(group_desc.to_owned(), replica_state.to_owned())
                 .await?;
+
+            if let Some(sched_state) = u.schedule_state {
+                ongoing_stats.handle_update(&[sched_state], None);
+            }
+
             if let Some(desc) = group_desc {
                 info!(
                     group = desc.id,
@@ -1102,7 +1109,7 @@ impl HeartbeatQueue {
     }
 }
 
-struct ReplicaDelta {
+struct GroupDelta {
     incoming: Vec<ReplicaDesc>,
     outgoing: Vec<ReplicaDesc>,
 }
@@ -1121,7 +1128,7 @@ pub struct OngoingStats {
 
 #[derive(Default)]
 struct SchedStats {
-    raw_group_delta: HashMap<u64 /* group */, ReplicaDelta>,
+    raw_group_delta: HashMap<u64 /* group */, GroupDelta>,
     node_view: HashMap<u64 /* node */, NodeDelta>,
 }
 
@@ -1182,7 +1189,7 @@ impl SchedStats {
         for state in updates {
             self.raw_group_delta.insert(
                 state.group_id,
-                ReplicaDelta {
+                GroupDelta {
                     incoming: state.incoming_replicas.to_owned(),
                     outgoing: state.outgoing_replicas.to_owned(),
                 },
