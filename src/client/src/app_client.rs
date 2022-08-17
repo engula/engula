@@ -28,10 +28,10 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 pub struct ClientOptions {
     /// The duration of connection timeout, an error is issued if establish connection is not
-    /// finished after so many milliseconds.
+    /// finished after so the duration.
     pub connect_timeout: Option<Duration>,
 
-    /// The duration of RPC over this client, in milliseconds.
+    /// The duration of RPC over this client.
     pub timeout: Option<Duration>,
 }
 
