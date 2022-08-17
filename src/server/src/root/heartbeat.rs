@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    collections::{hash_map, HashMap, HashSet},
-    ops::Add,
-    sync::{Arc, Mutex},
-    time::Duration,
-    vec,
-};
+use std::{collections::HashSet, ops::Add, sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{
     watch_response::{update_event, UpdateEvent},
@@ -266,119 +260,7 @@ impl Root {
     }
 
     async fn handle_schedule_state(&self, resp: &CollectScheduleStateResponse) -> Result<()> {
-        self.delta_stats.handle_update(&resp.schedule_states, None);
+        self.ongoing_stats.handle_update(&resp.schedule_states, None);
         Ok(())
     }
-}
-
-struct ReplicaDelta {
-    incoming: Vec<ReplicaDesc>,
-    outgoing: Vec<ReplicaDesc>,
-}
-
-#[derive(Clone, Default)]
-pub struct NodeDelta {
-    pub replica_count: i64,
-    // TODO: qps
-}
-
-#[derive(Default, Clone)]
-pub struct DeltaStats {
-    sched_inner: Arc<Mutex<ScheduleDeltaInner>>,
-    job_inner: Arc<Mutex<JobInner>>,
-}
-
-#[derive(Default)]
-struct ScheduleDeltaInner {
-    raw_group_delta: HashMap<u64 /* group */, ReplicaDelta>,
-    node_view: HashMap<u64 /* node */, NodeDelta>,
-}
-
-impl DeltaStats {
-    fn handle_update(
-        &self,
-        state_updates: &[ScheduleState],
-        job_updates: Option<HashMap<u64 /* node */, NodeDelta>>,
-    ) {
-        if !state_updates.is_empty() {
-            let mut inner = self.sched_inner.lock().unwrap();
-            inner.replace_state(state_updates);
-            inner.rebuild_view();
-        }
-        if job_updates.is_some() {
-            let mut inner = self.job_inner.lock().unwrap();
-            inner.node_delta = job_updates.as_ref().unwrap().to_owned();
-        }
-    }
-
-    pub fn get_node_delta(&self, node: u64) -> NodeDelta {
-        let mut rs = NodeDelta::default();
-        if let Some(sched_node_delta) = {
-            let inner = self.sched_inner.lock().unwrap();
-            inner.node_view.get(&node).map(ToOwned::to_owned)
-        } {
-            rs.replica_count += sched_node_delta.replica_count;
-        }
-        if let Some(job_node_delta) = {
-            let inner = self.job_inner.lock().unwrap();
-            inner.node_delta.get(&node).map(ToOwned::to_owned)
-        } {
-            rs.replica_count += job_node_delta.replica_count;
-        }
-        rs
-    }
-
-    pub fn reset(&self) {
-        {
-            let mut inner = self.sched_inner.lock().unwrap();
-            inner.raw_group_delta.clear();
-            inner.node_view.clear();
-        }
-        {
-            let mut inner = self.job_inner.lock().unwrap();
-            inner.node_delta.clear();
-        }
-    }
-}
-
-impl ScheduleDeltaInner {
-    fn replace_state(&mut self, updates: &[ScheduleState]) {
-        for state in updates {
-            self.raw_group_delta.insert(
-                state.group_id,
-                ReplicaDelta {
-                    incoming: state.incoming_replicas.to_owned(),
-                    outgoing: state.outgoing_replicas.to_owned(),
-                },
-            );
-        }
-    }
-
-    fn rebuild_view(&mut self) {
-        let mut new_node_view: HashMap<u64, NodeDelta> = HashMap::new();
-        for r in self.raw_group_delta.values() {
-            for incoming in &r.incoming {
-                match new_node_view.entry(incoming.node_id) {
-                    hash_map::Entry::Occupied(mut ent) => ent.get_mut().replica_count += 1,
-                    hash_map::Entry::Vacant(ent) => {
-                        ent.insert(NodeDelta { replica_count: 1 });
-                    }
-                }
-            }
-            for outgoing in &r.outgoing {
-                match new_node_view.entry(outgoing.node_id) {
-                    hash_map::Entry::Occupied(mut ent) => ent.get_mut().replica_count -= 1,
-                    hash_map::Entry::Vacant(ent) => {
-                        ent.insert(NodeDelta { replica_count: -1 });
-                    }
-                }
-            }
-        }
-        self.node_view = new_node_view;
-    }
-}
-
-#[derive(Default)]
-struct JobInner {
-    node_delta: HashMap<u64 /* node_id */, NodeDelta>,
 }

@@ -22,18 +22,18 @@ use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use tracing::trace;
 
 use super::{source::NodeFilter, *};
-use crate::{bootstrap::ROOT_GROUP_ID, root::heartbeat::DeltaStats, Result};
+use crate::{bootstrap::ROOT_GROUP_ID, root::OngoingStats, Result};
 
 pub struct ReplicaCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
-    delta_stats: Arc<DeltaStats>,
+    ongoing_stats: Arc<OngoingStats>,
 }
 
 impl<T: AllocSource> ReplicaCountPolicy<T> {
-    pub fn with(alloc_source: Arc<T>, delta_stats: Arc<DeltaStats>) -> Self {
+    pub fn with(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>) -> Self {
         Self {
             alloc_source,
-            delta_stats,
+            ongoing_stats,
         }
     }
 
@@ -205,7 +205,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
     fn node_replica_count(&self, n: &NodeDesc) -> u64 {
         let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
-        let delta = self.delta_stats.get_node_delta(n.id);
+        let delta = self.ongoing_stats.get_node_delta(n.id);
         cnt += delta.replica_count;
         if cnt < 0 {
             cnt = 0;
