@@ -53,6 +53,7 @@ impl Task for ReplicaMigration {
             // TODO: verify task pre-conditions.
             if let Some(locks) = ctx.group_lock_table.config_change(
                 task_id,
+                move_replicas.epoch,
                 &peers,
                 &move_replicas.incoming_replicas,
                 &[],

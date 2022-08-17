@@ -21,7 +21,7 @@ use self::{
     policy_leader_cnt::LeaderCountPolicy, policy_replica_cnt::ReplicaCountPolicy,
     policy_shard_cnt::ShardCountPolicy, source::NodeFilter,
 };
-use super::{metrics, RootShared};
+use super::{metrics, OngoingStats, RootShared};
 use crate::{bootstrap::REPLICA_PER_GROUP, Result};
 
 #[cfg(test)]
@@ -132,14 +132,16 @@ impl RootConfig {
 #[derive(Clone)]
 pub struct Allocator<T: AllocSource> {
     alloc_source: Arc<T>,
+    ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
 }
 
 impl<T: AllocSource> Allocator<T> {
-    pub fn new(alloc_source: Arc<T>, config: RootConfig) -> Self {
+    pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
         Self {
             alloc_source,
             config,
+            ongoing_stats,
         }
     }
 
@@ -193,7 +195,9 @@ impl<T: AllocSource> Allocator<T> {
         // TODO: try qps rebalance.
 
         // try replica-count rebalance.
-        let actions = ReplicaCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
+        let actions =
+            ReplicaCountPolicy::with(self.alloc_source.to_owned(), self.ongoing_stats.to_owned())
+                .compute_balance()?;
         if !actions.is_empty() {
             return Ok(actions);
         }
@@ -231,7 +235,7 @@ impl<T: AllocSource> Allocator<T> {
     ) -> Result<Vec<NodeDesc>> {
         self.alloc_source.refresh_all().await?;
 
-        ReplicaCountPolicy::with(self.alloc_source.to_owned())
+        ReplicaCountPolicy::with(self.alloc_source.to_owned(), self.ongoing_stats.to_owned())
             .allocate_group_replica(existing_replica_nodes, wanted_count)
     }
 

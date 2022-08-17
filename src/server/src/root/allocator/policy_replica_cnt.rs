@@ -22,15 +22,19 @@ use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use tracing::trace;
 
 use super::{source::NodeFilter, *};
-use crate::{bootstrap::ROOT_GROUP_ID, Result};
+use crate::{bootstrap::ROOT_GROUP_ID, root::OngoingStats, Result};
 
 pub struct ReplicaCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
+    ongoing_stats: Arc<OngoingStats>,
 }
 
 impl<T: AllocSource> ReplicaCountPolicy<T> {
-    pub fn with(alloc_source: Arc<T>) -> Self {
-        Self { alloc_source }
+    pub fn with(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>) -> Self {
+        Self {
+            alloc_source,
+            ongoing_stats,
+        }
     }
 
     pub fn allocate_group_replica(
@@ -45,8 +49,8 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
 
         // sort by alloc score
         candidate_nodes.sort_by(|n1, n2| {
-            Self::node_alloc_score(n2)
-                .partial_cmp(&Self::node_alloc_score(n1))
+            self.node_alloc_score(n2)
+                .partial_cmp(&self.node_alloc_score(n1))
                 .unwrap()
         });
 
@@ -57,9 +61,9 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         let mean_cnt = self.mean_replica_count(NodeFilter::Schedulable);
         let candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
-        let ranked_candidates = Self::rank_node_for_balance(candidate_nodes, mean_cnt);
+        let ranked_candidates = self.rank_node_for_balance(candidate_nodes, mean_cnt);
         trace!(
-            scored_nodes = ?ranked_candidates.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().replica_count, s)).collect::<Vec<_>>(),
+            scored_nodes = ?ranked_candidates.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, self.node_replica_count(n), s)).collect::<Vec<_>>(),
             mean = mean_cnt,
             "node ranked by replica count",
         );
@@ -107,7 +111,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if *state != BalanceStatus::Underfull {
                 break;
             }
-            let sim_count = (target.capacity.as_ref().unwrap().replica_count + 1) as f64;
+            let sim_count = (self.node_replica_count(target) + 1) as f64;
             if Self::node_balance_state(sim_count, mean) == BalanceStatus::Overfull {
                 continue;
             }
@@ -149,16 +153,20 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         let nodes = self.alloc_source.nodes(filter);
         let total_replicas = nodes
             .iter()
-            .map(|n| n.capacity.as_ref().unwrap().replica_count)
+            .map(|n| self.node_replica_count(n))
             .sum::<u64>() as f64;
         total_replicas / (nodes.len() as f64)
     }
 
-    fn rank_node_for_balance(ns: Vec<NodeDesc>, mean_cnt: f64) -> Vec<(NodeDesc, BalanceStatus)> {
+    fn rank_node_for_balance(
+        &self,
+        ns: Vec<NodeDesc>,
+        mean_cnt: f64,
+    ) -> Vec<(NodeDesc, BalanceStatus)> {
         let mut with_status = ns
             .into_iter()
             .map(|n| {
-                let replica_num = n.capacity.as_ref().unwrap().replica_count as f64;
+                let replica_num = self.node_replica_count(&n) as f64;
                 let s = Self::node_balance_state(replica_num, mean_cnt);
                 (n, s)
             })
@@ -170,13 +178,9 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
             if (n2.1 == BalanceStatus::Underfull) && (n1.1 != BalanceStatus::Underfull) {
                 return Ordering::Less;
             }
-            return n2
-                .0
-                .capacity
-                .as_ref()
-                .unwrap()
-                .replica_count
-                .cmp(&n1.0.capacity.as_ref().unwrap().replica_count);
+            let n2_cnt = self.node_replica_count(&n2.0);
+            let n1_cnt = self.node_replica_count(&n1.0);
+            n2_cnt.cmp(&n1_cnt)
         });
         with_status
     }
@@ -194,8 +198,18 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         BalanceStatus::Balanced
     }
 
-    fn node_alloc_score(n: &NodeDesc) -> f64 {
+    fn node_alloc_score(&self, n: &NodeDesc) -> f64 {
         // TODO: add more rule to calculate score.
-        -(n.capacity.as_ref().unwrap().replica_count as f64)
+        -(self.node_replica_count(n) as f64)
+    }
+
+    fn node_replica_count(&self, n: &NodeDesc) -> u64 {
+        let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
+        let delta = self.ongoing_stats.get_node_delta(n.id);
+        cnt += delta.replica_count;
+        if cnt < 0 {
+            cnt = 0;
+        }
+        cnt as u64
     }
 }

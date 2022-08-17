@@ -36,6 +36,7 @@ pub struct ScheduleContext {
     shared: Arc<RootShared>,
     alloc: Arc<Allocator<SysAllocSource>>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    ongoing_stats: Arc<OngoingStats>,
     jobs: Arc<Jobs>,
     cfg: RootConfig,
 }
@@ -306,6 +307,7 @@ impl ScheduleContext {
         shared: Arc<RootShared>,
         alloc: Arc<Allocator<SysAllocSource>>,
         heartbeat_queue: Arc<HeartbeatQueue>,
+        ongoing_stats: Arc<OngoingStats>,
         jobs: Arc<Jobs>,
         cfg: RootConfig,
     ) -> Self {
@@ -313,6 +315,7 @@ impl ScheduleContext {
             shared,
             alloc,
             heartbeat_queue,
+            ongoing_stats,
             jobs,
             cfg,
         }
@@ -411,8 +414,8 @@ impl ScheduleContext {
             )
             .await
         {
-            Ok(_schedule_state) => {
-                // TODO: update local schedule_state
+            Ok(schedule_state) => {
+                self.ongoing_stats.handle_update(&[schedule_state], None);
                 Ok((true, false))
             }
             Err(crate::Error::AlreadyExists(_)) | Err(crate::Error::EpochNotMatch(_)) => {

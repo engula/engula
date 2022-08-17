@@ -57,9 +57,10 @@ impl PromoteGroup {
 
         let incoming_peers = replicas.iter().map(|r| r.id).collect::<Vec<_>>();
         let new_task_id = ctx.next_task_id();
+        let epoch = ctx.replica.epoch();
         let locks = ctx
             .group_lock_table
-            .config_change(new_task_id, &[former_replica_id], &replicas, &[])
+            .config_change(new_task_id, epoch, &[former_replica_id], &replicas, &[])
             .expect("Check conflicts in before steps");
         let create_replicas = Box::new(CreateReplicas::new(replicas.clone()));
         let add_learners = Box::new(AddLearners {
