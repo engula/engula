@@ -29,7 +29,7 @@ NUM_SERVERS=5
 # The first port of servers in cluster.
 BASE_PORT=21805
 
-export RUST_LOG=engula_server=debug
+export RUST_LOG=info,engula_server=debug,engula_client=debug
 
 ###### CONFIG ######
 
@@ -100,7 +100,7 @@ function start_join_server() {
 function start_server() {
     local id=$1
     ulimit -c unlimited
-    ulimit -n 1024000
+    ulimit -n 102400
     setsid ${BASE_DIR}/engula start \
         --conf ${BASE_DIR}/config/${id}.toml \
         >${BASE_DIR}/log/${id}.log 2>&1 &
@@ -145,6 +145,7 @@ function stop() {
 function setup_cluster() {
     ${BASE_DIR}/engula start \
         --db ${BASE_DIR}/server/1 \
+        --cpu-nums 2 \
         --addr "127.0.0.1:${BASE_PORT}" \
         --init \
         --dump-config ${BASE_DIR}/config/1.toml
@@ -154,6 +155,7 @@ function setup_cluster() {
 
         ${BASE_DIR}/engula start \
             --db ${BASE_DIR}/server/${id} \
+            --cpu-nums 2 \
             --addr "127.0.0.1:$(server_port ${id})" \
             ${servers} \
             --dump-config ${BASE_DIR}/config/${id}.toml
