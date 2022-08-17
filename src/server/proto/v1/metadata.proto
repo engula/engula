@@ -18,7 +18,6 @@ syntax = "proto3";
 
 package serverpb.v1;
 
-import "eraft.proto";
 import "engula/server/v1/metadata.proto";
 
 message SnapshotMeta {
