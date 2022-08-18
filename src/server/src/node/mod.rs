@@ -40,7 +40,7 @@ use self::{
 use crate::{
     bootstrap::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{RaftManager, RaftNodeFacade, TransportManager},
+    raftgroup::{snap::RecycleSnapMode, RaftManager, RaftNodeFacade, TransportManager},
     runtime::{sync::WaitGroup, Executor},
     schedule::MoveReplicasProvider,
     serverpb::v1::*,
@@ -134,14 +134,18 @@ impl Node {
         let node_id = node_ident.node_id;
         let it = self.provider.state_engine.iterate_replica_states().await;
         for (group_id, replica_id, state) in it {
-            match state {
-                ReplicaLocalState::Tombstone => continue,
-                ReplicaLocalState::Terminated => {
-                    setup_destory_replica(group_id, replica_id, self.provider.as_ref());
-                    continue;
-                }
-                _ => {}
-            };
+            if state == ReplicaLocalState::Terminated {
+                setup_destory_replica(group_id, replica_id, self.provider.as_ref());
+            }
+            if matches!(
+                state,
+                ReplicaLocalState::Tombstone | ReplicaLocalState::Terminated
+            ) {
+                self.raft_mgr
+                    .snapshot_manager()
+                    .recycle_snapshots(replica_id, RecycleSnapMode::All);
+                continue;
+            }
 
             let desc = ReplicaDesc {
                 id: replica_id,
@@ -268,6 +272,10 @@ impl Node {
         };
 
         wait_group.wait().await;
+
+        self.raft_mgr
+            .snapshot_manager()
+            .recycle_snapshots(replica_id, RecycleSnapMode::All);
 
         // This replica is shutdowned, we need to update and persisted states.
         self.provider

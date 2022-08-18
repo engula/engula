@@ -40,6 +40,12 @@ const SNAP_DATA: &str = "DATA";
 const SNAP_TEMP: &str = "TEMP";
 const SNAP_META: &str = "META";
 
+#[derive(Debug)]
+pub enum RecycleSnapMode {
+    RequiredIndex(u64),
+    All,
+}
+
 /// A wrapper of snapshot meta, with the parent dir.
 #[derive(Clone)]
 pub struct SnapshotInfo {
@@ -238,7 +244,7 @@ impl SnapManager {
             })
     }
 
-    pub fn recycle_snapshots(&self, replica_id: u64, required_index: u64) {
+    pub fn recycle_snapshots(&self, replica_id: u64, mode: RecycleSnapMode) {
         let now = Instant::now();
         let (mut sender, snapshots) = {
             let mut inner = self.shared.inner.lock().unwrap();
@@ -248,18 +254,26 @@ impl SnapManager {
             }
 
             let replica = replica.unwrap();
-            let snapshots = replica
-                .snapshots
-                .drain_filter(|info| {
-                    info.meta.apply_state.as_ref().unwrap().index < required_index
-                        && info.created_at + self.shared.min_keep_intervals < now
-                        && info.ref_count == 0
-                })
-                .map(|info| info.base_dir)
-                .collect::<Vec<_>>();
-            if replica.snapshots.is_empty() {
-                inner.replicas.remove(&replica_id);
-            }
+            let snapshots = match mode {
+                RecycleSnapMode::RequiredIndex(required_index) => replica
+                    .snapshots
+                    .drain_filter(|info| {
+                        info.meta.apply_state.as_ref().unwrap().index < required_index
+                            && info.created_at + self.shared.min_keep_intervals < now
+                            && info.ref_count == 0
+                    })
+                    .map(|info| info.base_dir)
+                    .collect::<Vec<_>>(),
+                RecycleSnapMode::All => {
+                    let snapshots = replica
+                        .snapshots
+                        .iter()
+                        .map(|info| info.base_dir.clone())
+                        .collect::<Vec<_>>();
+                    inner.replicas.remove(&replica_id);
+                    snapshots
+                }
+            };
             (inner.sender.clone(), snapshots)
         };
 
@@ -611,14 +625,14 @@ mod tests {
             let snap = snap_manager.lock_snap(replica_id, &snap_id_2);
             assert!(snap.is_some());
 
-            snap_manager.recycle_snapshots(replica_id, 3);
+            snap_manager.recycle_snapshots(replica_id, RecycleSnapMode::RequiredIndex(3));
             assert!(snap_manager.lock_snap(replica_id, &snap_id_1).is_none());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_2).is_some());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_3).is_some());
 
             drop(snap);
 
-            snap_manager.recycle_snapshots(replica_id, 3);
+            snap_manager.recycle_snapshots(replica_id, RecycleSnapMode::RequiredIndex(3));
             assert!(snap_manager.lock_snap(replica_id, &snap_id_1).is_none());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_2).is_none());
             assert!(snap_manager.lock_snap(replica_id, &snap_id_3).is_some());
@@ -649,6 +663,27 @@ mod tests {
 
             assert!(matches!(snap_mgr.latest_snap(replica_id),
                 Some(info) if info.snapshot_id == expected_id));
+        });
+    }
+
+    #[test]
+    fn recycle_during_creating() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            let root_dir = TempDir::new("snap-recycle-during-creating").unwrap();
+            std::fs::create_dir_all(&root_dir).unwrap();
+
+            let replica_id: u64 = 1;
+            let snap_mgr = SnapManager::new(root_dir.path().to_owned());
+
+            let snap_dir_1 = snap_mgr.create(replica_id);
+            let snap_meta = SnapshotMeta {
+                apply_state: Some(ApplyState::default()),
+                group_desc: Some(GroupDesc::default()),
+                files: vec![],
+            };
+            snap_mgr.recycle_snapshots(replica_id, RecycleSnapMode::RequiredIndex(123123));
+            snap_mgr.install(replica_id, &snap_dir_1, &snap_meta);
         });
     }
 }
