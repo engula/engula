@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use engula_api::{server::v1::*, v1::*};
-use tonic::transport::Channel;
+use prost::Message;
+use tonic::{transport::Channel, IntoRequest};
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -72,7 +75,7 @@ impl Client {
 
     pub async fn batch_group_requests(
         &self,
-        req: BatchRequest,
+        req: impl IntoRequest<BatchRequest>,
     ) -> Result<Vec<GroupResponse>, tonic::Status> {
         let mut client = self.client.clone();
         let res = client.batch(req).await?;
@@ -315,5 +318,29 @@ impl RequestBatchBuilder {
             node_id: self.node_id,
             requests: self.requests,
         }
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct RpcTimeout<T: Message> {
+    timeout: Option<Duration>,
+    msg: T,
+}
+
+impl<T: Message> RpcTimeout<T> {
+    pub fn new(timeout: Option<Duration>, msg: T) -> Self {
+        RpcTimeout { timeout, msg }
+    }
+}
+
+impl<T: Message> IntoRequest<T> for RpcTimeout<T> {
+    fn into_request(self) -> tonic::Request<T> {
+        use tonic::Request;
+
+        let mut req = Request::new(self.msg);
+        if let Some(duration) = self.timeout {
+            req.set_timeout(duration);
+        }
+        req
     }
 }

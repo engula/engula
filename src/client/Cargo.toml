@@ -21,4 +21,6 @@ tonic = "0.7.2"
 tracing = "0.1"
 
 [dev-dependencies]
+ctor = "0.1.22"
+socket2 = "0.4.4"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }

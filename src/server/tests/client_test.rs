@@ -16,7 +16,9 @@
 
 mod helper;
 
-use engula_client::{AppError, Partition};
+use std::time::Duration;
+
+use engula_client::{AppError, ClientOptions, Partition};
 use tracing::info;
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
@@ -33,7 +35,11 @@ fn to_unreachable_peers() {
         let mut ctx = TestContext::new("client_test__to_unreachable_peers");
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
-        let client = c.app_client().await;
+        let opts = ClientOptions {
+            connect_timeout: Some(Duration::from_millis(50)),
+            timeout: Some(Duration::from_millis(200)),
+        };
+        let client = c.app_client_with_options(opts).await;
         let db = client.create_database("test_db".to_string()).await.unwrap();
         let co = db
             .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))

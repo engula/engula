@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use engula_client::{AppError, EngulaClient, Partition};
+use engula_client::{AppError, ClientOptions, EngulaClient, Partition};
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     tracing_subscriber::fmt::init();
 
     let addrs = vec!["127.0.0.1:21805".to_owned()];
-    let client = EngulaClient::connect(addrs).await?;
+    let client = EngulaClient::new(ClientOptions::default(), addrs).await?;
     let db = client.create_database("test_db".to_string()).await?;
     let co = db
         .create_collection("test_co".to_string(), Some(Partition::Hash { slots: 3 }))

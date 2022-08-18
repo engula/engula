@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, future::Future, task::Poll, time::Duration};
+use std::{
+    collections::HashMap,
+    future::Future,
+    task::Poll,
+    time::{Duration, Instant},
+};
 
 use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
@@ -23,7 +28,8 @@ use tonic::{Code, Status};
 use tracing::{debug, trace, warn};
 
 use crate::{
-    error::retryable_rpc_err, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
+    error::retryable_rpc_err, node_client::RpcTimeout, ConnManager, Error, NodeClient,
+    RequestBatchBuilder, Result, Router,
 };
 
 pub struct RetryableShardChunkStreaming<'a> {
@@ -39,11 +45,20 @@ struct InvokeOpt<'a> {
     accurate_epoch: bool,
 }
 
+#[derive(Clone, Debug, Default)]
+struct InvokeContext {
+    group_id: u64,
+    epoch: u64,
+    node_id: u64,
+    timeout: Option<Duration>,
+}
+
 #[derive(Clone)]
 pub struct GroupClient {
     group_id: u64,
     router: Router,
     conn_manager: ConnManager,
+    timeout: Option<Duration>,
 
     epoch: u64,
     leader_state: Option<(u64, u64)>,
@@ -61,6 +76,7 @@ impl GroupClient {
     pub fn new(group_id: u64, router: Router, conn_manager: ConnManager) -> Self {
         GroupClient {
             group_id,
+            timeout: None,
 
             node_clients: HashMap::default(),
             epoch: 0,
@@ -74,9 +90,16 @@ impl GroupClient {
         }
     }
 
+    /// Apply a timeout to next request issued via this client.
+    ///
+    /// NOTES: it depends the underlying request metadata (grpc-timeout header).
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = Some(timeout);
+    }
+
     async fn invoke<F, O, V>(&mut self, op: F) -> Result<V>
     where
-        F: Fn(u64, u64, u64, NodeClient) -> O,
+        F: Fn(InvokeContext, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
         self.invoke_opt(op, InvokeOpt::default()).await
@@ -84,22 +107,46 @@ impl GroupClient {
 
     async fn invoke_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
     where
-        F: Fn(u64, u64, u64, NodeClient) -> O,
+        F: Fn(InvokeContext, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
-        // FIXME(walter) support timeout
-        for _ in 0..4 {
-            let (node_id, client) = self.recommend_client().await;
-            trace!("issue rpc request to node {node_id}");
-            match op(self.group_id, self.epoch, node_id, client).await {
-                Ok(s) => return Ok(s),
-                Err(status) => {
-                    self.apply_status(status, &opt).await?;
-                }
+        let deadline = self
+            .timeout
+            .take()
+            .map(|duration| Instant::now() + duration);
+        let mut num_seeked = 0;
+        while num_seeked < self.replicas.len() + 1 {
+            if deadline
+                .map(|v| v.elapsed() > Duration::ZERO)
+                .unwrap_or_default()
+            {
+                return Err(Error::DeadlineExceeded("invoke_opt".to_owned()));
             }
+
+            let (node_id, client) = self.recommend_client().await;
+
+            trace!("issue rpc request to node {node_id}, num seeked {num_seeked}");
+            let ctx = InvokeContext {
+                group_id: self.group_id,
+                epoch: self.epoch,
+                node_id,
+                timeout: self.timeout,
+            };
+            let status = match op(ctx, client).await {
+                Err(status) => status,
+                Ok(s) => return Ok(s),
+            };
+
+            self.apply_status(status, &opt).await?;
+
+            // records the num of seeked replicas.
+            num_seeked = if self.access_node_id.is_none() {
+                num_seeked + 1
+            } else {
+                0
+            };
         }
 
-        // FIXME(walter) support timeout
         Err(Error::EpochNotMatch(GroupDesc::default()))
     }
 
@@ -274,12 +321,12 @@ impl GroupClient {
 
 impl GroupClient {
     pub async fn request(&mut self, request: &Request) -> Result<Response> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
+        let op = |ctx: InvokeContext, client: NodeClient| {
             let req = BatchRequest {
-                node_id,
+                node_id: ctx.node_id,
                 requests: vec![GroupRequest {
-                    group_id,
-                    epoch,
+                    group_id: ctx.group_id,
+                    epoch: ctx.epoch,
                     request: Some(GroupRequestUnion {
                         request: Some(request.clone()),
                     }),
@@ -287,7 +334,7 @@ impl GroupClient {
             };
             async move {
                 client
-                    .batch_group_requests(req)
+                    .batch_group_requests(RpcTimeout::new(ctx.timeout, req))
                     .await
                     .and_then(Self::batch_response)
                     .and_then(Self::group_response)
@@ -302,10 +349,10 @@ impl GroupClient {
     }
 
     pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
+        let op = |ctx: InvokeContext, client: NodeClient| {
             let desc = desc.to_owned();
-            let req = RequestBatchBuilder::new(node_id)
-                .create_shard(group_id, epoch, desc)
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .create_shard(ctx.group_id, ctx.epoch, desc)
                 .build();
             async move {
                 let resp = client
@@ -325,10 +372,10 @@ impl GroupClient {
     }
 
     pub async fn transfer_leader(&mut self, dest_replica: u64) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
+        let op = |ctx: InvokeContext, client: NodeClient| {
             let dest_replica = dest_replica.to_owned();
-            let req = RequestBatchBuilder::new(node_id)
-                .transfer_leader(group_id, epoch, dest_replica)
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .transfer_leader(ctx.group_id, ctx.epoch, dest_replica)
                 .build();
             async move {
                 let resp = client
@@ -352,10 +399,10 @@ impl GroupClient {
     }
 
     pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
+        let op = |ctx: InvokeContext, client: NodeClient| {
             let remove_replica = remove_replica.to_owned();
-            let req = RequestBatchBuilder::new(node_id)
-                .remove_replica(group_id, epoch, remove_replica)
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .remove_replica(ctx.group_id, ctx.epoch, remove_replica)
                 .build();
             async move {
                 let resp = client
@@ -375,9 +422,9 @@ impl GroupClient {
     }
 
     pub async fn add_replica(&mut self, replica: u64, node: u64) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
-            let req = RequestBatchBuilder::new(node_id)
-                .add_replica(group_id, epoch, replica, node)
+        let op = |ctx: InvokeContext, client: NodeClient| {
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .add_replica(ctx.group_id, ctx.epoch, replica, node)
                 .build();
             async move {
                 let resp = client
@@ -419,9 +466,9 @@ impl GroupClient {
     }
 
     pub async fn add_learner(&mut self, replica: u64, node: u64) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
-            let req = RequestBatchBuilder::new(node_id)
-                .add_learner(group_id, epoch, replica, node)
+        let op = |ctx: InvokeContext, client: NodeClient| {
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .add_learner(ctx.group_id, ctx.epoch, replica, node)
                 .build();
             async move {
                 let resp = client
@@ -446,9 +493,9 @@ impl GroupClient {
         src_epoch: u64,
         shard: &ShardDesc,
     ) -> Result<()> {
-        let op = |group_id, epoch, node_id, client: NodeClient| {
-            let req = RequestBatchBuilder::new(node_id)
-                .accept_shard(group_id, epoch, src_group, src_epoch, shard)
+        let op = |ctx: InvokeContext, client: NodeClient| {
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .accept_shard(ctx.group_id, ctx.epoch, src_group, src_epoch, shard)
                 .build();
             async move {
                 let resp = client
@@ -503,7 +550,7 @@ impl GroupClient {
 // Migration related functions.
 impl GroupClient {
     pub async fn setup_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
-        let op = |_, _, _, client: NodeClient| {
+        let op = |_: InvokeContext, client: NodeClient| {
             let req = MigrateRequest {
                 desc: Some(desc.clone()),
                 action: MigrateAction::Setup as i32,
@@ -518,7 +565,7 @@ impl GroupClient {
     }
 
     pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
-        let op = |_, _, _, client: NodeClient| {
+        let op = |_: InvokeContext, client: NodeClient| {
             let req = MigrateRequest {
                 desc: Some(desc.clone()),
                 action: MigrateAction::Commit as i32,
@@ -529,7 +576,7 @@ impl GroupClient {
     }
 
     pub async fn forward(&mut self, req: ForwardRequest) -> Result<ForwardResponse> {
-        let op = |_, _, _, client: NodeClient| {
+        let op = |_: InvokeContext, client: NodeClient| {
             let cloned_req = req.clone();
             async move { client.forward(cloned_req).await }
         };
@@ -561,7 +608,7 @@ impl GroupClient {
         last_key: &[u8],
     ) -> Result<tonic::Streaming<ShardChunk>> {
         let group_id = self.group_id;
-        let op = |_, _, _, client: NodeClient| {
+        let op = |_: InvokeContext, client: NodeClient| {
             let request = PullRequest {
                 group_id,
                 shard_id,

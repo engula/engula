@@ -15,10 +15,10 @@ mod config;
 mod metrics;
 mod worker;
 
-use std::sync::mpsc;
+use std::{sync::mpsc, time::Duration};
 
 use clap::Parser;
-use engula_client::{AppError, Collection, Database, EngulaClient, Partition};
+use engula_client::{AppError, ClientOptions, Collection, Database, EngulaClient, Partition};
 use engula_server::runtime::{sync::WaitGroup, Shutdown, ShutdownNotifier};
 use tokio::{runtime::Runtime, select};
 use tracing::{debug, info};
@@ -137,7 +137,11 @@ async fn create_or_open_collection(db: &Database, collection: &str) -> Result<Co
 }
 
 async fn open_collection(cfg: &AppConfig) -> Result<Collection> {
-    let client = EngulaClient::connect(cfg.addrs.clone()).await?;
+    let opts = ClientOptions {
+        connect_timeout: Some(Duration::from_millis(200)),
+        timeout: Some(Duration::from_millis(500)),
+    };
+    let client = EngulaClient::new(opts, cfg.addrs.clone()).await?;
     let database = match client.open_database(cfg.database.clone()).await {
         Ok(db) => db,
         Err(AppError::NotFound(_)) if cfg.create_if_missing => {
