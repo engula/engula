@@ -541,7 +541,9 @@ impl Jobs {
                     job: Some(Job::PurgeCollection(PurgeCollectionJob {
                         database_id: co.db,
                         collection_id: co.id,
+                        database_name: "".to_owned(),
                         collection_name: co.name.to_owned(),
+                        created_time: format!("{:?}", Instant::now()),
                     })),
                     ..Default::default()
                 };

@@ -73,7 +73,9 @@ fn admin_delete() {
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(1).await;
         let addrs = nodes.values().cloned().collect::<Vec<_>>();
-        let c = EngulaClient::connect(addrs.to_owned()).await.unwrap();
+        let c = EngulaClient::new(ClientOptions::default(), addrs.to_owned())
+            .await
+            .unwrap();
         {
             let db = c.create_database("test1".into()).await.unwrap();
             let c1 = db

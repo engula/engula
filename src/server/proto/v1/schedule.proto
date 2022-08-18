@@ -119,6 +119,7 @@ message CreateCollectionJob {
   CreateCollectionJobStatus status = 5;
   string remark = 6;
   engula.v1.CollectionDesc desc = 7;
+  string created_time = 89;
 }
 
 enum CreateCollectionJobStatus {
@@ -137,6 +138,7 @@ message CreateOneGroupJob {
   CreateOneGroupStatus status = 5;
   uint64 create_retry = 6;
   repeated uint64 invoked_nodes = 7;
+  string created_time = 8;
 }
 
 enum CreateOneGroupStatus {
@@ -150,7 +152,13 @@ enum CreateOneGroupStatus {
 message PurgeCollectionJob {
   uint64 database_id = 1;
   uint64 collection_id = 2;
-  string collection_name = 3;
+  string database_name = 3;
+  string collection_name = 4;
+  string created_time = 5;
 }
 
-message PurgeDatabaseJob { uint64 database_id = 1; }
+message PurgeDatabaseJob {
+  uint64 database_id = 1;
+  string database_name = 2;
+  string created_time = 3;
+}

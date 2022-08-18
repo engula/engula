@@ -453,20 +453,34 @@ impl Root {
                         "wait_cleanup": wait_cleanup,
                     })
                 }
-                Job::CreateOneGroup(_c) => {
-                    // TODO:!!!!
+                Job::CreateOneGroup(c) => {
+                    let status = format!("{:?}", CreateOneGroupStatus::from_i32(c.status).unwrap());
+                    let wait_create = c.wait_create.len();
+                    let wait_cleanup = c.wait_cleanup.len();
+                    let retired = c.create_retry;
+                    let group_id = c.group_desc.as_ref().map(|g| g.id).unwrap_or_default();
                     json!({
                         "type": "create group",
+                        "status": status,
+                        "replica_count": c.request_replica_cnt,
+                        "wait_create": wait_create,
+                        "wait_cleanup": wait_cleanup,
+                        "retry_count": retired,
+                        "group_id": group_id,
                     })
                 }
-                Job::PurgeCollection(_p) => {
+                Job::PurgeCollection(p) => {
                     json!({
                         "type": "purge collection",
+                        "database": p.database_id,
+                        "collection": p.collection_id,
+                        "name": p.collection_name,
                     })
                 }
-                Job::PurgeDatabase(_) => {
+                Job::PurgeDatabase(p) => {
                     json!({
                         "type": "purge database",
+                        "database": p.database_id,
                     })
                 }
             }
@@ -647,7 +661,11 @@ impl Root {
         self.jobs
             .submit(
                 BackgroundJob {
-                    job: Some(Job::PurgeDatabase(PurgeDatabaseJob { database_id: db.id })),
+                    job: Some(Job::PurgeDatabase(PurgeDatabaseJob {
+                        database_id: db.id,
+                        database_name: db.name.to_owned(),
+                        created_time: format!("{:?}", Instant::now()),
+                    })),
                     ..Default::default()
                 },
                 false,
@@ -784,6 +802,7 @@ impl Root {
                 ));
             }
             let collection_id = collection.id;
+            let database_name = db.name.to_owned();
             let collection_name = collection.name.to_owned();
             self.jobs
                 .submit(
@@ -791,7 +810,9 @@ impl Root {
                         job: Some(Job::PurgeCollection(PurgeCollectionJob {
                             database_id: db.id,
                             collection_id,
+                            database_name,
                             collection_name,
+                            created_time: format!("{:?}", Instant::now()),
                         })),
                         ..Default::default()
                     },
