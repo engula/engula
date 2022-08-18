@@ -117,7 +117,7 @@ impl GroupClient {
         let mut num_seeked = 0;
         while num_seeked < self.replicas.len() + 1 {
             if deadline
-                .map(|v| v.elapsed() >= Duration::ZERO)
+                .map(|v| v.elapsed() > Duration::ZERO)
                 .unwrap_or_default()
             {
                 return Err(Error::DeadlineExceeded("invoke_opt".to_owned()));
