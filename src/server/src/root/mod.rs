@@ -63,6 +63,7 @@ pub struct Root {
     liveness: Arc<liveness::Liveness>,
     scheduler: Arc<ReconcileScheduler>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    ongoing_stats: Arc<OngoingStats>,
     jobs: Arc<Jobs>,
 }
 
@@ -92,6 +93,7 @@ impl Root {
     pub(crate) fn new(provider: Arc<Provider>, node_ident: &NodeIdent, cfg: Config) -> Self {
         let local_addr = cfg.addr.clone();
         let cfg_cpu_nums = cfg.cpu_nums;
+        let ongoing_stats = Arc::new(OngoingStats::default());
         let shared = Arc::new(RootShared {
             provider,
             local_addr,
@@ -104,7 +106,11 @@ impl Root {
             cfg.root.liveness_threshold_sec,
         )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
-        let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
+        let alloc = Arc::new(allocator::Allocator::new(
+            info,
+            ongoing_stats.clone(),
+            cfg.root.to_owned(),
+        ));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let jobs = Arc::new(Jobs::new(
             shared.to_owned(),
@@ -115,6 +121,7 @@ impl Root {
             shared.clone(),
             alloc.clone(),
             heartbeat_queue.clone(),
+            ongoing_stats.clone(),
             jobs.to_owned(),
             cfg.root.to_owned(),
         );
@@ -126,6 +133,7 @@ impl Root {
             liveness,
             scheduler,
             heartbeat_queue,
+            ongoing_stats,
             jobs,
         }
     }
@@ -279,6 +287,7 @@ impl Root {
         }
         self::metrics::LEADER_STATE_INFO.set(1);
 
+        self.ongoing_stats.reset();
         self.heartbeat_queue.enable(true).await;
         self.jobs.on_step_leader().await?;
 
@@ -310,6 +319,7 @@ impl Root {
         // After that, RootCore needs to be set to None before returning.
         self.heartbeat_queue.enable(false).await;
         self.jobs.on_drop_leader();
+        self.ongoing_stats.reset();
         {
             self.liveness.reset();
 
@@ -835,6 +845,7 @@ impl Root {
         // mock report doesn't work.
         // return Ok(());
 
+        let ongoing_stats = self.ongoing_stats.clone();
         let schema = self.schema()?;
         let mut update_events = Vec::new();
         let mut changed_group_states = Vec::new();
@@ -868,6 +879,11 @@ impl Root {
             schema
                 .update_group_replica(group_desc.to_owned(), replica_state.to_owned())
                 .await?;
+
+            if let Some(sched_state) = u.schedule_state {
+                ongoing_stats.handle_update(&[sched_state], None);
+            }
+
             if let Some(desc) = group_desc {
                 info!(
                     group = desc.id,
@@ -1090,6 +1106,136 @@ impl HeartbeatQueue {
             core.delay.clear();
             core.enable = enable;
         }
+    }
+}
+
+struct GroupDelta {
+    epoch: u64,
+    incoming: Vec<ReplicaDesc>,
+    outgoing: Vec<ReplicaDesc>,
+}
+
+#[derive(Clone, Default)]
+pub struct NodeDelta {
+    pub replica_count: i64,
+    // TODO: qps
+}
+
+#[derive(Default, Clone)]
+pub struct OngoingStats {
+    sched_stats: Arc<Mutex<SchedStats>>,
+    job_stats: Arc<Mutex<JobStats>>,
+}
+
+#[derive(Default)]
+struct SchedStats {
+    raw_group_delta: HashMap<u64 /* group */, GroupDelta>,
+    node_view: HashMap<u64 /* node */, NodeDelta>,
+}
+
+#[derive(Default)]
+struct JobStats {
+    node_delta: HashMap<u64 /* node_id */, NodeDelta>,
+}
+
+impl OngoingStats {
+    fn handle_update(
+        &self,
+        state_updates: &[ScheduleState],
+        job_updates: Option<HashMap<u64 /* node */, NodeDelta>>,
+    ) {
+        if !state_updates.is_empty() {
+            let mut inner = self.sched_stats.lock().unwrap();
+            if inner.replace_state(state_updates) {
+                inner.rebuild_view();
+            }
+        }
+        if job_updates.is_some() {
+            let mut inner = self.job_stats.lock().unwrap();
+            inner.node_delta = job_updates.as_ref().unwrap().to_owned();
+        }
+    }
+
+    pub fn get_node_delta(&self, node: u64) -> NodeDelta {
+        let mut rs = NodeDelta::default();
+        if let Some(sched_node_delta) = {
+            let inner = self.sched_stats.lock().unwrap();
+            inner.node_view.get(&node).map(ToOwned::to_owned)
+        } {
+            rs.replica_count += sched_node_delta.replica_count;
+        }
+        if let Some(job_node_delta) = {
+            let inner = self.job_stats.lock().unwrap();
+            inner.node_delta.get(&node).map(ToOwned::to_owned)
+        } {
+            rs.replica_count += job_node_delta.replica_count;
+        }
+        rs
+    }
+
+    pub fn reset(&self) {
+        {
+            let mut inner = self.sched_stats.lock().unwrap();
+            inner.raw_group_delta.clear();
+            inner.node_view.clear();
+        }
+        {
+            let mut inner = self.job_stats.lock().unwrap();
+            inner.node_delta.clear();
+        }
+    }
+}
+
+impl SchedStats {
+    fn replace_state(&mut self, updates: &[ScheduleState]) -> bool {
+        let mut updated = false;
+        for state in updates {
+            match self.raw_group_delta.entry(state.group_id) {
+                hash_map::Entry::Occupied(mut ent) => {
+                    let delta = ent.get_mut();
+                    if delta.epoch < state.epoch {
+                        *delta = GroupDelta {
+                            epoch: state.epoch,
+                            incoming: state.incoming_replicas.to_owned(),
+                            outgoing: state.outgoing_replicas.to_owned(),
+                        };
+                        updated = true;
+                    }
+                }
+                hash_map::Entry::Vacant(ent) => {
+                    ent.insert(GroupDelta {
+                        epoch: state.epoch,
+                        incoming: state.incoming_replicas.to_owned(),
+                        outgoing: state.outgoing_replicas.to_owned(),
+                    });
+                    updated = true;
+                }
+            }
+        }
+        updated
+    }
+
+    fn rebuild_view(&mut self) {
+        let mut new_node_view: HashMap<u64, NodeDelta> = HashMap::new();
+        for r in self.raw_group_delta.values() {
+            for incoming in &r.incoming {
+                match new_node_view.entry(incoming.node_id) {
+                    hash_map::Entry::Occupied(mut ent) => ent.get_mut().replica_count += 1,
+                    hash_map::Entry::Vacant(ent) => {
+                        ent.insert(NodeDelta { replica_count: 1 });
+                    }
+                }
+            }
+            for outgoing in &r.outgoing {
+                match new_node_view.entry(outgoing.node_id) {
+                    hash_map::Entry::Occupied(mut ent) => ent.get_mut().replica_count -= 1,
+                    hash_map::Entry::Vacant(ent) => {
+                        ent.insert(NodeDelta { replica_count: -1 });
+                    }
+                }
+            }
+        }
+        self.node_view = new_node_view;
     }
 }
 

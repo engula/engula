@@ -69,6 +69,11 @@ impl Root {
                     field_mask: None,
                 })),
             });
+            piggybacks.push(PiggybackRequest {
+                info: Some(piggyback_request::Info::CollectScheduleState(
+                    CollectScheduleStateRequest {},
+                )),
+            })
         }
 
         let resps = {
@@ -104,8 +109,8 @@ impl Root {
                             piggyback_response::Info::CollectGroupDetail(ref resp) => {
                                 self.handle_group_detail(&schema, resp).await?
                             }
-                            piggyback_response::Info::CollectScheduleState(_) => {
-                                todo!()
+                            piggyback_response::Info::CollectScheduleState(ref resp) => {
+                                self.handle_schedule_state(resp).await?
                             }
                         }
                     }
@@ -251,6 +256,12 @@ impl Root {
             self.watcher_hub().notify_updates(update_events).await;
         }
 
+        Ok(())
+    }
+
+    async fn handle_schedule_state(&self, resp: &CollectScheduleStateResponse) -> Result<()> {
+        self.ongoing_stats
+            .handle_update(&resp.schedule_states, None);
         Ok(())
     }
 }

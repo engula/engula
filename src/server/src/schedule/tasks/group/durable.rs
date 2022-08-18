@@ -60,9 +60,10 @@ impl DurableGroup {
             voters.keys(),
             learners.keys()
         );
+        let epoch = ctx.replica.epoch();
         let locks = ctx
             .group_lock_table
-            .config_change(task_id, &peers, &[], &[])
+            .config_change(task_id, epoch, &peers, &[], &[])
             .expect("Check conflicts in before steps");
         let learners = learners.values().cloned().collect::<Vec<_>>();
         let voters = voters.values().cloned().collect::<Vec<_>>();
@@ -96,9 +97,10 @@ impl DurableGroup {
             incoming_voters.iter().map(|r| r.id),
             outgoing_voters.keys()
         );
+        let epoch = ctx.replica.epoch();
         let locks = ctx
             .group_lock_table
-            .config_change(task_id, &peers, &incoming_voters, &[])
+            .config_change(task_id, epoch, &peers, &incoming_voters, &[])
             .expect("Check conflicts in before steps");
         let outgoing_voters = outgoing_voters.values().cloned().collect::<Vec<_>>();
         let create_replicas_action = Box::new(CreateReplicas::new(incoming_voters.clone()));
@@ -140,9 +142,10 @@ impl DurableGroup {
             ctx.replica_id,
             learners.keys()
         );
+        let epoch = ctx.replica.epoch();
         let locks = ctx
             .group_lock_table
-            .config_change(task_id, &peers, &[], &[])
+            .config_change(task_id, epoch, &peers, &[], &[])
             .expect("Check conflicts in before steps");
         let action_task = ActionTask::new(
             task_id,

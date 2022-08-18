@@ -16,9 +16,7 @@ syntax = "proto3";
 
 package serverpb.v1;
 
-import "eraft.proto";
 import "engula/server/v1/metadata.proto";
-import "v1/metadata.proto";
 import "engula/v1/metadata.proto";
 
 message ScheduleTask {

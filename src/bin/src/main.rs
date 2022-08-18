@@ -59,6 +59,7 @@ struct StartCommand {
     addr: Option<String>,
     #[clap(long)]
     db: Option<String>,
+    #[clap(long)]
     cpu_nums: Option<u32>,
 
     #[clap(long, help = "dump config as toml file and exit")]
@@ -116,7 +117,7 @@ fn load_config(
     let mut builder = Config::builder()
         .set_default("addr", "127.0.0.1:21805")?
         .set_default("init", false)?
-        .set_default("cpu_nums", 0)?
+        .set_default("cpu_nums", 0u32)?
         .set_default("join_list", Vec::<String>::default())?;
 
     if let Some(conf) = cmd.conf.as_ref() {
