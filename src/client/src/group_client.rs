@@ -125,7 +125,7 @@ impl GroupClient {
 
             let (node_id, client) = self.recommend_client().await;
 
-            trace!("issue rpc request to node {node_id}");
+            trace!("issue rpc request to node {node_id}, num seeked {num_seeked}");
             let ctx = InvokeContext {
                 group_id: self.group_id,
                 epoch: self.epoch,

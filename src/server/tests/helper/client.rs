@@ -77,6 +77,11 @@ impl ClusterClient {
             .unwrap()
     }
 
+    pub async fn app_client_with_options(&self, opts: ClientOptions) -> EngulaClient {
+        let addrs = self.nodes.values().cloned().collect::<Vec<_>>();
+        EngulaClient::new(opts, addrs).await.unwrap()
+    }
+
     pub async fn group_members(&self, group_id: u64) -> Vec<(u64, i32)> {
         if let Ok(state) = self.router.find_group(group_id) {
             let mut current = state

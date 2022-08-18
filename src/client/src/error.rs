@@ -86,7 +86,9 @@ impl From<tonic::Status> for Error {
         match status.code() {
             Code::Ok => panic!("invalid argument"),
             Code::InvalidArgument => Error::InvalidArgument(status.message().into()),
-            Code::Cancelled => Error::DeadlineExceeded(status.message().into()),
+            Code::Cancelled if status.message().contains("Timeout expired") => {
+                Error::DeadlineExceeded(status.message().into())
+            }
             Code::AlreadyExists => Error::AlreadyExists(status.message().into()),
             Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
