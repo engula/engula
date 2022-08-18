@@ -15,6 +15,7 @@
 use clap::{Parser, Subcommand};
 use engula_server::{Error, Result};
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 #[clap(name = "engula", version, author, about)]
@@ -96,7 +97,11 @@ impl StartCommand {
 }
 
 fn main() -> Result<()> {
+    let filter_layer = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("info"))
+        .unwrap();
     tracing_subscriber::fmt()
+        .with_env_filter(filter_layer)
         .with_ansi(atty::is(atty::Stream::Stderr))
         .init();
 
