@@ -127,6 +127,7 @@ message MigrationDesc {
 
 message ScheduleState {
   uint64 group_id = 1;
-  repeated ReplicaDesc incoming_replicas = 2;
-  repeated ReplicaDesc outgoing_replicas = 3;
+  uint64 epoch = 2;
+  repeated ReplicaDesc incoming_replicas = 3;
+  repeated ReplicaDesc outgoing_replicas = 4;
 }

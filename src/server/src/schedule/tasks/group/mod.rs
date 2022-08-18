@@ -73,6 +73,7 @@ impl GroupLockTable {
     pub fn lock(
         &mut self,
         task_id: u64,
+        epoch: u64,
         replicas: &[u64],
         incoming_replicas: &[ReplicaDesc],
         outgoing_replicas: &[ReplicaDesc],
@@ -88,6 +89,7 @@ impl GroupLockTable {
             }
             let state = ScheduleState {
                 group_id: 0,
+                epoch,
                 incoming_replicas: incoming_replicas.to_owned(),
                 outgoing_replicas: outgoing_replicas.to_owned(),
             };
@@ -102,15 +104,20 @@ impl GroupLockTable {
     pub fn config_change(
         &mut self,
         task_id: u64,
+        epoch: u64,
         replicas: &[u64],
         incoming_replicas: &[ReplicaDesc],
         outgoing_replicas: &[ReplicaDesc],
     ) -> Option<GroupLocks> {
         if self.config_change.is_some() {
             None
-        } else if let Some(locks) =
-            self.lock(task_id, replicas, incoming_replicas, outgoing_replicas)
-        {
+        } else if let Some(locks) = self.lock(
+            task_id,
+            epoch,
+            replicas,
+            incoming_replicas,
+            outgoing_replicas,
+        ) {
             self.config_change = Some(task_id);
             Some(locks)
         } else {
@@ -142,6 +149,7 @@ impl GroupLockTable {
 
         self.states_updated = false;
         let mut accumulated_state = ScheduleState {
+            epoch: 0,
             group_id: self.group_id,
             incoming_replicas: vec![],
             outgoing_replicas: vec![],
@@ -153,6 +161,9 @@ impl GroupLockTable {
             accumulated_state
                 .outgoing_replicas
                 .extend(state.outgoing_replicas.iter().cloned());
+            if state.epoch > accumulated_state.epoch {
+                accumulated_state.epoch = state.epoch;
+            }
         }
         Some(accumulated_state)
     }

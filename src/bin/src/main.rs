@@ -15,6 +15,7 @@
 use clap::{Parser, Subcommand};
 use engula_server::{Error, Result};
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 #[clap(name = "engula", version, author, about)]
@@ -58,6 +59,7 @@ struct StartCommand {
     addr: Option<String>,
     #[clap(long)]
     db: Option<String>,
+    #[clap(long)]
     cpu_nums: Option<u32>,
 
     #[clap(long, help = "dump config as toml file and exit")]
@@ -95,7 +97,11 @@ impl StartCommand {
 }
 
 fn main() -> Result<()> {
+    let filter_layer = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("info"))
+        .unwrap();
     tracing_subscriber::fmt()
+        .with_env_filter(filter_layer)
         .with_ansi(atty::is(atty::Stream::Stderr))
         .init();
 
@@ -111,7 +117,7 @@ fn load_config(
     let mut builder = Config::builder()
         .set_default("addr", "127.0.0.1:21805")?
         .set_default("init", false)?
-        .set_default("cpu_nums", 0)?
+        .set_default("cpu_nums", 0u32)?
         .set_default("join_list", Vec::<String>::default())?;
 
     if let Some(conf) = cmd.conf.as_ref() {

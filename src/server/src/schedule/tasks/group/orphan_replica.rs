@@ -54,7 +54,7 @@ impl RemoveOrphanReplica {
         let task_id = ctx.next_task_id();
         if let Some(locks) =
             ctx.group_lock_table
-                .lock(task_id, &[target_id], &[], &[replica.clone()])
+                .lock(task_id, group.epoch, &[target_id], &[], &[replica.clone()])
         {
             let action_task = ActionTask::new(
                 task_id,
