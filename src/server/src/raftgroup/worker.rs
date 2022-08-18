@@ -28,7 +28,7 @@ use super::{
     fsm::StateMachine,
     metrics::*,
     node::RaftNode,
-    snap::{apply::apply_snapshot, SnapManager},
+    snap::{apply::apply_snapshot, RecycleSnapMode, SnapManager},
     transport::{Channel, TransportManager},
     RaftManager, ReadPolicy,
 };
@@ -431,7 +431,8 @@ where
             self.engine.write(&mut lb, false).unwrap();
         }
 
-        self.snap_mgr.recycle_snapshots(self.desc.id, to);
+        self.snap_mgr
+            .recycle_snapshots(self.desc.id, RecycleSnapMode::RequiredIndex(to));
     }
 
     fn raft_group_state(&self, first_index: u64, last_index: u64) -> RaftGroupState {
