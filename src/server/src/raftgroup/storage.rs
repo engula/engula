@@ -82,8 +82,20 @@ impl Storage {
             .get_message::<RaftLocalState>(replica_id, keys::LOCAL_STATE_KEY)?
             .expect("raft local state must be initialized");
 
-        let first_index = engine.first_index(replica_id).unwrap_or(1);
-        let last_index = engine.last_index(replica_id).unwrap_or(0);
+        let mut first_index = engine.first_index(replica_id).unwrap_or(1);
+        let mut last_index = engine.last_index(replica_id).unwrap_or(0);
+        if let Some(truncated) = local_state.last_truncated.clone() {
+            if first_index <= last_index {
+                if truncated.index + 1 != first_index {
+                    panic!("some log entries are missing, truncated state {truncated:?}, engine range [{}, {})",
+                        first_index, last_index + 1);
+                }
+            } else {
+                // update empty range.
+                first_index = truncated.index + 1;
+                last_index = truncated.index;
+            }
+        }
 
         let cache = if applied_index < last_index {
             // There exists some entries haven't been applied.
@@ -93,8 +105,7 @@ impl Storage {
             }
 
             debug!(
-                "replica {} fetch uncommitted entries in range [{}, {})",
-                replica_id,
+                "replica {replica_id} fetch uncommitted entries in range [{}, {})",
                 applied_index + 1,
                 last_index + 1
             );
@@ -112,16 +123,10 @@ impl Storage {
         };
 
         debug!(
-            "open storage of replica {} applied index {}, log range [{}, {})",
-            replica_id,
-            applied_index,
+            "open storage of replica {replica_id} applied index {applied_index}, log range [{}, {}), local state {local_state:?}",
             first_index,
             last_index + 1,
         );
-
-        if let Some(truncated) = local_state.last_truncated.clone() {
-            assert_eq!(truncated.index + 1, first_index);
-        }
 
         Ok(Storage {
             replica_id,
@@ -384,6 +389,7 @@ impl raft::Storage for Storage {
                 }
             }
 
+            assert!(!self.create_snapshot.get());
             self.create_snapshot.set(true);
             self.is_creating_snapshot.set(true);
         }
@@ -602,6 +608,7 @@ mod tests {
 
     use raft_engine::{Config, Engine};
     use tempdir::TempDir;
+    use tracing::info;
 
     use super::*;
     use crate::runtime::*;
@@ -746,6 +753,73 @@ mod tests {
         assert_eq!(storage.last_index, snap_index);
     }
 
+    async fn open_empty_raft_storage_after_applying_snapshot() {
+        let dir = TempDir::new("open-empty-raft-storage-after-applying-snapshot").unwrap();
+
+        let cfg = Config {
+            dir: dir.path().join("db").to_str().unwrap().to_owned(),
+            ..Default::default()
+        };
+        let engine = Arc::new(Engine::open(cfg).unwrap());
+
+        write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+            .await
+            .unwrap();
+
+        let snap_mgr = SnapManager::new(dir.path().join("snap"));
+        let mut storage = Storage::open(
+            &RaftConfig::default(),
+            1,
+            0,
+            ConfState::default(),
+            engine.clone(),
+            snap_mgr.clone(),
+        )
+        .await
+        .unwrap();
+
+        let snap_index = 123;
+        let snap_term = 123;
+        let mut task = WriteTask::with_entries(vec![]);
+        task.snapshot = Some(Snapshot {
+            data: vec![],
+            metadata: Some(SnapshotMetadata {
+                conf_state: None,
+                index: snap_index,
+                term: snap_term,
+            }),
+        });
+
+        let mut lb = LogBatch::default();
+        storage.write(&mut lb, &task).unwrap();
+        assert_eq!(storage.hard_state.commit, snap_index);
+        assert_eq!(storage.truncated_index(), snap_index);
+        assert_eq!(storage.truncated_term(), snap_term);
+        assert_eq!(storage.first_index, snap_index + 1);
+        assert_eq!(storage.last_index, snap_index);
+        engine.write(&mut lb, false).unwrap();
+
+        info!("open storage again after applying snapshot");
+
+        // Open storage again.
+        drop(storage);
+        let storage = Storage::open(
+            &RaftConfig::default(),
+            1,
+            0,
+            ConfState::default(),
+            engine.clone(),
+            snap_mgr,
+        )
+        .await
+        .unwrap();
+        assert_eq!(storage.hard_state.commit, snap_index);
+        assert_eq!(storage.truncated_index(), snap_index);
+        assert_eq!(storage.truncated_term(), snap_term);
+        assert_eq!(storage.first_index, snap_index + 1);
+        assert_eq!(storage.last_index, snap_index);
+    }
+
     async fn raft_storage_inner() {
         let dir = TempDir::new("raft-storage").unwrap();
 
@@ -832,6 +906,7 @@ mod tests {
         let owner = ExecutorOwner::new(1);
         owner.executor().block_on(async move {
             raft_storage_apply_snapshot().await;
+            open_empty_raft_storage_after_applying_snapshot().await;
         });
     }
 }
