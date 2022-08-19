@@ -98,14 +98,14 @@ impl Storage {
         }
 
         let cache = if applied_index < last_index {
-            assert!(first_index <= applied_index + 1,
-                "there are some missing entries, applied index {applied_index}, entries [{first_index}, {})", last_index + 1);
-
             // There exists some entries haven't been applied.
             let mut applied_index = applied_index;
             if cfg.testing_knobs.force_new_peer_receiving_snapshot && applied_index == 0 {
                 applied_index = 5;
             }
+
+            assert!(first_index <= applied_index + 1,
+                "there are some missing entries, applied index {applied_index}, entries [{first_index}, {})", last_index + 1);
 
             debug!(
                 "replica {replica_id} fetch uncommitted entries in range [{}, {})",
@@ -126,7 +126,7 @@ impl Storage {
         };
 
         debug!(
-            "open storage of replica {replica_id} applied index {applied_index}, log range [{}, {}), local state {local_state:?}",
+            "replica {replica_id} open storage with applied index {applied_index}, log range [{}, {}), local state {local_state:?}",
             first_index,
             last_index + 1,
         );
