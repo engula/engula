@@ -44,7 +44,7 @@ use crate::{
 };
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
-const SYSTEM_DATABASE_ID: u64 = 1;
+pub const SYSTEM_DATABASE_ID: u64 = 1;
 const SYSTEM_COLLECTION_COLLECTION: &str = "collection";
 const SYSTEM_COLLECTION_COLLECTION_ID: u64 = LOCAL_COLLECTION_ID + 1;
 const SYSTEM_COLLECTION_COLLECTION_SHARD: u64 = 1;
@@ -69,6 +69,8 @@ const SYSTEM_JOB_COLLECTION_SHARD: u64 = SYSTEM_REPLICA_STATE_COLLECTION_SHARD +
 const SYSTEM_JOB_HISTORY_COLLECTION: &str = "job_history";
 const SYSTEM_JOB_HISTORY_COLLECTION_ID: u64 = SYSTEM_JOB_COLLECTION_ID + 1;
 const SYSTEM_JOB_HISTORY_COLLECTION_SHARD: u64 = SYSTEM_JOB_COLLECTION_SHARD + 1;
+
+pub const USER_COLLECTION_INIT_ID: u64 = SYSTEM_JOB_HISTORY_COLLECTION_ID + 1;
 
 const META_CLUSTER_ID_KEY: &str = "cluster_id";
 const META_COLLECTION_ID_KEY: &str = "collection_id";
@@ -156,13 +158,8 @@ impl Schema {
         todo!()
     }
 
-    pub async fn delete_database(&self, name: &str) -> Result<u64> {
-        let db = self.get_database(name).await?;
-        if db.is_none() {
-            return Err(Error::DatabaseNotFound(name.to_owned()));
-        }
-        let db = db.unwrap();
-        self.delete(SYSTEM_DATABASE_COLLECTION_ID, &db.id.to_le_bytes())
+    pub async fn delete_database(&self, db: &DatabaseDesc) -> Result<u64> {
+        self.delete(SYSTEM_DATABASE_COLLECTION_ID, db.name.as_bytes())
             .await?;
         Ok(db.id)
     }
@@ -222,6 +219,20 @@ impl Schema {
         Ok(Some(desc))
     }
 
+    pub async fn get_collection_shards(&self, collection_id: u64) -> Result<Vec<(u64, ShardDesc)>> {
+        let groups = self.list_group().await?;
+        let group_shards = groups
+            .iter()
+            .flat_map(|g| {
+                g.shards
+                    .iter()
+                    .filter(|s| s.collection_id == collection_id)
+                    .map(|s| (g.id, s.to_owned()))
+            })
+            .collect::<Vec<_>>();
+        Ok(group_shards)
+    }
+
     pub async fn update_collection(&self, _desc: CollectionDesc) -> Result<()> {
         todo!()
     }
@@ -229,7 +240,7 @@ impl Schema {
     pub async fn delete_collection(&self, collection: CollectionDesc) -> Result<()> {
         self.delete(
             SYSTEM_COLLECTION_COLLECTION_ID,
-            &collection.id.to_le_bytes(),
+            &collection_key(collection.db, &collection.name),
         )
         .await
     }
@@ -243,6 +254,14 @@ impl Schema {
             collections.push(c);
         }
         Ok(collections)
+    }
+
+    pub async fn list_database_collections(&self, database: u64) -> Result<Vec<CollectionDesc>> {
+        let collections = self.list_collection().await?;
+        Ok(collections
+            .into_iter()
+            .filter(|c| c.db == database)
+            .collect::<Vec<_>>())
     }
 
     pub async fn add_node(&self, desc: NodeDesc) -> Result<NodeDesc> {
@@ -684,16 +703,11 @@ impl Schema {
 
         let mut batch = PutBatchBuilder::default();
 
-        let next_collection_id = Self::init_system_collections(&mut batch);
+        Self::init_system_collections(&mut batch);
 
         let (shards, next_shard_id) = Schema::init_shards();
 
-        Self::init_meta_collection(
-            &mut batch,
-            next_collection_id,
-            next_shard_id,
-            cluster_id.to_owned(),
-        );
+        Self::init_meta_collection(&mut batch, next_shard_id, cluster_id.to_owned());
 
         batch.put_database(DatabaseDesc {
             id: SYSTEM_DATABASE_ID.to_owned(),
@@ -798,7 +812,7 @@ impl Schema {
         self.next_id(META_SHARD_ID_KEY).await
     }
 
-    fn init_system_collections(batch: &mut PutBatchBuilder) -> u64 {
+    fn init_system_collections(batch: &mut PutBatchBuilder) {
         let self_collection = CollectionDesc {
             id: SYSTEM_COLLECTION_COLLECTION_ID,
             name: SYSTEM_COLLECTION_COLLECTION.to_owned(),
@@ -877,17 +891,10 @@ impl Schema {
                 collection_desc::RangePartition {},
             )),
         };
-        batch.put_collection(job_history_collection.to_owned());
-
-        job_history_collection.id + 1 // TODO: reserve more collection id for furture?
+        batch.put_collection(job_history_collection);
     }
 
-    fn init_meta_collection(
-        batch: &mut PutBatchBuilder,
-        next_collection_id: u64,
-        next_shard_id: u64,
-        cluster_id: Vec<u8>,
-    ) {
+    fn init_meta_collection(batch: &mut PutBatchBuilder, next_shard_id: u64, cluster_id: Vec<u8>) {
         batch.put_meta(META_CLUSTER_ID_KEY.into(), cluster_id);
         batch.put_meta(
             META_DATABASE_ID_KEY.into(),
@@ -895,7 +902,7 @@ impl Schema {
         );
         batch.put_meta(
             META_COLLECTION_ID_KEY.into(),
-            next_collection_id.to_le_bytes().to_vec(),
+            USER_COLLECTION_INIT_ID.to_le_bytes().to_vec(),
         );
         batch.put_meta(
             META_GROUP_ID_KEY.into(),

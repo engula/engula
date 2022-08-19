@@ -23,10 +23,15 @@ use engula_client::GroupClient;
 use futures::future::poll_fn;
 use prometheus::HistogramTimer;
 use tokio::time::Instant;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use super::{allocator::*, HeartbeatQueue, HeartbeatTask, RootShared, Schema};
-use crate::{bootstrap::INITIAL_EPOCH, root::metrics, serverpb::v1::*, Result};
+use crate::{
+    bootstrap::INITIAL_EPOCH,
+    root::metrics,
+    serverpb::v1::{background_job::Job, *},
+    Result,
+};
 
 pub struct Jobs {
     core: JobCore,
@@ -83,14 +88,23 @@ impl Jobs {
     }
 
     async fn handle_job(&self, job: &BackgroundJob) -> Result<()> {
-        match job.job.as_ref().unwrap() {
+        info!("start background job: {job:?}");
+        let r = match job.job.as_ref().unwrap() {
             background_job::Job::CreateCollection(create_collection) => {
                 self.handle_create_collection(job, create_collection).await
             }
             background_job::Job::CreateOneGroup(create_group) => {
                 self.handle_create_one_group(job, create_group).await
             }
-        }
+            background_job::Job::PurgeCollection(purge_collection) => {
+                self.handle_purge_collection(job, purge_collection).await
+            }
+            background_job::Job::PurgeDatabase(purge_database) => {
+                self.handle_purge_database(job, purge_database).await
+            }
+        };
+        info!("backgroud job: {job:?}, handle result: {r:?}");
+        r
     }
 }
 
@@ -492,6 +506,63 @@ impl Jobs {
 }
 
 impl Jobs {
+    async fn handle_purge_collection(
+        &self,
+        job: &BackgroundJob,
+        purge_collection: &PurgeCollectionJob,
+    ) -> Result<()> {
+        let schema = self.core.root_shared.schema()?;
+        let mut group_shards = schema
+            .get_collection_shards(purge_collection.collection_id)
+            .await?;
+        loop {
+            if let Some((group, shard)) = group_shards.pop() {
+                self.try_remove_shard(group, shard.id).await?;
+                continue;
+            }
+            break;
+        }
+        self.core.finish(job.to_owned()).await?;
+        Ok(())
+    }
+
+    async fn handle_purge_database(
+        &self,
+        job: &BackgroundJob,
+        purge_database: &PurgeDatabaseJob,
+    ) -> Result<()> {
+        let schema = self.core.root_shared.schema()?;
+        let mut collections = schema
+            .list_database_collections(purge_database.database_id)
+            .await?;
+        loop {
+            if let Some(co) = collections.pop() {
+                let job = BackgroundJob {
+                    job: Some(Job::PurgeCollection(PurgeCollectionJob {
+                        database_id: co.db,
+                        collection_id: co.id,
+                        database_name: "".to_owned(),
+                        collection_name: co.name.to_owned(),
+                        created_time: format!("{:?}", Instant::now()),
+                    })),
+                    ..Default::default()
+                };
+                match self.submit(job, false).await {
+                    Ok(_) => {}
+                    Err(crate::Error::AlreadyExists(_)) => {}
+                    Err(err) => return Err(err),
+                };
+                schema.delete_collection(co).await?;
+                continue;
+            }
+            break;
+        }
+        self.core.finish(job.to_owned()).await?;
+        Ok(())
+    }
+}
+
+impl Jobs {
     async fn try_create_shard(&self, group_id: u64, desc: &ShardDesc) -> Result<()> {
         let mut group_client = GroupClient::new(
             group_id,
@@ -546,6 +617,11 @@ impl Jobs {
             )
             .await?;
         schema.remove_replica_state(group, replica).await?;
+        Ok(())
+    }
+
+    async fn try_remove_shard(&self, _group: u64, _shard: u64) -> Result<()> {
+        // TODO: impl remove shard.
         Ok(())
     }
 }
@@ -722,6 +798,7 @@ impl JobCore {
                     _ => unreachable!(),
                 }
             }
+            _ => unreachable!(),
         }
     }
 
@@ -753,6 +830,11 @@ fn res_key(job: &BackgroundJob) -> Option<Vec<u8>> {
             key.extend_from_slice(job.collection_name.as_bytes());
             Some(key)
         }
-        background_job::Job::CreateOneGroup(_) => None,
+        background_job::Job::PurgeCollection(job) => {
+            let mut key = job.database_id.to_le_bytes().to_vec();
+            key.extend_from_slice(job.collection_name.as_bytes());
+            Some(key)
+        }
+        background_job::Job::CreateOneGroup(_) | background_job::Job::PurgeDatabase(_) => None,
     }
 }

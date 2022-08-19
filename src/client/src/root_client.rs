@@ -309,6 +309,16 @@ impl AdminRequestBuilder {
         }
     }
 
+    pub fn delete_database(name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::DeleteDatabase(
+                    DeleteDatabaseRequest { name },
+                )),
+            }),
+        }
+    }
+
     pub fn list_database() -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
@@ -341,6 +351,19 @@ impl AdminRequestBuilder {
                         name: co_name,
                         parent: db_name,
                         partition,
+                    },
+                )),
+            }),
+        }
+    }
+
+    pub fn delete_collection(db_name: String, co_name: String) -> AdminRequest {
+        AdminRequest {
+            request: Some(AdminRequestUnion {
+                request: Some(admin_request_union::Request::DeleteCollection(
+                    DeleteCollectionRequest {
+                        name: co_name,
+                        parent: db_name,
                     },
                 )),
             }),
@@ -383,6 +406,17 @@ impl AdminResponseExtractor {
         }
     }
 
+    pub fn delete_database(resp: AdminResponse) -> Option<()> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::DeleteDatabase(_)),
+        }) = resp.response
+        {
+            Some(())
+        } else {
+            None
+        }
+    }
+
     pub fn list_database(resp: AdminResponse) -> Vec<DatabaseDesc> {
         if let Some(AdminResponseUnion {
             response: Some(admin_response_union::Response::ListDatabases(response)),
@@ -411,6 +445,17 @@ impl AdminResponseExtractor {
         }) = resp.response
         {
             response.collection
+        } else {
+            None
+        }
+    }
+
+    pub fn delete_collection(resp: AdminResponse) -> Option<()> {
+        if let Some(AdminResponseUnion {
+            response: Some(admin_response_union::Response::DeleteCollection(_)),
+        }) = resp.response
+        {
+            Some(())
         } else {
             None
         }

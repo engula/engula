@@ -453,10 +453,34 @@ impl Root {
                         "wait_cleanup": wait_cleanup,
                     })
                 }
-                Job::CreateOneGroup(_c) => {
-                    // TODO:!!!!
+                Job::CreateOneGroup(c) => {
+                    let status = format!("{:?}", CreateOneGroupStatus::from_i32(c.status).unwrap());
+                    let wait_create = c.wait_create.len();
+                    let wait_cleanup = c.wait_cleanup.len();
+                    let retired = c.create_retry;
+                    let group_id = c.group_desc.as_ref().map(|g| g.id).unwrap_or_default();
                     json!({
                         "type": "create group",
+                        "status": status,
+                        "replica_count": c.request_replica_cnt,
+                        "wait_create": wait_create,
+                        "wait_cleanup": wait_cleanup,
+                        "retry_count": retired,
+                        "group_id": group_id,
+                    })
+                }
+                Job::PurgeCollection(p) => {
+                    json!({
+                        "type": "purge collection",
+                        "database": p.database_id,
+                        "collection": p.collection_id,
+                        "name": p.collection_name,
+                    })
+                }
+                Job::PurgeDatabase(p) => {
+                    json!({
+                        "type": "purge database",
+                        "database": p.database_id,
                     })
                 }
             }
@@ -624,7 +648,31 @@ impl Root {
     }
 
     pub async fn delete_database(&self, name: &str) -> Result<()> {
-        let id = self.schema()?.delete_database(name).await?;
+        let db = self.get_database(name).await?;
+        if db.is_none() {
+            return Err(Error::DatabaseNotFound(name.to_owned()));
+        }
+        let db = db.unwrap();
+        if db.id == SYSTEM_DATABASE_ID {
+            return Err(Error::InvalidArgument(
+                "unsupport delete system database".into(),
+            ));
+        }
+        self.jobs
+            .submit(
+                BackgroundJob {
+                    job: Some(Job::PurgeDatabase(PurgeDatabaseJob {
+                        database_id: db.id,
+                        database_name: db.name.to_owned(),
+                        created_time: format!("{:?}", Instant::now()),
+                    })),
+                    ..Default::default()
+                },
+                false,
+            )
+            .await?;
+        let schema = self.schema()?;
+        let id = schema.delete_database(&db).await?;
         self.watcher_hub()
             .notify_deletes(vec![DeleteEvent {
                 event: Some(delete_event::Event::Database(id)),
@@ -748,11 +796,33 @@ impl Root {
             .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
         let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
-            let id = collection.id;
+            if collection.id < USER_COLLECTION_INIT_ID {
+                return Err(Error::InvalidArgument(
+                    "unsupport delete system collection".into(),
+                ));
+            }
+            let collection_id = collection.id;
+            let database_name = db.name.to_owned();
+            let collection_name = collection.name.to_owned();
+            self.jobs
+                .submit(
+                    BackgroundJob {
+                        job: Some(Job::PurgeCollection(PurgeCollectionJob {
+                            database_id: db.id,
+                            collection_id,
+                            database_name,
+                            collection_name,
+                            created_time: format!("{:?}", Instant::now()),
+                        })),
+                        ..Default::default()
+                    },
+                    false,
+                )
+                .await?;
             schema.delete_collection(collection).await?;
             self.watcher_hub()
                 .notify_deletes(vec![DeleteEvent {
-                    event: Some(delete_event::Event::Collection(id)),
+                    event: Some(delete_event::Event::Collection(collection_id)),
                 }])
                 .await;
         }

@@ -75,12 +75,23 @@ impl Client {
             .admin(AdminRequestBuilder::create_database(name.clone()))
             .await?;
         match AdminResponseExtractor::create_database(resp) {
-            None => Err(AppError::NotFound(format!("database {}", name))),
+            None => Err(AppError::NotFound(format!("database {name}"))),
             Some(desc) => Ok(Database {
                 rpc_timeout: self.inner.opts.timeout,
                 desc,
                 client: self.clone(),
             }),
+        }
+    }
+
+    pub async fn delete_database(&self, name: String) -> AppResult<()> {
+        let root_client = self.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::delete_database(name.clone()))
+            .await?;
+        match AdminResponseExtractor::delete_database(resp) {
+            Some(()) => Ok(()),
+            None => Err(AppError::NotFound(format!("database {name}"))),
         }
     }
 
@@ -155,13 +166,29 @@ impl Database {
             ))
             .await?;
         match AdminResponseExtractor::create_collection(resp) {
-            None => Err(AppError::NotFound(format!("collection {}", name))),
+            None => Err(AppError::NotFound(format!("collection {name}"))),
             Some(co_desc) => Ok(Collection {
                 rpc_timeout: self.rpc_timeout,
                 db_desc,
                 co_desc,
                 client: client.clone(),
             }),
+        }
+    }
+
+    pub async fn delete_collection(&self, name: String) -> AppResult<()> {
+        let client = self.client.clone();
+        let db_desc = self.desc.clone();
+        let root_client = client.inner.root_client.clone();
+        let resp = root_client
+            .admin(AdminRequestBuilder::delete_collection(
+                db_desc.name.clone(),
+                name.clone(),
+            ))
+            .await?;
+        match AdminResponseExtractor::delete_collection(resp) {
+            None => Err(AppError::NotFound(format!("collection {name}"))),
+            Some(_) => Ok(()),
         }
     }
 

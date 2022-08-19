@@ -65,6 +65,49 @@ fn balance_init_cluster() {
 }
 
 #[test]
+fn admin_delete() {
+    block_on_current(async {
+        let mut ctx = TestContext::new("db-col-mng");
+        ctx.mut_replica_testing_knobs()
+            .disable_orphan_replica_detecting_intervals = true;
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(1).await;
+        let addrs = nodes.values().cloned().collect::<Vec<_>>();
+        let c = EngulaClient::new(ClientOptions::default(), addrs.to_owned())
+            .await
+            .unwrap();
+        {
+            let db = c.create_database("test1".into()).await.unwrap();
+            let c1 = db
+                .create_collection("test_co1".into(), Some(Partition::Hash { slots: 1 }))
+                .await
+                .unwrap();
+            c1.put("k1".into(), "v1".into()).await.unwrap();
+            db.delete_collection("test_co1".into()).await.unwrap();
+            assert!(db.open_collection("test_co1".into()).await.is_err());
+            db.create_collection("test_co1".into(), Some(Partition::Hash { slots: 1 }))
+                .await
+                .unwrap();
+            let oc2 = db.open_collection("test_co1".into()).await.unwrap();
+            assert!(oc2.get("k1".into()).await.unwrap().is_none())
+        }
+        {
+            c.create_database("test_db1".into()).await.unwrap();
+            let db1 = c.open_database("test_db1".into()).await.unwrap();
+            db1.create_collection("co1".into(), Some(Partition::Hash { slots: 1 }))
+                .await
+                .unwrap();
+            assert!(db1.list_collection().await.unwrap().len() == 1);
+            c.delete_database("test_db1".into()).await.unwrap();
+            assert!(c.open_database("test_db1".into()).await.is_err());
+            c.create_database("test_db1".into()).await.unwrap();
+            let od2 = c.open_database("test_db1".into()).await.unwrap();
+            assert!(od2.list_collection().await.unwrap().is_empty());
+        }
+    })
+}
+
+#[test]
 fn admin_basic() {
     block_on_current(async {
         let node_count = 4;
