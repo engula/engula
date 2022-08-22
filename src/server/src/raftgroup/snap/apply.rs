@@ -31,9 +31,8 @@ pub fn apply_snapshot<M: StateMachine>(
         .lock_snap(replica_id, snap_id)
         .expect("The snapshot should does not be gc before apply");
     // TODO(walter) check snapshot data integrity.
-    let state_machine = applier.mut_state_machine();
     let snap_dir = snap_info.base_dir.join(SNAP_DATA);
-    state_machine
+    applier
         .apply_snapshot(&snap_dir)
         .expect("apply snapshot must success, because the data integrity might broken");
 }

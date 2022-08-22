@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::Path,
+};
 
 use engula_api::server::v1::ReplicaDesc;
 use futures::channel::oneshot;
@@ -121,6 +124,13 @@ impl<M: StateMachine> Applier<M> {
         &mut self.state_machine
     }
 
+    pub fn apply_snapshot(&mut self, snap_dir: &Path) -> Result<()> {
+        let state_machine = self.mut_state_machine();
+        state_machine.apply_snapshot(snap_dir)?;
+        self.last_applied_index = state_machine.flushed_index();
+        Ok(())
+    }
+
     #[inline]
     pub fn applied_index(&self) -> u64 {
         self.last_applied_index
@@ -139,6 +149,11 @@ impl<M: StateMachine> Applier<M> {
         committed_entries: Vec<Entry>,
     ) -> u64 {
         for entry in committed_entries {
+            if entry.index != self.last_applied_index + 1 && self.last_applied_index != 0 {
+                panic!("group {} apply entries: log is not discontinuous, last applied index {}, entry index {}",
+                    self.group_id, self.last_applied_index, entry.index);
+            }
+
             self.last_applied_index = entry.index;
             let index = entry.index;
             let term = entry.term;

@@ -105,7 +105,12 @@ impl Node {
             provider.address_resolver.clone(),
             raft_route_table.clone(),
         );
-        let raft_mgr = RaftManager::open(cfg.raft.clone(), provider.clone(), trans_mgr)?;
+        let raft_mgr = RaftManager::open(
+            cfg.raft.clone(),
+            &provider.log_path,
+            provider.executor.clone(),
+            trans_mgr,
+        )?;
         let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
         Ok(Node {
             cfg: cfg.node,
