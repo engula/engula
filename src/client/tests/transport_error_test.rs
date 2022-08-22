@@ -129,6 +129,10 @@ impl node_server::Node for MockedServer {
 
 #[tokio::test]
 async fn broken_pipe() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
+
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
     socket.set_linger(Some(Duration::ZERO)).unwrap();
     socket
@@ -165,6 +169,10 @@ async fn broken_pipe() {
 
 #[tokio::test]
 async fn connection_closed() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
+
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
     socket.set_nodelay(true).unwrap();
     socket.set_nonblocking(true).unwrap();
@@ -245,6 +253,10 @@ async fn connection_closed() {
 
 #[tokio::test]
 async fn connection_reset() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
+
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
     socket.set_linger(Some(Duration::ZERO)).unwrap();
     socket
