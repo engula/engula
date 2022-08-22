@@ -40,7 +40,7 @@ pub use self::{
 };
 use crate::{
     runtime::{sync::WaitGroup, Executor, TaskPriority},
-    Provider, Result,
+    Result,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -95,7 +95,7 @@ pub enum ReadPolicy {
 #[derive(Clone)]
 pub struct RaftManager {
     pub cfg: RaftConfig,
-    provider: Arc<Provider>,
+    executor: Executor,
     engine: Arc<raft_engine::Engine>,
     transport_mgr: TransportManager,
     snap_mgr: SnapManager,
@@ -104,12 +104,13 @@ pub struct RaftManager {
 impl RaftManager {
     pub(crate) fn open(
         cfg: RaftConfig,
-        provider: Arc<Provider>,
+        log_path: &Path,
+        executor: Executor,
         transport_mgr: TransportManager,
     ) -> Result<Self> {
         use raft_engine::{Config, Engine};
-        let engine_dir = provider.log_path.join("engine");
-        let snap_dir = provider.log_path.join("snap");
+        let engine_dir = log_path.join("engine");
+        let snap_dir = log_path.join("snap");
         create_dir_all_if_not_exists(&engine_dir)?;
         create_dir_all_if_not_exists(&snap_dir)?;
         let engine_cfg = Config {
@@ -117,10 +118,10 @@ impl RaftManager {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
-        let snap_mgr = SnapManager::recovery(&provider.executor, snap_dir)?;
+        let snap_mgr = SnapManager::recovery(&executor, snap_dir)?;
         Ok(RaftManager {
             cfg,
-            provider,
+            executor,
             engine,
             transport_mgr,
             snap_mgr,
@@ -144,7 +145,7 @@ impl RaftManager {
 
     #[inline]
     pub fn executor(&self) -> &Executor {
-        &self.provider.executor
+        &self.executor
     }
 
     pub async fn start_raft_group<M: 'static + StateMachine>(
@@ -162,8 +163,7 @@ impl RaftManager {
 
         let tick_interval_ms = self.cfg.tick_interval_ms;
         let tag = &group_id.to_le_bytes();
-        self.provider
-            .executor
+        self.executor
             .spawn(Some(tag), TaskPriority::High, async move {
                 // TODO(walter) handle result.
                 worker.run(tick_interval_ms).await.unwrap();

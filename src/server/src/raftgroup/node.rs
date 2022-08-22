@@ -79,8 +79,24 @@ where
         mgr: &RaftManager,
         state_machine: M,
     ) -> Result<Self> {
-        let applied = state_machine.flushed_index();
+        let mut applier = Applier::new(group_id, state_machine);
+        try_apply_fresh_snapshot(replica_id, &mgr.snap_mgr, &mut applier).await;
+
         let cfg = &mgr.cfg;
+        let applied = applier.flushed_index();
+        let conf_state =
+            super::conf_state_from_group_descriptor(&applier.mut_state_machine().descriptor());
+        let mut storage = Storage::open(
+            cfg,
+            replica_id,
+            applied,
+            conf_state,
+            mgr.engine.clone(),
+            mgr.snap_mgr.clone(),
+        )
+        .await?;
+        try_reset_storage_state(replica_id, &mgr.snap_mgr, &mgr.engine, &mut storage).await?;
+
         let config = Config {
             id: replica_id,
             election_tick: cfg.election_tick,
@@ -94,26 +110,6 @@ where
             read_only_option: ReadOnlyOption::Safe,
             ..Default::default()
         };
-
-        let conf_state = super::conf_state_from_group_descriptor(&state_machine.descriptor());
-        let mut storage = Storage::open(
-            cfg,
-            replica_id,
-            applied,
-            conf_state,
-            mgr.engine.clone(),
-            mgr.snap_mgr.clone(),
-        )
-        .await?;
-        let mut applier = Applier::new(group_id, state_machine);
-        try_recover_snapshot(
-            replica_id,
-            &mgr.snap_mgr,
-            &mgr.engine,
-            &mut storage,
-            &mut applier,
-        )
-        .await?;
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),
@@ -435,14 +431,11 @@ impl WriteTask {
     }
 }
 
-async fn try_recover_snapshot<M>(
+async fn try_apply_fresh_snapshot<M>(
     replica_id: u64,
     snap_mgr: &SnapManager,
-    engine: &raft_engine::Engine,
-    storage: &mut Storage,
     applier: &mut Applier<M>,
-) -> Result<()>
-where
+) where
     M: StateMachine,
 {
     if let Some(info) = snap_mgr.latest_snap(replica_id) {
@@ -455,12 +448,22 @@ where
             );
             apply_snapshot(replica_id, snap_mgr, applier, &info.to_raft_snapshot());
         }
+    }
+}
 
+async fn try_reset_storage_state(
+    replica_id: u64,
+    snap_mgr: &SnapManager,
+    engine: &raft_engine::Engine,
+    storage: &mut Storage,
+) -> Result<()> {
+    if let Some(info) = snap_mgr.latest_snap(replica_id) {
         // Two cases:
         // 1. out of range
         // 2. term mismatch
         //
         // Don't need to check `storage.truncated_index() == apply_state.index`.
+        let apply_state = info.meta.apply_state.as_ref().unwrap();
         if storage.truncated_index() < apply_state.index
             && (!storage.range().contains(&apply_state.index)
                 || storage.term(apply_state.index).unwrap() < apply_state.term)
@@ -486,14 +489,15 @@ where
 mod tests {
     use std::{path::PathBuf, sync::Arc};
 
-    use engula_api::server::v1::GroupDesc;
+    use engula_api::server::v1::{GroupDesc, NodeDesc, ReplicaDesc, ReplicaRole};
     use raft_engine::*;
 
     use super::*;
     use crate::{
-        raftgroup::write_initial_state,
+        node::RaftRouteTable,
+        raftgroup::{write_initial_state, AddressResolver, TransportManager},
         runtime::ExecutorOwner,
-        serverpb::v1::{ApplyState, SnapshotMeta},
+        serverpb::v1::{ApplyState, EvalResult, SnapshotMeta},
         RaftConfig,
     };
 
@@ -530,17 +534,33 @@ mod tests {
         }
     }
 
+    async fn try_recover_snapshot<M>(
+        replica_id: u64,
+        snap_mgr: &SnapManager,
+        engine: &raft_engine::Engine,
+        storage: &mut Storage,
+        applier: &mut Applier<M>,
+    ) -> crate::Result<()>
+    where
+        M: StateMachine,
+    {
+        try_apply_fresh_snapshot(replica_id, snap_mgr, applier).await;
+        try_reset_storage_state(replica_id, snap_mgr, engine, storage).await
+    }
+
     fn create_snapshot(snap_mgr: &SnapManager, replica_id: u64, index: u64, term: u64) -> PathBuf {
+        use prost::Message;
+
         let snap_dir = snap_mgr.create(replica_id);
-        snap_mgr.install(
-            replica_id,
-            &snap_dir,
-            &SnapshotMeta {
-                apply_state: Some(ApplyState { index, term }),
-                group_desc: Some(GroupDesc::default()),
-                ..Default::default()
-            },
-        );
+        std::fs::create_dir_all(&snap_dir).unwrap();
+        let data = snap_dir.join("DATA");
+        let meta = SnapshotMeta {
+            apply_state: Some(ApplyState { index, term }),
+            group_desc: Some(GroupDesc::default()),
+            ..Default::default()
+        };
+        std::fs::write(&data, meta.encode_to_vec()).unwrap();
+        snap_mgr.install(replica_id, &snap_dir, &meta);
         snap_dir
     }
 
@@ -736,6 +756,161 @@ mod tests {
                 .unwrap();
             assert!(applier.mut_state_machine().current_snapshot.is_none());
             assert_eq!(storage.truncated_index(), 125);
+        });
+    }
+
+    /// After restoring the state machine data from the snapshot, the index of the submitted apply
+    /// task must be monotonically increasing (the first one should be equal to snapshot.index + 1).
+    #[test]
+    fn recover_from_snapshot_with_consistent_applied_index() {
+        struct MockedAddressResolver {}
+
+        #[crate::async_trait]
+        impl AddressResolver for MockedAddressResolver {
+            async fn resolve(&self, _: u64) -> crate::Result<NodeDesc> {
+                todo!()
+            }
+        }
+
+        struct CheckIndexStateMachine {
+            flushed_index: u64,
+        }
+
+        impl StateMachine for CheckIndexStateMachine {
+            #[allow(unused)]
+            fn apply(
+                &mut self,
+                index: u64,
+                term: u64,
+                entry: crate::raftgroup::ApplyEntry,
+            ) -> crate::Result<()> {
+                assert_eq!(self.flushed_index + 1, index);
+                self.flushed_index = index;
+                Ok(())
+            }
+
+            fn apply_snapshot(&mut self, data: &std::path::Path) -> crate::Result<()> {
+                use prost::Message;
+
+                let content = std::fs::read(&data).unwrap();
+                let meta = SnapshotMeta::decode(&*content).unwrap();
+                self.flushed_index = meta.apply_state.unwrap().index;
+                Ok(())
+            }
+
+            fn snapshot_builder(&self) -> Box<dyn crate::raftgroup::SnapshotBuilder> {
+                todo!()
+            }
+
+            fn descriptor(&self) -> engula_api::server::v1::GroupDesc {
+                // Only one member, so the node will become leader immediately.
+                GroupDesc {
+                    id: 1,
+                    epoch: 1,
+                    shards: vec![],
+                    replicas: vec![ReplicaDesc {
+                        id: 1,
+                        role: ReplicaRole::Voter as i32,
+                        ..Default::default()
+                    }],
+                }
+            }
+
+            fn flushed_index(&self) -> u64 {
+                self.flushed_index
+            }
+        }
+
+        let owner = ExecutorOwner::new(1);
+        let executor = owner.executor();
+        owner.executor().block_on(async {
+            use raft_engine::Config;
+
+            let dir = tempdir::TempDir::new("raftgroup-partial-recover-snapshot").unwrap();
+            let cfg = Config {
+                dir: dir.path().join("db").to_str().unwrap().to_owned(),
+                ..Default::default()
+            };
+            let engine = Arc::new(Engine::open(cfg).unwrap());
+            let snap_dir = dir.path().join("snap");
+            let snap_mgr = SnapManager::new(snap_dir.clone());
+            let resolver = Arc::new(MockedAddressResolver {});
+            let transport_mgr =
+                TransportManager::build(executor.clone(), resolver, RaftRouteTable::new());
+            let raft_mgr = RaftManager {
+                cfg: RaftConfig::default(),
+                executor,
+                engine: engine.clone(),
+                transport_mgr,
+                snap_mgr: snap_mgr.clone(),
+            };
+
+            // 1. initial storage with log entries in [0, 100), all entries are committed.
+            write_initial_state(
+                &RaftConfig::default(),
+                engine.as_ref(),
+                1,
+                vec![ReplicaDesc {
+                    id: 1,
+                    ..Default::default()
+                }],
+                (0..100)
+                    .into_iter()
+                    .map(|_| EvalResult::default())
+                    .collect(),
+            )
+            .await
+            .unwrap();
+
+            // 2. create snapshot with index 50 term 1.
+            // See storage::write_initial_state for details about term 1.
+            create_snapshot(&snap_mgr, 1, 50, 1);
+
+            // 3. recover node from snapshot. and apply all entries.
+            let state_machine = CheckIndexStateMachine { flushed_index: 0 };
+            let mut node = RaftNode::new(1, 1, &raft_mgr, state_machine).await.unwrap();
+            assert_eq!(node.mut_state_machine().flushed_index(), 50);
+            node.raw_node.campaign().unwrap();
+
+            // 4. apply left entries.
+            struct AdvanceTemplateImpl {
+                snap_mgr: SnapManager,
+                replica_cache: ReplicaCache,
+            }
+
+            impl AdvanceTemplate for AdvanceTemplateImpl {
+                fn send_messages(&mut self, _: Vec<Message>) {}
+
+                fn on_state_updated(&mut self, _: u64, _: u64, _: u64, _: RaftRole) {}
+
+                fn mut_replica_cache(&mut self) -> &mut ReplicaCache {
+                    &mut self.replica_cache
+                }
+
+                fn apply_snapshot<M: StateMachine>(
+                    &mut self,
+                    applier: &mut Applier<M>,
+                    snapshot: &Snapshot,
+                ) {
+                    use crate::raftgroup::snap::apply::apply_snapshot;
+                    apply_snapshot(1, &self.snap_mgr, applier, snapshot);
+                }
+            }
+
+            let mut template = AdvanceTemplateImpl {
+                snap_mgr: snap_mgr.clone(),
+                replica_cache: ReplicaCache::default(),
+            };
+
+            while let Some(task) = node.advance(&mut template) {
+                let mut batch = LogBatch::default();
+                node.mut_store()
+                    .write(&mut batch, &task)
+                    .expect("write log batch");
+                engine.write(&mut batch, false).unwrap();
+                node.post_advance(task.post_ready(), &mut template)
+            }
+            assert!(node.mut_state_machine().flushed_index() >= 100);
         });
     }
 }
