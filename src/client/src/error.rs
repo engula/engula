@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("deadline exceeded {0}")]
     DeadlineExceeded(String),
 
+    #[error("network: {0}")]
+    Network(tonic::Status),
+
     #[error("internal {0}")]
     Internal(Box<dyn StdError + Send + Sync + 'static>),
 }
@@ -70,6 +73,12 @@ pub enum Error {
         Option<ReplicaDesc>,
     ),
 
+    #[error("transport {0}")]
+    Transport(tonic::Status),
+
+    #[error("connect {0}")]
+    Connect(tonic::Status),
+
     #[error("rpc {0}")]
     Rpc(tonic::Status),
 
@@ -93,9 +102,11 @@ impl From<tonic::Status> for Error {
             Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
             Code::Internal => Error::Internal(status.message().into()),
+            Code::Unavailable if retryable_rpc_err(&status) => Error::Connect(status),
             Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
                 .map(Into::into)
                 .unwrap_or_else(|_| Error::Rpc(status)),
+            Code::Unknown if transport_err(&status) => Error::Transport(status),
             _ => Error::Rpc(status),
         }
     }
@@ -135,6 +146,8 @@ impl From<Error> for AppError {
             Error::AlreadyExists(v) => AppError::AlreadyExists(v),
             Error::Internal(v) => AppError::Internal(v),
 
+            Error::Transport(status) => AppError::Network(status),
+            Error::Connect(status) => panic!("do not expose connect error {status:?} to user"),
             Error::Rpc(status) => panic!("unknown error: {status:?}"),
 
             Error::EpochNotMatch(_)
@@ -148,7 +161,7 @@ impl From<Error> for AppError {
 
 pub fn find_io_error(status: &tonic::Status) -> Option<&std::io::Error> {
     use tonic::Code;
-    if status.code() == Code::Unknown {
+    if status.code() == Code::Unavailable || status.code() == Code::Unknown {
         find_source::<std::io::Error>(status)
     } else {
         None
@@ -170,22 +183,49 @@ pub fn find_source<E: std::error::Error + 'static>(err: &tonic::Status) -> Optio
 pub fn retryable_io_err(err: &std::io::Error) -> bool {
     use std::io::ErrorKind;
 
-    matches!(
-        err.kind(),
-        ErrorKind::ConnectionRefused
-            | ErrorKind::ConnectionReset
-            | ErrorKind::ConnectionAborted
-            | ErrorKind::BrokenPipe
-    )
+    matches!(err.kind(), ErrorKind::ConnectionRefused)
 }
 
 pub fn retryable_rpc_err(status: &tonic::Status) -> bool {
     use tonic::Code;
-    if status.code() == Code::Unavailable {
+    if status.code() == Code::Unavailable
+        && status
+            .message()
+            .contains("error trying to connect: deadline has elapsed")
+    {
+        // connection timeout.
         true
     } else if let Some(err) = find_io_error(status) {
         retryable_io_err(err)
     } else {
         false
     }
+}
+
+pub fn transport_io_err(err: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionReset | ErrorKind::BrokenPipe
+    )
+}
+
+pub fn transport_err(status: &tonic::Status) -> bool {
+    use tonic::Code;
+    if status.code() == Code::Unknown && status.message().starts_with("transport error") {
+        let mut cause = status.source();
+        while let Some(err) = cause {
+            if let Some(err) = err.downcast_ref::<std::io::Error>() {
+                return transport_io_err(err);
+            } else if err
+                .to_string()
+                .starts_with("operation was canceled: connection closed")
+            {
+                return true;
+            }
+            cause = err.source();
+        }
+    }
+    false
 }

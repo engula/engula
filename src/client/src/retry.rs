@@ -56,7 +56,10 @@ impl RetryState {
                 self.interval_ms = std::cmp::min(self.interval_ms * 2, 250);
                 Ok(())
             }
-            Error::NotLeader(..) | Error::GroupNotFound(_) | Error::NotRootLeader(..) => {
+            Error::NotLeader(..)
+            | Error::GroupNotFound(_)
+            | Error::NotRootLeader(..)
+            | Error::Connect(_) => {
                 unreachable!()
             }
             Error::InvalidArgument(_)
@@ -64,6 +67,7 @@ impl RetryState {
             | Error::ResourceExhausted(_)
             | Error::AlreadyExists(_)
             | Error::Rpc(_)
+            | Error::Transport(_)
             | Error::Internal(_) => Err(err),
         }
     }

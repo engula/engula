@@ -103,7 +103,7 @@ function start_server() {
     ulimit -n 102400
     setsid ${BASE_DIR}/engula start \
         --conf ${BASE_DIR}/config/${id}.toml \
-        >${BASE_DIR}/log/${id}.log 2>&1 &
+        >>${BASE_DIR}/log/${id}.log 2>&1 &
 }
 
 # start [id]

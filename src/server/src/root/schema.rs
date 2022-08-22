@@ -920,7 +920,10 @@ impl Schema {
             META_SHARD_ID_KEY.into(),
             next_shard_id.to_le_bytes().to_vec(),
         );
-        batch.put_meta(META_JOB_ID_KEY.into(), INITAL_JOB_ID.to_le_bytes().to_vec());
+        batch.put_meta(
+            META_JOB_ID_KEY.into(),
+            INITIAL_JOB_ID.to_le_bytes().to_vec(),
+        );
     }
 }
 

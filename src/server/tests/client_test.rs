@@ -60,7 +60,19 @@ fn to_unreachable_peers() {
         let k = "key".as_bytes().to_vec();
         let v = "value-1".as_bytes().to_vec();
         assert!(matches!(
-            co.put(k.clone(), v).await,
+            co.put(k.clone(), v.clone()).await,
+            Err(AppError::Network(_) | AppError::DeadlineExceeded(_))
+        ));
+        assert!(matches!(
+            co.put(k.clone(), v.clone()).await,
+            Err(AppError::DeadlineExceeded(_))
+        ));
+        assert!(matches!(
+            co.put(k.clone(), v.clone()).await,
+            Err(AppError::DeadlineExceeded(_))
+        ));
+        assert!(matches!(
+            co.put(k.clone(), v.clone()).await,
             Err(AppError::DeadlineExceeded(_))
         ));
     });
@@ -151,7 +163,13 @@ fn request_to_offline_leader() {
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();
             let v = format!("value-{i}").as_bytes().to_vec();
-            co.put(k.clone(), v).await.unwrap();
+            match co.put(k.clone(), v).await {
+                Ok(_) => {}
+                Err(AppError::Network(_)) => continue,
+                Err(e) => {
+                    panic!("put {k:?}: {e:?}");
+                }
+            }
             let r = co.get(k).await.unwrap();
             let r = r.map(String::from_utf8);
             assert!(matches!(r, Some(Ok(v)) if v == format!("value-{i}")));

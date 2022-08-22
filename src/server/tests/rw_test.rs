@@ -129,7 +129,7 @@ fn operation_with_config_change() {
         for i in 0..3000 {
             if i == 20 {
                 ctx.stop_server(2).await;
-                ctx.add_server(root_addr.clone(), 3).await;
+                ctx.add_server(vec![root_addr.clone()], 3).await;
             }
 
             let k = format!("key-{i}").as_bytes().to_vec();
