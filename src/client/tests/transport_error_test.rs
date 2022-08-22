@@ -246,7 +246,7 @@ async fn connection_closed() {
                     break false;
                 }
             };
-            assert!(found, "status is {status:}");
+            assert!(found, "status is {status:?}");
         }
     }
 }
