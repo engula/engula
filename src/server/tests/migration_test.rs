@@ -391,6 +391,7 @@ fn migration_with_offline_peers() {
             shard_id, group_id_2
         );
 
+        c.assert_root_group_has_promoted().await;
         ctx.stop_server(*node_ids.last().unwrap()).await;
 
         move_shard(&c, &shard_desc, group_id_2, group_id_1).await;

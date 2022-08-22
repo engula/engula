@@ -124,6 +124,7 @@ fn operation_with_config_change() {
             .await
             .unwrap();
         c.assert_collection_ready(&co.desc()).await;
+        c.assert_root_group_has_promoted().await;
 
         for i in 0..3000 {
             if i == 20 {

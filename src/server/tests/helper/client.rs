@@ -390,4 +390,10 @@ impl ClusterClient {
             }
         }
     }
+
+    /// Some tests may shut down a server, if root happens to be on that server, and there is only
+    /// one replica in root group, then the test will not continue because root group is lost.
+    pub async fn assert_root_group_has_promoted(&self) {
+        self.assert_num_group_voters(0, 3).await;
+    }
 }

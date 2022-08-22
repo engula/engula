@@ -146,6 +146,7 @@ fn request_to_offline_leader() {
             .unwrap();
 
         c.assert_collection_ready(&co.desc()).await;
+        c.assert_root_group_has_promoted().await;
 
         for i in 0..1000 {
             let k = format!("key-{i}").as_bytes().to_vec();
