@@ -210,6 +210,7 @@ fn cure_group() {
 
         info!("shutdown node 3 and replica 103");
         c.assert_group_contains_member(group_id, 103).await;
+        c.assert_root_group_has_promoted().await;
 
         ctx.stop_server(3).await;
         ctx.wait_election_timeout().await;

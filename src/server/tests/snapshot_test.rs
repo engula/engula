@@ -122,6 +122,7 @@ fn send_snapshot() {
             .unwrap();
 
         ctx.wait_election_timeout().await;
+        c.assert_root_group_has_promoted().await;
 
         // majority(4) == 3, force `new_replica_id` accept new entries.
         ctx.stop_server(node_ids.last().cloned().unwrap()).await;
