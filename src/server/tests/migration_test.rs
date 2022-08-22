@@ -23,7 +23,7 @@ use engula_api::{
     v1::{GetRequest, GetResponse, PutRequest},
 };
 use engula_client::RetryState;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
 
@@ -36,10 +36,15 @@ fn init() {
 async fn is_not_in_migration(c: &ClusterClient, dest_group_id: u64) -> bool {
     use collect_migration_state_response::State;
     if let Some(leader_node_id) = c.get_group_leader_node_id(dest_group_id).await {
+        debug!("group {dest_group_id} node {leader_node_id} collect migration state",);
         if let Ok(resp) = c
             .collect_migration_state(dest_group_id, leader_node_id)
             .await
         {
+            debug!(
+                "group {dest_group_id} node {leader_node_id} collect migration state: {:?}",
+                resp.state
+            );
             if resp.state == State::None as i32 {
                 // migration is finished or aborted.
                 return true;
@@ -393,6 +398,7 @@ fn migration_with_offline_peers() {
 
         c.assert_root_group_has_promoted().await;
         ctx.stop_server(*node_ids.last().unwrap()).await;
+        ctx.wait_election_timeout().await;
 
         move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
     });
