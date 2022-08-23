@@ -290,7 +290,7 @@ impl ClusterClient {
         node_id: u64,
     ) -> Result<CollectMigrationStateResponse> {
         let node_addr = self.nodes.get(&node_id).unwrap();
-        let client = node_client_with_retry(node_addr).await;
+        let client = NodeClient::connect(node_addr.to_string()).await?;
         let resp = client
             .root_heartbeat(HeartbeatRequest {
                 timestamp: 0,
@@ -321,7 +321,7 @@ impl ClusterClient {
         node_id: u64,
     ) -> Result<Option<ReplicaState>> {
         let node_addr = self.nodes.get(&node_id).unwrap();
-        let client = node_client_with_retry(node_addr).await;
+        let client = NodeClient::connect(node_addr.to_string()).await?;
         let resp = client
             .root_heartbeat(HeartbeatRequest {
                 timestamp: 0,

@@ -21,7 +21,7 @@ use std::{
 use engula_api::{server::v1::*, v1::*};
 use tokio_stream::StreamExt;
 use tonic::Streaming;
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 use crate::RootClient;
 
@@ -212,6 +212,7 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                     state.node_id_lookup.insert(node_desc.id, node_desc.addr);
                 }
                 UpdateEvent::Group(group_desc) => {
+                    trace!("update event; group {group_desc:?}");
                     let (id, epoch) = (group_desc.id, group_desc.epoch);
                     let (shards, replicas) = (group_desc.shards, group_desc.replicas);
 
@@ -248,6 +249,7 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
                     }
                 }
                 UpdateEvent::GroupState(group_state) => {
+                    trace!("update event; group state {group_state:?}");
                     let id = group_state.group_id;
                     if let Some(group) = state.group_id_lookup.get_mut(&id) {
                         group.leader_state = leader_state(&group_state);
@@ -306,12 +308,21 @@ async fn watch_events(state: &Mutex<State>, mut events: Streaming<WatchResponse>
 
 #[inline]
 fn leader_state(group_state: &GroupState) -> Option<(u64, u64)> {
-    if let Some(leader_id) = group_state.leader_id {
-        group_state
+    if let Some(_leader_id) = group_state.leader_id {
+        // FIXME: This is a temporary solution to bypass issue #1014.
+        // group_state
+        //     .replicas
+        //     .iter()
+        //     .find(|r| r.replica_id == leader_id)
+        //     .map(|r| (leader_id, r.term))
+        let mut candidates = group_state
             .replicas
             .iter()
-            .find(|r| r.replica_id == leader_id)
-            .map(|r| (leader_id, r.term))
+            .filter(|r| r.role == RaftRole::Leader as i32)
+            .map(|r| (r.replica_id, r.term))
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|(_, term)| *term);
+        candidates.pop()
     } else {
         None
     }

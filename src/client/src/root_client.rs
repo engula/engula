@@ -518,19 +518,16 @@ where
     match op(client).await {
         Ok(res) => Ok(res),
         Err(status) => match status.code() {
-            Code::Unavailable | Code::DeadlineExceeded => Err(RootError::NotAvailable),
-            Code::Unknown => {
-                if status.details().is_empty() {
-                    if retryable_rpc_err(&status) {
-                        Err(RootError::NotAvailable)
-                    } else {
-                        Err(status.into())
-                    }
-                } else {
-                    let (root, term, leader_opt) = extract_root_descriptor(&status)
-                        .ok_or_else(|| <Status as Into<RootError>>::into(status))?;
-                    Err(RootError::NotRoot(root, term, leader_opt))
-                }
+            Code::Ok => unreachable!(),
+            Code::DeadlineExceeded => Err(RootError::NotAvailable),
+            Code::Cancelled if status.message().contains("Timeout expired") => {
+                Err(RootError::NotAvailable)
+            }
+            Code::Unavailable if retryable_rpc_err(&status) => Err(RootError::NotAvailable),
+            Code::Unknown if !status.details().is_empty() => {
+                let (root, term, leader_opt) = extract_root_descriptor(&status)
+                    .ok_or_else(|| <Status as Into<RootError>>::into(status))?;
+                Err(RootError::NotRoot(root, term, leader_opt))
             }
             _ => Err(status.into()),
         },

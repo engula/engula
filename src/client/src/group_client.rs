@@ -28,8 +28,7 @@ use tonic::{Code, Status};
 use tracing::{debug, trace, warn};
 
 use crate::{
-    error::retryable_rpc_err, node_client::RpcTimeout, ConnManager, Error, NodeClient,
-    RequestBatchBuilder, Result, Router,
+    node_client::RpcTimeout, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
 };
 
 pub struct RetryableShardChunkStreaming<'a> {
@@ -245,7 +244,7 @@ impl GroupClient {
             }
             Error::NotLeader(_, term, leader_desc) => {
                 debug!(
-                    "group client issue rpc to {}: not leader of group {}, new leader {:?}",
+                    "group client issue rpc to {}: not leader of group {}, new leader {:?} term {term}",
                     self.access_node_id.unwrap_or_default(),
                     self.group_id,
                     leader_desc
@@ -265,9 +264,21 @@ impl GroupClient {
                 }
                 Ok(())
             }
-            Error::Rpc(status) if retryable_rpc_err(&status) => {
+            Error::Connect(status) => {
                 debug!(
                     "group client issue rpc to {}: group {} with retryable status: {}",
+                    self.access_node_id.unwrap_or_default(),
+                    self.group_id,
+                    status.to_string(),
+                );
+                self.access_node_id = None;
+                Ok(())
+            }
+            Error::Transport(status)
+                if opt.request.map(is_read_only_request).unwrap_or_default() =>
+            {
+                debug!(
+                    "group client issue rpc to {}: group {} with transport status: {}",
                     self.access_node_id.unwrap_or_default(),
                     self.group_id,
                     status.to_string(),
@@ -664,6 +675,11 @@ impl<'a> futures::Stream for RetryableShardChunkStreaming<'a> {
         futures::pin_mut!(future);
         future.poll_unpin(cx)
     }
+}
+
+#[inline]
+fn is_read_only_request(request: &Request) -> bool {
+    matches!(request, Request::Get(_) | Request::PrefixList(_))
 }
 
 fn is_executable(descriptor: &GroupDesc, request: &Request) -> bool {

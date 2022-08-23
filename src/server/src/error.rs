@@ -228,6 +228,8 @@ impl From<engula_client::Error> for Error {
             engula_client::Error::AlreadyExists(v) => Error::AlreadyExists(v),
             engula_client::Error::ResourceExhausted(v) => Error::ResourceExhausted(v),
             engula_client::Error::Rpc(err) => Error::Rpc(err),
+            engula_client::Error::Connect(err) => Error::Rpc(err),
+            engula_client::Error::Transport(err) => Error::Rpc(err),
 
             engula_client::Error::GroupNotFound(v) => Error::GroupNotFound(v),
             engula_client::Error::NotRootLeader(desc, term, leader) => {

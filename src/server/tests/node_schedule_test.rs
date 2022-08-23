@@ -288,6 +288,7 @@ fn cure_group() {
         info!("stop server {offline_node_id}");
         c.assert_root_group_has_promoted().await;
         ctx.stop_server(offline_node_id).await;
+        ctx.wait_election_timeout().await;
         c.assert_group_leader(group_id).await;
 
         info!("cure group by replace offline voters with new replicas");

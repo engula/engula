@@ -180,10 +180,10 @@ impl TestContext {
         nodes
     }
 
-    pub async fn add_server(&mut self, root_addr: String, id: u64) -> String {
+    pub async fn add_server(&mut self, root_addrs: Vec<String>, id: u64) -> String {
         assert_ne!(id, 0);
         let addr = self.next_listen_address();
-        self.spawn_server(id as usize, &addr, false, vec![root_addr]);
+        self.spawn_server(id as usize, &addr, false, root_addrs);
         node_client_with_retry(&addr).await;
         addr
     }
