@@ -577,7 +577,7 @@ fn receive_forward_request_after_shard_migrated() {
                 })),
             }),
         };
-        group_client.forward(req).await.unwrap();
+        group_client.forward(&req).await.unwrap();
         let resp = group_client
             .request(&Request::Get(ShardGetRequest {
                 shard_id,

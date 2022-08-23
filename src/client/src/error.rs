@@ -73,6 +73,11 @@ pub enum Error {
         Option<ReplicaDesc>,
     ),
 
+    /// This indicates that the `GroupClient` has not been able to access the group leader after
+    /// retries many times.
+    #[error("group {0} not accessable")]
+    GroupNotAccessable(u64),
+
     #[error("transport {0}")]
     Transport(tonic::Status),
 
@@ -153,6 +158,7 @@ impl From<Error> for AppError {
             Error::EpochNotMatch(_)
             | Error::ResourceExhausted(_)
             | Error::GroupNotFound(_)
+            | Error::GroupNotAccessable(_)
             | Error::NotRootLeader(..)
             | Error::NotLeader(..) => unreachable!(),
         }

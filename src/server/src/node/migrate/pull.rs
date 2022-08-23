@@ -19,7 +19,7 @@ use std::{
 };
 
 use engula_api::server::v1::*;
-use engula_client::GroupClient;
+use engula_client::MigrateClient;
 use futures::StreamExt;
 
 use crate::{
@@ -28,16 +28,14 @@ use crate::{
 };
 
 pub async fn pull_shard(
-    group_client: &mut GroupClient,
+    client: &mut MigrateClient,
     replica: &Replica,
     desc: &MigrationDesc,
     last_migrated_key: Vec<u8>,
 ) -> Result<()> {
     record_latency!(take_pull_shard_metrics());
     let shard_id = desc.get_shard_id();
-    let mut streaming = group_client
-        .retryable_pull(shard_id, last_migrated_key)
-        .await?;
+    let mut streaming = client.retryable_pull(shard_id, last_migrated_key).await?;
     while let Some(shard_chunk) = streaming.next().await {
         let shard_chunk = shard_chunk?;
         replica.ingest(shard_id, shard_chunk, false).await?;

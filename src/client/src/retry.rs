@@ -43,7 +43,7 @@ impl RetryState {
 
     pub async fn retry(&mut self, err: Error) -> Result<()> {
         match err {
-            Error::NotFound(_) | Error::EpochNotMatch(_) => {
+            Error::NotFound(_) | Error::EpochNotMatch(_) | Error::GroupNotAccessable(_) => {
                 let mut interval = Duration::from_millis(self.interval_ms);
                 if let Some(deadline) = self.deadline {
                     if let Some(duration) = deadline.checked_duration_since(Instant::now()) {
