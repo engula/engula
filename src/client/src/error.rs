@@ -195,9 +195,21 @@ pub fn retryable_rpc_err(status: &tonic::Status) -> bool {
     {
         // connection timeout.
         true
-    } else if let Some(err) = find_io_error(status) {
-        retryable_io_err(err)
     } else {
+        let mut cause = status.source();
+        while let Some(err) = cause {
+            if let Some(err) = err.downcast_ref::<std::io::Error>() {
+                return retryable_io_err(err);
+            } else if err
+                .to_string()
+                .ends_with("operation was canceled: connection closed")
+            {
+                // The request is dropped in an internal queue, which is guaranteed to have not been
+                // sent to the server. See https://github.com/hyperium/hyper/blob/bb3af17ce1a3841e9170adabcce595c7c8743ea7/src/client/dispatch.rs#L209 for details.
+                return true;
+            }
+            cause = err.source();
+        }
         false
     }
 }
@@ -218,11 +230,6 @@ pub fn transport_err(status: &tonic::Status) -> bool {
         while let Some(err) = cause {
             if let Some(err) = err.downcast_ref::<std::io::Error>() {
                 return transport_io_err(err);
-            } else if err
-                .to_string()
-                .starts_with("operation was canceled: connection closed")
-            {
-                return true;
             }
             cause = err.source();
         }
