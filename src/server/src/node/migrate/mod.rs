@@ -13,12 +13,10 @@
 // limitations under the License.
 
 mod ctrl;
-mod forward;
 mod gc;
 mod pull;
 
 pub(crate) use self::{
-    ctrl::MigrateController,
-    forward::{forward_request, ForwardCtx},
+    ctrl::{ForwardCtx, MigrateController},
     pull::{pull_shard, ShardChunkStream},
 };

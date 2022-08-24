@@ -243,6 +243,9 @@ impl From<engula_client::Error> for Error {
             // FIXME(walter) handle unknown errors.
             engula_client::Error::NotFound(v) => panic!("unknown not found: {v}"),
             engula_client::Error::Internal(v) => panic!("internal error: {v:?}"),
+            engula_client::Error::GroupNotAccessable(id) => {
+                panic!("GroupNotAccessable({id}) is an internal error of engula client");
+            }
         }
     }
 }

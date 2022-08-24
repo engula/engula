@@ -31,17 +31,24 @@ use crate::{
     node_client::RpcTimeout, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
 };
 
-pub struct RetryableShardChunkStreaming<'a> {
+pub struct RetryableShardChunkStreaming {
     shard_id: u64,
     last_key: Vec<u8>,
-    client: &'a mut GroupClient,
+    client: GroupClient,
     streaming: tonic::Streaming<ShardChunk>,
 }
 
 #[derive(Clone, Debug, Default)]
 struct InvokeOpt<'a> {
     request: Option<&'a Request>,
+
+    /// It indicates that the value of epoch is accurate. If `EpochNotMatch` is encountered, it
+    /// means that the precondition is not satisfied, and there is no need to retry.
     accurate_epoch: bool,
+
+    /// It points out that the associated request is idempotent, and if a transport error
+    /// (connection reset, broken pipe) is encountered, it can be retried safety.
+    ignore_transport_error: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,6 +59,13 @@ struct InvokeContext {
     timeout: Option<Duration>,
 }
 
+/// GroupClient is an abstraction for submitting requests to the leader of a group of replicas.
+///
+/// It provides leader positioning, automatic error retry (for retryable errors) and requests
+/// timeout.
+///
+/// Of course, if it has traversed all the replicas and has not successfully submitted the
+/// request, it will return `GroupNotAccessable`.
 #[derive(Clone)]
 pub struct GroupClient {
     group_id: u64,
@@ -101,10 +115,10 @@ impl GroupClient {
         F: Fn(InvokeContext, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
-        self.invoke_opt(op, InvokeOpt::default()).await
+        self.invoke_with_opt(op, InvokeOpt::default()).await
     }
 
-    async fn invoke_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
+    async fn invoke_with_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
     where
         F: Fn(InvokeContext, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
@@ -146,7 +160,7 @@ impl GroupClient {
             };
         }
 
-        Err(Error::EpochNotMatch(GroupDesc::default()))
+        Err(Error::GroupNotAccessable(self.group_id))
     }
 
     async fn recommend_client(&mut self) -> (u64, NodeClient) {
@@ -275,7 +289,8 @@ impl GroupClient {
                 Ok(())
             }
             Error::Transport(status)
-                if opt.request.map(is_read_only_request).unwrap_or_default() =>
+                if opt.ignore_transport_error
+                    || opt.request.map(is_read_only_request).unwrap_or_default() =>
             {
                 debug!(
                     "group client issue rpc to {}: group {} with transport status: {}",
@@ -322,8 +337,12 @@ impl GroupClient {
                 }
             }
             e => {
-                // FIXME(walter) performance
-                warn!(err = ?e, send_epoch = self.epoch, "group client issue rpc");
+                warn!(
+                    "group client issue rpc to {}: group {} epoch {} with unknown error {e:?}",
+                    self.access_node_id.unwrap_or_default(),
+                    self.group_id,
+                    self.epoch,
+                );
                 Err(e)
             }
         }
@@ -355,10 +374,42 @@ impl GroupClient {
         let opt = InvokeOpt {
             request: Some(request),
             accurate_epoch: false,
+            ignore_transport_error: false,
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
+    fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
+        if resps.is_empty() {
+            Err(Status::internal(
+                "response of batch request is empty".to_owned(),
+            ))
+        } else {
+            Ok(resps.pop().unwrap())
+        }
+    }
+
+    fn group_response(resp: GroupResponse) -> std::result::Result<Response, Status> {
+        use prost::Message;
+
+        if let Some(resp) = resp.response.and_then(|resp| resp.response) {
+            Ok(resp)
+        } else if let Some(err) = resp.error {
+            Err(Status::with_details(
+                Code::Unknown,
+                "response",
+                err.encode_to_vec().into(),
+            ))
+        } else {
+            Err(Status::internal(
+                "Both response and error are None in GroupResponse".to_owned(),
+            ))
+        }
+    }
+}
+
+// Scheduling related functions that return GroupNotAccessable will be retried safely.
+impl GroupClient {
     pub async fn create_shard(&mut self, desc: &ShardDesc) -> Result<()> {
         let op = |ctx: InvokeContext, client: NodeClient| {
             let desc = desc.to_owned();
@@ -404,9 +455,10 @@ impl GroupClient {
         };
         let opt = InvokeOpt {
             accurate_epoch: true,
+            ignore_transport_error: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
     pub async fn remove_group_replica(&mut self, remove_replica: u64) -> Result<()> {
@@ -524,41 +576,15 @@ impl GroupClient {
         };
         let opt = InvokeOpt {
             accurate_epoch: true,
+            ignore_transport_error: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
-    }
-
-    fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
-        if resps.is_empty() {
-            Err(Status::internal(
-                "response of batch request is empty".to_owned(),
-            ))
-        } else {
-            Ok(resps.pop().unwrap())
-        }
-    }
-
-    fn group_response(resp: GroupResponse) -> std::result::Result<Response, Status> {
-        use prost::Message;
-
-        if let Some(resp) = resp.response.and_then(|resp| resp.response) {
-            Ok(resp)
-        } else if let Some(err) = resp.error {
-            Err(Status::with_details(
-                Code::Unknown,
-                "response",
-                err.encode_to_vec().into(),
-            ))
-        } else {
-            Err(Status::internal(
-                "Both response and error are None in GroupResponse".to_owned(),
-            ))
-        }
+        self.invoke_with_opt(op, opt).await
     }
 }
 
-// Migration related functions.
+// Migration related functions, which will be retried at:
+// `engula-client::migrate_client::MigrateClient`.
 impl GroupClient {
     pub async fn setup_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
         let op = |_: InvokeContext, client: NodeClient| {
@@ -570,9 +596,10 @@ impl GroupClient {
         };
         let opt = InvokeOpt {
             accurate_epoch: true,
+            ignore_transport_error: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
     pub async fn commit_migration(&mut self, desc: &MigrationDesc) -> Result<MigrateResponse> {
@@ -583,10 +610,14 @@ impl GroupClient {
             };
             async move { client.migrate(req).await }
         };
-        self.invoke(op).await
+        let opt = InvokeOpt {
+            ignore_transport_error: true,
+            ..Default::default()
+        };
+        self.invoke_with_opt(op, opt).await
     }
 
-    pub async fn forward(&mut self, req: ForwardRequest) -> Result<ForwardResponse> {
+    pub async fn forward(&mut self, req: &ForwardRequest) -> Result<ForwardResponse> {
         let op = |_: InvokeContext, client: NodeClient| {
             let cloned_req = req.clone();
             async move { client.forward(cloned_req).await }
@@ -595,11 +626,11 @@ impl GroupClient {
             accurate_epoch: true,
             ..Default::default()
         };
-        self.invoke_opt(op, opt).await
+        self.invoke_with_opt(op, opt).await
     }
 
     pub async fn retryable_pull(
-        &mut self,
+        mut self,
         shard_id: u64,
         last_key: Vec<u8>,
     ) -> Result<RetryableShardChunkStreaming> {
@@ -627,11 +658,15 @@ impl GroupClient {
             };
             async move { client.pull(request).await }
         };
-        self.invoke(op).await
+        let opt = InvokeOpt {
+            ignore_transport_error: true,
+            ..Default::default()
+        };
+        self.invoke_with_opt(op, opt).await
     }
 }
 
-impl<'a> RetryableShardChunkStreaming<'a> {
+impl RetryableShardChunkStreaming {
     async fn next(&mut self) -> Option<Result<ShardChunk>> {
         loop {
             let item = match self.streaming.next().await {
@@ -664,7 +699,7 @@ impl<'a> RetryableShardChunkStreaming<'a> {
     }
 }
 
-impl<'a> futures::Stream for RetryableShardChunkStreaming<'a> {
+impl futures::Stream for RetryableShardChunkStreaming {
     type Item = Result<ShardChunk>;
 
     fn poll_next(
