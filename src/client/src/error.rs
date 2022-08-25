@@ -107,11 +107,13 @@ impl From<tonic::Status> for Error {
             Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
             Code::Internal => Error::Internal(status.message().into()),
-            Code::Unavailable if retryable_rpc_err(&status) => Error::Connect(status),
             Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
                 .map(Into::into)
                 .unwrap_or_else(|_| Error::Rpc(status)),
             Code::Unknown if transport_err(&status) => Error::Transport(status),
+            Code::Unavailable | Code::Unknown if retryable_rpc_err(&status) => {
+                Error::Connect(status)
+            }
             _ => Error::Rpc(status),
         }
     }
