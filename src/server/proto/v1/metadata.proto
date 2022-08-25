@@ -40,10 +40,7 @@ message NodeIdent {
 }
 
 enum ReplicaLocalState {
-  /// With membership, but couldn't supply service.  It is used in group
-  /// creation.
   INITIAL = 0;
-  /// Without membership, only response raft messages.
   PENDING = 1;
   NORMAL = 2;
   /// The service and memory states are shutdown and cleans, but disk data still

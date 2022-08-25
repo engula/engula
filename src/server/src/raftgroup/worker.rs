@@ -17,6 +17,7 @@ use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 use engula_api::server::v1::{ChangeReplicas, RaftRole, ReplicaDesc};
 use futures::{
     channel::{mpsc, oneshot},
+    stream::FusedStream,
     FutureExt, SinkExt, StreamExt,
 };
 use raft::{prelude::*, SoftState, StateRole};
@@ -244,12 +245,13 @@ where
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
     pub async fn run(mut self, tick_interval_ms: u64) -> Result<()> {
         debug!(
-            "raft worker of replica {} group {} start running",
-            self.desc.id, self.group_id
+            "group {} replica {} raft worker is running",
+            self.group_id, self.desc.id
         );
+
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(tick_interval_ms));
-        loop {
+        while !self.request_receiver.is_terminated() {
             if !self.raft_node.has_ready() {
                 futures::select_biased! {
                     _ = interval.tick().fuse() => {
@@ -302,6 +304,11 @@ where
                 );
             }
         }
+
+        debug!(
+            "group {} replica {} raft worker is quit",
+            self.group_id, self.desc.id
+        );
 
         Ok(())
     }

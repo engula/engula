@@ -110,7 +110,7 @@ impl Replica {
             .collect::<Vec<_>>();
         write_initial_state(
             &raft_mgr.cfg,
-            raft_mgr.engine(),
+            &raft_mgr.engine(),
             replica_id,
             target_desc.replicas.clone(),
             eval_results,
@@ -425,6 +425,15 @@ impl ReplicaInfo {
                 .compare_exchange(local_state, TERMINATED, Ordering::AcqRel, Ordering::Acquire)
                 .into_ok_or_err();
         }
+    }
+
+    pub fn as_normal_state(&self) {
+        use std::sync::atomic::Ordering;
+
+        let local_state: i32 = self.local_state().into();
+        debug_assert_eq!(local_state, ReplicaLocalState::Initial as i32);
+        self.local_state
+            .store(ReplicaLocalState::Normal as i32, Ordering::SeqCst);
     }
 }
 

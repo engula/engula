@@ -34,7 +34,7 @@ pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
     snap::SnapManager,
-    storage::write_initial_state,
+    storage::{destory as destory_storage, write_initial_state},
     transport::{retrive_snapshot, AddressResolver, TransportManager},
     worker::{RaftGroupState, StateObserver},
 };
@@ -129,8 +129,8 @@ impl RaftManager {
     }
 
     #[inline]
-    pub fn engine(&self) -> &raft_engine::Engine {
-        &self.engine
+    pub fn engine(&self) -> Arc<raft_engine::Engine> {
+        self.engine.clone()
     }
 
     #[inline]

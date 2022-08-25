@@ -22,7 +22,7 @@ use engula_api::server::v1::*;
 use prost::Message;
 use raft::{prelude::*, GetEntriesContext, RaftState};
 use raft_engine::{Command, Engine, LogBatch, MessageExt};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use super::{node::WriteTask, snap::SnapManager, RaftConfig};
 use crate::{
@@ -587,12 +587,21 @@ pub async fn write_initial_state(
         .unwrap();
 
     debug!(
-        "write initial state of {}, total {} initial entries",
-        replica_id,
+        "write initial state of {replica_id}, total {} initial entries",
         initial_entries.len()
     );
 
     engine.write(&mut batch, true)?;
+    Ok(())
+}
+
+pub async fn destory(engine: &Engine, replica_id: u64) -> Result<()> {
+    let mut batch = LogBatch::default();
+    batch.add_command(replica_id, Command::Clean);
+    engine.write(&mut batch, true)?;
+
+    info!("destory storage state of {replica_id} success");
+
     Ok(())
 }
 
