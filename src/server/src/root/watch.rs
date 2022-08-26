@@ -166,9 +166,7 @@ impl Stream for Watcher {
             };
             return Poll::Ready(Some(Ok(resp)));
         }
-        if inner.waker.is_none() {
-            inner.waker = Some(cx.waker().clone());
-        }
+        inner.waker = Some(cx.waker().clone());
         Poll::Pending
     }
 }
