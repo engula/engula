@@ -315,6 +315,10 @@ impl Task for DurableGroup {
     }
 
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
+        if ctx.cfg.testing_knobs.disable_scheduler_durable_task {
+            return TaskState::Pending(None);
+        }
+
         let replicas = self.providers.descriptor.replicas();
         if replicas.len() <= 1 || ctx.group_lock_table.has_config_change() {
             return TaskState::Pending(Some(Duration::from_secs(1)));

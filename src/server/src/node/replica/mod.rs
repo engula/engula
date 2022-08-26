@@ -42,7 +42,9 @@ use crate::{
 
 #[derive(Clone, Debug, Default)]
 pub struct ReplicaTestingKnobs {
-    pub disable_orphan_replica_detecting_intervals: bool,
+    pub disable_scheduler_orphan_replica_detecting_intervals: bool,
+    pub disable_scheduler_durable_task: bool,
+    pub disable_scheduler_remove_orphan_replica_task: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
