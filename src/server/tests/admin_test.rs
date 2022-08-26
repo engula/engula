@@ -35,7 +35,8 @@ fn init() {
 fn balance_init_cluster() {
     block_on_current(async {
         let node_count = 4;
-        let mut ctx = TestContext::new("db-col-mng");
+        let mut ctx = TestContext::new("db-col-mng-1");
+        ctx.disable_all_balance();
         let start = tokio::time::Instant::now();
         let nodes = ctx.bootstrap_servers(node_count).await;
         let addrs = nodes.values().cloned().collect::<Vec<_>>();
@@ -67,7 +68,7 @@ fn balance_init_cluster() {
 #[test]
 fn admin_delete() {
     block_on_current(async {
-        let mut ctx = TestContext::new("db-col-mng");
+        let mut ctx = TestContext::new("db-col-mng-2");
         ctx.mut_replica_testing_knobs()
             .disable_scheduler_orphan_replica_detecting_intervals = true;
         ctx.disable_all_balance();
@@ -111,7 +112,8 @@ fn admin_delete() {
 fn admin_basic() {
     block_on_current(async {
         let node_count = 4;
-        let mut ctx = TestContext::new("db-col-mng");
+        let mut ctx = TestContext::new("db-col-mng-3");
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(node_count).await;
         let addrs = nodes.values().cloned().collect::<Vec<_>>();
 

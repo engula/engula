@@ -89,15 +89,13 @@ message DeleteDatabaseResponse {}
 message GetCollectionRequest {
   // Required. The name of the collection.
   string name = 1;
-  // Required. The name of the parent database.
-  string parent = 2;
+  DatabaseDesc database = 2;
 }
 
 message GetCollectionResponse { CollectionDesc collection = 1; }
 
 message ListCollectionsRequest {
-  // Required. The name of the parent database.
-  string parent = 1;
+  DatabaseDesc database = 1;
 }
 
 message ListCollectionsResponse { repeated CollectionDesc collections = 1; }
@@ -105,8 +103,7 @@ message ListCollectionsResponse { repeated CollectionDesc collections = 1; }
 message CreateCollectionRequest {
   // Required. The name of the collection.
   string name = 1;
-  // Required. The name of the parent database.
-  string parent = 2;
+  DatabaseDesc database = 2;
 
   message HashPartition { uint32 slots = 1; }
 
@@ -127,21 +124,20 @@ message UpdateCollectionResponse {}
 message DeleteCollectionRequest {
   // Required. The name of the collection.
   string name = 1;
-  // Required. The name of the parent database.
-  string parent = 2;
+  DatabaseDesc database = 2;
 }
 
 message DeleteCollectionResponse {}
 
 message DatabaseRequest {
-  string database = 1;
+  DatabaseDesc database = 1;
   CollectionRequest request = 2;
 }
 
 message DatabaseResponse { CollectionResponse response = 1; }
 
 message CollectionRequest {
-  string collection = 1;
+  CollectionDesc collection = 1;
   CollectionRequestUnion request = 2;
 }
 

@@ -167,6 +167,21 @@ impl From<Error> for AppError {
     }
 }
 
+impl From<AppError> for tonic::Status {
+    fn from(err: AppError) -> Self {
+        use tonic::Status;
+
+        match err {
+            AppError::NotFound(msg) => Status::not_found(msg),
+            AppError::AlreadyExists(msg) => Status::already_exists(msg),
+            AppError::InvalidArgument(msg) => Status::invalid_argument(msg),
+            AppError::DeadlineExceeded(msg) => Status::deadline_exceeded(msg),
+            AppError::Network(status) => status, // as proxy
+            AppError::Internal(err) => Status::internal(err.to_string()),
+        }
+    }
+}
+
 pub fn find_io_error(status: &tonic::Status) -> Option<&std::io::Error> {
     use tonic::Code;
     if status.code() == Code::Unavailable || status.code() == Code::Unknown {

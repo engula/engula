@@ -130,6 +130,7 @@ impl TestContext {
             addr,
             cpu_nums,
             init,
+            enable_proxy_service: false,
             join_list,
             node: NodeConfig {
                 replica: ReplicaConfig {

@@ -240,12 +240,14 @@ impl From<engula_client::Error> for Error {
             }
             engula_client::Error::EpochNotMatch(v) => Error::EpochNotMatch(v),
 
+            // NOTE: This is a fallback, for some scenarios where you don't need to deal with
+            // `GroupNotAccessable` raised by `GroupClient`. (`GroupNotReady` only used inside
+            // nodes)
+            engula_client::Error::GroupNotAccessable(id) => Error::GroupNotReady(id),
+
             // FIXME(walter) handle unknown errors.
             engula_client::Error::NotFound(v) => panic!("unknown not found: {v}"),
             engula_client::Error::Internal(v) => panic!("internal error: {v:?}"),
-            engula_client::Error::GroupNotAccessable(id) => {
-                panic!("GroupNotAccessable({id}) is an internal error of engula client");
-            }
         }
     }
 }

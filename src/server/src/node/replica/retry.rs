@@ -95,7 +95,11 @@ async fn execute_internal(
             }
             Err(Error::ShardNotFound(shard_id)) => {
                 if exec_ctx.forward_shard_id.is_none() {
-                    panic!("shard {shard_id} is not found for serving request {request:?}");
+                    panic!(
+                        "shard {shard_id} is not found in group {} for serving request {request:?} epoch {}",
+                        replica.replica_info().group_id,
+                        exec_ctx.epoch
+                    );
                 }
 
                 // This is forwarding request and the target shard might be migrated to another

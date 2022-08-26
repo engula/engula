@@ -788,17 +788,17 @@ impl Root {
         Ok(())
     }
 
-    pub async fn delete_collection(&self, name: &str, database: &str) -> Result<()> {
+    pub async fn delete_collection(&self, name: &str, database: &DatabaseDesc) -> Result<()> {
         let schema = self.schema()?;
         let db = self
-            .get_database(database)
+            .get_database(&database.name)
             .await?
-            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+            .ok_or_else(|| Error::DatabaseNotFound(database.name.clone()))?;
         let collection = schema.get_collection(db.id, name).await?;
         if let Some(collection) = collection {
             if collection.id < USER_COLLECTION_INIT_ID {
                 return Err(Error::InvalidArgument(
-                    "unsupport delete system collection".into(),
+                    "unsupported delete system collection".into(),
                 ));
             }
             let collection_id = collection.id;
@@ -826,7 +826,11 @@ impl Root {
                 }])
                 .await;
         }
-        trace!(database = database, collection = name, "delete collection");
+        trace!(
+            collection = name,
+            "delete collection, database {}",
+            database.name
+        );
         Ok(())
     }
 
@@ -838,12 +842,12 @@ impl Root {
         self.schema()?.get_database(name).await
     }
 
-    pub async fn list_collection(&self, database: &str) -> Result<Vec<CollectionDesc>> {
+    pub async fn list_collection(&self, database: &DatabaseDesc) -> Result<Vec<CollectionDesc>> {
         let schema = self.schema()?;
         let db = schema
-            .get_database(database)
+            .get_database(&database.name)
             .await?
-            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+            .ok_or_else(|| Error::DatabaseNotFound(database.name.clone()))?;
         Ok(schema
             .list_collection()
             .await?
@@ -856,12 +860,12 @@ impl Root {
     pub async fn get_collection(
         &self,
         name: &str,
-        database: &str,
+        database: &DatabaseDesc,
     ) -> Result<Option<CollectionDesc>> {
         let db = self
-            .get_database(database)
+            .get_database(&database.name)
             .await?
-            .ok_or_else(|| Error::DatabaseNotFound(database.to_owned()))?;
+            .ok_or_else(|| Error::DatabaseNotFound(database.name.clone()))?;
         self.schema()?.get_collection(db.id, name).await
     }
 

@@ -24,6 +24,7 @@ use crate::{
     root::{Root, Schema},
     runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent},
+    service::ProxyServer,
     Config, Error, Provider, Result, Server,
 };
 
@@ -63,12 +64,24 @@ pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()>
             root,
             address_resolver: provider.address_resolver.clone(),
         };
-        bootstrap_services(&config.addr, server, shutdown).await
+
+        let proxy_server = if config.enable_proxy_service {
+            Some(ProxyServer::new(provider.as_ref()))
+        } else {
+            None
+        };
+        bootstrap_services(&config.addr, server, proxy_server, shutdown).await
     })
 }
 
 /// Listen and serve incoming rpc requests.
-async fn bootstrap_services(addr: &str, server: Server, shutdown: Shutdown) -> Result<()> {
+async fn bootstrap_services(
+    addr: &str,
+    server: Server,
+    proxy_server: Option<ProxyServer>,
+    shutdown: Shutdown,
+) -> Result<()> {
+    use engula_api::v1::engula_server::EngulaServer;
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
@@ -84,6 +97,7 @@ async fn bootstrap_services(addr: &str, server: Server, shutdown: Shutdown) -> R
         .add_service(RaftServer::new(server.clone()))
         .add_service(RootServer::new(server.clone()))
         .add_service(make_admin_service(server.clone()))
+        .add_optional_service(proxy_server.map(EngulaServer::new))
         .serve_with_incoming(listener);
 
     crate::runtime::select! {

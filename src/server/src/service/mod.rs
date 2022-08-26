@@ -14,14 +14,18 @@
 pub mod admin;
 mod metrics;
 pub mod node;
+pub mod proxy;
 pub mod raft;
 pub mod root;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+
+use engula_client::{ClientOptions, EngulaClient};
 
 use crate::{
     node::{resolver::AddressResolver, Node},
     root::Root,
+    Provider,
 };
 
 #[derive(Clone)]
@@ -29,4 +33,26 @@ pub struct Server {
     pub node: Arc<Node>,
     pub root: Root,
     pub address_resolver: Arc<AddressResolver>,
+}
+
+#[derive(Clone)]
+pub struct ProxyServer {
+    pub client: engula_client::EngulaClient,
+}
+
+impl ProxyServer {
+    pub(crate) fn new(provider: &Provider) -> Self {
+        let opts = ClientOptions {
+            connect_timeout: Some(Duration::from_millis(250)),
+            timeout: None,
+        };
+        ProxyServer {
+            client: EngulaClient::build(
+                opts,
+                provider.router.clone(),
+                provider.root_client.clone(),
+                provider.conn_manager.clone(),
+            ),
+        }
+    }
 }

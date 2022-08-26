@@ -69,6 +69,22 @@ impl Client {
         })
     }
 
+    pub fn build(
+        opts: ClientOptions,
+        router: Router,
+        root_client: RootClient,
+        conn_manager: ConnManager,
+    ) -> Self {
+        Client {
+            inner: Arc::new(ClientInner {
+                opts,
+                root_client,
+                router,
+                conn_manager,
+            }),
+        }
+    }
+
     pub async fn create_database(&self, name: String) -> AppResult<Database> {
         let root_client = self.inner.root_client.clone();
         let resp = root_client
@@ -128,9 +144,9 @@ impl Client {
 
 #[derive(Debug, Clone)]
 pub struct Database {
-    rpc_timeout: Option<Duration>,
-    desc: DatabaseDesc,
     client: Client,
+    desc: DatabaseDesc,
+    rpc_timeout: Option<Duration>,
 }
 
 pub enum Partition {
@@ -149,7 +165,26 @@ impl From<Partition> for create_collection_request::Partition {
     }
 }
 
+impl From<create_collection_request::Partition> for Partition {
+    fn from(p: create_collection_request::Partition) -> Self {
+        match p {
+            create_collection_request::Partition::Hash(HashPartition { slots }) => {
+                Partition::Hash { slots }
+            }
+            create_collection_request::Partition::Range(RangePartition {}) => Partition::Range,
+        }
+    }
+}
+
 impl Database {
+    pub fn new(client: Client, desc: DatabaseDesc, rpc_timeout: Option<Duration>) -> Self {
+        Database {
+            client,
+            desc,
+            rpc_timeout,
+        }
+    }
+
     pub async fn create_collection(
         &self,
         name: String,
@@ -160,7 +195,7 @@ impl Database {
         let root_client = client.inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::create_collection(
-                db_desc.name.clone(),
+                db_desc,
                 name.clone(),
                 partition.map(Into::into),
             ))
@@ -169,7 +204,6 @@ impl Database {
             None => Err(AppError::NotFound(format!("collection {name}"))),
             Some(co_desc) => Ok(Collection {
                 rpc_timeout: self.rpc_timeout,
-                db_desc,
                 co_desc,
                 client: client.clone(),
             }),
@@ -182,7 +216,7 @@ impl Database {
         let root_client = client.inner.root_client.clone();
         let resp = root_client
             .admin(AdminRequestBuilder::delete_collection(
-                db_desc.name.clone(),
+                db_desc.clone(),
                 name.clone(),
             ))
             .await?;
@@ -196,15 +230,12 @@ impl Database {
         let client = self.client.clone();
         let root_client = client.inner.root_client.clone();
         let resp = root_client
-            .admin(AdminRequestBuilder::list_collection(
-                self.desc.name.to_owned(),
-            ))
+            .admin(AdminRequestBuilder::list_collection(self.desc.clone()))
             .await?;
         Ok(AdminResponseExtractor::list_collection(resp)
             .into_iter()
             .map(|co_desc| Collection {
                 rpc_timeout: self.rpc_timeout,
-                db_desc: self.desc.to_owned(),
                 co_desc,
                 client: client.clone(),
             })
@@ -216,16 +247,12 @@ impl Database {
         let db_desc = self.desc.clone();
         let root_client = client.inner.root_client.clone();
         let resp = root_client
-            .admin(AdminRequestBuilder::get_collection(
-                db_desc.name.clone(),
-                name.clone(),
-            ))
+            .admin(AdminRequestBuilder::get_collection(db_desc, name.clone()))
             .await?;
         match AdminResponseExtractor::get_collection(resp) {
             None => Err(AppError::NotFound(format!("collection {}", name))),
             Some(co_desc) => Ok(Collection {
                 rpc_timeout: self.rpc_timeout,
-                db_desc,
                 co_desc,
                 client: client.clone(),
             }),
@@ -236,18 +263,33 @@ impl Database {
     pub fn name(&self) -> String {
         self.desc.name.to_owned()
     }
+
+    #[inline]
+    pub fn desc(&self) -> DatabaseDesc {
+        self.desc.clone()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Collection {
-    rpc_timeout: Option<Duration>,
-    #[allow(unused)]
-    db_desc: DatabaseDesc,
-    co_desc: CollectionDesc,
     client: Client,
+    co_desc: CollectionDesc,
+    rpc_timeout: Option<Duration>,
 }
 
 impl Collection {
+    pub fn new(
+        client: Client,
+        co_desc: CollectionDesc,
+        rpc_timeout: Option<Duration>,
+    ) -> Collection {
+        Collection {
+            client,
+            co_desc,
+            rpc_timeout,
+        }
+    }
+
     pub async fn delete(&self, key: Vec<u8>) -> AppResult<()> {
         let mut retry_state = RetryState::new(self.rpc_timeout);
 
@@ -369,6 +411,7 @@ impl Collection {
         self.co_desc.name.to_owned()
     }
 
+    #[inline]
     pub fn desc(&self) -> CollectionDesc {
         self.co_desc.clone()
     }
