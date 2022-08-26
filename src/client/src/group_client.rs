@@ -249,18 +249,18 @@ impl GroupClient {
         match Error::from(status) {
             Error::GroupNotFound(_) => {
                 debug!(
-                    "group client issue rpc to {}: group {} not found",
+                    "group {} issue rpc to {}: group not found",
+                    self.group_id,
                     self.access_node_id.unwrap_or_default(),
-                    self.group_id
                 );
                 self.access_node_id = None;
                 Ok(())
             }
             Error::NotLeader(_, term, leader_desc) => {
                 debug!(
-                    "group client issue rpc to {}: not leader of group {}, new leader {:?} term {term}",
-                    self.access_node_id.unwrap_or_default(),
+                    "group {} issue rpc to {}: not leader, new leader {:?} term {term}",
                     self.group_id,
+                    self.access_node_id.unwrap_or_default(),
                     leader_desc
                 );
                 self.access_node_id = None;
@@ -280,9 +280,9 @@ impl GroupClient {
             }
             Error::Connect(status) => {
                 debug!(
-                    "group client issue rpc to {}: group {} with retryable status: {}",
-                    self.access_node_id.unwrap_or_default(),
+                    "group {} issue rpc to {}: with retryable status: {}",
                     self.group_id,
+                    self.access_node_id.unwrap_or_default(),
                     status.to_string(),
                 );
                 self.access_node_id = None;
@@ -293,9 +293,9 @@ impl GroupClient {
                     || opt.request.map(is_read_only_request).unwrap_or_default() =>
             {
                 debug!(
-                    "group client issue rpc to {}: group {} with transport status: {}",
-                    self.access_node_id.unwrap_or_default(),
+                    "group {} issue rpc to {}: with transport status: {}",
                     self.group_id,
+                    self.access_node_id.unwrap_or_default(),
                     status.to_string(),
                 );
                 self.access_node_id = None;
@@ -305,15 +305,15 @@ impl GroupClient {
             Error::EpochNotMatch(group_desc) if !opt.accurate_epoch => {
                 if group_desc.epoch <= self.epoch {
                     panic!(
-                        "receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
-                        self.epoch, group_desc
+                        "group {} receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
+                        self.group_id, self.epoch, group_desc
                     );
                 }
 
                 debug!(
-                    "group client issue rpc to {}: group {} epoch {} not match target epoch {}",
-                    self.access_node_id.unwrap_or_default(),
+                    "group {} issue rpc to {}: epoch {} not match target epoch {}",
                     self.group_id,
+                    self.access_node_id.unwrap_or_default(),
                     self.epoch,
                     group_desc.epoch,
                 );
@@ -338,9 +338,9 @@ impl GroupClient {
             }
             e => {
                 warn!(
-                    "group client issue rpc to {}: group {} epoch {} with unknown error {e:?}",
-                    self.access_node_id.unwrap_or_default(),
+                    "group {} issue rpc to {}: epoch {} with unknown error {e:?}",
                     self.group_id,
+                    self.access_node_id.unwrap_or_default(),
                     self.epoch,
                 );
                 Err(e)

@@ -84,7 +84,7 @@ impl RemoveOrphanReplica {
         if ctx
             .cfg
             .testing_knobs
-            .disable_orphan_replica_detecting_intervals
+            .disable_scheduler_orphan_replica_detecting_intervals
         {
             self.orphan_replicas
                 .keys()
@@ -109,6 +109,14 @@ impl Task for RemoveOrphanReplica {
     }
 
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
+        if ctx
+            .cfg
+            .testing_knobs
+            .disable_scheduler_remove_orphan_replica_task
+        {
+            return TaskState::Pending(None);
+        }
+
         let replica_states = self.providers.replica_states.replica_states();
         let desc = self.providers.descriptor.descriptor();
         if desc.replicas.is_empty() {
@@ -141,7 +149,7 @@ impl Task for RemoveOrphanReplica {
         if ctx
             .cfg
             .testing_knobs
-            .disable_orphan_replica_detecting_intervals
+            .disable_scheduler_orphan_replica_detecting_intervals
         {
             TaskState::Pending(Some(Duration::from_millis(1)))
         } else {

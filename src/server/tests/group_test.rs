@@ -57,6 +57,7 @@ fn add_replica() {
     block_on_current(async {
         let mut ctx = TestContext::new("add-replica");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
 
@@ -93,6 +94,7 @@ fn create_group_with_multi_replicas() {
     block_on_current(async {
         let mut ctx = TestContext::new("create-group-with-multi-replicas");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
 

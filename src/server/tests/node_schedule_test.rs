@@ -64,7 +64,9 @@ fn remove_orphan_replicas() {
     block_on_current(async {
         let mut ctx = TestContext::new("node-schedule-test--remove-orphan-replicas");
         ctx.mut_replica_testing_knobs()
-            .disable_orphan_replica_detecting_intervals = true;
+            .disable_scheduler_orphan_replica_detecting_intervals = true;
+        ctx.mut_replica_testing_knobs()
+            .disable_scheduler_durable_task = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
@@ -97,6 +99,7 @@ fn remove_orphan_replicas() {
         c.create_replica(1, 101, group_desc.clone()).await;
         c.create_replica(2, 102, group_desc.clone()).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
 
         info!("create new replica 103");
 
@@ -146,6 +149,7 @@ fn remove_offline_learners() {
         let node_id_list = nodes.keys().cloned().collect();
         create_group(&c, group_id, node_id_list, vec![]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
         let former_epoch = c.must_group_epoch(group_id).await;
 
         info!("add offline learners");
@@ -165,7 +169,7 @@ fn remove_exceeds_offline_voters() {
     block_on_current(async {
         let mut ctx = TestContext::new("node-schedule-test--remove-exceeds-offline-voters");
         ctx.mut_replica_testing_knobs()
-            .disable_orphan_replica_detecting_intervals = true;
+            .disable_scheduler_orphan_replica_detecting_intervals = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes.clone()).await;
@@ -176,6 +180,7 @@ fn remove_exceeds_offline_voters() {
         let node_id_list = nodes.keys().cloned().collect();
         create_group(&c, group_id, node_id_list, vec![]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
         let former_epoch = c.must_group_epoch(group_id).await;
 
         info!("add offline voters");
@@ -204,6 +209,7 @@ fn remove_exceeds_online_voters() {
         info!("create new group {group_id}");
         create_group(&c, group_id, node_id_list, vec![]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
 
         ctx.wait_election_timeout().await;
 
@@ -228,6 +234,7 @@ fn replace_offline_voters_by_existing_learners() {
         info!("create new group {group_id} with learner on node {learner_node_id}");
         create_group(&c, group_id, node_id_list, vec![learner_node_id]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
         let former_epoch = c.must_group_epoch(group_id).await;
 
         // FIXME(walter) the `learner_node_id` will be promote to voters before we add offline
@@ -260,6 +267,7 @@ fn supply_replicas_by_promoting_learners() {
         info!("create new group {group_id} with learner on node {learner_node_id}");
         create_group(&c, group_id, node_id_list, vec![learner_node_id]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
 
         ctx.wait_election_timeout().await;
 
@@ -284,6 +292,7 @@ fn cure_group() {
         info!("create new group {group_id}");
         create_group(&c, group_id, node_id_list, vec![]).await;
         c.assert_group_leader(group_id).await;
+        c.assert_root_group_has_promoted().await;
 
         info!("stop server {offline_node_id}");
         c.assert_root_group_has_promoted().await;

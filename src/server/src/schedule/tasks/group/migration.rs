@@ -48,7 +48,8 @@ impl Task for ReplicaMigration {
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
         if let Some(move_replicas) = self.providers.move_replicas.take() {
             let replicas = self.providers.descriptor.replicas();
-            let peers = replicas.iter().map(|v| v.id).collect::<Vec<_>>();
+            let mut peers = replicas.iter().map(|v| v.id).collect::<Vec<_>>();
+            peers.extend(move_replicas.incoming_replicas.iter().map(|v| v.id));
             let task_id = ctx.next_task_id();
             // TODO: verify task pre-conditions.
             if let Some(locks) = ctx.group_lock_table.config_change(

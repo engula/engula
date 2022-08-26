@@ -70,7 +70,7 @@ fn admin_delete() {
     block_on_current(async {
         let mut ctx = TestContext::new("db-col-mng-2");
         ctx.mut_replica_testing_knobs()
-            .disable_orphan_replica_detecting_intervals = true;
+            .disable_scheduler_orphan_replica_detecting_intervals = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(1).await;
         let addrs = nodes.values().cloned().collect::<Vec<_>>();

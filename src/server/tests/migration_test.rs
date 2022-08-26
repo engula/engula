@@ -127,6 +127,7 @@ fn single_replica_empty_shard_migration() {
     block_on_current(async {
         let mut ctx = TestContext::new("single-replica-empty-shard-migration");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -196,6 +197,7 @@ fn single_replica_migration() {
     block_on_current(async {
         let mut ctx = TestContext::new("single-replica-migration");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;
@@ -384,6 +386,7 @@ fn migration_with_offline_peers() {
     block_on_current(async {
         let mut ctx = TestContext::new("migration-with-offline-peers");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(3).await;
         let mut node_ids = nodes.keys().cloned().collect::<Vec<_>>();
         node_ids.sort_unstable();
@@ -497,6 +500,7 @@ fn receive_forward_request_after_shard_migrated() {
         let mut ctx =
             TestContext::new("migration-test--receive-forward-request-after-shard-migrated");
         ctx.disable_all_balance();
+        ctx.disable_all_node_scheduler();
         let nodes = ctx.bootstrap_servers(2).await;
         let c = ClusterClient::new(nodes).await;
         let node_1_id = 0;

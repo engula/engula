@@ -27,6 +27,7 @@ use crate::helper::socket::next_avail_port;
 
 #[allow(dead_code)]
 pub struct TestContext {
+    name: String,
     root_dir: TempDir,
     root_cfg: RootConfig,
     replica_knobs: ReplicaTestingKnobs,
@@ -44,22 +45,25 @@ impl TestContext {
     pub fn new(prefix: &str) -> Self {
         let root_dir = TempDir::new(prefix).unwrap();
         TestContext {
+            name: prefix.to_owned(),
             root_dir,
             disable_group_promoting: false,
             replica_knobs: ReplicaTestingKnobs::default(),
             raft_knobs: RaftTestingKnobs::default(),
             root_cfg: RootConfig::default(),
-            tick_interval_ms: 50,
+            tick_interval_ms: 500,
             notifiers: HashMap::default(),
             handles: HashMap::default(),
         }
     }
 
     pub fn shutdown(&mut self) {
+        info!("{} shutdown cluster ...", self.name);
         let _ = std::mem::take(&mut self.notifiers);
         for (_, handle) in std::mem::take(&mut self.handles) {
             handle.join().unwrap_or_default();
         }
+        info!("{} shutdown cluster success", self.name);
     }
 
     pub fn next_listen_address(&self) -> String {
@@ -95,6 +99,12 @@ impl TestContext {
         self.disable_leader_balance();
         self.disable_shard_balance();
         self.disable_group_balance();
+    }
+
+    pub fn disable_all_node_scheduler(&mut self) {
+        self.replica_knobs.disable_scheduler_durable_task = true;
+        self.replica_knobs
+            .disable_scheduler_remove_orphan_replica_task = true;
     }
 
     #[allow(dead_code)]
@@ -138,9 +148,11 @@ impl TestContext {
         };
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();
+        let name = self.name.clone();
         let handle = thread::spawn(move || {
             let owner = ExecutorOwner::new(1);
             engula_server::run(cfg, owner.executor(), shutdown).unwrap();
+            info!("{name} server {idx} is shutdown");
         });
         self.notifiers.insert(idx as u64, notifier);
         self.handles.insert(idx as u64, handle);
@@ -167,7 +179,7 @@ impl TestContext {
         keys.sort_unstable();
         for id in keys {
             let addr = nodes.get(&id).unwrap().clone();
-            info!("start server {id}");
+            info!("{} start server {id}", self.name);
             if id == 0 {
                 self.spawn_server(id as usize, &addr, true, vec![]);
                 node_client_with_retry(&addr).await;
@@ -176,7 +188,7 @@ impl TestContext {
                 self.spawn_server(id as usize, &addr, false, vec![root_addr.clone()]);
                 node_client_with_retry(&addr).await;
             }
-            info!("start server {id} success");
+            info!("{} start server {id} success", self.name);
         }
         nodes
     }
@@ -190,7 +202,7 @@ impl TestContext {
     }
 
     pub async fn stop_server(&mut self, id: u64) {
-        info!("stop server {id}");
+        info!("{} stop server {id}", self.name);
         self.notifiers.remove(&id);
         if let Some(handle) = self.handles.remove(&id) {
             handle.join().unwrap_or_default();
