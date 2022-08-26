@@ -33,6 +33,7 @@ fn init() {
 fn to_unreachable_peers() {
     block_on_current(async {
         let mut ctx = TestContext::new("client_test__to_unreachable_peers");
+        ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes).await;
         let opts = ClientOptions {

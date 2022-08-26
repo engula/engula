@@ -57,7 +57,7 @@ impl Task for WatchReplicaStates {
         if ctx
             .cfg
             .testing_knobs
-            .disable_orphan_replica_detecting_intervals
+            .disable_scheduler_orphan_replica_detecting_intervals
         {
             TaskState::Pending(Some(Duration::from_millis(1)))
         } else {

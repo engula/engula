@@ -64,7 +64,9 @@ fn remove_orphan_replicas() {
     block_on_current(async {
         let mut ctx = TestContext::new("node-schedule-test--remove-orphan-replicas");
         ctx.mut_replica_testing_knobs()
-            .disable_orphan_replica_detecting_intervals = true;
+            .disable_scheduler_orphan_replica_detecting_intervals = true;
+        ctx.mut_replica_testing_knobs()
+            .disable_scheduler_durable_task = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(4).await;
         let c = ClusterClient::new(nodes).await;
@@ -165,7 +167,7 @@ fn remove_exceeds_offline_voters() {
     block_on_current(async {
         let mut ctx = TestContext::new("node-schedule-test--remove-exceeds-offline-voters");
         ctx.mut_replica_testing_knobs()
-            .disable_orphan_replica_detecting_intervals = true;
+            .disable_scheduler_orphan_replica_detecting_intervals = true;
         ctx.disable_all_balance();
         let nodes = ctx.bootstrap_servers(3).await;
         let c = ClusterClient::new(nodes.clone()).await;

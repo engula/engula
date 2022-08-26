@@ -101,6 +101,12 @@ impl TestContext {
         self.disable_group_balance();
     }
 
+    pub fn disable_all_node_scheduler(&mut self) {
+        self.replica_knobs.disable_scheduler_durable_task = true;
+        self.replica_knobs
+            .disable_scheduler_remove_orphan_replica_task = true;
+    }
+
     #[allow(dead_code)]
     pub fn spawn_server(&mut self, idx: usize, addr: &str, init: bool, join_list: Vec<String>) {
         self.spawn_server_with_cfg(idx, addr, 2, init, join_list, self.root_cfg.clone());
