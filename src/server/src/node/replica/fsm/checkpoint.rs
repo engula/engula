@@ -179,13 +179,7 @@ mod tests {
         let db = open_engine(dir).unwrap();
         let db = Arc::new(db);
 
-        let desc = GroupDesc {
-            id: group_id,
-            ..Default::default()
-        };
-        GroupEngine::create(db.clone(), &desc).await.unwrap();
-        let group_engine = GroupEngine::open(group_id, db).await.unwrap().unwrap();
-
+        let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
         let mut wb = WriteBatch::default();
         group_engine.set_group_desc(
             &mut wb,

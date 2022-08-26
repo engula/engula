@@ -130,13 +130,11 @@ struct ColumnFamilyDecorator<'a, 'b> {
 
 impl GroupEngine {
     /// Create a new instance of group engine.
-    pub async fn create(raw_db: Arc<rocksdb::DB>, group_desc: &GroupDesc) -> Result<()> {
+    pub async fn create(raw_db: Arc<rocksdb::DB>, group_id: u64, replica_id: u64) -> Result<Self> {
         use rocksdb::Options;
 
-        let group_id = group_desc.id;
-        let name = group_id.to_string();
-        info!("create group engine for {}, cf name is {}", group_id, name);
-        // FIXME(walter) clean staled data if the column families already exists.
+        let name = Self::cf_name(group_id, replica_id);
+        info!("group {group_id} replica {replica_id} create group engine, cf name is {name}");
         debug_assert!(raw_db.cf_handle(&name).is_none());
         raw_db.create_cf(&name, &Options::default())?;
 
@@ -147,9 +145,12 @@ impl GroupEngine {
             replicas: vec![],
         };
 
+        let cf_handle = raw_db
+            .cf_handle(&name)
+            .expect("cf must exists because it just created");
         let engine = GroupEngine {
             name,
-            raw_db,
+            raw_db: raw_db.clone(),
             core: Arc::new(RwLock::new(GroupEngineCore {
                 group_desc: desc.clone(),
                 shard_descs: Default::default(),
@@ -163,12 +164,19 @@ impl GroupEngine {
         engine.set_group_desc(&mut wb, &desc);
         engine.commit(wb, true)?;
 
-        Ok(())
+        // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
+        raw_db.flush_cf(&cf_handle)?;
+
+        Ok(engine)
     }
 
     /// Open the exists instance of group engine.
-    pub async fn open(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<Option<Self>> {
-        let name = group_id.to_string();
+    pub async fn open(
+        raw_db: Arc<rocksdb::DB>,
+        group_id: u64,
+        replica_id: u64,
+    ) -> Result<Option<Self>> {
+        let name = Self::cf_name(group_id, replica_id);
         let cf_handle = match raw_db.cf_handle(&name) {
             Some(cf_handle) => cf_handle,
             None => {
@@ -190,8 +198,6 @@ impl GroupEngine {
             shard_descs,
         };
 
-        // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
-        raw_db.flush_cf(&cf_handle)?;
         Ok(Some(GroupEngine {
             name,
             raw_db: raw_db.clone(),
@@ -200,8 +206,8 @@ impl GroupEngine {
     }
 
     /// Destory a group engine.
-    pub async fn destory(group_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
-        let name = group_id.to_string();
+    pub async fn destory(group_id: u64, replica_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
+        let name = Self::cf_name(group_id, replica_id);
         raw_db.drop_cf(&name)?;
         info!("destory column family {}", name);
         Ok(())
@@ -458,6 +464,13 @@ impl GroupEngine {
         self.raw_db
             .cf_handle(&self.name)
             .expect("column family handle")
+    }
+
+    #[inline]
+    fn cf_name(group_id: u64, replica_id: u64) -> String {
+        // Using the replica id avoids the problem of creating a new replica immediately after
+        // deleting the replica.
+        format!("{group_id}-{replica_id}")
     }
 }
 
@@ -1075,14 +1088,8 @@ mod tests {
 
         let db = open_engine(db_dir).unwrap();
         let db = Arc::new(db);
-        let group_engine = executor.block_on(async move {
-            let desc = GroupDesc {
-                id: group_id,
-                ..Default::default()
-            };
-            GroupEngine::create(db.clone(), &desc).await.unwrap();
-            GroupEngine::open(group_id, db).await.unwrap().unwrap()
-        });
+        let group_engine =
+            executor.block_on(async move { GroupEngine::create(db.clone(), 1, 1).await.unwrap() });
 
         let mut wb = WriteBatch::default();
         group_engine.set_group_desc(

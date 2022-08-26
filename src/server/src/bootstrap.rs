@@ -23,7 +23,7 @@ use crate::{
     node::{engine::StateEngine, resolver::AddressResolver, Node},
     root::{Root, Schema},
     runtime::{Executor, Shutdown},
-    serverpb::v1::{raft_server::RaftServer, NodeIdent, ReplicaLocalState},
+    serverpb::v1::{raft_server::RaftServer, NodeIdent},
     Config, Error, Provider, Result, Server,
 };
 
@@ -209,21 +209,7 @@ pub(crate) async fn bootstrap_cluster(node: &Node, addr: &str) -> Result<NodeIde
     // TODO(walter) clean staled data in db.
     write_initial_cluster_data(node, addr).await?;
 
-    // The first replica in the cluster has been created. It has only one member
-    // and does not need to wait for other replicas, so it can directly enter the
-    // normal state.
     let state_engine = node.state_engine();
-    state_engine
-        .save_replica_state(ROOT_GROUP_ID, FIRST_REPLICA_ID, ReplicaLocalState::Normal)
-        .await?;
-    state_engine
-        .save_replica_state(
-            INIT_USER_GROUP_ID,
-            INIT_USER_REPLICA_ID,
-            ReplicaLocalState::Normal,
-        )
-        .await?;
-
     let cluster_id = vec![];
 
     let ident = save_node_ident(state_engine, cluster_id.to_owned(), FIRST_NODE_ID).await?;
