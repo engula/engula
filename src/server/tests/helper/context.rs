@@ -51,7 +51,7 @@ impl TestContext {
             replica_knobs: ReplicaTestingKnobs::default(),
             raft_knobs: RaftTestingKnobs::default(),
             root_cfg: RootConfig::default(),
-            tick_interval_ms: 50,
+            tick_interval_ms: 500,
             notifiers: HashMap::default(),
             handles: HashMap::default(),
         }
