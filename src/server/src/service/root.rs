@@ -184,9 +184,12 @@ impl Server {
         &self,
         req: CreateCollectionRequest,
     ) -> Result<CreateCollectionResponse> {
+        let database = req.database.ok_or_else(|| {
+            Error::InvalidArgument("CreateCollectionRequest::database".to_owned())
+        })?;
         let desc = self
             .root
-            .create_collection(req.name, req.parent, req.partition)
+            .create_collection(req.name, database.name, req.partition)
             .await?;
         Ok(CreateCollectionResponse {
             collection: Some(desc),
@@ -197,7 +200,10 @@ impl Server {
         &self,
         req: DeleteCollectionRequest,
     ) -> Result<DeleteCollectionResponse> {
-        self.root.delete_collection(&req.name, &req.parent).await?;
+        let database = req.database.ok_or_else(|| {
+            Error::InvalidArgument("DeleteCollectionRequest::database is required".to_owned())
+        })?;
+        self.root.delete_collection(&req.name, &database).await?;
         Ok(DeleteCollectionResponse {})
     }
 
@@ -205,7 +211,10 @@ impl Server {
         &self,
         req: GetCollectionRequest,
     ) -> Result<GetCollectionResponse> {
-        let collection = self.root.get_collection(&req.name, &req.parent).await?;
+        let database = req.database.ok_or_else(|| {
+            Error::InvalidArgument("GetCollectionRequest::database is required".to_owned())
+        })?;
+        let collection = self.root.get_collection(&req.name, &database).await?;
         Ok(GetCollectionResponse { collection })
     }
 
@@ -213,7 +222,10 @@ impl Server {
         &self,
         req: ListCollectionsRequest,
     ) -> Result<ListCollectionsResponse> {
-        let collections = self.root.list_collection(&req.parent).await?;
+        let database = req.database.ok_or_else(|| {
+            Error::InvalidArgument("ListCollectionRequest::database is required".to_owned())
+        })?;
+        let collections = self.root.list_collection(&database).await?;
         Ok(ListCollectionsResponse { collections })
     }
 

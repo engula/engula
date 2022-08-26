@@ -340,7 +340,7 @@ impl AdminRequestBuilder {
     }
 
     pub fn create_collection(
-        db_name: String,
+        database: DatabaseDesc,
         co_name: String,
         partition: Option<Partition>,
     ) -> AdminRequest {
@@ -349,7 +349,7 @@ impl AdminRequestBuilder {
                 request: Some(admin_request_union::Request::CreateCollection(
                     CreateCollectionRequest {
                         name: co_name,
-                        parent: db_name,
+                        database: Some(database),
                         partition,
                     },
                 )),
@@ -357,36 +357,38 @@ impl AdminRequestBuilder {
         }
     }
 
-    pub fn delete_collection(db_name: String, co_name: String) -> AdminRequest {
+    pub fn delete_collection(database: DatabaseDesc, co_name: String) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
                 request: Some(admin_request_union::Request::DeleteCollection(
                     DeleteCollectionRequest {
                         name: co_name,
-                        parent: db_name,
+                        database: Some(database),
                     },
                 )),
             }),
         }
     }
 
-    pub fn list_collection(parent: String) -> AdminRequest {
+    pub fn list_collection(database: DatabaseDesc) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
                 request: Some(admin_request_union::Request::ListCollections(
-                    ListCollectionsRequest { parent },
+                    ListCollectionsRequest {
+                        database: Some(database),
+                    },
                 )),
             }),
         }
     }
 
-    pub fn get_collection(db_name: String, co_name: String) -> AdminRequest {
+    pub fn get_collection(database: DatabaseDesc, co_name: String) -> AdminRequest {
         AdminRequest {
             request: Some(AdminRequestUnion {
                 request: Some(admin_request_union::Request::GetCollection(
                     GetCollectionRequest {
                         name: co_name,
-                        parent: db_name,
+                        database: Some(database),
                     },
                 )),
             }),

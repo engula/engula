@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use engula_api::server::v1::*;
+use engula_api::{server::v1::*, v1::collection_request_union};
 use lazy_static::lazy_static;
 use prometheus::*;
 use prometheus_static_metric::make_static_metric;
@@ -221,6 +221,65 @@ lazy_static! {
         "The batch size of msg requests of raft service",
     )
     .unwrap();
+}
+
+make_static_metric! {
+    pub struct DatabaseRequestTotal: IntCounter {
+        "type" => {
+            get,
+            put,
+            delete,
+        }
+    }
+    pub struct DatabaseRequestDuration: Histogram {
+        "type" => {
+            get,
+            put,
+            delete,
+        }
+    }
+}
+
+lazy_static! {
+    pub static ref PROXY_SERVICE_DATABASE_REQUEST_TOTAL_VEC: IntCounterVec =
+        register_int_counter_vec!(
+            "proxy_service_database_request_total",
+            "The total database requests of proxy service",
+            &["type"]
+        )
+        .unwrap();
+    pub static ref PROXY_SERVICE_DATABASE_REQUEST_TOTAL: DatabaseRequestTotal =
+        DatabaseRequestTotal::from(&*PROXY_SERVICE_DATABASE_REQUEST_TOTAL_VEC);
+    pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
+        register_histogram_vec!(
+            "database_service_database_request_duration_seconds",
+            "The intervals of database requests of proxy service",
+            &["type"]
+        )
+        .unwrap();
+    pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS: DatabaseRequestDuration =
+        DatabaseRequestDuration::from(&*PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC);
+}
+
+pub fn take_database_request_metrics(
+    request: &collection_request_union::Request,
+) -> &'static Histogram {
+    use collection_request_union::Request;
+
+    match request {
+        Request::Get(_) => {
+            PROXY_SERVICE_DATABASE_REQUEST_TOTAL.get.inc();
+            &PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS.get
+        }
+        Request::Put(_) => {
+            PROXY_SERVICE_DATABASE_REQUEST_TOTAL.put.inc();
+            &PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS.put
+        }
+        Request::Delete(_) => {
+            PROXY_SERVICE_DATABASE_REQUEST_TOTAL.delete.inc();
+            &PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS.delete
+        }
+    }
 }
 
 #[macro_export]

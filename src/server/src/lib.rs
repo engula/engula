@@ -57,6 +57,8 @@ pub struct Config {
 
     pub init: bool,
 
+    pub enable_proxy_service: bool,
+
     pub join_list: Vec<String>,
 
     #[serde(default)]
