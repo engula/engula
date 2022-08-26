@@ -117,6 +117,7 @@ fn load_config(
     let mut builder = Config::builder()
         .set_default("addr", "127.0.0.1:21805")?
         .set_default("init", false)?
+        .set_default("enable_proxy_service", false)?
         .set_default("cpu_nums", 0u32)?
         .set_default("join_list", Vec::<String>::default())?;
 
