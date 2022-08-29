@@ -450,6 +450,12 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
+        info!(
+            shard = task.shard,
+            src_group = task.src_group,
+            dest_group = task.dest_group,
+            "start migrate shard"
+        );
         let r = self
             .try_migrate_shard(task.src_group, task.dest_group, task.shard)
             .await;
