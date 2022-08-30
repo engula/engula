@@ -96,7 +96,7 @@ impl MigrateClient {
 
     #[inline]
     fn group_client(&self) -> GroupClient {
-        GroupClient::new(
+        GroupClient::lazy(
             self.group_id,
             self.router.clone(),
             self.conn_manager.clone(),

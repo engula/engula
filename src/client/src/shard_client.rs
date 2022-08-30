@@ -71,7 +71,7 @@ impl ShardClient {
             shard_id: self.shard_id,
             prefix: prefix.to_owned(),
         });
-        let mut client = GroupClient::new(
+        let mut client = GroupClient::lazy(
             self.group_id,
             self.router.clone(),
             self.conn_manager.clone(),
@@ -91,7 +91,7 @@ impl ShardClient {
                 key: key.to_owned(),
             }),
         });
-        let mut client = GroupClient::new(
+        let mut client = GroupClient::lazy(
             self.group_id,
             self.router.clone(),
             self.conn_manager.clone(),

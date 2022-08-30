@@ -67,7 +67,7 @@ impl ClusterClient {
     }
 
     pub fn group(&self, group_id: u64) -> GroupClient {
-        GroupClient::new(group_id, self.router.clone(), self.conn_manager.clone())
+        GroupClient::lazy(group_id, self.router.clone(), self.conn_manager.clone())
     }
 
     pub async fn app_client(&self) -> EngulaClient {

@@ -60,7 +60,7 @@ async fn move_shard(
     dest_group_id: u64,
     src_group_id: u64,
 ) {
-    'OUTER: for _ in 0..10 {
+    'OUTER: for _ in 0..16 {
         let src_group_epoch = c.must_group_epoch(src_group_id).await;
 
         // Shard migration is finished.
@@ -92,7 +92,7 @@ async fn move_shard(
         panic!("migration task is timeout");
     }
 
-    panic!("move shard is failed after 10 retries");
+    panic!("move shard is failed after 16 retries");
 }
 
 async fn insert(c: &ClusterClient, group_id: u64, shard_id: u64, range: std::ops::Range<u64>) {
@@ -181,6 +181,8 @@ fn single_replica_empty_shard_migration() {
         };
         c.create_replica(node_2_id, replica_2, group_desc_2.clone())
             .await;
+        c.assert_group_leader(group_id_1).await;
+        c.assert_group_leader(group_id_2).await;
 
         info!(
             "issue accept shard {} request to group {}",
@@ -254,6 +256,8 @@ fn single_replica_migration() {
         };
         c.create_replica(node_2_id, replica_2, group_desc_2.clone())
             .await;
+        c.assert_group_leader(group_id_1).await;
+        c.assert_group_leader(group_id_2).await;
 
         info!(
             "issue accept shard {} request to group {}",
@@ -314,6 +318,9 @@ async fn create_two_groups(
 
     info!("create group {} ", group_id_2);
     create_group(c, group_id_2, nodes, vec![]).await;
+
+    c.assert_group_leader(group_id_1).await;
+    c.assert_group_leader(group_id_2).await;
     (group_id_1, group_id_2, shard_desc)
 }
 
@@ -560,6 +567,8 @@ fn receive_forward_request_after_shard_migrated() {
             shard_id, group_id_2
         );
 
+        c.assert_group_leader(group_id_1).await;
+        c.assert_group_leader(group_id_2).await;
         move_shard(&c, &shard_desc, group_id_2, group_id_1).await;
 
         let mut group_client = c.group(group_id_2);

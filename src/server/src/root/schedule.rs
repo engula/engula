@@ -673,7 +673,7 @@ impl ScheduleContext {
         incoming_replica: ReplicaDesc,
         outgoing_replica: ReplicaDesc,
     ) -> Result<ScheduleState> {
-        let mut group_client = GroupClient::new(
+        let mut group_client = GroupClient::lazy(
             group,
             self.shared.provider.router.clone(),
             self.shared.provider.conn_manager.clone(),
@@ -685,7 +685,7 @@ impl ScheduleContext {
     }
 
     async fn try_transfer_leader(&self, group: u64, target_replica: u64) -> Result<()> {
-        let mut group_client = GroupClient::new(
+        let mut group_client = GroupClient::lazy(
             group,
             self.shared.provider.router.clone(),
             self.shared.provider.conn_manager.clone(),
@@ -705,7 +705,7 @@ impl ScheduleContext {
             crate::Error::AbortScheduleTask("migrate shard has be moved out"),
         )?;
 
-        let mut group_client = GroupClient::new(
+        let mut group_client = GroupClient::lazy(
             target_group,
             self.shared.provider.router.clone(),
             self.shared.provider.conn_manager.clone(),

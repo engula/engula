@@ -332,7 +332,7 @@ impl Collection {
     async fn delete_inner(&self, key: &[u8], timeout: Option<Duration>) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
-        let mut client = GroupClient::from_group_state(
+        let mut client = GroupClient::new(
             group,
             self.client.inner.router.clone(),
             self.client.inner.conn_manager.clone(),
@@ -358,7 +358,7 @@ impl Collection {
     ) -> crate::Result<()> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
-        let mut client = GroupClient::from_group_state(
+        let mut client = GroupClient::new(
             group,
             self.client.inner.router.clone(),
             self.client.inner.conn_manager.clone(),
@@ -384,7 +384,7 @@ impl Collection {
     ) -> crate::Result<Option<Vec<u8>>> {
         let router = self.client.inner.router.clone();
         let (group, shard) = router.find_shard(self.co_desc.clone(), key)?;
-        let mut client = GroupClient::from_group_state(
+        let mut client = GroupClient::new(
             group,
             self.client.inner.router.clone(),
             self.client.inner.conn_manager.clone(),

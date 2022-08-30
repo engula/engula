@@ -87,7 +87,7 @@ pub struct GroupClient {
 }
 
 impl GroupClient {
-    pub fn new(group_id: u64, router: Router, conn_manager: ConnManager) -> Self {
+    pub fn lazy(group_id: u64, router: Router, conn_manager: ConnManager) -> Self {
         GroupClient {
             group_id,
             timeout: None,
@@ -104,12 +104,9 @@ impl GroupClient {
         }
     }
 
-    pub fn from_group_state(
-        group_state: RouterGroupState,
-        router: Router,
-        conn_manager: ConnManager,
-    ) -> Self {
-        let mut c = GroupClient::new(group_state.id, router, conn_manager);
+    pub fn new(group_state: RouterGroupState, router: Router, conn_manager: ConnManager) -> Self {
+        debug_assert!(!group_state.replicas.is_empty());
+        let mut c = GroupClient::lazy(group_state.id, router, conn_manager);
         c.apply_group_state(group_state);
         c
     }
@@ -134,76 +131,62 @@ impl GroupClient {
         F: Fn(InvokeContext, NodeClient) -> O,
         O: Future<Output = std::result::Result<V, tonic::Status>>,
     {
+        // Initial lazy connection
+        if self.epoch == 0 {
+            self.initial_group_state()?;
+        }
+        self.next_access_index = 0;
+
         let deadline = self
             .timeout
             .take()
             .map(|duration| Instant::now() + duration);
-        let mut num_seeked = 0;
-        while num_seeked < self.replicas.len() + 1 {
-            if deadline
-                .map(|v| v.elapsed() > Duration::ZERO)
-                .unwrap_or_default()
-            {
-                return Err(Error::DeadlineExceeded("invoke_opt".to_owned()));
-            }
-
-            let (node_id, client) = self.recommend_client().await;
-
-            trace!("issue rpc request to node {node_id}, num seeked {num_seeked}");
+        let mut index = 0;
+        let group_id = self.group_id;
+        while let Some((node_id, client)) = self.recommend_client().await {
+            trace!("group {group_id} issue rpc request with index {index} to node {node_id}");
+            index += 1;
             let ctx = InvokeContext {
-                group_id: self.group_id,
+                group_id,
                 epoch: self.epoch,
                 node_id,
                 timeout: self.timeout,
             };
-            let status = match op(ctx, client).await {
-                Err(status) => status,
+            match op(ctx, client).await {
+                Err(status) => self.apply_status(status, &opt).await?,
                 Ok(s) => return Ok(s),
             };
-
-            self.apply_status(status, &opt).await?;
-
-            // records the num of seeked replicas.
-            num_seeked = if self.access_node_id.is_none() {
-                num_seeked + 1
-            } else {
-                0
-            };
+            if deadline
+                .map(|v| v.elapsed() > Duration::ZERO)
+                .unwrap_or_default()
+            {
+                return Err(Error::DeadlineExceeded("issue rpc".to_owned()));
+            }
         }
 
-        Err(Error::GroupNotAccessable(self.group_id))
+        Err(Error::GroupNotAccessable(group_id))
     }
 
-    async fn recommend_client(&mut self) -> (u64, NodeClient) {
-        let mut interval = 1;
-        loop {
-            if self.replicas.len() <= self.next_access_index {
-                self.refresh_group_state();
+    async fn recommend_client(&mut self) -> Option<(u64, NodeClient)> {
+        while let Some(node_id) = self.access_node_id.or_else(|| self.next_access_node_id()) {
+            if let Some(client) = self.fetch_client(node_id).await {
+                self.access_node_id = Some(node_id);
+                return Some((node_id, client));
             }
-
-            let recommend_node_id = self.access_node_id.or_else(|| self.next_access_node_id());
-            if let Some(node_id) = recommend_node_id {
-                if let Some(client) = self.fetch_client(node_id).await {
-                    self.access_node_id = Some(node_id);
-                    return (node_id, client);
-                }
-            }
-
             self.access_node_id = None;
-
-            // Sleep before the next round to avoid busy requests.
-            tokio::time::sleep(Duration::from_millis(interval)).await;
-            interval = std::cmp::max(interval * 2, 1000);
         }
+        None
     }
 
-    fn refresh_group_state(&mut self) {
-        self.next_access_index = 0;
-        if let Ok(group) = self.router.find_group(self.group_id) {
-            if self.epoch < group.epoch {
-                self.apply_group_state(group);
-            }
-        }
+    fn initial_group_state(&mut self) -> Result<()> {
+        debug_assert_eq!(self.epoch, 0);
+        debug_assert!(self.replicas.is_empty());
+        let group_state = self
+            .router
+            .find_group(self.group_id)
+            .map_err(|_| Error::GroupNotAccessable(self.group_id))?;
+        self.apply_group_state(group_state);
+        Ok(())
     }
 
     pub fn apply_group_state(&mut self, group: RouterGroupState) {
@@ -227,8 +210,10 @@ impl GroupClient {
 
     /// Return the next node id, skip the leader node.
     fn next_access_node_id(&mut self) -> Option<u64> {
-        if self.next_access_index < self.replicas.len() {
-            let replica_desc = &self.replicas[self.next_access_index];
+        // The first node is the current leader in most cases, making sure it retries more than
+        // other nodes.
+        if self.next_access_index <= self.replicas.len() {
+            let replica_desc = &self.replicas[self.next_access_index % self.replicas.len()];
             self.next_access_index += 1;
             Some(replica_desc.node_id)
         } else {
@@ -271,25 +256,7 @@ impl GroupClient {
                 Ok(())
             }
             Error::NotLeader(_, term, leader_desc) => {
-                debug!(
-                    "group {} issue rpc to {}: not leader, new leader {:?} term {term}",
-                    self.group_id,
-                    self.access_node_id.unwrap_or_default(),
-                    leader_desc
-                );
-                self.access_node_id = None;
-                if let Some(leader) = leader_desc {
-                    // Ignore staled `NotLeader` response.
-                    if !self
-                        .leader_state
-                        .map(|(_, local_term)| local_term >= term)
-                        .unwrap_or_default()
-                    {
-                        move_node_to_first_element(&mut self.replicas, leader.node_id);
-                        self.access_node_id = Some(leader.node_id);
-                        self.leader_state = Some((leader.id, term));
-                    }
-                }
+                self.apply_not_leader_status(term, leader_desc);
                 Ok(())
             }
             Error::Connect(status) => {
@@ -317,38 +284,7 @@ impl GroupClient {
             }
             // If the exact epoch is required, don't retry if epoch isn't matched.
             Error::EpochNotMatch(group_desc) if !opt.accurate_epoch => {
-                if group_desc.epoch <= self.epoch {
-                    panic!(
-                        "group {} receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
-                        self.group_id, self.epoch, group_desc
-                    );
-                }
-
-                debug!(
-                    "group {} issue rpc to {}: epoch {} not match target epoch {}",
-                    self.group_id,
-                    self.access_node_id.unwrap_or_default(),
-                    self.epoch,
-                    group_desc.epoch,
-                );
-
-                if opt
-                    .request
-                    .map(|r| !is_executable(&group_desc, r))
-                    .unwrap_or_default()
-                {
-                    // The target group would not execute the specified request.
-                    Err(Error::EpochNotMatch(group_desc))
-                } else {
-                    self.replicas = group_desc.replicas;
-                    self.epoch = group_desc.epoch;
-                    self.next_access_index = 1;
-                    move_node_to_first_element(
-                        &mut self.replicas,
-                        self.access_node_id.unwrap_or_default(),
-                    );
-                    Ok(())
-                }
+                self.apply_epoch_not_match_status(group_desc, opt)
             }
             e => {
                 warn!(
@@ -359,6 +295,69 @@ impl GroupClient {
                 );
                 Err(e)
             }
+        }
+    }
+
+    fn apply_not_leader_status(&mut self, term: u64, leader_desc: Option<ReplicaDesc>) {
+        debug!(
+            "group {} issue rpc to {}: not leader, new leader {:?} term {term}, local state {:?}",
+            self.group_id,
+            self.access_node_id.unwrap_or_default(),
+            leader_desc,
+            self.leader_state,
+        );
+        self.access_node_id = None;
+        if let Some(leader) = leader_desc {
+            // Ignore staled `NotLeader` response.
+            if !self
+                .leader_state
+                .map(|(_, local_term)| local_term >= term)
+                .unwrap_or_default()
+            {
+                self.access_node_id = Some(leader.node_id);
+                self.leader_state = Some((leader.id, term));
+
+                // It is possible that the leader is not in the replica descs (because a staled
+                // group descriptor is used). In order to ensure that the leader can be retried
+                // later, the leader needs to be saved to the replicas.
+                move_replica_to_first_element(&mut self.replicas, leader);
+            }
+        }
+    }
+
+    fn apply_epoch_not_match_status(
+        &mut self,
+        group_desc: GroupDesc,
+        opt: &InvokeOpt<'_>,
+    ) -> Result<()> {
+        if group_desc.epoch <= self.epoch {
+            panic!(
+                "group {} receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
+                self.group_id, self.epoch, group_desc
+            );
+        }
+
+        debug!(
+            "group {} issue rpc to {}: epoch {} not match target epoch {}",
+            self.group_id,
+            self.access_node_id.unwrap_or_default(),
+            self.epoch,
+            group_desc.epoch,
+        );
+
+        if opt
+            .request
+            .map(|r| !is_executable(&group_desc, r))
+            .unwrap_or_default()
+        {
+            // The target group would not execute the specified request.
+            Err(Error::EpochNotMatch(group_desc))
+        } else {
+            self.replicas = group_desc.replicas;
+            self.epoch = group_desc.epoch;
+            self.next_access_index = 1;
+            move_node_to_first_element(&mut self.replicas, self.access_node_id.unwrap_or_default());
+            Ok(())
         }
     }
 }
@@ -764,5 +763,17 @@ fn move_node_to_first_element(replicas: &mut [ReplicaDesc], node_id: u64) {
         if idx != 0 {
             replicas.swap(0, idx)
         }
+    }
+}
+
+fn move_replica_to_first_element(replicas: &mut Vec<ReplicaDesc>, replica: ReplicaDesc) {
+    let idx = if let Some(idx) = replicas.iter().position(|r| r.node_id == replica.node_id) {
+        idx
+    } else {
+        replicas.push(replica);
+        replicas.len() - 1
+    };
+    if idx != 0 {
+        replicas.swap(0, idx)
     }
 }
