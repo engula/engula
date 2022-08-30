@@ -64,7 +64,7 @@ impl Router {
         &self,
         desc: CollectionDesc,
         key: &[u8],
-    ) -> Result<(u64, ShardDesc), crate::Error> {
+    ) -> Result<(RouterGroupState, ShardDesc), crate::Error> {
         if let Some(collection_desc::Partition::Hash(collection_desc::HashPartition { slots })) =
             desc.partition
         {
@@ -101,7 +101,13 @@ impl Router {
                 .cloned()
                 .ok_or_else(|| crate::Error::NotFound(format!("shard (key={key:?}) group")))?;
 
-            return Ok((group_id, shard.clone()));
+            let group_state = state
+                .group_id_lookup
+                .get(&group_id)
+                .cloned()
+                .ok_or_else(|| crate::Error::NotFound(format!("shard (key={key:?}) group")))?;
+
+            return Ok((group_state, shard.clone()));
         }
 
         let state = self.state.lock().unwrap();
@@ -127,7 +133,16 @@ impl Router {
                             crate::Error::NotFound(format!("shard (key={key:?}) group"))
                         })?;
 
-                    return Ok((group_id, shard.clone()));
+                    let group_state =
+                        state
+                            .group_id_lookup
+                            .get(&group_id)
+                            .cloned()
+                            .ok_or_else(|| {
+                                crate::Error::NotFound(format!("shard (key={key:?}) group"))
+                            })?;
+
+                    return Ok((group_state, shard.clone()));
                 }
             }
         }

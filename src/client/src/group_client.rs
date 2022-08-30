@@ -29,6 +29,7 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     node_client::RpcTimeout, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
+    RouterGroupState,
 };
 
 pub struct RetryableShardChunkStreaming {
@@ -101,6 +102,16 @@ impl GroupClient {
             router,
             conn_manager,
         }
+    }
+
+    pub fn from_group_state(
+        group_state: RouterGroupState,
+        router: Router,
+        conn_manager: ConnManager,
+    ) -> Self {
+        let mut c = GroupClient::new(group_state.id, router, conn_manager);
+        c.apply_group_state(group_state);
+        c
     }
 
     /// Apply a timeout to next request issued via this client.
@@ -190,24 +201,27 @@ impl GroupClient {
         self.next_access_index = 0;
         if let Ok(group) = self.router.find_group(self.group_id) {
             if self.epoch < group.epoch {
-                let mut leader_node_id = None;
-                if let Some((leader_id, _)) = group.leader_state {
-                    if let Some(desc) = group.replicas.get(&leader_id) {
-                        leader_node_id = Some(desc.node_id);
-                    }
-                };
-                self.leader_state = group.leader_state;
-                self.epoch = group.epoch;
-                self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
-                if let Some(node_id) = leader_node_id {
-                    trace!(
-                        "group client refresh group {} state with leader node id {}",
-                        self.group_id,
-                        node_id
-                    );
-                    move_node_to_first_element(&mut self.replicas, node_id);
-                }
+                self.apply_group_state(group);
             }
+        }
+    }
+
+    pub fn apply_group_state(&mut self, group: RouterGroupState) {
+        let leader_node_id = group
+            .leader_state
+            .and_then(|(leader_id, _)| group.replicas.get(&leader_id))
+            .map(|desc| desc.node_id);
+
+        self.leader_state = group.leader_state;
+        self.epoch = group.epoch;
+        self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
+        if let Some(node_id) = leader_node_id {
+            trace!(
+                "group client refresh group {} state with leader node id {}",
+                self.group_id,
+                node_id
+            );
+            move_node_to_first_element(&mut self.replicas, node_id);
         }
     }
 
