@@ -78,10 +78,9 @@ message ReconcileTask {
 
 message ReallocateReplicaTask {
   uint64 group = 1;
-  uint64 src_node = 2;
-  uint64 src_replica = 3;
-  engula.server.v1.NodeDesc dest_node = 4;
-  engula.server.v1.ReplicaDesc dest_replica = 5;
+  uint64 epoch = 2;
+  uint64 src_node = 3;
+  uint64 dest_node = 4;
 }
 
 message MigrateShardTask {

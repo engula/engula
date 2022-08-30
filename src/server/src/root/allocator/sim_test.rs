@@ -36,6 +36,8 @@ fn sim_boostrap_join_node_balance() {
         let d = Arc::new(OngoingStats::default());
         let a = Allocator::new(p.clone(), d.clone(), RootConfig::default());
 
+        let policy = ByReplicaCountPolicy::default();
+
         println!("1. boostrap and no need rebalance");
         p.set_groups(vec![GroupDesc {
             id: 1,
@@ -209,7 +211,7 @@ fn sim_boostrap_join_node_balance() {
         println!("4. group alloc works and group & replicas balanced");
         let act = a.compute_group_action().await.unwrap();
         assert!(matches!(act, GroupAction::Noop));
-        let ract = a.compute_replica_action().await.unwrap();
+        let ract = a.compute_balance_action(&policy).await.unwrap();
         assert!(ract.is_empty());
         p.display();
 
@@ -304,47 +306,29 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("8. balance replica between nodes");
-        let racts = a.compute_replica_action().await.unwrap();
+        let racts = a.compute_balance_action(&policy).await.unwrap();
         assert!(!racts.is_empty());
         for act in &racts {
-            match act {
-                ReplicaAction::Migrate(ReallocateReplica {
-                    group,
-                    source_node: _,
-                    source_replica,
-                    target_node,
-                }) => {
-                    println!(
-                        "move group {} replica {} to {}",
-                        group, source_replica, target_node.id
-                    );
-                    p.move_replica(*source_replica, target_node.id)
-                }
-            }
+            println!(
+                "move group {} replica {} to {}",
+                act.group_id, act.source_node, act.dest_node
+            );
+            p.move_replica(act.group_id, act.source_node, act.dest_node)
         }
         loop {
-            let racts = a.compute_replica_action().await.unwrap();
+            let racts = a.compute_balance_action(&policy).await.unwrap();
             if racts.is_empty() {
                 break;
             }
             for act in &racts {
-                match act {
-                    ReplicaAction::Migrate(ReallocateReplica {
-                        group,
-                        source_node: _,
-                        source_replica,
-                        target_node,
-                    }) => {
-                        println!(
-                            "move group {} replica {} to {}",
-                            group, source_replica, target_node.id
-                        );
-                        p.move_replica(*source_replica, target_node.id)
-                    }
-                }
+                println!(
+                    "move group {} replica {} to {}",
+                    act.group_id, act.source_node, act.dest_node
+                );
+                p.move_replica(act.group_id, act.source_node, act.dest_node)
             }
         }
-        let racts = a.compute_replica_action().await.unwrap();
+        let racts = a.compute_balance_action(&policy).await.unwrap();
         assert!(racts.is_empty());
         p.display();
 
@@ -506,7 +490,10 @@ impl MockInfoProvider {
         let mut nodes = self.nodes(NodeFilter::All);
         for n in nodes.iter_mut() {
             let mut cap = n.capacity.take().unwrap();
-            cap.replica_count = node_replicas.get(&n.id).unwrap().len() as u64;
+            cap.replica_count = node_replicas
+                .get(&n.id)
+                .map(|c| c.len() as u64)
+                .unwrap_or_default();
             n.capacity = Some(cap)
         }
         self.set_nodes(nodes);
@@ -565,14 +552,13 @@ impl MockInfoProvider {
         let _ = std::mem::replace(&mut *replicas, id_to_state);
     }
 
-    pub fn move_replica(&self, replica_id: u64, node: u64) {
+    pub fn move_replica(&self, group: u64, src_node: u64, dest_node: u64) {
         let mut groups = self.groups();
-        for group in groups.values_mut() {
-            for replica in group.replicas.iter_mut() {
-                if replica.id == replica_id {
-                    replica.node_id = node;
-                    break;
-                }
+        let group = groups.get_mut(&group).unwrap();
+        for replica in group.replicas.iter_mut() {
+            if replica.node_id == src_node {
+                replica.node_id = dest_node;
+                break;
             }
         }
         self.set_groups(groups.values().map(ToOwned::to_owned).collect());
@@ -640,7 +626,9 @@ impl MockInfoProvider {
             println!(
                 "node replicas: {} -> {:?}",
                 n,
-                g.iter().map(|r| r.0.id).collect::<Vec<u64>>()
+                g.iter()
+                    .map(|r| format!("{}({})", r.0.id, r.1))
+                    .collect::<Vec<String>>()
             )
         }
         let descs = &groups.descs;
