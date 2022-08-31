@@ -21,13 +21,14 @@ mod storage;
 mod transport;
 mod worker;
 
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use engula_api::server::v1::*;
 use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 use self::worker::RaftWorker;
 pub use self::{
@@ -118,6 +119,7 @@ impl RaftManager {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
+        start_purging_expired_files(&executor, engine.clone());
         let snap_mgr = SnapManager::recovery(&executor, snap_dir)?;
         Ok(RaftManager {
             cfg,
@@ -184,6 +186,24 @@ impl Default for RaftConfig {
             testing_knobs: RaftTestingKnobs::default(),
         }
     }
+}
+
+fn start_purging_expired_files(executor: &Executor, engine: Arc<raft_engine::Engine>) {
+    executor.spawn(None, TaskPriority::IoLow, async move {
+        loop {
+            crate::runtime::time::sleep(Duration::from_secs(10)).await;
+            match engine.purge_expired_files() {
+                Err(e) => {
+                    warn!("raft engine purge expired files: {e:?}")
+                }
+                Ok(replicas) => {
+                    if !replicas.is_empty() {
+                        debug!("raft engine purge expired files, replicas {replicas:?} is too old")
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn encode_to_conf_change(change_replicas: ChangeReplicas) -> ConfChangeV2 {
