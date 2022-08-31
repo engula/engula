@@ -182,7 +182,7 @@ impl ReconcileScheduler {
         let mut actions = Vec::new();
 
         let mv_repl_action = {
-            let repl_cnt_policy = ByReplicaCountPolicy::default();
+            let repl_cnt_policy = ReplicaCountPolicy::default();
             self.ctx
                 .alloc
                 .compute_balance_action(&repl_cnt_policy)
@@ -212,7 +212,7 @@ impl ReconcileScheduler {
         );
 
         let leader_actions = {
-            let leader_policy = ByLeaderCountPolicy::default();
+            let leader_policy = LeaderCountPolicy::default();
             self.ctx
                 .alloc
                 .compute_balance_action(&leader_policy)

@@ -18,7 +18,7 @@ use engula_api::server::v1::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use self::{policy_shard_cnt::ShardCountPolicy, source::NodeFilter};
+use self::{policy_shard_cnt::ShardCountPolicy, replica_balancer::*, source::NodeFilter};
 use super::{metrics, OngoingStats, RootShared};
 use crate::{
     bootstrap::{REPLICA_PER_GROUP, ROOT_GROUP_ID},
@@ -28,9 +28,15 @@ use crate::{
 #[cfg(test)]
 mod sim_test;
 
+mod policy_leader_cnt;
+mod policy_replica_cnt;
 mod policy_shard_cnt;
+mod replica_balancer;
 mod source;
 
+pub use policy_leader_cnt::LeaderCountPolicy;
+pub use policy_replica_cnt::ReplicaCountPolicy;
+pub use replica_balancer::BalancePolicy;
 pub use source::{AllocSource, SysAllocSource};
 
 #[derive(Clone, Debug)]
@@ -133,698 +139,31 @@ pub struct GroupReplicaAction {
     pub dest_node: u64,
 }
 
-#[derive(Default, Clone)]
-pub struct NodeCandidate {
-    node: NodeDesc,
-    disk_full: bool,
-    balance_score: f64,
-    converges_score: f64,
-    balance_value: f64,
-}
-
-impl NodeCandidate {
-    fn worse(&self, o: &NodeCandidate) -> bool {
-        score_compare_candidate(self, o) < 0.0
-    }
-
-    fn almost_same(&self, o: &NodeCandidate) -> bool {
-        self.balance_score == o.balance_score && self.converges_score == o.converges_score
-    }
-}
-
-fn score_compare_candidate(c: &NodeCandidate, o: &NodeCandidate) -> f64 {
-    // the greater value, the more suitable using `c` than `o`.
-    if o.disk_full && !c.disk_full {
-        return 3.0;
-    }
-    if c.disk_full && !o.disk_full {
-        return -3.0;
-    }
-    if c.converges_score != o.converges_score {
-        if c.converges_score > o.converges_score {
-            return 2.0 + ((c.converges_score - o.converges_score) / 10.0);
-        }
-        return -(2.0 + ((o.converges_score - c.converges_score) / 10.0));
-    }
-    if c.balance_score != o.balance_score {
-        if c.balance_score > o.balance_score {
-            return 1.0 + ((c.balance_score - o.balance_score) / 10.0);
-        }
-        return -(1.0 + ((o.balance_score - c.balance_score) / 10.0));
-    }
-    let c_replica_count = c.balance_value;
-    let o_replica_count = o.balance_value;
-
-    if c_replica_count == o_replica_count {
-        return 0.0;
-    }
-    if c_replica_count < o_replica_count {
-        return (o_replica_count - c_replica_count) as f64 / (o_replica_count as f64);
-    }
-    -((c_replica_count - o_replica_count) as f64 / c_replica_count as f64)
-}
-
-impl Ord for NodeCandidate {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let score_cmp = score_compare_candidate(self, other);
-        if score_cmp < 0.0 {
-            return Ordering::Less;
-        }
-        if score_cmp > 0.0 {
-            return Ordering::Greater;
-        }
-        Ordering::Equal
-    }
-}
-
-impl PartialOrd for NodeCandidate {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for NodeCandidate {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for NodeCandidate {}
-
-pub struct PotentialReplacement {
-    existing: NodeCandidate,
-    candidates: Vec<NodeCandidate>,
-}
-
-struct BalanceOption {
-    existing: NodeCandidate,
-    candidates: Vec<NodeCandidate>,
-}
-
-pub enum MoveTarget {
-    MoveReplica,
-    TransferLeader,
-}
-
-pub trait BalancePolicy {
-    fn should_balance(&self, rep: &PotentialReplacement) -> bool;
-
-    fn balance_score(
-        &self,
-        node: &NodeCandidate,
-        cands: &[NodeCandidate],
-        from: bool,
-    ) -> (f64 /* balance_score */, f64 /* converges_score */);
-
-    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64;
-
-    fn move_target(&self) -> MoveTarget;
-}
-
-#[derive(Clone, Copy, Default)]
-pub struct ByLeaderCountPolicy {
-    count_policy: ByReplicaCountPolicy,
-}
-
-impl BalancePolicy for ByLeaderCountPolicy {
-    fn balance_value(&self, _ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
-        n.capacity.as_ref().unwrap().leader_count as u64
-    }
-
-    fn should_balance(&self, rep: &PotentialReplacement) -> bool {
-        self.count_policy.should_balance(rep)
-    }
-
-    fn balance_score(
-        &self,
-        node: &NodeCandidate,
-        cands: &[NodeCandidate],
-        from: bool,
-    ) -> (f64 /* balance_score */, f64 /* converges_score */) {
-        self.count_policy.balance_score(node, cands, from)
-    }
-
-    fn move_target(&self) -> MoveTarget {
-        MoveTarget::TransferLeader
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-pub struct ByReplicaCountPolicy {}
-
-impl BalancePolicy for ByReplicaCountPolicy {
-    fn should_balance(&self, rep: &PotentialReplacement) -> bool {
-        if rep.candidates.is_empty() {
-            return false;
-        }
-        let (mean, min, max) = self.count_threshold(&rep.candidates);
-        let cnt = rep.existing.balance_value;
-        if cnt > max {
-            // balance if over max a lot.
-            return true;
-        }
-        if cnt > mean {
-            // balance if over mean and others is underfull.
-            for c in &rep.candidates {
-                let cand_cnt = c.balance_value;
-                if cand_cnt < min {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    fn balance_score(
-        &self,
-        node: &NodeCandidate,
-        cands: &[NodeCandidate],
-        from: bool,
-    ) -> (f64, f64) {
-        let current = node.balance_value;
-        let (mean, min, max) = self.count_threshold(cands);
-        let mut balance_score = 0.0;
-        if current < min {
-            balance_score = 1.0;
-        }
-        if current > max {
-            balance_score = -1.0;
-        }
-        let new_val = if from { current - 1.0 } else { current + 1.0 };
-        let converges_score = if f64::abs(new_val - mean) < f64::abs(current - mean) {
-            if from {
-                0.0
-            } else {
-                1.0
-            }
-        } else if from {
-            1.0
-        } else {
-            0.0
-        };
-        (balance_score, converges_score)
-    }
-
-    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
-        let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
-        let delta = ongoing_stats.get_node_delta(n.id);
-        cnt += delta.replica_count;
-        if cnt < 0 {
-            cnt = 0;
-        }
-        cnt as u64
-    }
-
-    fn move_target(&self) -> MoveTarget {
-        MoveTarget::MoveReplica
-    }
-}
-
-impl ByReplicaCountPolicy {
-    fn count_threshold(&self, cands: &[NodeCandidate]) -> (f64, f64, f64) {
-        const THRESHOLD_FRACTION: f64 = 0.05;
-        const MIN_RANGE_DELTA: f64 = 2.0;
-        let mean = self.mean_candidate_replica_count(cands);
-        let delta = f64::max(mean as f64 * THRESHOLD_FRACTION, MIN_RANGE_DELTA);
-        (mean, mean - delta, mean + delta)
-    }
-
-    fn mean_candidate_replica_count(&self, cands: &[NodeCandidate]) -> f64 {
-        let total = cands
-            .iter()
-            .filter(|c| c.node.capacity.is_some())
-            .fold(0f64, |t, c| t + c.balance_value) as f64;
-        let cnt = cands.iter().filter(|c| c.node.capacity.is_some()).count() as f64;
-        total / cnt
-    }
-}
-
 #[derive(Clone)]
 pub struct Allocator<T: AllocSource> {
     alloc_source: Arc<T>,
     ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
+    balancer: replica_balancer::GroupReplicaBalancer<T>,
 }
 
 impl<T: AllocSource> Allocator<T> {
     pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
+        let balancer = replica_balancer::GroupReplicaBalancer::new(
+            alloc_source.to_owned(),
+            ongoing_stats.to_owned(),
+            config.to_owned(),
+        );
         Self {
             alloc_source,
             config,
             ongoing_stats,
+            balancer,
         }
     }
 
     pub fn replicas_per_group(&self) -> usize {
         self.config.replicas_per_group
-    }
-
-    pub async fn compute_balance_action(
-        &self,
-        policy: &(dyn BalancePolicy + Send + Sync + 'static),
-    ) -> Result<Vec<GroupReplicaAction>> {
-        if !self.config.enable_replica_balance {
-            return Ok(vec![]);
-        }
-
-        self.alloc_source.refresh_all().await?;
-
-        let mut gaction = Vec::new();
-        let groups = self.alloc_source.groups();
-        for (group_id, desc) in &groups {
-            if *group_id == ROOT_GROUP_ID {
-                continue;
-            }
-            let in_joint_or_learner = desc.replicas.iter().any(|r| {
-                matches!(
-                    ReplicaRole::from_i32(r.role).unwrap(),
-                    ReplicaRole::IncomingVoter | ReplicaRole::DemotingVoter | ReplicaRole::Learner
-                )
-            });
-            if in_joint_or_learner {
-                // in-progress group should consider addition group action
-                // after it leave middle status.
-                continue;
-            }
-            let mut balance_opts = self.try_balance(policy, desc, true).await?;
-            if balance_opts.is_none() {
-                continue;
-            }
-            let (source_node, dest_node) = balance_opts.take().unwrap();
-            gaction.push(GroupReplicaAction {
-                group_id: group_id.to_owned(),
-                epoch: desc.epoch,
-                source_node,
-                dest_node,
-            });
-            break;
-        }
-        Ok(gaction)
-    }
-
-    fn best_balance_target(
-        &self,
-        opts: &mut [BalanceOption],
-    ) -> (Option<NodeCandidate>, Option<NodeCandidate>) {
-        let mut best_idx = None;
-        let mut best_target = None;
-        let mut best_existing = None;
-        for (i, opt) in opts.iter().enumerate() {
-            if opt.candidates.is_empty() {
-                continue;
-            }
-            let target = select_good(&opt.candidates);
-            if target.is_none() {
-                continue;
-            }
-            let target = target.unwrap();
-            let existing = opt.existing.to_owned();
-            let better_target = self.better_target(
-                &target,
-                &existing,
-                best_target.to_owned(),
-                best_existing.to_owned(),
-            );
-            if better_target.node.id == target.node.id {
-                best_target = Some(target.to_owned());
-                best_existing = Some(existing.to_owned());
-                best_idx = Some(i);
-            }
-        }
-        if best_idx.is_none() {
-            return (None, None);
-        }
-        let target = best_target.as_ref().unwrap().to_owned();
-        let best_opt = opts.get_mut(best_idx.unwrap()).unwrap();
-        best_opt.candidates.retain(|c| c.node.id != target.node.id);
-        (Some(target), Some(best_opt.existing.to_owned()))
-    }
-
-    fn better_target(
-        &self,
-        new_target: &NodeCandidate,
-        new_existing: &NodeCandidate,
-        old_target: Option<NodeCandidate>,
-        old_existing: Option<NodeCandidate>,
-    ) -> NodeCandidate {
-        if old_target.is_none() {
-            return new_target.to_owned();
-        }
-        let cmp_score1 = score_compare_candidate(new_target, new_existing);
-        let cmp_score2 =
-            score_compare_candidate(old_target.as_ref().unwrap(), old_existing.as_ref().unwrap());
-        if almost_same_score(cmp_score1, cmp_score2) {
-            if cmp_score1 > cmp_score2 {
-                return new_target.to_owned();
-            }
-            if cmp_score1 < cmp_score2 {
-                return old_target.as_ref().unwrap().to_owned();
-            }
-        }
-        if new_target.worse(old_target.as_ref().unwrap()) {
-            return old_target.as_ref().unwrap().to_owned();
-        }
-        new_target.to_owned()
-    }
-
-    async fn try_balance(
-        &self,
-        policy: &(dyn BalancePolicy + Send + Sync + 'static),
-        group: &GroupDesc,
-        within_voter: bool,
-    ) -> Result<Option<(u64, u64)>> {
-        let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
-
-        // Prepare related replicas, it make them into three categories:
-        // 1. `replica_to_balance`: the replicas that participate in balance
-        // 2. `other_replica`: the replicas that not participate in balance but existed in the group
-        // 3. `exclude_replica`: the replicas that forbid to allocate current type repli
-        let mut other_replicas = Vec::new();
-        let mut excluded_replicas = Vec::new();
-        let voters = group
-            .replicas
-            .iter()
-            .filter(|r| {
-                if !nodes.iter().any(|n| n.id == r.node_id) {
-                    return false;
-                }
-                if !matches!(ReplicaRole::from_i32(r.role).unwrap(), ReplicaRole::Voter) {
-                    return false;
-                }
-                true
-            })
-            .collect::<Vec<_>>();
-        let non_voters = group
-            .replicas
-            .iter()
-            .filter(|r| {
-                if !nodes.iter().any(|n| n.id == r.node_id) {
-                    return false;
-                }
-                if matches!(ReplicaRole::from_i32(r.role).unwrap(), ReplicaRole::Voter) {
-                    return false;
-                }
-                true
-            })
-            .collect::<Vec<_>>();
-
-        let replica_to_balance = if within_voter {
-            other_replicas.extend_from_slice(&non_voters);
-            voters.to_owned()
-        } else {
-            other_replicas.extend_from_slice(&voters);
-            excluded_replicas.extend_from_slice(&voters);
-            non_voters.to_owned()
-        };
-
-        // find moveable nodes.
-        // 1. the node contain particpated balance replica.
-        // 2. full node need transfer-out in higher priority.
-        let mut moveable_candidates = HashMap::new();
-        let mut require_transfer_from = false;
-        for repl_node in nodes
-            .iter()
-            .filter(|n| replica_to_balance.iter().any(|r| r.node_id == n.id))
-        {
-            let disk_full = check_node_full(repl_node);
-            if disk_full {
-                require_transfer_from = true;
-            }
-            match policy.move_target() {
-                MoveTarget::MoveReplica => {}
-                MoveTarget::TransferLeader => {
-                    let r = group.replicas.iter().find(|r| r.node_id == repl_node.id);
-                    if r.is_none() {
-                        continue;
-                    }
-                    let rs = self.alloc_source.replica_state(&r.unwrap().id);
-                    if rs.is_none() {
-                        continue;
-                    }
-                    if !matches!(
-                        RaftRole::from_i32(rs.unwrap().role).unwrap(),
-                        RaftRole::Leader
-                    ) {
-                        continue;
-                    }
-                }
-            }
-            let balance_value =
-                policy.balance_value(self.ongoing_stats.to_owned(), repl_node) as f64;
-            moveable_candidates.insert(
-                repl_node.id,
-                NodeCandidate {
-                    node: repl_node.to_owned(),
-                    disk_full,
-                    balance_value,
-                    ..Default::default()
-                },
-            );
-        }
-
-        // find potential replacements, for each moveable replica to find replacable replicas:
-        // 1. the replace candidate couldn't be allocate in the node already exist replica
-        // 2. the replace candidate couldn't be allocate in forbid allocate nodes
-        // 3. the replace candidate should not be disk full
-        let mut potential_replacements = Vec::new();
-        for move_candidate in moveable_candidates.values() {
-            let mut replace_candidates = Vec::new();
-            for n in nodes
-                .iter()
-                .filter(|n| move_candidate.node.id != n.id)
-                .filter(|n| !excluded_replicas.iter().any(|r| r.node_id == n.id))
-            {
-                match policy.move_target() {
-                    MoveTarget::MoveReplica => {}
-                    MoveTarget::TransferLeader => {
-                        if !voters.iter().any(|v| v.node_id == n.id) {
-                            continue;
-                        }
-                    }
-                }
-                let disk_full = check_node_full(n);
-                let balance_value = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
-                let cand = NodeCandidate {
-                    node: n.to_owned(),
-                    disk_full,
-                    balance_value,
-                    ..Default::default()
-                };
-                if !cand.worse(move_candidate) {
-                    // replace replica better or almost same to moveable replica.
-                    replace_candidates.push(cand);
-                }
-            }
-            if !replace_candidates.is_empty() {
-                replace_candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
-                let best_candidates = best(&replace_candidates);
-                if best_candidates.is_empty() {
-                    continue;
-                }
-                potential_replacements.push(PotentialReplacement {
-                    existing: move_candidate.to_owned(),
-                    candidates: best_candidates,
-                });
-            }
-        }
-
-        let mut need_balance = require_transfer_from;
-        if !need_balance {
-            for rep in &potential_replacements {
-                if policy.should_balance(rep) {
-                    need_balance = true;
-                    break;
-                }
-            }
-        }
-
-        if !need_balance {
-            return Ok(None);
-        }
-
-        // build the balance option with balance score by policy.
-        let mut balance_opts = Vec::with_capacity(potential_replacements.len());
-        for potential_replacement in potential_replacements.iter_mut() {
-            let mut ex_cand = moveable_candidates
-                .get(&potential_replacement.existing.node.id)
-                .unwrap()
-                .to_owned();
-            ex_cand.balance_value =
-                policy.balance_value(self.ongoing_stats.to_owned(), &ex_cand.node) as f64;
-            (ex_cand.balance_score, ex_cand.converges_score) =
-                policy.balance_score(&ex_cand, &potential_replacement.candidates, true);
-
-            let mut candidates = Vec::new();
-            for candidate_node in &potential_replacement.candidates {
-                match policy.move_target() {
-                    MoveTarget::MoveReplica => {
-                        if moveable_candidates.contains_key(&candidate_node.node.id) {
-                            continue;
-                        }
-                    }
-                    MoveTarget::TransferLeader => {}
-                }
-                let mut c = candidate_node.to_owned();
-                (c.balance_score, c.converges_score) =
-                    policy.balance_score(&c, &potential_replacement.candidates, false);
-                candidates.push(c);
-            }
-
-            if candidates.is_empty() {
-                continue;
-            }
-
-            candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
-
-            let candidates = candidates
-                .iter()
-                .take_while(|c| !c.worse(&ex_cand))
-                .cloned()
-                .collect::<Vec<_>>();
-            if candidates.is_empty() {
-                continue;
-            }
-
-            balance_opts.push(BalanceOption {
-                existing: ex_cand,
-                candidates,
-            });
-        }
-
-        if balance_opts.is_empty() {
-            return Ok(None);
-        }
-
-        match policy.move_target() {
-            MoveTarget::MoveReplica => {
-                // check the result of simulate remove after running options, and skip option if
-                // new-added replica be removed in next turn.
-                loop {
-                    let (target, _existing) = self.best_balance_target(&mut balance_opts);
-                    if target.is_none() {
-                        break;
-                    }
-                    let mut exist_replica_candidates = replica_to_balance.to_owned();
-                    let fake_new_replica = ReplicaDesc {
-                        id: exist_replica_candidates.iter().map(|r| r.id).max().unwrap() + 1,
-                        node_id: target.as_ref().unwrap().node.id,
-                        ..Default::default()
-                    };
-                    exist_replica_candidates.push(&fake_new_replica);
-
-                    let replica_candidates = exist_replica_candidates.to_owned();
-
-                    // TODO: filter out out-of-date replicas from replica_candidates.
-
-                    let remove_candidate = self.sim_remove_target(
-                        policy,
-                        fake_new_replica.node_id,
-                        replica_candidates,
-                        exist_replica_candidates,
-                        other_replicas.to_owned(),
-                        within_voter,
-                    )?;
-
-                    if remove_candidate.is_none() {
-                        return Ok(None);
-                    }
-
-                    if remove_candidate.as_ref().unwrap().node.id
-                        != target.as_ref().unwrap().node.id
-                    {
-                        return Ok(Some((
-                            remove_candidate.as_ref().unwrap().node.id,
-                            target.as_ref().unwrap().node.id,
-                        )));
-                    }
-                }
-                Ok(None)
-            }
-            MoveTarget::TransferLeader => {
-                let (target, existing) = self.best_balance_target(&mut balance_opts);
-                if let Some(target) = target {
-                    Ok(Some((existing.as_ref().unwrap().node.id, target.node.id)))
-                } else {
-                    Ok(None)
-                }
-            }
-        }
-    }
-
-    fn sim_remove_target(
-        &self,
-        policy: &(dyn BalancePolicy + Send + Sync + 'static),
-        _remove_node: u64,
-        replica_cands: Vec<&ReplicaDesc>,
-        exist_cands: Vec<&ReplicaDesc>,
-        other_replicas: Vec<&ReplicaDesc>,
-        within_voter: bool,
-    ) -> Result<Option<NodeCandidate>> {
-        let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
-        let candidate_nodes = replica_cands
-            .iter()
-            .map(|r| nodes.iter().find(|n| n.id == r.node_id).unwrap().to_owned())
-            .collect::<Vec<_>>();
-        if within_voter {
-            self.remove_target(
-                policy,
-                candidate_nodes,
-                exist_cands,
-                other_replicas,
-                within_voter,
-            )
-        } else {
-            unimplemented!()
-        }
-    }
-
-    fn remove_target(
-        &self,
-        policy: &(dyn BalancePolicy + Send + Sync + 'static),
-        candidate_nodes: Vec<NodeDesc>,
-        exist_cands: Vec<&ReplicaDesc>,
-        other_replicas: Vec<&ReplicaDesc>,
-        _within_voter: bool,
-    ) -> Result<Option<NodeCandidate>> {
-        assert!(!candidate_nodes.is_empty());
-        let mut candidates = Vec::new();
-        for n in &candidate_nodes {
-            let replica_cnt = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
-            candidates.push(NodeCandidate {
-                node: n.to_owned(),
-                disk_full: check_node_full(n),
-                balance_value: replica_cnt,
-                ..Default::default()
-            })
-        }
-        candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
-
-        let mut score_candidates = Vec::new();
-        for c in &candidates {
-            let mut c = c.to_owned();
-            (c.balance_score, c.converges_score) = policy.balance_score(&c, &candidates, true);
-            score_candidates.push(c);
-        }
-
-        score_candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
-        let worst_candidates = worst(&score_candidates);
-
-        let exist_replicas = {
-            let mut replicas = exist_cands.to_owned();
-            replicas.extend_from_slice(&other_replicas);
-            replicas
-        };
-
-        let bad_candidate = select_bad(&worst_candidates);
-        if let Some(bad_candidate) = bad_candidate {
-            for replica in exist_replicas {
-                if replica.node_id == bad_candidate.node.id {
-                    return Ok(Some(bad_candidate));
-                }
-            }
-        }
-
-        Ok(None)
     }
 
     /// Compute group change action.
@@ -884,6 +223,13 @@ impl<T: AllocSource> Allocator<T> {
         Ok(Vec::new())
     }
 
+    pub async fn compute_balance_action(
+        &self,
+        policy: &(dyn BalancePolicy + Send + Sync + 'static),
+    ) -> Result<Vec<GroupReplicaAction>> {
+        self.balancer.compute_balance_action(policy).await
+    }
+
     /// Allocate new replica in one group.
     pub async fn allocate_group_replica(
         &self,
@@ -897,7 +243,7 @@ impl<T: AllocSource> Allocator<T> {
         // skip the nodes already have group replicas.
         candidate_nodes.retain(|n| !existing_replica_nodes.iter().any(|rn| *rn == n.id));
 
-        let policy = ByReplicaCountPolicy::default();
+        let policy = ReplicaCountPolicy::default();
 
         let candidate_nodes = candidate_nodes
             .into_iter()

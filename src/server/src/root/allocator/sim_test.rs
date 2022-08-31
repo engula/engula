@@ -36,7 +36,7 @@ fn sim_boostrap_join_node_balance() {
         let d = Arc::new(OngoingStats::default());
         let a = Allocator::new(p.clone(), d.clone(), RootConfig::default());
 
-        let policy = ByReplicaCountPolicy::default();
+        let policy = ReplicaCountPolicy::default();
 
         println!("1. boostrap and no need rebalance");
         p.set_groups(vec![GroupDesc {
@@ -380,7 +380,7 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("10. try balance leader between nodes");
-        let policy = ByLeaderCountPolicy::default();
+        let policy = LeaderCountPolicy::default();
         loop {
             let lact = a.compute_balance_action(&policy).await.unwrap();
             if lact.is_empty() {
