@@ -688,6 +688,7 @@ impl Schema {
         cfg_cpu_nums: u32,
         cluster_id: Vec<u8>,
     ) -> Result<()> {
+        debug_assert_ne!(cfg_cpu_nums, 0);
         let _timer = super::metrics::BOOTSTRAP_DURATION_SECONDS.start_timer();
 
         if let Some(exist_cluster_id) = self.cluster_id().await? {
@@ -712,16 +713,11 @@ impl Schema {
             name: SYSTEM_DATABASE_NAME.to_owned(),
         });
 
-        let cpu_nums = if cfg_cpu_nums == 0 {
-            num_cpus::get() as f64
-        } else {
-            cfg_cpu_nums as f64
-        };
         batch.put_node(NodeDesc {
             id: FIRST_NODE_ID,
             addr: addr.into(),
             capacity: Some(NodeCapacity {
-                cpu_nums,
+                cpu_nums: cfg_cpu_nums as f64,
                 replica_count: 1,
                 leader_count: 0,
             }),
