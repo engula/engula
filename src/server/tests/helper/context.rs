@@ -22,7 +22,7 @@ use engula_server::{
 use tempdir::TempDir;
 use tracing::info;
 
-use super::client::node_client_with_retry;
+use super::{client::node_client_with_retry, socket::next_n_avail_port};
 use crate::helper::socket::next_avail_port;
 
 #[allow(dead_code)]
@@ -68,6 +68,13 @@ impl TestContext {
 
     pub fn next_listen_address(&self) -> String {
         format!("127.0.0.1:{}", next_avail_port())
+    }
+
+    pub fn next_n_listen_addrs(&self, n: usize) -> Vec<String> {
+        next_n_avail_port(n)
+            .into_iter()
+            .map(|port| format!("127.0.0.1:{port}"))
+            .collect()
     }
 
     pub fn mut_replica_testing_knobs(&mut self) -> &mut ReplicaTestingKnobs {
@@ -161,12 +168,12 @@ impl TestContext {
     /// Create a set of servers and bootstrap all of them.
     #[allow(dead_code)]
     pub async fn bootstrap_servers(&mut self, num_server: usize) -> HashMap<u64, String> {
-        let mut nodes = HashMap::new();
-        for i in 0..num_server {
-            let next_addr = self.next_listen_address();
-            let node_id = i as u64;
-            nodes.insert(node_id, next_addr);
-        }
+        let nodes = self
+            .next_n_listen_addrs(num_server)
+            .into_iter()
+            .enumerate()
+            .map(|(id, addr)| (id as u64, addr))
+            .collect::<HashMap<_, _>>();
         self.start_servers(nodes).await
     }
 

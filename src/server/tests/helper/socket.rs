@@ -18,16 +18,32 @@ use socket2::{Domain, Socket, Type};
 
 /// Find the next available port to listen on.
 pub fn next_avail_port() -> u16 {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
-    socket.set_reuse_address(true).unwrap();
-    socket.set_reuse_port(true).unwrap();
-    socket
-        .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
-        .unwrap();
-    socket
-        .local_addr()
-        .unwrap()
-        .as_socket_ipv4()
-        .unwrap()
-        .port()
+    next_n_avail_port(1)[0]
+}
+
+pub fn next_n_avail_port(n: usize) -> Vec<u16> {
+    #[allow(clippy::needless_collect)]
+    let sockets = (0..n)
+        .into_iter()
+        .map(|_| {
+            let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+            socket.set_reuse_address(true).unwrap();
+            socket.set_reuse_port(true).unwrap();
+            socket
+                .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
+                .unwrap();
+            socket
+        })
+        .collect::<Vec<_>>();
+    sockets
+        .into_iter()
+        .map(|socket| {
+            socket
+                .local_addr()
+                .unwrap()
+                .as_socket_ipv4()
+                .unwrap()
+                .port()
+        })
+        .collect()
 }

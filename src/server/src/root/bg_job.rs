@@ -159,6 +159,7 @@ impl Jobs {
                 return Err(crate::Error::ResourceExhausted("no engouth groups".into()));
             }
             let group = groups.first().unwrap();
+            info!("try create shard at group {}", group.id);
             if let Err(err) = self.try_create_shard(group.id, &shard).await {
                 error!(group=group.id, shard=shard.id, err=?err, "create collection shard error and try to rollback");
                 create_collection.remark = format!("{err:?}");
@@ -564,7 +565,7 @@ impl Jobs {
 
 impl Jobs {
     async fn try_create_shard(&self, group_id: u64, desc: &ShardDesc) -> Result<()> {
-        let mut group_client = GroupClient::new(
+        let mut group_client = GroupClient::lazy(
             group_id,
             self.core.root_shared.provider.router.clone(),
             self.core.root_shared.provider.conn_manager.clone(),
