@@ -183,13 +183,8 @@ async fn try_join_cluster(
         ));
     }
 
-    let cpu_nums = if cpu_nums == 0 {
-        num_cpus::get() as f64
-    } else {
-        cpu_nums as f64
-    };
     let capacity = NodeCapacity {
-        cpu_nums,
+        cpu_nums: cpu_nums as f64,
         ..Default::default()
     };
 

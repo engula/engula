@@ -70,7 +70,7 @@ impl StartCommand {
     fn run(self) -> Result<()> {
         use engula_server::runtime::{ExecutorOwner, ShutdownNotifier, TaskPriority};
 
-        let config = match load_config(&self) {
+        let mut config = match load_config(&self) {
             Ok(c) => c,
             Err(e) => {
                 return Err(Error::InvalidArgument(format!("Config: {e}")));
@@ -83,11 +83,15 @@ impl StartCommand {
             return Ok(());
         }
 
+        if config.cpu_nums == 0 {
+            config.cpu_nums = num_cpus::get() as u32;
+        }
+
         info!("{config:#?}");
 
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();
-        let owner = ExecutorOwner::new(num_cpus::get());
+        let owner = ExecutorOwner::new(config.cpu_nums as usize);
         let executor = owner.executor();
         executor.spawn(None, TaskPriority::Low, async move {
             notifier.ctrl_c().await;
