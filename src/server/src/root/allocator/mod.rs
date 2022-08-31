@@ -18,16 +18,16 @@ use engula_api::server::v1::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use self::{
-    policy_leader_cnt::LeaderCountPolicy, policy_shard_cnt::ShardCountPolicy, source::NodeFilter,
-};
+use self::{policy_shard_cnt::ShardCountPolicy, source::NodeFilter};
 use super::{metrics, OngoingStats, RootShared};
-use crate::{bootstrap::REPLICA_PER_GROUP, Result};
+use crate::{
+    bootstrap::{REPLICA_PER_GROUP, ROOT_GROUP_ID},
+    Result,
+};
 
 #[cfg(test)]
 mod sim_test;
 
-mod policy_leader_cnt;
 mod policy_shard_cnt;
 mod source;
 
@@ -58,17 +58,15 @@ pub enum ShardAction {
 
 #[derive(Clone, Debug)]
 pub enum LeaderAction {
-    Noop,
     Shed(TransferLeader),
 }
 
 #[derive(Debug, Clone)]
 pub struct TransferLeader {
     pub group: u64,
+    pub epoch: u64,
     pub src_node: u64,
-    pub src_replica: u64,
     pub target_node: u64,
-    pub target_replica: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -141,7 +139,7 @@ pub struct NodeCandidate {
     disk_full: bool,
     balance_score: f64,
     converges_score: f64,
-    replica_cnt: f64,
+    balance_value: f64,
 }
 
 impl NodeCandidate {
@@ -155,7 +153,7 @@ impl NodeCandidate {
 }
 
 fn score_compare_candidate(c: &NodeCandidate, o: &NodeCandidate) -> f64 {
-    // the greater value, the more suitable for `c` than `o` to be a memeber of current group.
+    // the greater value, the more suitable using `c` than `o`.
     if o.disk_full && !c.disk_full {
         return 3.0;
     }
@@ -174,8 +172,8 @@ fn score_compare_candidate(c: &NodeCandidate, o: &NodeCandidate) -> f64 {
         }
         return -(1.0 + ((o.balance_score - c.balance_score) / 10.0));
     }
-    let c_replica_count = c.replica_cnt;
-    let o_replica_count = o.replica_cnt;
+    let c_replica_count = c.balance_value;
+    let o_replica_count = o.balance_value;
 
     if c_replica_count == o_replica_count {
         return 0.0;
@@ -184,16 +182,6 @@ fn score_compare_candidate(c: &NodeCandidate, o: &NodeCandidate) -> f64 {
         return (o_replica_count - c_replica_count) as f64 / (o_replica_count as f64);
     }
     -((c_replica_count - o_replica_count) as f64 / c_replica_count as f64)
-}
-
-fn node_replica_count(ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
-    let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
-    let delta = ongoing_stats.get_node_delta(n.id);
-    cnt += delta.replica_count;
-    if cnt < 0 {
-        cnt = 0;
-    }
-    cnt as u64
 }
 
 impl Ord for NodeCandidate {
@@ -233,6 +221,11 @@ struct BalanceOption {
     candidates: Vec<NodeCandidate>,
 }
 
+pub enum MoveTarget {
+    MoveReplica,
+    TransferLeader,
+}
+
 pub trait BalancePolicy {
     fn should_balance(&self, rep: &PotentialReplacement) -> bool;
 
@@ -242,6 +235,38 @@ pub trait BalancePolicy {
         cands: &[NodeCandidate],
         from: bool,
     ) -> (f64 /* balance_score */, f64 /* converges_score */);
+
+    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64;
+
+    fn move_target(&self) -> MoveTarget;
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct ByLeaderCountPolicy {
+    count_policy: ByReplicaCountPolicy,
+}
+
+impl BalancePolicy for ByLeaderCountPolicy {
+    fn balance_value(&self, _ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
+        n.capacity.as_ref().unwrap().leader_count as u64
+    }
+
+    fn should_balance(&self, rep: &PotentialReplacement) -> bool {
+        self.count_policy.should_balance(rep)
+    }
+
+    fn balance_score(
+        &self,
+        node: &NodeCandidate,
+        cands: &[NodeCandidate],
+        from: bool,
+    ) -> (f64 /* balance_score */, f64 /* converges_score */) {
+        self.count_policy.balance_score(node, cands, from)
+    }
+
+    fn move_target(&self) -> MoveTarget {
+        MoveTarget::TransferLeader
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -252,8 +277,8 @@ impl BalancePolicy for ByReplicaCountPolicy {
         if rep.candidates.is_empty() {
             return false;
         }
-        let (mean, min, max) = self.replica_count_threshold(&rep.candidates);
-        let cnt = rep.existing.replica_cnt;
+        let (mean, min, max) = self.count_threshold(&rep.candidates);
+        let cnt = rep.existing.balance_value;
         if cnt > max {
             // balance if over max a lot.
             return true;
@@ -261,7 +286,7 @@ impl BalancePolicy for ByReplicaCountPolicy {
         if cnt > mean {
             // balance if over mean and others is underfull.
             for c in &rep.candidates {
-                let cand_cnt = c.replica_cnt;
+                let cand_cnt = c.balance_value;
                 if cand_cnt < min {
                     return true;
                 }
@@ -276,8 +301,8 @@ impl BalancePolicy for ByReplicaCountPolicy {
         cands: &[NodeCandidate],
         from: bool,
     ) -> (f64, f64) {
-        let current = node.replica_cnt;
-        let (mean, min, max) = self.replica_count_threshold(cands);
+        let current = node.balance_value;
+        let (mean, min, max) = self.count_threshold(cands);
         let mut balance_score = 0.0;
         if current < min {
             balance_score = 1.0;
@@ -286,17 +311,37 @@ impl BalancePolicy for ByReplicaCountPolicy {
             balance_score = -1.0;
         }
         let new_val = if from { current - 1.0 } else { current + 1.0 };
-        let converges_score = if f64::abs(new_val - mean) >= f64::abs(current - mean) {
+        let converges_score = if f64::abs(new_val - mean) < f64::abs(current - mean) {
+            if from {
+                0.0
+            } else {
+                1.0
+            }
+        } else if from {
             1.0
         } else {
             0.0
         };
         (balance_score, converges_score)
     }
+
+    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
+        let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
+        let delta = ongoing_stats.get_node_delta(n.id);
+        cnt += delta.replica_count;
+        if cnt < 0 {
+            cnt = 0;
+        }
+        cnt as u64
+    }
+
+    fn move_target(&self) -> MoveTarget {
+        MoveTarget::MoveReplica
+    }
 }
 
 impl ByReplicaCountPolicy {
-    fn replica_count_threshold(&self, cands: &[NodeCandidate]) -> (f64, f64, f64) {
+    fn count_threshold(&self, cands: &[NodeCandidate]) -> (f64, f64, f64) {
         const THRESHOLD_FRACTION: f64 = 0.05;
         const MIN_RANGE_DELTA: f64 = 2.0;
         let mean = self.mean_candidate_replica_count(cands);
@@ -308,7 +353,7 @@ impl ByReplicaCountPolicy {
         let total = cands
             .iter()
             .filter(|c| c.node.capacity.is_some())
-            .fold(0f64, |t, c| t + c.replica_cnt) as f64;
+            .fold(0f64, |t, c| t + c.balance_value) as f64;
         let cnt = cands.iter().filter(|c| c.node.capacity.is_some()).count() as f64;
         total / cnt
     }
@@ -347,6 +392,9 @@ impl<T: AllocSource> Allocator<T> {
         let mut gaction = Vec::new();
         let groups = self.alloc_source.groups();
         for (group_id, desc) in &groups {
+            if *group_id == ROOT_GROUP_ID {
+                continue;
+            }
             let in_joint_or_learner = desc.replicas.iter().any(|r| {
                 matches!(
                     ReplicaRole::from_i32(r.role).unwrap(),
@@ -502,13 +550,33 @@ impl<T: AllocSource> Allocator<T> {
             if disk_full {
                 require_transfer_from = true;
             }
-            let replica_cnt = node_replica_count(self.ongoing_stats.to_owned(), repl_node) as f64;
+            match policy.move_target() {
+                MoveTarget::MoveReplica => {}
+                MoveTarget::TransferLeader => {
+                    let r = group.replicas.iter().find(|r| r.node_id == repl_node.id);
+                    if r.is_none() {
+                        continue;
+                    }
+                    let rs = self.alloc_source.replica_state(&r.unwrap().id);
+                    if rs.is_none() {
+                        continue;
+                    }
+                    if !matches!(
+                        RaftRole::from_i32(rs.unwrap().role).unwrap(),
+                        RaftRole::Leader
+                    ) {
+                        continue;
+                    }
+                }
+            }
+            let balance_value =
+                policy.balance_value(self.ongoing_stats.to_owned(), repl_node) as f64;
             moveable_candidates.insert(
                 repl_node.id,
                 NodeCandidate {
                     node: repl_node.to_owned(),
                     disk_full,
-                    replica_cnt,
+                    balance_value,
                     ..Default::default()
                 },
             );
@@ -519,7 +587,6 @@ impl<T: AllocSource> Allocator<T> {
         // 2. the replace candidate couldn't be allocate in forbid allocate nodes
         // 3. the replace candidate should not be disk full
         let mut potential_replacements = Vec::new();
-        let mut require_transfer_to = false;
         for move_candidate in moveable_candidates.values() {
             let mut replace_candidates = Vec::new();
             for n in nodes
@@ -527,19 +594,23 @@ impl<T: AllocSource> Allocator<T> {
                 .filter(|n| move_candidate.node.id != n.id)
                 .filter(|n| !excluded_replicas.iter().any(|r| r.node_id == n.id))
             {
+                match policy.move_target() {
+                    MoveTarget::MoveReplica => {}
+                    MoveTarget::TransferLeader => {
+                        if !voters.iter().any(|v| v.node_id == n.id) {
+                            continue;
+                        }
+                    }
+                }
                 let disk_full = check_node_full(n);
-                let replica_cnt = node_replica_count(self.ongoing_stats.to_owned(), n) as f64;
+                let balance_value = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
                 let cand = NodeCandidate {
                     node: n.to_owned(),
                     disk_full,
-                    replica_cnt,
+                    balance_value,
                     ..Default::default()
                 };
                 if !cand.worse(move_candidate) {
-                    if !require_transfer_from && !require_transfer_to && move_candidate.worse(&cand)
-                    {
-                        require_transfer_to = true;
-                    }
                     // replace replica better or almost same to moveable replica.
                     replace_candidates.push(cand);
                 }
@@ -557,7 +628,7 @@ impl<T: AllocSource> Allocator<T> {
             }
         }
 
-        let mut need_balance = require_transfer_from || require_transfer_to;
+        let mut need_balance = require_transfer_from;
         if !need_balance {
             for rep in &potential_replacements {
                 if policy.should_balance(rep) {
@@ -578,15 +649,20 @@ impl<T: AllocSource> Allocator<T> {
                 .get(&potential_replacement.existing.node.id)
                 .unwrap()
                 .to_owned();
-            ex_cand.replica_cnt =
-                node_replica_count(self.ongoing_stats.to_owned(), &ex_cand.node) as f64;
+            ex_cand.balance_value =
+                policy.balance_value(self.ongoing_stats.to_owned(), &ex_cand.node) as f64;
             (ex_cand.balance_score, ex_cand.converges_score) =
                 policy.balance_score(&ex_cand, &potential_replacement.candidates, true);
 
             let mut candidates = Vec::new();
             for candidate_node in &potential_replacement.candidates {
-                if moveable_candidates.contains_key(&candidate_node.node.id) {
-                    continue;
+                match policy.move_target() {
+                    MoveTarget::MoveReplica => {
+                        if moveable_candidates.contains_key(&candidate_node.node.id) {
+                            continue;
+                        }
+                    }
+                    MoveTarget::TransferLeader => {}
                 }
                 let mut c = candidate_node.to_owned();
                 (c.balance_score, c.converges_score) =
@@ -619,47 +695,60 @@ impl<T: AllocSource> Allocator<T> {
             return Ok(None);
         }
 
-        // check the result of simulate remove after running options, and skip option if new-added
-        // replica be removed in next turn.
-        loop {
-            let (target, _existing) = self.best_balance_target(&mut balance_opts);
-            if target.is_none() {
-                break;
+        match policy.move_target() {
+            MoveTarget::MoveReplica => {
+                // check the result of simulate remove after running options, and skip option if
+                // new-added replica be removed in next turn.
+                loop {
+                    let (target, _existing) = self.best_balance_target(&mut balance_opts);
+                    if target.is_none() {
+                        break;
+                    }
+                    let mut exist_replica_candidates = replica_to_balance.to_owned();
+                    let fake_new_replica = ReplicaDesc {
+                        id: exist_replica_candidates.iter().map(|r| r.id).max().unwrap() + 1,
+                        node_id: target.as_ref().unwrap().node.id,
+                        ..Default::default()
+                    };
+                    exist_replica_candidates.push(&fake_new_replica);
+
+                    let replica_candidates = exist_replica_candidates.to_owned();
+
+                    // TODO: filter out out-of-date replicas from replica_candidates.
+
+                    let remove_candidate = self.sim_remove_target(
+                        policy,
+                        fake_new_replica.node_id,
+                        replica_candidates,
+                        exist_replica_candidates,
+                        other_replicas.to_owned(),
+                        within_voter,
+                    )?;
+
+                    if remove_candidate.is_none() {
+                        return Ok(None);
+                    }
+
+                    if remove_candidate.as_ref().unwrap().node.id
+                        != target.as_ref().unwrap().node.id
+                    {
+                        return Ok(Some((
+                            remove_candidate.as_ref().unwrap().node.id,
+                            target.as_ref().unwrap().node.id,
+                        )));
+                    }
+                }
+                Ok(None)
             }
-            let mut exist_replica_candidates = replica_to_balance.to_owned();
-            let fake_new_replica = ReplicaDesc {
-                id: exist_replica_candidates.iter().map(|r| r.id).max().unwrap() + 1,
-                node_id: target.as_ref().unwrap().node.id,
-                ..Default::default()
-            };
-            exist_replica_candidates.push(&fake_new_replica);
-
-            let replica_candidates = exist_replica_candidates.to_owned();
-
-            // TODO: filter out out-of-date replicas from replica_candidates.
-
-            let remove_candidate = self.sim_remove_target(
-                policy,
-                fake_new_replica.node_id,
-                replica_candidates,
-                exist_replica_candidates,
-                other_replicas.to_owned(),
-                within_voter,
-            )?;
-
-            if remove_candidate.is_none() {
-                return Ok(None);
-            }
-
-            if remove_candidate.as_ref().unwrap().node.id != target.as_ref().unwrap().node.id {
-                return Ok(Some((
-                    remove_candidate.as_ref().unwrap().node.id,
-                    target.as_ref().unwrap().node.id,
-                )));
+            MoveTarget::TransferLeader => {
+                let (target, existing) = self.best_balance_target(&mut balance_opts);
+                if let Some(target) = target {
+                    Ok(Some((existing.as_ref().unwrap().node.id, target.node.id)))
+                } else {
+                    Ok(None)
+                }
             }
         }
-
-        Ok(None)
     }
 
     fn sim_remove_target(
@@ -700,11 +789,11 @@ impl<T: AllocSource> Allocator<T> {
         assert!(!candidate_nodes.is_empty());
         let mut candidates = Vec::new();
         for n in &candidate_nodes {
-            let replica_cnt = node_replica_count(self.ongoing_stats.to_owned(), n) as f64;
+            let replica_cnt = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
             candidates.push(NodeCandidate {
                 node: n.to_owned(),
                 disk_full: check_node_full(n),
-                replica_cnt,
+                balance_value: replica_cnt,
                 ..Default::default()
             })
         }
@@ -716,8 +805,8 @@ impl<T: AllocSource> Allocator<T> {
             (c.balance_score, c.converges_score) = policy.balance_score(&c, &candidates, true);
             score_candidates.push(c);
         }
-        score_candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
 
+        score_candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
         let worst_candidates = worst(&score_candidates);
 
         let exist_replicas = {
@@ -808,17 +897,18 @@ impl<T: AllocSource> Allocator<T> {
         // skip the nodes already have group replicas.
         candidate_nodes.retain(|n| !existing_replica_nodes.iter().any(|rn| *rn == n.id));
 
+        let policy = ByReplicaCountPolicy::default();
+
         let candidate_nodes = candidate_nodes
             .into_iter()
             .map(|node| NodeCandidate {
                 node: node.to_owned(),
                 disk_full: check_node_full(&node),
-                replica_cnt: node_replica_count(self.ongoing_stats.to_owned(), &node) as f64,
+                balance_value: policy.balance_value(self.ongoing_stats.to_owned(), &node) as f64,
                 ..Default::default()
             })
             .collect::<Vec<_>>();
 
-        let policy = ByReplicaCountPolicy::default();
         let mut candidate_nodes = candidate_nodes
             .iter()
             .map(|n| {
@@ -827,7 +917,7 @@ impl<T: AllocSource> Allocator<T> {
                 NodeCandidate {
                     node: n.node.to_owned(),
                     disk_full: n.disk_full,
-                    replica_cnt: n.replica_cnt,
+                    balance_value: n.balance_value,
                     balance_score,
                     converges_score,
                 }
@@ -848,18 +938,6 @@ impl<T: AllocSource> Allocator<T> {
         self.alloc_source.refresh_all().await?;
 
         ShardCountPolicy::with(self.alloc_source.to_owned()).allocate_shard(n)
-    }
-
-    pub async fn compute_leader_action(&self) -> Result<Vec<LeaderAction>> {
-        if !self.config.enable_leader_balance {
-            return Ok(vec![]);
-        }
-        self.alloc_source.refresh_all().await?;
-        match LeaderCountPolicy::with(self.alloc_source.to_owned()).compute_balance()? {
-            LeaderAction::Noop => {}
-            e @ LeaderAction::Shed { .. } => return Ok(vec![e]),
-        }
-        Ok(Vec::new())
     }
 }
 
@@ -927,7 +1005,9 @@ fn best(replace_candidates: &[NodeCandidate]) -> Vec<NodeCandidate> {
 }
 
 fn select_good(cands: &[NodeCandidate]) -> Option<NodeCandidate> {
-    let bests = best(cands);
+    let mut cands = cands.to_owned();
+    cands.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
+    let bests = best(&cands);
     if bests.is_empty() {
         return None;
     }
@@ -984,7 +1064,9 @@ fn worst(candidates: &[NodeCandidate]) -> Vec<NodeCandidate> {
 }
 
 fn select_bad(candidates: &[NodeCandidate]) -> Option<NodeCandidate> {
-    let candidates = worst(candidates);
+    let mut cands = candidates.to_owned();
+    cands.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
+    let candidates = worst(&cands);
     if candidates.is_empty() {
         return None;
     }

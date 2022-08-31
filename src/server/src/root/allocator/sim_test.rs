@@ -380,20 +380,31 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("10. try balance leader between nodes");
+        let policy = ByLeaderCountPolicy::default();
         loop {
-            let lact = a.compute_leader_action().await.unwrap();
+            let lact = a.compute_balance_action(&policy).await.unwrap();
             if lact.is_empty() {
                 break;
             }
+            let lact = lact
+                .iter()
+                .map(|act| {
+                    LeaderAction::Shed(TransferLeader {
+                        group: act.group_id,
+                        src_node: act.source_node,
+                        target_node: act.dest_node,
+                        epoch: act.epoch,
+                    })
+                })
+                .collect::<Vec<_>>();
             for act in &lact {
                 match act {
-                    LeaderAction::Noop => unreachable!(),
                     LeaderAction::Shed(action) => {
                         println!(
                             "transfer group {} leader from {} to {}",
                             action.group, action.src_node, action.target_node,
                         );
-                        p.transfer_leader(action.src_replica, action.target_replica);
+                        p.transfer_leader(action.group, action.src_node, action.target_node);
                     }
                 }
             }
@@ -558,19 +569,30 @@ impl MockInfoProvider {
         for replica in group.replicas.iter_mut() {
             if replica.node_id == src_node {
                 replica.node_id = dest_node;
+                let mut states = self.replica_states();
+                for state in states.iter_mut() {
+                    if state.replica_id == replica.id {
+                        state.node_id = dest_node;
+                        break;
+                    }
+                }
+                self.set_replica_states(states);
                 break;
             }
         }
         self.set_groups(groups.values().map(ToOwned::to_owned).collect());
     }
 
-    pub fn transfer_leader(&self, src_replica: u64, desc_replica: u64) {
+    pub fn transfer_leader(&self, group: u64, src_node: u64, dest_node: u64) {
         let mut states = self.replica_states();
         for state in states.iter_mut() {
-            if state.replica_id == src_replica {
+            if state.group_id != group {
+                continue;
+            }
+            if state.node_id == src_node {
                 state.role = RaftRole::Follower.into();
             }
-            if state.replica_id == desc_replica {
+            if state.node_id == dest_node {
                 state.role = RaftRole::Leader.into();
             }
         }

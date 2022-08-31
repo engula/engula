@@ -148,7 +148,7 @@ impl ReconcileScheduler {
                             task: Some(reconcile_task::Task::TransferGroupLeader(
                                 TransferGroupLeaderTask {
                                     group: action.group,
-                                    target_replica: action.target_replica,
+                                    epoch: action.epoch,
                                     src_node: action.src_node,
                                     dest_node: action.target_node,
                                 },
@@ -156,7 +156,6 @@ impl ReconcileScheduler {
                         })
                         .await;
                     }
-                    _ => {}
                 }
             }
 
@@ -182,10 +181,14 @@ impl ReconcileScheduler {
     pub async fn comput_replica_role_action(&self) -> Result<Vec<ReplicaRoleAction>> {
         let mut actions = Vec::new();
 
-        let cnt_policy = ByReplicaCountPolicy::default();
-
-        let balance_actions = self.ctx.alloc.compute_balance_action(&cnt_policy).await?;
-        if balance_actions.is_empty() {
+        let mv_repl_action = {
+            let repl_cnt_policy = ByReplicaCountPolicy::default();
+            self.ctx
+                .alloc
+                .compute_balance_action(&repl_cnt_policy)
+                .await?
+        };
+        if mv_repl_action.is_empty() {
             metrics::RECONCILE_ALREADY_BALANCED_INFO
                 .node_replica_count
                 .set(1);
@@ -195,7 +198,7 @@ impl ReconcileScheduler {
                 .set(0);
         }
         actions.extend_from_slice(
-            &balance_actions
+            &mv_repl_action
                 .iter()
                 .map(|a| {
                     ReplicaRoleAction::Replica(ReplicaAction::Migrate(ReallocateReplica {
@@ -207,7 +210,14 @@ impl ReconcileScheduler {
                 })
                 .collect::<Vec<_>>(),
         );
-        let leader_actions = self.ctx.alloc.compute_leader_action().await?;
+
+        let leader_actions = {
+            let leader_policy = ByLeaderCountPolicy::default();
+            self.ctx
+                .alloc
+                .compute_balance_action(&leader_policy)
+                .await?
+        };
         if leader_actions.is_empty() {
             metrics::RECONCILE_ALREADY_BALANCED_INFO
                 .node_leader_count
@@ -220,8 +230,14 @@ impl ReconcileScheduler {
         actions.extend_from_slice(
             &leader_actions
                 .iter()
-                .cloned()
-                .map(ReplicaRoleAction::Leader)
+                .map(|act| {
+                    ReplicaRoleAction::Leader(LeaderAction::Shed(TransferLeader {
+                        group: act.group_id,
+                        src_node: act.source_node,
+                        target_node: act.dest_node,
+                        epoch: act.epoch,
+                    }))
+                })
                 .collect::<Vec<_>>(),
         );
         Ok(actions)
@@ -488,17 +504,41 @@ impl ScheduleContext {
         bool, /* ack current */
         bool, /* immediately step next tick */
     )> {
+        let schema = self.shared.schema()?;
+        let group_desc = schema.get_group(task.group).await?;
+        if group_desc.is_none() {
+            warn!(
+                group = task.group,
+                epoch = task.epoch,
+                "transfer group not found, abort transfer task"
+            );
+            return Ok((true, false));
+        }
+        let target_replica = group_desc
+            .as_ref()
+            .unwrap()
+            .replicas
+            .iter()
+            .find(|r| r.node_id == task.dest_node);
+        if target_replica.is_none() {
+            warn!(
+                group = task.group,
+                epoch = task.epoch,
+                "transfer target replica not found, abort transfer task"
+            );
+            return Ok((true, false));
+        }
         match self
-            .try_transfer_leader(task.group, task.target_replica)
+            .try_transfer_leader(task.group, target_replica.as_ref().unwrap().id)
             .await
         {
             Ok(_) => {}
             Err(crate::Error::EpochNotMatch(new_group)) => {
-                warn!(group = task.group, dest_replica = task.target_replica, new_group = ?&new_group, "transfer target meet epoch not match, abort transfer task");
+                warn!(group = task.group, epoch = task.epoch, new_group = ?&new_group, "transfer target meet epoch not match, abort transfer task");
                 return Ok((true, false));
             }
             Err(err) => {
-                error!(group = task.group, dest_replica = task.target_replica, err = ?&err, "transfer group leader fail");
+                error!(group = task.group, epoch = task.epoch, err = ?&err, "transfer group leader fail");
                 return Err(err);
             }
         }
