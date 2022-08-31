@@ -28,7 +28,7 @@ use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use self::worker::RaftWorker;
 pub use self::{
@@ -194,10 +194,12 @@ fn start_purging_expired_files(executor: &Executor, engine: Arc<raft_engine::Eng
             crate::runtime::time::sleep(Duration::from_secs(10)).await;
             match engine.purge_expired_files() {
                 Err(e) => {
-                    warn!("purge expired files: {e:?}")
+                    warn!("raft engine purge expired files: {e:?}")
                 }
                 Ok(replicas) => {
-                    info!("purge expired files, old group {replicas:?}")
+                    if !replicas.is_empty() {
+                        debug!("raft engine purge expired files, replicas {replicas:?} is too old")
+                    }
                 }
             }
         }
