@@ -155,7 +155,7 @@ impl NodeCandidate {
 }
 
 fn score_compare_candidate(c: &NodeCandidate, o: &NodeCandidate) -> f64 {
-    // the greater value, the more suitable for `c` than `o` to be a memeber of current node.
+    // the greater value, the more suitable for `c` than `o` to be a memeber of current group.
     if o.disk_full && !c.disk_full {
         return 3.0;
     }
