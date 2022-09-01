@@ -384,36 +384,63 @@ impl ScheduleContext {
         }
         let group_desc = group_desc.unwrap();
 
-        let src_replica = group_desc
+        let target_replica = group_desc
             .replicas
             .iter()
-            .find(|r| r.node_id == task.src_node);
-        if src_replica.is_none() {
+            .find(|r| r.node_id == task.dest_node);
+        if target_replica.is_none() {
             warn!(
                 group = group,
-                src_node = task.src_node,
-                "source replica not found abort reallocate replica task."
+                dest_node = task.dest_node,
+                "target replica not found abort reallocate replica task."
             );
             return Ok((true, false));
         }
+        let target_replica = target_replica.unwrap();
 
-        let replica = src_replica.unwrap();
-        let r = self.try_shed_leader_before_remove(group, replica.id).await;
-        match r {
-            Ok(_) => {}
-            Err(crate::Error::AbortScheduleTask(_)) => return Ok((true, false)),
-            Err(crate::Error::EpochNotMatch(new_group)) => {
-                warn!(group = group, replica = replica.id, new_group = ?new_group, "shed leader meet epoch not match, abort task and retry allocator");
-                return Ok((true, false));
+        let mut leader_state = None;
+        for repl in &group_desc.replicas {
+            if let Some(replica_state) = schema.get_replica_state(group_desc.id, repl.id).await? {
+                if matches!(
+                    RaftRole::from_i32(replica_state.role).unwrap(),
+                    RaftRole::Leader
+                ) {
+                    leader_state = Some(replica_state);
+                    break;
+                }
             }
-            Err(err) => {
-                warn!(group = group, replica = replica.id, err = ?err, "shed leader in source replica fail, retry in next tick");
-                metrics::RECONCILE_RETRYL_TASK_TOTAL
-                    .reallocate_replica
-                    .inc();
-                return Err(err);
-            }
-        };
+        }
+        if leader_state.is_none() {
+            return Err(crate::Error::AbortScheduleTask(
+                "shed leader replica cancelled due to no group leader",
+            ));
+        }
+        let leader_state = leader_state.unwrap();
+
+        if leader_state.node_id == task.src_node {
+            let r = self
+                .try_shed_leader_before_remove(
+                    group_desc.to_owned(),
+                    leader_state.to_owned(),
+                    target_replica.id,
+                )
+                .await;
+            match r {
+                Ok(_) => {}
+                Err(crate::Error::AbortScheduleTask(_)) => return Ok((true, false)),
+                Err(crate::Error::EpochNotMatch(new_group)) => {
+                    warn!(group = group, replica = target_replica.id, new_group = ?new_group, "shed leader meet epoch not match, abort task and retry allocator");
+                    return Ok((true, false));
+                }
+                Err(err) => {
+                    warn!(group = group, replica = target_replica.id, err = ?err, "shed leader in source replica fail, retry in next tick");
+                    metrics::RECONCILE_RETRYL_TASK_TOTAL
+                        .reallocate_replica
+                        .inc();
+                    return Err(err);
+                }
+            };
+        }
 
         info!(
             group = group,
@@ -424,13 +451,14 @@ impl ScheduleContext {
         let next_replica = schema.next_replica_id().await?;
         match self
             .try_move_replica(
-                group,
+                group_desc.to_owned(),
+                (leader_state.replica_id, leader_state.term),
                 ReplicaDesc {
                     id: next_replica,
                     node_id: task.dest_node,
                     role: ReplicaRole::Voter as i32,
                 },
-                src_replica.unwrap().to_owned(),
+                target_replica.to_owned(),
             )
             .await
         {
@@ -720,60 +748,43 @@ impl ScheduleContext {
 impl ScheduleContext {
     async fn try_shed_leader_before_remove(
         &self,
-        group_id: u64,
-        remove_replica: u64,
+        group: GroupDesc,
+        leader_state: ReplicaState,
+        target_replica: u64,
     ) -> Result<()> {
-        let schema = self.shared.schema()?;
-
-        let leader_state = schema
-            .get_replica_state(group_id, remove_replica)
-            .await?
-            .ok_or(crate::Error::AbortScheduleTask(
-                "shed leader replica has be destroyed",
-            ))?;
-
-        if leader_state.role != RaftRole::Leader as i32 {
-            return Ok(());
-        }
-
-        let group = schema
-            .get_group(group_id)
-            .await?
-            .ok_or(crate::Error::AbortScheduleTask(
-                "shed leader group has be destroyed",
-            ))?;
-        if let Some(target_replica) = group
-            .to_owned()
-            .replicas
-            .iter()
-            .find(|e| e.id != remove_replica)
-        {
-            // TODO: find least-leader node.
-            info!(
-                group = group.id,
-                replica = remove_replica,
-                "attempt remove leader replica, so transfer leader to {} in node {}",
-                target_replica.id,
-                target_replica.node_id,
-            );
-            self.try_transfer_leader(
-                group,
-                (leader_state.replica_id, leader_state.term),
-                target_replica.id,
-            )
-            .await?;
-        }
+        info!(
+            group = group.id,
+            replica = target_replica,
+            "attempt remove leader replica, so transfer leader to {}",
+            target_replica,
+        );
+        self.try_transfer_leader(
+            group,
+            (leader_state.replica_id, leader_state.term),
+            target_replica,
+        )
+        .await?;
         Ok(())
     }
 
     async fn try_move_replica(
         &self,
-        group: u64,
+        group: GroupDesc,
+        leader_state: (u64 /* id */, u64 /* term */),
         incoming_replica: ReplicaDesc,
         outgoing_replica: ReplicaDesc,
     ) -> Result<ScheduleState> {
-        let mut group_client = GroupClient::lazy(
-            group,
+        let mut group_client = GroupClient::new(
+            RouterGroupState {
+                id: group.id,
+                epoch: group.epoch,
+                leader_state: Some(leader_state),
+                replicas: group
+                    .replicas
+                    .iter()
+                    .map(|g| (g.id, g.to_owned()))
+                    .collect::<HashMap<_, _>>(),
+            },
             self.shared.provider.router.clone(),
             self.shared.provider.conn_manager.clone(),
         );
