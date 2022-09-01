@@ -425,9 +425,7 @@ impl ScheduleContext {
                 }
                 Err(err) => {
                     warn!(group = group, replica = transferee.id, err = ?err, "shed leader in source replica fail, retry in next tick");
-                    metrics::RECONCILE_RETRYL_TASK_TOTAL
-                        .reallocate_replica
-                        .inc();
+                    metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc();
                     return Err(err);
                 }
             };
