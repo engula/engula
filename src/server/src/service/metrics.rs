@@ -61,7 +61,8 @@ lazy_static! {
         register_histogram_vec!(
             "node_service_group_request_duration_seconds",
             "The intervals of group requests of node service",
-            &["type"]
+            &["type"],
+            exponential_buckets(0.00005, 1.8, 26).unwrap(),
         )
         .unwrap();
     pub static ref NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS: GroupRequestDuration =
@@ -131,6 +132,7 @@ lazy_static! {
     pub static ref NODE_SERVICE_BATCH_REQUEST_DURATION_SECONDS: Histogram = register_histogram!(
         "node_service_batch_request_duration_seconds",
         "The intervals of batch requests of node service",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
 }
@@ -154,6 +156,7 @@ macro_rules! simple_node_method {
                     register_histogram!(
                         concat!("node_service_", stringify!($name), "_request_duration_seconds"),
                         concat!("The intervals of ", stringify!($name), " requests of node service"),
+                        exponential_buckets(0.00005, 1.8, 26).unwrap(),
                     )
                     .unwrap();
             }
@@ -187,6 +190,7 @@ macro_rules! simple_root_method {
                     register_histogram!(
                         concat!("root_service_", stringify!($name), "_request_duration_seconds"),
                         concat!("The intervals of ", stringify!($name), " requests of root service"),
+                        exponential_buckets(0.00005, 1.8, 26).unwrap(),
                     )
                     .unwrap();
             }
@@ -219,6 +223,7 @@ lazy_static! {
     pub static ref RAFT_SERVICE_MSG_BATCH_SIZE: Histogram = register_histogram!(
         "raft_service_msg_batch_size",
         "The batch size of msg requests of raft service",
+        exponential_buckets(1.0, 1.8, 22).unwrap(),
     )
     .unwrap();
 }
@@ -252,9 +257,10 @@ lazy_static! {
         DatabaseRequestTotal::from(&*PROXY_SERVICE_DATABASE_REQUEST_TOTAL_VEC);
     pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
-            "database_service_database_request_duration_seconds",
+            "proxy_service_database_request_duration_seconds",
             "The intervals of database requests of proxy service",
-            &["type"]
+            &["type"],
+            exponential_buckets(0.00005, 1.8, 26).unwrap(),
         )
         .unwrap();
     pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS: DatabaseRequestDuration =

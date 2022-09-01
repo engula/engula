@@ -252,19 +252,19 @@ impl ReconcileScheduler {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL
                     .reallocate_replica
                     .inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                metrics::RECONCILE_HANDLE_TASK_DURATION_SECONDS
                     .reallocate_replica
                     .start_timer()
             }
             Task::MigrateShard(_) => {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL.migrate_shard.inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                metrics::RECONCILE_HANDLE_TASK_DURATION_SECONDS
                     .migrate_shard
                     .start_timer()
             }
             Task::TransferGroupLeader(_) => {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL.transfer_leader.inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                metrics::RECONCILE_HANDLE_TASK_DURATION_SECONDS
                     .transfer_leader
                     .start_timer()
             }
@@ -272,13 +272,13 @@ impl ReconcileScheduler {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL
                     .shed_group_leaders
                     .inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                metrics::RECONCILE_HANDLE_TASK_DURATION_SECONDS
                     .shed_group_leaders
                     .start_timer()
             }
             Task::ShedRoot(_) => {
                 metrics::RECONCILE_HANDLE_TASK_TOTAL.shed_root_leader.inc();
-                metrics::RECONCILE_HANDL_TASK_DURATION_SECONDS
+                metrics::RECONCILE_HANDLE_TASK_DURATION_SECONDS
                     .shed_root_leader
                     .start_timer()
             }
@@ -287,17 +287,17 @@ impl ReconcileScheduler {
 
     fn record_retry(task: &mut ReconcileTask) {
         match task.task.as_ref().unwrap() {
-            Task::ReallocateReplica(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL
+            Task::ReallocateReplica(_) => metrics::RECONCILE_RETRY_TASK_TOTAL
                 .reallocate_replica
                 .inc(),
-            Task::MigrateShard(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL.migrate_shard.inc(),
+            Task::MigrateShard(_) => metrics::RECONCILE_RETRY_TASK_TOTAL.migrate_shard.inc(),
             Task::TransferGroupLeader(_) => {
-                metrics::RECONCILE_RETRYL_TASK_TOTAL.transfer_leader.inc()
+                metrics::RECONCILE_RETRY_TASK_TOTAL.transfer_leader.inc()
             }
-            Task::ShedLeader(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL
+            Task::ShedLeader(_) => metrics::RECONCILE_RETRY_TASK_TOTAL
                 .shed_group_leaders
                 .inc(),
-            Task::ShedRoot(_) => metrics::RECONCILE_RETRYL_TASK_TOTAL.shed_root_leader.inc(),
+            Task::ShedRoot(_) => metrics::RECONCILE_RETRY_TASK_TOTAL.shed_root_leader.inc(),
         }
     }
 }
@@ -363,7 +363,7 @@ impl ScheduleContext {
             }
             Err(err) => {
                 warn!(group = group, replica = replica, err = ?err, "shed leader in source replica fail, retry in next tick");
-                metrics::RECONCILE_RETRYL_TASK_TOTAL
+                metrics::RECONCILE_RETRY_TASK_TOTAL
                     .reallocate_replica
                     .inc();
                 return Err(err);
@@ -435,7 +435,7 @@ impl ScheduleContext {
                     err = ?err,
                     "move replica meet error and retry later"
                 );
-                metrics::RECONCILE_RETRYL_TASK_TOTAL
+                metrics::RECONCILE_RETRY_TASK_TOTAL
                     .reallocate_replica
                     .inc();
                 Err(err)
@@ -579,7 +579,7 @@ impl ScheduleContext {
                             src_replica = replica.replica_id,
                             "shed leader from node fail due to no suitable target replica."
                         );
-                        metrics::RECONCILE_RETRYL_TASK_TOTAL
+                        metrics::RECONCILE_RETRY_TASK_TOTAL
                             .shed_group_leaders
                             .inc();
                     }

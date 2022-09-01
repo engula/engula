@@ -67,7 +67,8 @@ lazy_static! {
     pub static ref RAFTGROUP_PROPOSE_DURATION_SECONDS_VEC: HistogramVec = register_histogram_vec!(
         "raftgroup_propose_duration_seconds",
         "The intervals of propose of raftgroup",
-        &["type"]
+        &["type"],
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
     )
     .unwrap();
     pub static ref RAFTGROUP_PROPOSE_DURATION_SECONDS: ProposeDuration =
@@ -88,7 +89,8 @@ lazy_static! {
     pub static ref RAFTGROUP_READ_DURATION_SECONDS_VEC: HistogramVec = register_histogram_vec!(
         "raftgroup_read_duration_seconds",
         "The intervals of read of raftgroup",
-        &["type"]
+        &["type"],
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
     )
     .unwrap();
     pub static ref RAFTGROUP_READ_DURATION_SECONDS: ReadDuration =
@@ -140,6 +142,7 @@ lazy_static! {
     pub static ref RAFTGROUP_DOWNLOAD_SNAPSHOT_DURATION_SECONDS: Histogram = register_histogram!(
         "raftgroup_download_snapshot_duration_seconds",
         "The intervals of download snapshot of raftgroup",
+        exponential_buckets(0.005, 1.8, 22).unwrap(),
     )
     .unwrap();
 }
@@ -153,6 +156,7 @@ lazy_static! {
     pub static ref RAFTGROUP_APPLY_SNAPSHOT_DURATION_SECONDS: Histogram = register_histogram!(
         "raftgroup_apply_snapshot_duration_seconds",
         "The intervals of apply snapshot of raftgroup",
+        exponential_buckets(0.005, 1.8, 22).unwrap(),
     )
     .unwrap();
 }
@@ -166,6 +170,7 @@ lazy_static! {
     pub static ref RAFTGROUP_CREATE_SNAPSHOT_DURATION_SECONDS: Histogram = register_histogram!(
         "raftgroup_create_snapshot_duration_seconds",
         "The intervals of create snapshot of raftgroup",
+        exponential_buckets(0.005, 1.8, 22).unwrap(),
     )
     .unwrap();
 }

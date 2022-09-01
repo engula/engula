@@ -175,6 +175,17 @@ def vector_duration_seconds(title, metric, *group):
     return raw_histogram(title, metric, SECONDS_FORMAT, *group)
 
 
+def proxy_service_db_panels():
+    return row_panels(
+        "Proxy services - DB",
+        vector_total("request qps", "proxy_service_database_request_total",
+                     "type"),
+        vector_duration_seconds("request duration",
+                                "proxy_service_database_request_duration_seconds",
+                                "type"),
+    )
+
+
 def node_service_batch_panels():
     return row_panels(
         "Node services - Batch",
@@ -372,7 +383,7 @@ def root_reconcile_panels():
     )
 
 
-def root_hearbeart_report_panels():
+def root_hearbeat_report_panels():
     return row_panels(
         "Root - Hearbeat Report",
         simple_duration_seconds("root heartbeat per tick duration",
@@ -400,6 +411,7 @@ dashboard = Dashboard(
     tags=['engula', 'server'],
     timezone="browser",
     panels=[
+        proxy_service_db_panels(),
         node_service_batch_panels(),
         node_service_shard_migration_panels(),
         node_service_metadata_panels(),
@@ -411,7 +423,7 @@ dashboard = Dashboard(
         root_cluster_overview_panels(),
         root_service_panels(),
         root_reconcile_panels(),
-        root_hearbeart_report_panels(),
+        root_hearbeat_report_panels(),
         root_misc_panels(),
     ],
 ).auto_panel_ids()
