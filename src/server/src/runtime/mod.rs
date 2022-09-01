@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+mod metrics;
 mod shutdown;
 pub mod sync;
 pub mod time;
@@ -21,8 +22,10 @@ use std::{
     task::{Context, Poll},
 };
 
+use serde::{Deserialize, Serialize};
 pub use tokio::select;
 
+use self::metrics::*;
 pub use self::shutdown::{Shutdown, ShutdownNotifier};
 
 #[derive(Debug)]
@@ -33,6 +36,12 @@ pub enum TaskPriority {
     Low,
     IoLow,
     IoHigh,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ExecutorConfig {
+    pub event_interval: Option<u32>,
+    pub global_event_interval: Option<u32>,
 }
 
 /// A handle that awaits the result of a task.
@@ -60,10 +69,22 @@ where
 impl ExecutorOwner {
     /// New executor and setup the underlying threads, scheduler.
     pub fn new(num_threads: usize) -> Self {
+        Self::with_config(num_threads, ExecutorConfig::default())
+    }
+
+    pub fn with_config(num_threads: usize, cfg: ExecutorConfig) -> Self {
         use tokio::runtime::Builder;
         let runtime = Builder::new_multi_thread()
             .worker_threads(num_threads)
             .enable_all()
+            .event_interval(cfg.event_interval.unwrap_or(61))
+            .global_queue_interval(cfg.global_event_interval.unwrap_or(64))
+            .on_thread_park(|| {
+                EXECUTOR_PARK_TOTAL.inc();
+            })
+            .on_thread_unpark(|| {
+                EXECUTOR_UNPARK_TOTAL.inc();
+            })
             .build()
             .expect("build tokio runtime");
         ExecutorOwner { runtime }
@@ -94,8 +115,7 @@ impl Executor {
     {
         // TODO(walter) support per thread task set.
         let _ = tag;
-        let _ = priority;
-
+        take_spawn_metrics(priority);
         let inner = self.handle.spawn(future);
         JoinHandle { inner }
     }

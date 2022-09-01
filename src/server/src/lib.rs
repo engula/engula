@@ -33,7 +33,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use engula_client::{ConnManager, RootClient, Router};
 use node::{resolver::AddressResolver, StateEngine};
-use runtime::Executor;
+use runtime::{Executor, ExecutorConfig};
 use serde::{Deserialize, Serialize};
 use tonic::async_trait;
 
@@ -69,6 +69,9 @@ pub struct Config {
 
     #[serde(default)]
     pub root: RootConfig,
+
+    #[serde(default)]
+    pub executor: ExecutorConfig,
 }
 
 pub(crate) struct Provider {
