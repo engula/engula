@@ -123,13 +123,13 @@ pub trait BalancePolicy {
 }
 
 #[derive(Clone)]
-pub struct GroupReplicaBalancer<T: AllocSource> {
+pub struct NodeBalancer<T: AllocSource> {
     alloc_source: Arc<T>,
     ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
 }
 
-impl<T: AllocSource> GroupReplicaBalancer<T> {
+impl<T: AllocSource> NodeBalancer<T> {
     pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
         Self {
             alloc_source,
@@ -139,11 +139,11 @@ impl<T: AllocSource> GroupReplicaBalancer<T> {
     }
 }
 
-impl<T: AllocSource> GroupReplicaBalancer<T> {
+impl<T: AllocSource> NodeBalancer<T> {
     pub async fn compute_balance_action(
         &self,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
-    ) -> Result<Vec<GroupReplicaAction>> {
+    ) -> Result<Vec<NodeBalanceAction>> {
         if !self.config.enable_replica_balance {
             return Ok(vec![]);
         }
@@ -172,7 +172,7 @@ impl<T: AllocSource> GroupReplicaBalancer<T> {
                 continue;
             }
             let (source_node, dest_node) = balance_opts.take().unwrap();
-            gaction.push(GroupReplicaAction {
+            gaction.push(NodeBalanceAction {
                 group_id: group_id.to_owned(),
                 epoch: desc.epoch,
                 source_node,

@@ -89,10 +89,6 @@ impl TestContext {
         self.root_cfg.enable_replica_balance = false;
     }
 
-    pub fn disable_leader_balance(&mut self) {
-        self.root_cfg.enable_leader_balance = false;
-    }
-
     pub fn disable_shard_balance(&mut self) {
         self.root_cfg.enable_shard_balance = false;
     }
@@ -103,7 +99,6 @@ impl TestContext {
 
     pub fn disable_all_balance(&mut self) {
         self.disable_replica_balance();
-        self.disable_leader_balance();
         self.disable_shard_balance();
         self.disable_group_balance();
     }

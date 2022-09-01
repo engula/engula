@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{replica_balancer::*, *};
+use super::{node_balancer::*, *};
 
 #[derive(Clone, Copy, Default)]
 pub struct ReplicaCountPolicy {}

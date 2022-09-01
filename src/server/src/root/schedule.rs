@@ -15,7 +15,7 @@
 use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
-use engula_client::GroupClient;
+use engula_client::{GroupClient, RouterGroupState};
 use prometheus::HistogramTimer;
 use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
@@ -355,9 +355,8 @@ impl ScheduleContext {
             Task::ReallocateReplica(reallocate_replica) => {
                 self.handle_reallocate_replica(reallocate_replica).await
             }
-            Task::MigrateShard(migrate_shard) => self.handle_migrate_shard(migrate_shard).await, /* atomic */
+            Task::MigrateShard(migrate_shard) => self.handle_migrate_shard(migrate_shard).await,
             Task::TransferGroupLeader(transfer_leader) => {
-                // atomic
                 self.handle_transfer_leader(transfer_leader).await
             }
             Task::ShedLeader(shed_leader) => self.handle_shed_leader(shed_leader).await,
@@ -514,11 +513,42 @@ impl ScheduleContext {
             );
             return Ok((true, false));
         }
-        let target_replica = group_desc
-            .as_ref()
-            .unwrap()
+        let group_desc = group_desc.unwrap();
+        if group_desc.epoch != task.epoch {
+            warn!(
+                group = task.group,
+                "transfer group meet epoch not match, abort transfer task"
+            );
+            return Ok((true, false));
+        }
+        let leader_replica = group_desc
             .replicas
             .iter()
+            .find(|r| r.node_id == task.src_node);
+        if leader_replica.is_none() {
+            warn!(
+                group = task.group,
+                epoch = task.epoch,
+                "transfer src replica not found, abort transfer task"
+            );
+            return Ok((true, false));
+        }
+        let leader_state = schema
+            .get_replica_state(task.group, leader_replica.as_ref().unwrap().id)
+            .await?;
+        if leader_state.is_none() {
+            warn!(
+                group = task.group,
+                epoch = task.epoch,
+                "transfer src replica not found, abort transfer task"
+            );
+            return Ok((true, false));
+        }
+        let replica_state = leader_state.unwrap();
+        let target_replica = group_desc
+            .replicas
+            .iter()
+            .cloned()
             .find(|r| r.node_id == task.dest_node);
         if target_replica.is_none() {
             warn!(
@@ -529,7 +559,11 @@ impl ScheduleContext {
             return Ok((true, false));
         }
         match self
-            .try_transfer_leader(task.group, target_replica.as_ref().unwrap().id)
+            .try_transfer_leader(
+                group_desc,
+                (replica_state.replica_id, replica_state.term),
+                target_replica.as_ref().unwrap().id,
+            )
             .await
         {
             Ok(_) => {}
@@ -576,7 +610,7 @@ impl ScheduleContext {
                 }
             }
 
-            let leader_replicas = schema
+            let leader_states = schema
                 .list_replica_state()
                 .await?
                 .into_iter()
@@ -585,7 +619,7 @@ impl ScheduleContext {
 
             // exit when all leader move-out
             // also change node status to Drained
-            if leader_replicas.is_empty() {
+            if leader_states.is_empty() {
                 if let Some(mut desc) = schema.get_node(node).await? {
                     if desc.status == NodeStatus::Draining as i32 {
                         desc.status = NodeStatus::Drained as i32;
@@ -595,12 +629,12 @@ impl ScheduleContext {
                 break;
             }
 
-            for replica in &leader_replicas {
-                let group_id = replica.group_id;
+            for leader_state in &leader_states {
+                let group_id = leader_state.group_id;
                 if let Some(group) = schema.get_group(group_id).await? {
                     let mut target_replica = None;
                     for r in &group.replicas {
-                        if r.id == replica.replica_id {
+                        if r.id == leader_state.replica_id {
                             continue;
                         }
                         let target_node = schema.get_node(r.node_id).await?;
@@ -613,13 +647,17 @@ impl ScheduleContext {
                         target_replica = Some(r.to_owned())
                     }
                     if let Some(target_replica) = target_replica {
-                        self.try_transfer_leader(group_id, target_replica.id)
-                            .await?;
+                        self.try_transfer_leader(
+                            group,
+                            (leader_state.replica_id, leader_state.term),
+                            target_replica.id,
+                        )
+                        .await?;
                     } else {
                         warn!(
                             node = node,
                             group = group_id,
-                            src_replica = replica.replica_id,
+                            src_replica = leader_state.replica_id,
                             "shed leader from node fail due to no suitable target replica."
                         );
                         metrics::RECONCILE_RETRY_TASK_TOTAL.shed_group_leaders.inc();
@@ -642,8 +680,10 @@ impl ScheduleContext {
         let schema = self.shared.schema()?;
         let root_group = schema.get_group(ROOT_GROUP_ID).await?.unwrap();
         let mut target = None;
+        let mut current = None;
         for r in &root_group.replicas {
             if r.node_id == node {
+                current = Some(r.to_owned());
                 continue;
             }
             let target_node = schema.get_node(r.node_id).await?;
@@ -655,20 +695,29 @@ impl ScheduleContext {
             }
             target = Some(r.to_owned())
         }
-        if let Some(r) = target {
-            self.try_transfer_leader(root_group.id, r.id).await?
+        if current.is_some() && target.is_some() {
+            let leader_state = schema
+                .get_replica_state(ROOT_GROUP_ID, current.unwrap().id)
+                .await?;
+            if let Some(leader_state) = leader_state {
+                if matches!(
+                    RaftRole::from_i32(leader_state.role).unwrap(),
+                    RaftRole::Leader
+                ) {
+                    self.try_transfer_leader(
+                        root_group,
+                        (leader_state.replica_id, leader_state.term),
+                        target.unwrap().id,
+                    )
+                    .await?
+                }
+            }
         }
         Ok((true, false))
     }
 }
 
 impl ScheduleContext {
-    async fn get_group_leader(&self, group_id: u64) -> Result<Option<GroupDesc>> {
-        let schema = self.shared.schema()?;
-        let group = schema.get_group(group_id).await?;
-        Ok(group)
-    }
-
     async fn try_shed_leader_before_remove(
         &self,
         group_id: u64,
@@ -676,24 +725,29 @@ impl ScheduleContext {
     ) -> Result<()> {
         let schema = self.shared.schema()?;
 
-        let replica_state = schema
+        let leader_state = schema
             .get_replica_state(group_id, remove_replica)
             .await?
             .ok_or(crate::Error::AbortScheduleTask(
                 "shed leader replica has be destroyed",
             ))?;
 
-        if replica_state.role != RaftRole::Leader as i32 {
+        if leader_state.role != RaftRole::Leader as i32 {
             return Ok(());
         }
 
-        let group =
-            self.get_group_leader(group_id)
-                .await?
-                .ok_or(crate::Error::AbortScheduleTask(
-                    "shed leader group has be destroyed",
-                ))?;
-        if let Some(target_replica) = group.replicas.iter().find(|e| e.id != remove_replica) {
+        let group = schema
+            .get_group(group_id)
+            .await?
+            .ok_or(crate::Error::AbortScheduleTask(
+                "shed leader group has be destroyed",
+            ))?;
+        if let Some(target_replica) = group
+            .to_owned()
+            .replicas
+            .iter()
+            .find(|e| e.id != remove_replica)
+        {
             // TODO: find least-leader node.
             info!(
                 group = group.id,
@@ -702,8 +756,12 @@ impl ScheduleContext {
                 target_replica.id,
                 target_replica.node_id,
             );
-            self.try_transfer_leader(group_id, target_replica.id)
-                .await?;
+            self.try_transfer_leader(
+                group,
+                (leader_state.replica_id, leader_state.term),
+                target_replica.id,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -725,9 +783,24 @@ impl ScheduleContext {
         Ok(current_state)
     }
 
-    async fn try_transfer_leader(&self, group: u64, target_replica: u64) -> Result<()> {
-        let mut group_client = GroupClient::lazy(
-            group,
+    async fn try_transfer_leader(
+        &self,
+        group: GroupDesc,
+        leader_state: (u64 /* id */, u64 /* term */),
+        target_replica: u64,
+    ) -> Result<()> {
+        let group_state = RouterGroupState {
+            id: group.id,
+            epoch: group.epoch,
+            leader_state: Some(leader_state),
+            replicas: group
+                .replicas
+                .iter()
+                .map(|g| (g.id, g.to_owned()))
+                .collect::<HashMap<_, _>>(),
+        };
+        let mut group_client = GroupClient::new(
+            group_state,
             self.shared.provider.router.clone(),
             self.shared.provider.conn_manager.clone(),
         );
@@ -736,8 +809,10 @@ impl ScheduleContext {
     }
 
     async fn try_migrate_shard(&self, src_group: u64, target_group: u64, shard: u64) -> Result<()> {
+        let schema = self.shared.schema()?;
         let src_group =
-            self.get_group_leader(src_group)
+            schema
+                .get_group(src_group)
                 .await?
                 .ok_or(crate::Error::AbortScheduleTask(
                     "migrate source group has be destroyed",

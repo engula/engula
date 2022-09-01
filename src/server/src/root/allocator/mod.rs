@@ -18,7 +18,7 @@ use engula_api::server::v1::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use self::{policy_shard_cnt::ShardCountPolicy, replica_balancer::*, source::NodeFilter};
+use self::{node_balancer::*, policy_shard_cnt::ShardCountPolicy, source::NodeFilter};
 use super::{metrics, OngoingStats, RootShared};
 use crate::{
     bootstrap::{REPLICA_PER_GROUP, ROOT_GROUP_ID},
@@ -28,15 +28,15 @@ use crate::{
 #[cfg(test)]
 mod sim_test;
 
+mod node_balancer;
 mod policy_leader_cnt;
 mod policy_replica_cnt;
 mod policy_shard_cnt;
-mod replica_balancer;
 mod source;
 
+pub use node_balancer::BalancePolicy;
 pub use policy_leader_cnt::LeaderCountPolicy;
 pub use policy_replica_cnt::ReplicaCountPolicy;
-pub use replica_balancer::BalancePolicy;
 pub use source::{AllocSource, SysAllocSource};
 
 #[derive(Clone, Debug)]
@@ -103,7 +103,6 @@ pub struct RootConfig {
     pub enable_group_balance: bool,
     pub enable_replica_balance: bool,
     pub enable_shard_balance: bool,
-    pub enable_leader_balance: bool,
     pub liveness_threshold_sec: u64,
     pub heartbeat_timeout_sec: u64,
     pub schedule_interval_sec: u64,
@@ -117,7 +116,6 @@ impl Default for RootConfig {
             enable_group_balance: true,
             enable_replica_balance: true,
             enable_shard_balance: true,
-            enable_leader_balance: true,
             liveness_threshold_sec: 30,
             heartbeat_timeout_sec: 4,
             schedule_interval_sec: 1,
@@ -132,7 +130,7 @@ impl RootConfig {
     }
 }
 
-pub struct GroupReplicaAction {
+pub struct NodeBalanceAction {
     pub group_id: u64,
     pub epoch: u64,
     pub source_node: u64,
@@ -144,12 +142,12 @@ pub struct Allocator<T: AllocSource> {
     alloc_source: Arc<T>,
     ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
-    balancer: replica_balancer::GroupReplicaBalancer<T>,
+    balancer: node_balancer::NodeBalancer<T>,
 }
 
 impl<T: AllocSource> Allocator<T> {
     pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
-        let balancer = replica_balancer::GroupReplicaBalancer::new(
+        let balancer = node_balancer::NodeBalancer::new(
             alloc_source.to_owned(),
             ongoing_stats.to_owned(),
             config.to_owned(),
@@ -226,7 +224,7 @@ impl<T: AllocSource> Allocator<T> {
     pub async fn compute_balance_action(
         &self,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
-    ) -> Result<Vec<GroupReplicaAction>> {
+    ) -> Result<Vec<NodeBalanceAction>> {
         self.balancer.compute_balance_action(policy).await
     }
 

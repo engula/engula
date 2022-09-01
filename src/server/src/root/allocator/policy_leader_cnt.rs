@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{policy_replica_cnt::ReplicaCountPolicy, replica_balancer::*, *};
+use super::{node_balancer::*, policy_replica_cnt::ReplicaCountPolicy, *};
 use crate::root::OngoingStats;
 
 #[derive(Clone, Copy, Default)]

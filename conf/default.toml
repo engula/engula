@@ -38,7 +38,6 @@ tick_interval_ms = 500
 
 [root]
 enable_group_balance = true
-enable_leader_balance = true
 enable_replica_balance = true
 enable_shard_balance = true
 heartbeat_timeout_sec = 4
