@@ -30,7 +30,8 @@ lazy_static! {
 lazy_static! {
     pub static ref BOOTSTRAP_DURATION_SECONDS: Histogram = register_histogram!(
         "root_bootstrap_duration_seconds",
-        "the duration of bootstrap root service"
+        "the duration of bootstrap root service",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref BOOTSTRAP_FAIL_TOTAL: IntCounter = register_int_counter!(
@@ -133,15 +134,15 @@ lazy_static! {
     .unwrap();
     pub static ref RECONCILE_HANDLE_TASK_TOTAL: ReconcileScheduleHandleTaskTotal =
         ReconcileScheduleHandleTaskTotal::from(&RECONCILE_HANDLE_TASK_TOTAL_VEC);
-    pub static ref RECONCILE_HANDL_TASK_DURATION_SECONDS_VEC: HistogramVec =
+    pub static ref RECONCILE_HANDLE_TASK_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "root_reconcile_scheduler_task_handle_duration_seconds",
             "the total handle duration of root reconcile scheduler",
             &["type"]
         )
         .unwrap();
-    pub static ref RECONCILE_HANDL_TASK_DURATION_SECONDS: ReconcileScheduleHandleTaskDuration =
-        ReconcileScheduleHandleTaskDuration::from(&RECONCILE_HANDL_TASK_DURATION_SECONDS_VEC);
+    pub static ref RECONCILE_HANDLE_TASK_DURATION_SECONDS: ReconcileScheduleHandleTaskDuration =
+        ReconcileScheduleHandleTaskDuration::from(&RECONCILE_HANDLE_TASK_DURATION_SECONDS_VEC);
     pub static ref RECONCILE_CREATE_GROUP_STEP_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "root_reconcile_scheduler_create_group_step_duration_seconds",
@@ -175,14 +176,14 @@ lazy_static! {
         ReconcileScheduleCreateCollectionStepDuration::from(
             &RECONCILE_CREATE_COLLECTION_STEP_DURATION_SECONDS_VEC
         );
-    pub static ref RECONCILE_RETRYL_TASK_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
+    pub static ref RECONCILE_RETRY_TASK_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
         "root_reconcile_scheduler_task_retry_total",
         "The total retry count of root reconcile scheduler",
         &["type"]
     )
     .unwrap();
-    pub static ref RECONCILE_RETRYL_TASK_TOTAL: ReconcileScheduleHandleTaskTotal =
-        ReconcileScheduleHandleTaskTotal::from(&RECONCILE_RETRYL_TASK_TOTAL_VEC);
+    pub static ref RECONCILE_RETRY_TASK_TOTAL: ReconcileScheduleHandleTaskTotal =
+        ReconcileScheduleHandleTaskTotal::from(&RECONCILE_RETRY_TASK_TOTAL_VEC);
 }
 
 // hearbeat & report
@@ -205,7 +206,8 @@ make_static_metric! {
 lazy_static! {
     pub static ref HEARTBEAT_STEP_DURATION_SECONDS: Histogram = register_histogram!(
         "root_heartbeat_step_duration_seconds",
-        "the duration of one heartbeat step"
+        "the duration of one heartbeat step",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref HEARTBEAT_TASK_QUEUE_SIZE: IntGauge = register_int_gauge!(
@@ -226,7 +228,8 @@ lazy_static! {
     .unwrap();
     pub static ref HEARTBEAT_NODES_RPC_DURATION_SECONDS: Histogram = register_histogram!(
         "root_heartbeat_rpc_nodes_duration_seconds",
-        "the duration of rpc heartbeat multiple nodes togather"
+        "the duration of rpc heartbeat multiple nodes together",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref HEARTBEAT_NODES_BATCH_SIZE: IntGauge = register_int_gauge!(
@@ -236,17 +239,19 @@ lazy_static! {
     .unwrap();
     pub static ref HEARTBEAT_HANDLE_GROUP_DETAIL_DURATION_SECONDS: Histogram = register_histogram!(
         "root_heartbeat_handle_group_detail_seconds",
-        "the duration of handle update group detail after recieve heartbeat response"
+        "the duration of handle update group detail after receive heartbeat response",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref HEARTBEAT_HANDLE_NODE_STATS_DURATION_SECONDS: Histogram = register_histogram!(
         "root_heartbeat_handle_node_stats_seconds",
-        "the duration of handle update stats after recieve heartbeat response"
+        "the duration of handle update stats after receive heartbeat response",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref HEARTBEAT_UPDATE_NODE_STATS_TOTAL: IntCounter = register_int_counter!(
         "root_heartbeat_update_node_stats_total",
-        "the count of real update node stats after recieve heartbeat response",
+        "the count of real update node stats after receive heartbeat response",
     )
     .unwrap();
     pub static ref ROOT_UPDATE_GROUP_DESC_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
@@ -274,6 +279,7 @@ lazy_static! {
     pub static ref WATCH_NOTIFY_DURATION_SECONDS: Histogram = register_histogram!(
         "root_watch_notify_duration_seconds",
         "the duration of watch notify(mainly wait watch lock)",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
 }

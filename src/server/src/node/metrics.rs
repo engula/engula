@@ -26,13 +26,15 @@ lazy_static! {
     pub static ref NODE_DESTORY_REPLICA_DURATION_SECONDS: Histogram = register_histogram!(
         "node_destory_replica_duration_seconds",
         "The intervals of destory replica of node",
+        exponential_buckets(0.005, 1.8, 22).unwrap(),
     )
     .unwrap();
     pub static ref NODE_REPORT_TOTAL: IntCounter =
         register_int_counter!("node_report_total", "The total reports of node").unwrap();
     pub static ref NODE_REPORT_DURATION_SECONDS: Histogram = register_histogram!(
         "node_report_duration_seconds",
-        "The intervals of report of node"
+        "The intervals of report of node",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
     pub static ref NODE_PULL_SHARD_TOTAL: IntCounter =
@@ -40,6 +42,7 @@ lazy_static! {
     pub static ref NODE_PULL_SHARD_DURATION_SECONDS: Histogram = register_histogram!(
         "node_pull_shard_duration_seconds",
         "The intervals of pull shard of node",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
 }

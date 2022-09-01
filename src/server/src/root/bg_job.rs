@@ -398,7 +398,7 @@ impl Jobs {
                 let retried = create_group.create_retry;
                 if retried < 20 {
                     warn!(node=n.id, replica=replica.id, group=group_desc.id, retried = retried, err = ?err, "create replica for new group error, retry in next");
-                    metrics::RECONCILE_RETRYL_TASK_TOTAL.create_group.inc();
+                    metrics::RECONCILE_RETRY_TASK_TOTAL.create_group.inc();
                     create_group.create_retry += 1;
                 } else {
                     warn!(node=n.id, replica=replica.id, group=group_desc.id, err = ?err, "create replica for new group error, start rollback");
