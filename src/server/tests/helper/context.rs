@@ -16,7 +16,7 @@ use std::{collections::HashMap, thread, time::Duration};
 use engula_server::{
     node::replica::{ReplicaConfig, ReplicaTestingKnobs},
     raftgroup::RaftTestingKnobs,
-    runtime::{ExecutorOwner, ShutdownNotifier},
+    runtime::{ExecutorConfig, ExecutorOwner, ShutdownNotifier},
     Config, NodeConfig, RaftConfig, RootConfig,
 };
 use tempdir::TempDir;
@@ -152,6 +152,7 @@ impl TestContext {
                 ..Default::default()
             },
             root,
+            executor: ExecutorConfig::default(),
         };
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();

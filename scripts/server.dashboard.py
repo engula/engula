@@ -404,6 +404,13 @@ def root_hearbeat_report_panels():
                      "root_update_replica_state_total", "type", "type"),
     )
 
+def executor_panels():
+    return row_panels(
+        "Executor",
+        simple_total("Total park", "executor_park_total"),
+        vector_total("Total spawn", "executor_spawn_total", "priority", "priority"),
+    )
+
 
 dashboard = Dashboard(
     title="Engula Server",
@@ -425,5 +432,6 @@ dashboard = Dashboard(
         root_reconcile_panels(),
         root_hearbeat_report_panels(),
         root_misc_panels(),
+        executor_panels(),
     ],
 ).auto_panel_ids()

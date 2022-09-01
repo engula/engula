@@ -91,7 +91,7 @@ impl StartCommand {
 
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();
-        let owner = ExecutorOwner::new(config.cpu_nums as usize);
+        let owner = ExecutorOwner::with_config(config.cpu_nums as usize, config.executor.clone());
         let executor = owner.executor();
         executor.spawn(None, TaskPriority::Low, async move {
             notifier.ctrl_c().await;
