@@ -287,16 +287,14 @@ impl ReconcileScheduler {
 
     fn record_retry(task: &mut ReconcileTask) {
         match task.task.as_ref().unwrap() {
-            Task::ReallocateReplica(_) => metrics::RECONCILE_RETRY_TASK_TOTAL
-                .reallocate_replica
-                .inc(),
+            Task::ReallocateReplica(_) => {
+                metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc()
+            }
             Task::MigrateShard(_) => metrics::RECONCILE_RETRY_TASK_TOTAL.migrate_shard.inc(),
             Task::TransferGroupLeader(_) => {
                 metrics::RECONCILE_RETRY_TASK_TOTAL.transfer_leader.inc()
             }
-            Task::ShedLeader(_) => metrics::RECONCILE_RETRY_TASK_TOTAL
-                .shed_group_leaders
-                .inc(),
+            Task::ShedLeader(_) => metrics::RECONCILE_RETRY_TASK_TOTAL.shed_group_leaders.inc(),
             Task::ShedRoot(_) => metrics::RECONCILE_RETRY_TASK_TOTAL.shed_root_leader.inc(),
         }
     }
@@ -363,9 +361,7 @@ impl ScheduleContext {
             }
             Err(err) => {
                 warn!(group = group, replica = replica, err = ?err, "shed leader in source replica fail, retry in next tick");
-                metrics::RECONCILE_RETRY_TASK_TOTAL
-                    .reallocate_replica
-                    .inc();
+                metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc();
                 return Err(err);
             }
         };
@@ -435,9 +431,7 @@ impl ScheduleContext {
                     err = ?err,
                     "move replica meet error and retry later"
                 );
-                metrics::RECONCILE_RETRY_TASK_TOTAL
-                    .reallocate_replica
-                    .inc();
+                metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc();
                 Err(err)
             }
         }
@@ -579,9 +573,7 @@ impl ScheduleContext {
                             src_replica = replica.replica_id,
                             "shed leader from node fail due to no suitable target replica."
                         );
-                        metrics::RECONCILE_RETRY_TASK_TOTAL
-                            .shed_group_leaders
-                            .inc();
+                        metrics::RECONCILE_RETRY_TASK_TOTAL.shed_group_leaders.inc();
                     }
                 }
             }
