@@ -384,20 +384,6 @@ impl ScheduleContext {
         }
         let group_desc = group_desc.unwrap();
 
-        let target_replica = group_desc
-            .replicas
-            .iter()
-            .find(|r| r.node_id == task.dest_node);
-        if target_replica.is_none() {
-            warn!(
-                group = group,
-                dest_node = task.dest_node,
-                "target replica not found abort reallocate replica task."
-            );
-            return Ok((true, false));
-        }
-        let target_replica = target_replica.unwrap();
-
         let mut leader_state = None;
         for repl in &group_desc.replicas {
             if let Some(replica_state) = schema.get_replica_state(group_desc.id, repl.id).await? {
@@ -418,22 +404,27 @@ impl ScheduleContext {
         let leader_state = leader_state.unwrap();
 
         if leader_state.node_id == task.src_node {
+            let transferee = group_desc
+                .replicas
+                .iter()
+                .find(|r| r.node_id != task.src_node)
+                .unwrap();
             let r = self
                 .try_shed_leader_before_remove(
                     group_desc.to_owned(),
                     leader_state.to_owned(),
-                    target_replica.id,
+                    transferee.id,
                 )
                 .await;
             match r {
                 Ok(_) => {}
                 Err(crate::Error::AbortScheduleTask(_)) => return Ok((true, false)),
                 Err(crate::Error::EpochNotMatch(new_group)) => {
-                    warn!(group = group, replica = target_replica.id, new_group = ?new_group, "shed leader meet epoch not match, abort task and retry allocator");
+                    warn!(group = group, replica = transferee.id, new_group = ?new_group, "shed leader meet epoch not match, abort task and retry allocator");
                     return Ok((true, false));
                 }
                 Err(err) => {
-                    warn!(group = group, replica = target_replica.id, err = ?err, "shed leader in source replica fail, retry in next tick");
+                    warn!(group = group, replica = transferee.id, err = ?err, "shed leader in source replica fail, retry in next tick");
                     metrics::RECONCILE_RETRYL_TASK_TOTAL
                         .reallocate_replica
                         .inc();
@@ -448,6 +439,19 @@ impl ScheduleContext {
             dest_node = task.dest_node,
             "start move replica"
         );
+        let src_replica = group_desc
+            .replicas
+            .iter()
+            .find(|r| r.node_id == task.src_node);
+        if src_replica.is_none() {
+            warn!(
+                group = group,
+                dest_node = task.dest_node,
+                "target replica not found abort reallocate replica task."
+            );
+            return Ok((true, false));
+        }
+        let src_replica = src_replica.unwrap();
         let next_replica = schema.next_replica_id().await?;
         match self
             .try_move_replica(
@@ -458,7 +462,7 @@ impl ScheduleContext {
                     node_id: task.dest_node,
                     role: ReplicaRole::Voter as i32,
                 },
-                target_replica.to_owned(),
+                src_replica.to_owned(),
             )
             .await
         {
