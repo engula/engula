@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use tracing::info;
+
 use super::*;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct NodeCandidate {
     pub node: NodeDesc,
     pub disk_full: bool,
@@ -92,16 +94,19 @@ impl PartialEq for NodeCandidate {
 
 impl Eq for NodeCandidate {}
 
+#[derive(Debug)]
 pub struct PotentialReplacement {
     pub existing: NodeCandidate,
     pub candidates: Vec<NodeCandidate>,
 }
 
+#[derive(Debug)]
 struct BalanceOption {
     existing: NodeCandidate,
     candidates: Vec<NodeCandidate>,
 }
 
+#[derive(Debug)]
 pub enum BalanceGoal {
     ReplicaConvergence,
     LeaderConvergence,
@@ -461,7 +466,14 @@ impl<T: AllocSource> NodeBalancer<T> {
                 // check the result of simulate remove after running options, and skip option if
                 // new-added replica be removed in next turn.
                 loop {
-                    let (target, _existing) = self.best_balance_target(&mut balance_opts);
+                    let (target, existing) = self.best_balance_target(&mut balance_opts);
+                    info!(
+                        "balance replica need {:?} transfer: {:?} target: {:?}, from: {:?}",
+                        policy.goal(),
+                        balance_opts,
+                        target,
+                        existing,
+                    );
                     if target.is_none() {
                         break;
                     }
@@ -494,7 +506,7 @@ impl<T: AllocSource> NodeBalancer<T> {
                         != target.as_ref().unwrap().node.id
                     {
                         return Ok(Some((
-                            remove_candidate.as_ref().unwrap().node.id,
+                            existing.as_ref().unwrap().node.id,
                             target.as_ref().unwrap().node.id,
                         )));
                     }
@@ -503,6 +515,13 @@ impl<T: AllocSource> NodeBalancer<T> {
             }
             BalanceGoal::LeaderConvergence => {
                 let (target, existing) = self.best_balance_target(&mut balance_opts);
+                info!(
+                    "balance leader need {:?} transfer: {:?} ,target: {:?} ,from: {:?}",
+                    policy.goal(),
+                    balance_opts,
+                    target,
+                    existing,
+                );
                 if let Some(target) = target {
                     Ok(Some((existing.as_ref().unwrap().node.id, target.node.id)))
                 } else {
