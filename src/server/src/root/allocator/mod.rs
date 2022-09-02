@@ -268,7 +268,7 @@ impl<T: AllocSource> Allocator<T> {
             })
             .collect::<Vec<_>>();
 
-        candidate_nodes.sort();
+        candidate_nodes.sort_by_key(|c| std::cmp::Reverse(c.to_owned()));
 
         Ok(candidate_nodes
             .into_iter()
