@@ -143,7 +143,7 @@ impl GroupClient {
             .map(|duration| Instant::now() + duration);
         let mut index = 0;
         let group_id = self.group_id;
-        while let Some((node_id, client)) = self.recommend_client().await {
+        while let Some((node_id, client)) = self.recommend_client() {
             trace!("group {group_id} issue rpc request with index {index} to node {node_id}");
             index += 1;
             let ctx = InvokeContext {
@@ -153,7 +153,7 @@ impl GroupClient {
                 timeout: self.timeout,
             };
             match op(ctx, client).await {
-                Err(status) => self.apply_status(status, &opt).await?,
+                Err(status) => self.apply_status(status, &opt)?,
                 Ok(s) => return Ok(s),
             };
             if deadline
@@ -168,9 +168,9 @@ impl GroupClient {
         Err(Error::GroupNotAccessable(group_id))
     }
 
-    async fn recommend_client(&mut self) -> Option<(u64, NodeClient)> {
+    fn recommend_client(&mut self) -> Option<(u64, NodeClient)> {
         while let Some(node_id) = self.access_node_id.or_else(|| self.next_access_node_id()) {
-            if let Some(client) = self.fetch_client(node_id).await {
+            if let Some(client) = self.fetch_client(node_id) {
                 self.access_node_id = Some(node_id);
                 return Some((node_id, client));
             }
@@ -222,13 +222,13 @@ impl GroupClient {
         }
     }
 
-    async fn fetch_client(&mut self, node_id: u64) -> Option<NodeClient> {
+    fn fetch_client(&mut self, node_id: u64) -> Option<NodeClient> {
         if let Some(client) = self.node_clients.get(&node_id) {
             return Some(client.clone());
         }
 
         if let Ok(addr) = self.router.find_node_addr(node_id) {
-            match self.conn_manager.get_node_client(addr.clone()).await {
+            match self.conn_manager.get_node_client(addr.clone()) {
                 Ok(client) => {
                     trace!("connect node {node_id} with addr {addr}");
                     self.node_clients.insert(node_id, client.clone());
@@ -245,7 +245,7 @@ impl GroupClient {
         None
     }
 
-    async fn apply_status(&mut self, status: tonic::Status, opt: &InvokeOpt<'_>) -> Result<()> {
+    fn apply_status(&mut self, status: tonic::Status, opt: &InvokeOpt<'_>) -> Result<()> {
         match Error::from(status) {
             Error::GroupNotFound(_) => {
                 debug!(
@@ -696,11 +696,7 @@ impl RetryableShardChunkStreaming {
                     return Some(Ok(item));
                 }
                 Err(status) => {
-                    if let Err(e) = self
-                        .client
-                        .apply_status(status, &InvokeOpt::default())
-                        .await
-                    {
+                    if let Err(e) = self.client.apply_status(status, &InvokeOpt::default()) {
                         return Some(Err(e));
                     }
                 }

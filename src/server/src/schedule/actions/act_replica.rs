@@ -52,7 +52,7 @@ impl CreateReplicas {
         provider: &Provider,
     ) -> std::result::Result<(), engula_client::Error> {
         let addr = provider.router.find_node_addr(r.node_id)?;
-        let client = provider.conn_manager.get_node_client(addr).await?;
+        let client = provider.conn_manager.get_node_client(addr)?;
         let desc = GroupDesc {
             id: group_id,
             ..Default::default()
@@ -115,7 +115,7 @@ impl RemoveReplica {
         provider: &Provider,
     ) -> std::result::Result<(), engula_client::Error> {
         let addr = provider.router.find_node_addr(r.node_id)?;
-        let client = provider.conn_manager.get_node_client(addr).await?;
+        let client = provider.conn_manager.get_node_client(addr)?;
         client.remove_replica(r.id, group.clone()).await?;
         Ok(())
     }

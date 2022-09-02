@@ -150,7 +150,7 @@ impl Client {
             if let Some(leader) = core.leader {
                 // Fast path of invoking.
                 let leader_node = &core.root.root_nodes[leader];
-                let client = self.get_root_client(leader_node.addr.clone()).await?;
+                let client = self.get_root_client(leader_node.addr.clone())?;
                 match invoke(client, &op).await {
                     Ok(res) => {
                         if save_core {
@@ -189,7 +189,7 @@ impl Client {
                     continue;
                 }
 
-                let client = self.get_root_client(node.addr.clone()).await?;
+                let client = self.get_root_client(node.addr.clone())?;
                 match invoke(client, &op).await {
                     Ok(res) => {
                         // Save new leader of root.
@@ -245,7 +245,7 @@ impl Client {
     async fn refresh_root_descriptor(&self, local_epoch: u64) -> Result<Option<RootDesc>> {
         let nodes = self.shared.discovery.list_nodes().await;
         for node in nodes {
-            let node_client = self.get_node_client(node).await?;
+            let node_client = self.get_node_client(node)?;
             if let Ok(root) = node_client.get_root().await {
                 if root.epoch > local_epoch {
                     return Ok(Some(root));
@@ -274,14 +274,14 @@ impl Client {
     }
 
     #[inline]
-    async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
-        let root_client = self.shared.conn_manager.get_root_client(addr).await?;
+    fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
+        let root_client = self.shared.conn_manager.get_root_client(addr)?;
         Ok(root_client)
     }
 
     #[inline]
-    async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
-        let node_client = self.shared.conn_manager.get_node_client(addr).await?;
+    fn get_node_client(&self, addr: String) -> Result<NodeClient> {
+        let node_client = self.shared.conn_manager.get_node_client(addr)?;
         Ok(node_client)
     }
 }
