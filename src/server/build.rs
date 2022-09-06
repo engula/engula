@@ -15,13 +15,20 @@
 use std::{error::Error, result::Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    std::env::set_var("PROTOC", protoc_build::PROTOC);
+    std::env::set_var("PROTOC_INCLUDE", protoc_build::PROTOC_INCLUDE);
+
     let mut config = prost_build::Config::default();
     config.extern_path(".engula.server.v1", "::engula_api::server::v1");
     config.extern_path(".engula.v1", "::engula_api::v1");
     config.extern_path(".eraftpb", "::raft::eraftpb");
     tonic_build::configure().compile_with_config(
         config,
-        &["v1/metadata.proto", "v1/raft.proto", "v1/schedule.proto"],
+        &[
+            "proto/v1/metadata.proto",
+            "proto/v1/raft.proto",
+            "proto/v1/schedule.proto",
+        ],
         &["proto", "proto/include", "../api/"],
     )?;
     Ok(())
