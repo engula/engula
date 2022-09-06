@@ -284,6 +284,28 @@ impl RequestBatchBuilder {
         self
     }
 
+    pub fn move_replica(
+        mut self,
+        group_id: u64,
+        epoch: u64,
+        incoming_voters: Vec<ReplicaDesc>,
+        outgoing_voters: Vec<ReplicaDesc>,
+    ) -> Self {
+        self.requests.push(GroupRequest {
+            group_id,
+            epoch,
+            request: Some(GroupRequestUnion {
+                request: Some(group_request_union::Request::MoveReplicas(
+                    MoveReplicasRequest {
+                        incoming_voters,
+                        outgoing_voters,
+                    },
+                )),
+            }),
+        });
+        self
+    }
+
     pub fn transfer_leader(mut self, group_id: u64, epoch: u64, transferee: u64) -> Self {
         self.requests.push(GroupRequest {
             group_id,

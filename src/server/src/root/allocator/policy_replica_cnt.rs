@@ -12,10 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use tracing::info;
+
 use super::{node_balancer::*, *};
 
-#[derive(Clone, Copy, Default)]
-pub struct ReplicaCountPolicy {}
+#[derive(Clone, Copy)]
+pub struct ReplicaCountPolicy {
+    pub goal: BalanceGoal,
+}
+
+impl Default for ReplicaCountPolicy {
+    fn default() -> Self {
+        Self {
+            goal: BalanceGoal::ReplicaConvergence,
+        }
+    }
+}
 
 impl BalancePolicy for ReplicaCountPolicy {
     fn should_balance(&self, rep: &PotentialReplacement) -> bool {
@@ -67,6 +79,7 @@ impl BalancePolicy for ReplicaCountPolicy {
         } else {
             0.0
         };
+        info!("DEBUG: type: {:?}, min: {min}, max: {max}, mean: {mean}, current: {current}, bs: {balance_score}, cs: {converges_score}, src: {:?}, target: {:?}", self.goal(), node, cands);
         (balance_score, converges_score)
     }
 
@@ -81,7 +94,7 @@ impl BalancePolicy for ReplicaCountPolicy {
     }
 
     fn goal(&self) -> BalanceGoal {
-        BalanceGoal::ReplicaConvergence
+        self.goal
     }
 }
 

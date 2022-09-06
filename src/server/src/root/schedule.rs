@@ -465,7 +465,20 @@ impl ScheduleContext {
             .await
         {
             Ok(schedule_state) => {
+                let pdelta_src = self.ongoing_stats.get_node_delta(task.src_node);
+                let pdelta_target = self.ongoing_stats.get_node_delta(task.dest_node);
                 self.ongoing_stats.handle_update(&[schedule_state], None);
+                let delta_src = self.ongoing_stats.get_node_delta(task.src_node);
+                let delta_target = self.ongoing_stats.get_node_delta(task.dest_node);
+                info!(
+                    "update handle: src_node: {}({}:{}) -> dest_node: {}({}:{})",
+                    task.src_node,
+                    pdelta_src.replica_count,
+                    delta_src.replica_count,
+                    task.dest_node,
+                    pdelta_target.replica_count,
+                    delta_target.replica_count,
+                );
                 Ok((true, false))
             }
             Err(crate::Error::AlreadyExists(_)) | Err(crate::Error::EpochNotMatch(_)) => {

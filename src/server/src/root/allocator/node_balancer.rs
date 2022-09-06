@@ -106,7 +106,7 @@ struct BalanceOption {
     candidates: Vec<NodeCandidate>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum BalanceGoal {
     ReplicaConvergence,
     LeaderConvergence,
@@ -176,16 +176,18 @@ impl<T: AllocSource> NodeBalancer<T> {
             if balance_opts.is_none() {
                 continue;
             }
-            let (source_node, dest_node) = balance_opts.take().unwrap();
+            let (source_node, dest_node, reason) = balance_opts.take().unwrap();
+            let epoch = desc.epoch;
+            info!("try balance replica, group: {group_id}, epoch: {epoch}, src_node: {source_node}, dest_node: {dest_node}, reason: {reason}");
             gaction.push(NodeBalanceAction {
                 group_id: group_id.to_owned(),
                 epoch: desc.epoch,
                 source_node,
                 dest_node,
             });
-            break;
+            return Ok(gaction);
         }
-        Ok(gaction)
+        Ok(vec![])
     }
 
     fn best_balance_target(
@@ -258,7 +260,7 @@ impl<T: AllocSource> NodeBalancer<T> {
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
         group: &GroupDesc,
         within_voter: bool,
-    ) -> Result<Option<(u64, u64)>> {
+    ) -> Result<Option<(u64, u64, String)>> {
         let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
         // Prepare related replicas, it make them into three categories:
@@ -485,13 +487,29 @@ impl<T: AllocSource> NodeBalancer<T> {
                     };
                     exist_replica_candidates.push(&fake_new_replica);
 
-                    let replica_candidates = exist_replica_candidates.to_owned();
+                    let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
+                    let replica_candidates = exist_replica_candidates
+                        .iter()
+                        .map(|r| {
+                            let n = nodes.iter().find(|n| n.id == r.node_id).unwrap();
+                            let mut n = NodeCandidate {
+                                node: n.to_owned(),
+                                balance_value: (policy
+                                    .balance_value(self.ongoing_stats.to_owned(), n))
+                                    as f64,
+                                ..Default::default()
+                            };
+                            if n.node.id == fake_new_replica.node_id {
+                                n.balance_value += 1.0 // TODO: add qps instead of 1 when using qps
+                            }
+                            n
+                        })
+                        .collect::<Vec<_>>();
 
                     // TODO: filter out out-of-date replicas from replica_candidates.
 
                     let remove_candidate = self.sim_remove_target(
                         policy,
-                        fake_new_replica.node_id,
                         replica_candidates,
                         exist_replica_candidates,
                         other_replicas.to_owned(),
@@ -508,6 +526,27 @@ impl<T: AllocSource> NodeBalancer<T> {
                         return Ok(Some((
                             existing.as_ref().unwrap().node.id,
                             target.as_ref().unwrap().node.id,
+                            format!(
+                                "{}({})=>{}({})",
+                                existing.as_ref().unwrap().balance_value,
+                                existing
+                                    .as_ref()
+                                    .unwrap()
+                                    .node
+                                    .capacity
+                                    .as_ref()
+                                    .unwrap()
+                                    .replica_count,
+                                target.as_ref().unwrap().balance_value,
+                                target
+                                    .as_ref()
+                                    .unwrap()
+                                    .node
+                                    .capacity
+                                    .as_ref()
+                                    .unwrap()
+                                    .replica_count,
+                            ),
                         )));
                     }
                 }
@@ -523,7 +562,11 @@ impl<T: AllocSource> NodeBalancer<T> {
                     existing,
                 );
                 if let Some(target) = target {
-                    Ok(Some((existing.as_ref().unwrap().node.id, target.node.id)))
+                    Ok(Some((
+                        existing.as_ref().unwrap().node.id,
+                        target.node.id,
+                        "".to_owned(),
+                    )))
                 } else {
                     Ok(None)
                 }
@@ -534,21 +577,15 @@ impl<T: AllocSource> NodeBalancer<T> {
     fn sim_remove_target(
         &self,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
-        _remove_node: u64,
-        replica_cands: Vec<&ReplicaDesc>,
+        node_candidates: Vec<NodeCandidate>,
         exist_cands: Vec<&ReplicaDesc>,
         other_replicas: Vec<&ReplicaDesc>,
         within_voter: bool,
     ) -> Result<Option<NodeCandidate>> {
-        let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
-        let candidate_nodes = replica_cands
-            .iter()
-            .map(|r| nodes.iter().find(|n| n.id == r.node_id).unwrap().to_owned())
-            .collect::<Vec<_>>();
         if within_voter {
             self.remove_target(
                 policy,
-                candidate_nodes,
+                node_candidates,
                 exist_cands,
                 other_replicas,
                 within_voter,
@@ -561,7 +598,7 @@ impl<T: AllocSource> NodeBalancer<T> {
     fn remove_target(
         &self,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
-        candidate_nodes: Vec<NodeDesc>,
+        candidate_nodes: Vec<NodeCandidate>,
         exist_cands: Vec<&ReplicaDesc>,
         other_replicas: Vec<&ReplicaDesc>,
         _within_voter: bool,
@@ -569,15 +606,13 @@ impl<T: AllocSource> NodeBalancer<T> {
         assert!(!candidate_nodes.is_empty());
         let mut candidates = Vec::new();
         for n in &candidate_nodes {
-            let replica_cnt = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
             candidates.push(NodeCandidate {
-                node: n.to_owned(),
-                disk_full: check_node_full(n),
-                balance_value: replica_cnt,
+                node: n.node.to_owned(),
+                disk_full: check_node_full(&n.node),
+                balance_value: n.balance_value,
                 ..Default::default()
             })
         }
-        candidates.sort_by_key(|w| std::cmp::Reverse(w.to_owned()));
 
         let mut score_candidates = Vec::new();
         for c in &candidates {

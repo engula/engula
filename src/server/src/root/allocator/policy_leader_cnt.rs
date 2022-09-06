@@ -15,9 +15,17 @@
 use super::{node_balancer::*, policy_replica_cnt::ReplicaCountPolicy, *};
 use crate::root::OngoingStats;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct LeaderCountPolicy {
     count_policy: ReplicaCountPolicy,
+}
+
+impl Default for LeaderCountPolicy {
+    fn default() -> Self {
+        let mut count_policy = ReplicaCountPolicy::default();
+        count_policy.goal = BalanceGoal::LeaderConvergence;
+        Self { count_policy }
+    }
 }
 
 impl BalancePolicy for LeaderCountPolicy {
@@ -39,6 +47,6 @@ impl BalancePolicy for LeaderCountPolicy {
     }
 
     fn goal(&self) -> BalanceGoal {
-        BalanceGoal::LeaderConvergence
+        self.count_policy.goal()
     }
 }

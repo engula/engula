@@ -527,18 +527,32 @@ impl GroupClient {
         incoming_voters: Vec<ReplicaDesc>,
         outgoing_voters: Vec<ReplicaDesc>,
     ) -> Result<ScheduleState> {
-        let req = Request::MoveReplicas(MoveReplicasRequest {
-            incoming_voters,
-            outgoing_voters,
-        });
-        let resp = match self.request(&req).await? {
-            Response::MoveReplicas(resp) => resp,
-            _ => {
-                return Err(Error::Internal(
-                    "invalid response type, `MoveReplicas` is required".into(),
-                ))
+        let op = |ctx: InvokeContext, client: NodeClient| {
+            let incoming_voters = incoming_voters.to_owned();
+            let outgoing_voters = outgoing_voters.to_owned();
+            let req = RequestBatchBuilder::new(ctx.node_id)
+                .move_replica(ctx.group_id, ctx.epoch, incoming_voters, outgoing_voters)
+                .build();
+            async move {
+                let resp = client
+                    .batch_group_requests(req)
+                    .await
+                    .and_then(Self::batch_response)
+                    .and_then(Self::group_response)?;
+                match resp {
+                    Response::MoveReplicas(resp) => Ok(resp),
+                    _ => Err(Status::internal(
+                        "invalid response type, MoveReplicas is required",
+                    )),
+                }
             }
         };
+        let opt = InvokeOpt {
+            accurate_epoch: true,
+            ignore_transport_error: true,
+            ..Default::default()
+        };
+        let resp = self.invoke_with_opt(op, opt).await?;
         resp.schedule_state.ok_or_else(|| {
             Error::Internal("invalid response type, `schedule_state` is required".into())
         })

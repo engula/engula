@@ -500,6 +500,7 @@ impl Root {
         let groups = schema.list_group().await?;
         let replicas = groups
             .iter()
+            .filter(|g| g.id != ROOT_GROUP_ID)
             .flat_map(|g| g.replicas.iter().map(|r| (r, g.id)).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         let states = schema.list_replica_state().await?;
