@@ -313,6 +313,9 @@ impl Root {
         while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
             let next_interval = self.scheduler.step_one().await;
             crate::runtime::time::sleep(next_interval).await;
+            if !next_interval.is_zero() {
+                self.scheduler.wait_heartbeat_tick().await;
+            }
         }
         info!("node {node_id} current root node drop leader");
 

@@ -22,8 +22,9 @@ pub struct LeaderCountPolicy {
 
 impl Default for LeaderCountPolicy {
     fn default() -> Self {
-        let mut count_policy = ReplicaCountPolicy::default();
-        count_policy.goal = BalanceGoal::LeaderConvergence;
+        let count_policy = ReplicaCountPolicy {
+            goal: BalanceGoal::LeaderConvergence,
+        };
         Self { count_policy }
     }
 }

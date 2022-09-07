@@ -15,6 +15,7 @@
 use tracing::info;
 
 use super::{node_balancer::*, *};
+use crate::root::metrics::ROOT_NODE_REPLICA_MEAN_COUNT;
 
 #[derive(Clone, Copy)]
 pub struct ReplicaCountPolicy {
@@ -35,9 +36,14 @@ impl BalancePolicy for ReplicaCountPolicy {
             return false;
         }
         let (mean, min, max) = self.count_threshold(&rep.candidates);
+        ROOT_NODE_REPLICA_MEAN_COUNT.set(mean);
         let cnt = rep.existing.balance_value;
         if cnt > max {
             // balance if over max a lot.
+            info!(
+                "should balance for overfull, node: {}, {cnt} > {max}",
+                rep.existing.node.id
+            );
             return true;
         }
         if cnt > mean {
@@ -45,6 +51,10 @@ impl BalancePolicy for ReplicaCountPolicy {
             for c in &rep.candidates {
                 let cand_cnt = c.balance_value;
                 if cand_cnt < min {
+                    info!(
+                        "should balance for better-fit node: {}, cand: {}, {cand_cnt} < {min}",
+                        rep.existing.node.id, c.node.id
+                    );
                     return true;
                 }
             }
@@ -83,13 +93,13 @@ impl BalancePolicy for ReplicaCountPolicy {
         (balance_score, converges_score)
     }
 
-    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
-        let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
-        let delta = ongoing_stats.get_node_delta(n.id);
-        cnt += delta.replica_count;
-        if cnt < 0 {
-            cnt = 0;
-        }
+    fn balance_value(&self, _ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
+        let cnt = n.capacity.as_ref().unwrap().replica_count as i64;
+        // let delta = ongoing_stats.get_node_delta(n.id);
+        // cnt += delta.replica_count;
+        // if cnt < 0 {
+        // cnt = 0;
+        // }
         cnt as u64
     }
 

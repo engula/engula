@@ -270,6 +270,11 @@ lazy_static! {
     .unwrap();
     pub static ref ROOT_UPDATE_REPLICA_STATE_TOTAL: UpdateReplicaState =
         UpdateReplicaState::from(&ROOT_UPDATE_REPLICA_STATE_TOTAL_VEC);
+    pub static ref ROOT_NODE_REPLICA_MEAN_COUNT: Gauge = register_gauge!(
+        "root_node_replica_count",
+        "the mean count for replica count in one node",
+    )
+    .unwrap();
 }
 
 // watch

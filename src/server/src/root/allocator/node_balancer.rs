@@ -524,12 +524,12 @@ impl<T: AllocSource> NodeBalancer<T> {
                         != target.as_ref().unwrap().node.id
                     {
                         return Ok(Some((
-                            existing.as_ref().unwrap().node.id,
+                            remove_candidate.as_ref().unwrap().node.id,
                             target.as_ref().unwrap().node.id,
                             format!(
                                 "{}({})=>{}({})",
-                                existing.as_ref().unwrap().balance_value,
-                                existing
+                                remove_candidate.as_ref().unwrap().balance_value,
+                                remove_candidate
                                     .as_ref()
                                     .unwrap()
                                     .node
