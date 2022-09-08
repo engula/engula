@@ -619,12 +619,7 @@ impl Root {
     }
 
     async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
-        let client = self
-            .shared
-            .provider
-            .conn_manager
-            .get_node_client(addr)
-            .await?;
+        let client = self.shared.provider.conn_manager.get_node_client(addr)?;
         Ok(client)
     }
 }

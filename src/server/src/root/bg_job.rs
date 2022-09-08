@@ -585,8 +585,7 @@ impl Jobs {
             .root_shared
             .provider
             .conn_manager
-            .get_node_client(addr.to_owned())
-            .await?;
+            .get_node_client(addr.to_owned())?;
         client.create_replica(replica_id.to_owned(), group).await?;
         Ok(())
     }
@@ -606,8 +605,7 @@ impl Jobs {
             .root_shared
             .provider
             .conn_manager
-            .get_node_client(target_node.addr.to_owned())
-            .await?;
+            .get_node_client(target_node.addr.to_owned())?;
         client
             .remove_replica(
                 replica.to_owned(),

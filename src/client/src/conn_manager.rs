@@ -51,7 +51,7 @@ impl ConnManager {
     }
 
     // TODO(walter) add tags
-    pub async fn get(&self, addr: String) -> Result<Channel> {
+    pub fn get(&self, addr: String) -> Result<Channel> {
         let mut core = self.core.lock().unwrap();
         if let Some(info) = core.channels.get_mut(&addr) {
             info.access += 1;
@@ -77,14 +77,14 @@ impl ConnManager {
     }
 
     #[inline]
-    pub async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
-        let channel = self.get(addr).await?;
+    pub fn get_node_client(&self, addr: String) -> Result<NodeClient> {
+        let channel = self.get(addr)?;
         Ok(NodeClient::new(channel))
     }
 
     #[inline]
-    pub async fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
-        let channel = self.get(addr).await?;
+    pub fn get_root_client(&self, addr: String) -> Result<RootClient<Channel>> {
+        let channel = self.get(addr)?;
         Ok(RootClient::new(channel))
     }
 }
