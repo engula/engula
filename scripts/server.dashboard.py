@@ -72,7 +72,7 @@ def raw_counter(title, metric, unit, legend, *group):
     )
 
 
-def raw_gauge_ts(title, metric, legend="instance"):
+def raw_gauge_ts(title, metric, legend="instance", unit=NO_FORMAT):
     global datasource
     if legend == "instance":
         expr = '{}'.format(metric)
@@ -89,6 +89,7 @@ def raw_gauge_ts(title, metric, legend="instance"):
         dataSource=datasource,
         targets=[target],
         gridPos=next_pos(),
+        unit=unit,
     )
 
 
@@ -121,7 +122,8 @@ def raw_histogram(title, metric, unit, *group):
         group = ','.join(group)
         avg_target = Target(
             datasource=datasource,
-            expr='sum(rate({}_sum[1m])) by ({}) / sum(rate({}_count[1m])) by ({})'.
+            expr=
+            'sum(rate({}_sum[1m])) by ({}) / sum(rate({}_count[1m])) by ({})'.
             format(metric, group, metric, group),
             legendFormat="{}avg".format(legend_prefix),
             refId='C',
@@ -163,8 +165,8 @@ def simple_duration_seconds(title, metric):
     return raw_histogram(title, metric, SECONDS_FORMAT)
 
 
-def simple_histogram_size(title, metric):
-    return raw_histogram(title, metric, NO_FORMAT)
+def simple_histogram_size(title, metric, unit=NO_FORMAT):
+    return raw_histogram(title, metric, unit)
 
 
 def vector_total(title, metric, group, legend="handler", unit=NO_FORMAT):
@@ -180,9 +182,9 @@ def proxy_service_db_panels():
         "Proxy services - DB",
         vector_total("request qps", "proxy_service_database_request_total",
                      "type"),
-        vector_duration_seconds("request duration",
-                                "proxy_service_database_request_duration_seconds",
-                                "type"),
+        vector_duration_seconds(
+            "request duration",
+            "proxy_service_database_request_duration_seconds", "type"),
     )
 
 
@@ -291,6 +293,29 @@ def raft_group_snapshot_panels():
         simple_duration_seconds(
             "download duration",
             "raftgroup_download_snapshot_duration_seconds"),
+    )
+
+
+def raft_engine_panels():
+    return row_panels(
+        "Raft Engine",
+        raw_gauge_ts("memory usage", "raft_engine_log_entry_count", unit=BYTES_FORMAT),
+        raw_gauge_ts("memory usage",
+                     "raft_engine_log_entry_count",
+                     unit=BYTES_FORMAT),
+        simple_histogram_size("write size",
+                              "raft_engine_write_size",
+                              unit=BYTES_FORMAT),
+        simple_duration_seconds("write duration",
+                                "raft_engine_write_duration_seconds"),
+        simple_duration_seconds("apply log entries duration",
+                                "raft_engine_write_apply_duration_seconds"),
+        simple_duration_seconds("sync log file duration",
+                                "raft_engine_sync_log_duration_seconds"),
+        simple_duration_seconds("rotate log file duration",
+                                "raft_engine_rotate_log_duration_seconds"),
+        simple_duration_seconds("allocate log file duration",
+                                "raft_engine_allocate_log_duration_seconds"),
     )
 
 
@@ -453,6 +478,7 @@ dashboard = Dashboard(
         raft_service_panels(),
         raft_group_panels(),
         raft_group_snapshot_panels(),
+        raft_engine_panels(),
         root_cluster_overview_panels(),
         root_service_panels(),
         root_reconcile_panels(),
