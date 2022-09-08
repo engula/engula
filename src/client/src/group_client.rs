@@ -366,7 +366,7 @@ impl GroupClient {
 impl GroupClient {
     pub async fn request(&mut self, request: &Request) -> Result<Response> {
         let op = |ctx: InvokeContext, client: NodeClient| {
-            let latency = take_group_request_metrics(&request);
+            let latency = take_group_request_metrics(request);
             let req = BatchRequest {
                 node_id: ctx.node_id,
                 requests: vec![GroupRequest {
