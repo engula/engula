@@ -19,6 +19,7 @@ mod conn_manager;
 mod discovery;
 pub mod error;
 mod group_client;
+mod metrics;
 mod migrate_client;
 mod node_client;
 mod retry;

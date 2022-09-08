@@ -21,8 +21,8 @@ use engula_api::{
 
 use crate::{
     conn_manager::ConnManager, discovery::StaticServiceDiscovery, group_client::GroupClient,
-    AdminRequestBuilder, AdminResponseExtractor, AppError, AppResult, RetryState, RootClient,
-    Router,
+    metrics::*, record_latency, AdminRequestBuilder, AdminResponseExtractor, AppError, AppResult,
+    RetryState, RootClient, Router,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -291,6 +291,9 @@ impl Collection {
     }
 
     pub async fn delete(&self, key: Vec<u8>) -> AppResult<()> {
+        CLIENT_DATABASE_BYTES_TOTAL.rx.inc_by(key.len() as u64);
+        CLIENT_DATABASE_REQUEST_TOTAL.delete.inc();
+        record_latency!(&CLIENT_DATABASE_REQUEST_DURATION_SECONDS.get);
         let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
@@ -304,6 +307,11 @@ impl Collection {
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> AppResult<()> {
+        CLIENT_DATABASE_BYTES_TOTAL
+            .rx
+            .inc_by((key.len() + value.len()) as u64);
+        CLIENT_DATABASE_REQUEST_TOTAL.put.inc();
+        record_latency!(&CLIENT_DATABASE_REQUEST_DURATION_SECONDS.put);
         let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
@@ -317,11 +325,19 @@ impl Collection {
     }
 
     pub async fn get(&self, key: Vec<u8>) -> AppResult<Option<Vec<u8>>> {
+        CLIENT_DATABASE_BYTES_TOTAL.rx.inc_by(key.len() as u64);
+        CLIENT_DATABASE_REQUEST_TOTAL.get.inc();
+        record_latency!(&CLIENT_DATABASE_REQUEST_DURATION_SECONDS.get);
         let mut retry_state = RetryState::new(self.rpc_timeout);
 
         loop {
             match self.get_inner(&key, retry_state.timeout()).await {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    CLIENT_DATABASE_BYTES_TOTAL
+                        .tx
+                        .inc_by(value.as_ref().map(Vec::len).unwrap_or_default() as u64);
+                    return Ok(value);
+                }
                 Err(err) => {
                     retry_state.retry(err).await?;
                 }
