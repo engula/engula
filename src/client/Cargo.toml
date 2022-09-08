@@ -19,7 +19,7 @@ prometheus = { version = "0.13.0", features = ["process"] }
 prometheus-static-metric = "0.5.1"
 prost = "0.10.3"
 thiserror = "1.0.31"
-tokio = { version = "1.21", features = ["full"] }
+tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.9", features = ["net"] }
 tonic = "0.7.2"
 tracing = "0.1"
