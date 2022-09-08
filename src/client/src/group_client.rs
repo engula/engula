@@ -28,8 +28,8 @@ use tonic::{Code, Status};
 use tracing::{debug, trace, warn};
 
 use crate::{
-    node_client::RpcTimeout, ConnManager, Error, NodeClient, RequestBatchBuilder, Result, Router,
-    RouterGroupState,
+    metrics::*, node_client::RpcTimeout, record_latency_opt, ConnManager, Error, NodeClient,
+    RequestBatchBuilder, Result, Router, RouterGroupState,
 };
 
 pub struct RetryableShardChunkStreaming {
@@ -162,6 +162,7 @@ impl GroupClient {
             {
                 return Err(Error::DeadlineExceeded("issue rpc".to_owned()));
             }
+            GROUP_CLIENT_RETRY_TOTAL.inc();
         }
 
         Err(Error::GroupNotAccessable(group_id))
@@ -365,6 +366,7 @@ impl GroupClient {
 impl GroupClient {
     pub async fn request(&mut self, request: &Request) -> Result<Response> {
         let op = |ctx: InvokeContext, client: NodeClient| {
+            let latency = take_group_request_metrics(&request);
             let req = BatchRequest {
                 node_id: ctx.node_id,
                 requests: vec![GroupRequest {
@@ -376,6 +378,7 @@ impl GroupClient {
                 }],
             };
             async move {
+                record_latency_opt!(latency);
                 client
                     .batch_group_requests(RpcTimeout::new(ctx.timeout, req))
                     .await

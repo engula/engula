@@ -167,8 +167,8 @@ def simple_histogram_size(title, metric):
     return raw_histogram(title, metric, NO_FORMAT)
 
 
-def vector_total(title, metric, group, legend="handler"):
-    return raw_counter(title, metric, NO_FORMAT, legend, group)
+def vector_total(title, metric, group, legend="handler", unit=NO_FORMAT):
+    return raw_counter(title, metric, unit, legend, group)
 
 
 def vector_duration_seconds(title, metric, *group):
@@ -404,6 +404,32 @@ def root_hearbeat_report_panels():
                      "root_update_replica_state_total", "type", "type"),
     )
 
+
+def client_database_panels():
+    return row_panels(
+        "Client - Database",
+        vector_total("database request qps",
+            "client_database_request_total", "type", "type"),
+        vector_duration_seconds(
+            "database request duration",
+            "client_database_request_duration_seconds", "type"),
+        vector_total("database in/out bytes",
+            "client_database_bytes_total", "type", "type", BYTES_FORMAT),
+    )
+
+
+def client_group_panels():
+    return row_panels(
+        "Client - Group",
+        vector_total("group request qps",
+            "group_client_group_request_total", "type", "type"),
+        vector_duration_seconds("group request duration",
+            "group_client_group_request_duration_seconds", "type", "type"),
+        simple_total("group client retry total",
+            "group_client_retry_total"),
+    )
+
+
 def executor_panels():
     return row_panels(
         "Executor",
@@ -432,6 +458,8 @@ dashboard = Dashboard(
         root_reconcile_panels(),
         root_hearbeat_report_panels(),
         root_misc_panels(),
+        client_database_panels(),
+        client_group_panels(),
         executor_panels(),
     ],
 ).auto_panel_ids()
