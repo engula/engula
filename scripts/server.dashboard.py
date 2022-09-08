@@ -306,6 +306,8 @@ def raft_engine_panels():
         simple_histogram_size("write size",
                               "raft_engine_write_size",
                               unit=BYTES_FORMAT),
+        simple_total("log entries bytes written total",
+                     "raft_engine_log_write_bytes_total"),
         simple_duration_seconds("write duration",
                                 "raft_engine_write_duration_seconds"),
         simple_duration_seconds("apply log entries duration",
