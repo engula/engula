@@ -16,7 +16,7 @@ use std::{sync::mpsc, time::Duration};
 use clap::Parser;
 use engula_client::{AppError, ClientOptions, Collection, Database, EngulaClient, Partition};
 use engula_server::runtime::{sync::WaitGroup, Shutdown, ShutdownNotifier};
-use tokio::{runtime::Runtime, select};
+use tokio::{runtime::Runtime, select, time::MissedTickBehavior};
 use tracing::{debug, info};
 
 use super::{config::*, report, report::ReportContext, worker::*};
@@ -174,6 +174,10 @@ fn spawn_reporter(ctx: &Context, cfg: AppConfig) -> WaitGroup {
 
 async fn reporter_main(cfg: AppConfig, ctx: &mut ReportContext) {
     let mut interval = tokio::time::interval(cfg.report_interval);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    // The first tick completes immediately
+    interval.tick().await;
     loop {
         interval.tick().await;
         report::display(ctx);
