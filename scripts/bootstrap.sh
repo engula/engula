@@ -15,7 +15,7 @@
 # limitations under the License.
 
 ###### CONFIG ######
-MODE=debug
+MODE=release
 
 # The working dir of the target cluster envs.
 BASE_DIR=$(pwd)/cluster_test
@@ -24,12 +24,13 @@ BASE_DIR=$(pwd)/cluster_test
 BINARY_DIR=$(pwd)/target/${MODE}/
 
 # The number of servers of this clusters.
-NUM_SERVERS=5
+NUM_SERVERS=1
 
 # The first port of servers in cluster.
 BASE_PORT=21805
 
-export RUST_LOG=info,engula_server=debug,engula_client=debug
+export RUST_LOG=info #,engula_server=debug,engula_client=debug
+export ENGULA_ENABLE_PROXY_SERVICE=true
 
 ###### CONFIG ######
 
@@ -143,6 +144,7 @@ function stop() {
 }
 
 function setup_cluster() {
+    export ENGULA_NUM_CONN=1
     ${BASE_DIR}/engula start \
         --db ${BASE_DIR}/server/1 \
         --cpu-nums 2 \
