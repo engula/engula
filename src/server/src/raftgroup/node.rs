@@ -792,7 +792,7 @@ mod tests {
             fn apply_snapshot(&mut self, data: &std::path::Path) -> crate::Result<()> {
                 use prost::Message;
 
-                let content = std::fs::read(&data).unwrap();
+                let content = std::fs::read(data).unwrap();
                 let meta = SnapshotMeta::decode(&*content).unwrap();
                 self.flushed_index = meta.apply_state.unwrap().index;
                 Ok(())

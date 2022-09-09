@@ -437,14 +437,14 @@ impl Schema {
                 Entry::Occupied(mut ent) => {
                     let group = ent.get_mut();
                     if state.role == RaftRole::Leader as i32 {
-                        (*group).leader_id = Some(state.replica_id);
-                    } else if (*group).leader_id == Some(state.replica_id) {
-                        (*group).leader_id = None;
+                        group.leader_id = Some(state.replica_id);
+                    } else if group.leader_id == Some(state.replica_id) {
+                        group.leader_id = None;
                     }
-                    (*group)
+                    group
                         .replicas
                         .retain(|desc| desc.replica_id != state.replica_id);
-                    (*group).replicas.push(state);
+                    group.replicas.push(state);
                 }
                 Entry::Vacant(ent) => {
                     let leader_id = if state.role == RaftRole::Leader as i32 {

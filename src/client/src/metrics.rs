@@ -57,7 +57,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref GROUP_CLIENT_GROUP_REQUEST_TOTAL: GroupRequestTotal =
-        GroupRequestTotal::from(&*GROUP_CLIENT_GROUP_REQUEST_TOTAL_VEC);
+        GroupRequestTotal::from(&GROUP_CLIENT_GROUP_REQUEST_TOTAL_VEC);
     pub static ref GROUP_CLIENT_GROUP_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "group_client_group_request_duration_seconds",
@@ -67,7 +67,7 @@ lazy_static! {
         )
         .unwrap();
     pub static ref GROUP_CLIENT_GROUP_REQUEST_DURATION_SECONDS: GroupRequestDuration =
-        GroupRequestDuration::from(&*GROUP_CLIENT_GROUP_REQUEST_DURATION_SECONDS_VEC);
+        GroupRequestDuration::from(&GROUP_CLIENT_GROUP_REQUEST_DURATION_SECONDS_VEC);
     pub static ref GROUP_CLIENT_RETRY_TOTAL: IntCounter = register_int_counter!(
         "group_client_retry_total",
         "The total retries of group client",
@@ -155,7 +155,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref CLIENT_DATABASE_REQUEST_TOTAL: DatabaseRequestTotal =
-        DatabaseRequestTotal::from(&*CLIENT_DATABASE_REQUEST_TOTAL_VEC);
+        DatabaseRequestTotal::from(&CLIENT_DATABASE_REQUEST_TOTAL_VEC);
     pub static ref CLIENT_DATABASE_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "client_database_request_duration_seconds",
@@ -165,7 +165,7 @@ lazy_static! {
         )
         .unwrap();
     pub static ref CLIENT_DATABASE_REQUEST_DURATION_SECONDS: DatabaseRequestDuration =
-        DatabaseRequestDuration::from(&*CLIENT_DATABASE_REQUEST_DURATION_SECONDS_VEC);
+        DatabaseRequestDuration::from(&CLIENT_DATABASE_REQUEST_DURATION_SECONDS_VEC);
     pub static ref CLIENT_DATABASE_BYTES_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
         "client_database_bytes_total",
         "The total bytes of client database receive/send",
@@ -173,7 +173,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref CLIENT_DATABASE_BYTES_TOTAL: DatabaseBytesTotal =
-        DatabaseBytesTotal::from(&*CLIENT_DATABASE_BYTES_TOTAL_VEC);
+        DatabaseBytesTotal::from(&CLIENT_DATABASE_BYTES_TOTAL_VEC);
 }
 
 #[macro_export]

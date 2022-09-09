@@ -56,7 +56,7 @@ lazy_static! {
     )
     .unwrap();
     pub static ref NODE_SERVICE_GROUP_REQUEST_TOTAL: GroupRequestTotal =
-        GroupRequestTotal::from(&*NODE_SERVICE_GROUP_REQUEST_TOTAL_VEC);
+        GroupRequestTotal::from(&NODE_SERVICE_GROUP_REQUEST_TOTAL_VEC);
     pub static ref NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "node_service_group_request_duration_seconds",
@@ -66,7 +66,7 @@ lazy_static! {
         )
         .unwrap();
     pub static ref NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS: GroupRequestDuration =
-        GroupRequestDuration::from(&*NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS_VEC);
+        GroupRequestDuration::from(&NODE_SERVICE_GROUP_REQUEST_DURATION_SECONDS_VEC);
 }
 
 pub fn take_group_request_metrics(request: &GroupRequest) -> Option<&'static Histogram> {
@@ -140,7 +140,7 @@ lazy_static! {
 pub fn take_batch_request_metrics(request: &BatchRequest) -> &'static Histogram {
     NODE_SERVICE_BATCH_REQUEST_SIZE.observe(request.requests.len() as f64);
     NODE_SERVICE_BATCH_REQUEST_TOTAL.inc();
-    &*NODE_SERVICE_BATCH_REQUEST_DURATION_SECONDS
+    &NODE_SERVICE_BATCH_REQUEST_DURATION_SECONDS
 }
 
 macro_rules! simple_node_method {
@@ -254,7 +254,7 @@ lazy_static! {
         )
         .unwrap();
     pub static ref PROXY_SERVICE_DATABASE_REQUEST_TOTAL: DatabaseRequestTotal =
-        DatabaseRequestTotal::from(&*PROXY_SERVICE_DATABASE_REQUEST_TOTAL_VEC);
+        DatabaseRequestTotal::from(&PROXY_SERVICE_DATABASE_REQUEST_TOTAL_VEC);
     pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC: HistogramVec =
         register_histogram_vec!(
             "proxy_service_database_request_duration_seconds",
@@ -264,7 +264,7 @@ lazy_static! {
         )
         .unwrap();
     pub static ref PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS: DatabaseRequestDuration =
-        DatabaseRequestDuration::from(&*PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC);
+        DatabaseRequestDuration::from(&PROXY_SERVICE_DATABASE_REQUEST_DURATION_SECONDS_VEC);
 }
 
 pub fn take_database_request_metrics(
