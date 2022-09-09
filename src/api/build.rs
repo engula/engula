@@ -15,6 +15,9 @@
 use std::{error::Error, result::Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    std::env::set_var("PROTOC", protoc_build::PROTOC);
+    std::env::set_var("PROTOC_INCLUDE", protoc_build::PROTOC_INCLUDE);
+
     tonic_build::configure().compile(
         &[
             "engula/v1/engula.proto",
