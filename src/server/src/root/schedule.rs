@@ -73,6 +73,11 @@ impl ReconcileScheduler {
         info!(len = tasks.len(), task=?task, "setup new reconcile task")
     }
 
+    pub async fn exec_task(&self, mut task: ReconcileTask) -> Result<()> {
+        self.ctx.handle_task(&mut task).await?;
+        Ok(())
+    }
+
     async fn is_empty(&self) -> bool {
         self.tasks.lock().await.is_empty()
     }
@@ -85,8 +90,7 @@ impl ReconcileScheduler {
             return Ok(true);
         }
 
-        let actions = self.comput_replica_role_action().await?;
-        if !actions.is_empty() {
+        if self.need_balance_replica().await? {
             return Ok(true);
         }
 
@@ -126,26 +130,11 @@ impl ReconcileScheduler {
             .cluster_groups
             .set(1);
 
-        let ractions = self.comput_replica_role_action().await?;
-        let sactions = self.ctx.alloc.compute_shard_action().await?;
-
-        for action in ractions {
+        let lactions = self.compute_leader_action().await?;
+        for action in lactions {
             match action {
-                ReplicaRoleAction::Replica(ReplicaAction::Migrate(action)) => {
-                    self.setup_task(ReconcileTask {
-                        task: Some(reconcile_task::Task::ReallocateReplica(
-                            ReallocateReplicaTask {
-                                group: action.group,
-                                epoch: action.epoch,
-                                src_node: action.source_node,
-                                dest_node: action.dest_node,
-                            },
-                        )),
-                    })
-                    .await;
-                }
                 ReplicaRoleAction::Leader(LeaderAction::Shed(action)) => {
-                    self.setup_task(ReconcileTask {
+                    self.exec_task(ReconcileTask {
                         task: Some(reconcile_task::Task::TransferGroupLeader(
                             TransferGroupLeaderTask {
                                 group: action.group,
@@ -155,11 +144,33 @@ impl ReconcileScheduler {
                             },
                         )),
                     })
-                    .await;
+                    .await?;
                 }
+                _ => unreachable!(""),
             }
         }
 
+        let ractions = self.compute_replica_action().await?;
+        for action in ractions {
+            match action {
+                ReplicaRoleAction::Replica(ReplicaAction::Migrate(action)) => {
+                    self.exec_task(ReconcileTask {
+                        task: Some(reconcile_task::Task::ReallocateReplica(
+                            ReallocateReplicaTask {
+                                group: action.group,
+                                epoch: action.epoch,
+                                src_node: action.source_node,
+                                dest_node: action.dest_node,
+                            },
+                        )),
+                    })
+                    .await?;
+                }
+                _ => unreachable!(""),
+            }
+        }
+
+        let sactions = self.ctx.alloc.compute_shard_action().await?;
         for action in sactions {
             let ShardAction::Migrate(action) = action;
             self.setup_task(ReconcileTask {
@@ -175,39 +186,7 @@ impl ReconcileScheduler {
         Ok(!self.is_empty().await)
     }
 
-    pub async fn comput_replica_role_action(&self) -> Result<Vec<ReplicaRoleAction>> {
-        let mut actions = Vec::new();
-
-        let mv_repl_action = {
-            let repl_cnt_policy = ReplicaCountPolicy::default();
-            self.ctx
-                .alloc
-                .compute_balance_action(&repl_cnt_policy)
-                .await?
-        };
-        if mv_repl_action.is_empty() {
-            metrics::RECONCILE_ALREADY_BALANCED_INFO
-                .node_replica_count
-                .set(1);
-        } else {
-            metrics::RECONCILE_ALREADY_BALANCED_INFO
-                .node_replica_count
-                .set(0);
-        }
-        actions.extend_from_slice(
-            &mv_repl_action
-                .iter()
-                .map(|a| {
-                    ReplicaRoleAction::Replica(ReplicaAction::Migrate(ReallocateReplica {
-                        group: a.group_id,
-                        epoch: a.epoch,
-                        source_node: a.source_node,
-                        dest_node: a.dest_node,
-                    }))
-                })
-                .collect::<Vec<_>>(),
-        );
-
+    pub async fn compute_leader_action(&self) -> Result<Vec<ReplicaRoleAction>> {
         let leader_actions = {
             let leader_policy = LeaderCountPolicy::default();
             self.ctx
@@ -224,20 +203,61 @@ impl ReconcileScheduler {
                 .node_leader_count
                 .set(0);
         }
-        actions.extend_from_slice(
-            &leader_actions
-                .iter()
-                .map(|act| {
-                    ReplicaRoleAction::Leader(LeaderAction::Shed(TransferLeader {
-                        group: act.group_id,
-                        src_node: act.source_node,
-                        target_node: act.dest_node,
-                        epoch: act.epoch,
-                    }))
-                })
-                .collect::<Vec<_>>(),
-        );
+        let actions = leader_actions
+            .iter()
+            .map(|act| {
+                ReplicaRoleAction::Leader(LeaderAction::Shed(TransferLeader {
+                    group: act.group_id,
+                    src_node: act.source_node,
+                    target_node: act.dest_node,
+                    epoch: act.epoch,
+                }))
+            })
+            .collect::<Vec<_>>();
         Ok(actions)
+    }
+
+    pub async fn compute_replica_action(&self) -> Result<Vec<ReplicaRoleAction>> {
+        let mv_repl_action = {
+            let repl_cnt_policy = ReplicaCountPolicy::default();
+            self.ctx
+                .alloc
+                .compute_balance_action(&repl_cnt_policy)
+                .await?
+        };
+        if mv_repl_action.is_empty() {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_replica_count
+                .set(1);
+        } else {
+            metrics::RECONCILE_ALREADY_BALANCED_INFO
+                .node_replica_count
+                .set(0);
+        }
+        let actions = mv_repl_action
+            .iter()
+            .map(|a| {
+                ReplicaRoleAction::Replica(ReplicaAction::Migrate(ReallocateReplica {
+                    group: a.group_id,
+                    epoch: a.epoch,
+                    source_node: a.source_node,
+                    dest_node: a.dest_node,
+                }))
+            })
+            .collect::<Vec<_>>();
+        Ok(actions)
+    }
+
+    pub async fn need_balance_replica(&self) -> Result<bool> {
+        let lact = self.compute_leader_action().await?;
+        if !lact.is_empty() {
+            return Ok(true);
+        }
+        let ract = self.compute_replica_action().await?;
+        if !ract.is_empty() {
+            return Ok(true);
+        }
+        return Ok(false);
     }
 }
 
