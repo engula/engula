@@ -31,12 +31,20 @@ macro_rules! request_total {
                         IntCounter::new(
                             concat!(stringify!($name), "_failure_request_total"),
                             concat!("The total failure ", stringify!($name), " requests")).unwrap();
-                pub static ref [<$name:upper _REQUEST_DURATION_SECONDS>]: Histogram =
-                    Histogram::with_opts(HistogramOpts::new(
-                            concat!(stringify!($name), "_request_duration_seconds"),
-                            concat!("The intervals of ", stringify!($name), " requests"),
-                    ))
-                    .unwrap();
+                pub static ref [<$name:upper _SUCCESS_REQUEST_DURATION_SECONDS>]: Histogram =
+                        register_histogram!(
+                            concat!(stringify!($name), "_success_request_duration_seconds"),
+                            concat!("The intervals of success ", stringify!($name), " requests"),
+                            exponential_buckets(0.00005, 1.8, 26).unwrap(),
+                        )
+                        .unwrap();
+                pub static ref [<$name:upper _FAILURE_REQUEST_DURATION_SECONDS>]: Histogram =
+                        register_histogram!(
+                            concat!(stringify!($name), "_failure_request_duration_seconds"),
+                            concat!("The intervals of failure ", stringify!($name), " requests"),
+                            exponential_buckets(0.00005, 1.8, 26).unwrap(),
+                        )
+                        .unwrap();
             }
         }
     };

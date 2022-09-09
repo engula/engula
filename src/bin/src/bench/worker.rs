@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
+
 use engula_client::Collection;
 use rand::prelude::*;
 use tracing::trace;
 
-use crate::{metrics::*, AppConfig};
+use super::{metrics::*, AppConfig};
 
 pub struct Job {
     co: Collection,
@@ -123,14 +125,16 @@ async fn execute(co: &Collection, next_op: NextOp) {
 
 async fn get(co: &Collection, key: Vec<u8>) {
     trace!("send get request");
-    let _timer = GET_REQUEST_DURATION_SECONDS.start_timer();
+    let start = Instant::now();
     match co.get(key).await {
         Ok(_) => {
             GET_SUCCESS_REQUEST_TOTAL.inc();
+            GET_SUCCESS_REQUEST_DURATION_SECONDS.observe(saturating_elapsed_seconds(start));
         }
         Err(e) => {
             tracing::error!("get request {e:?}");
             GET_FAILURE_REQUEST_TOTAL.inc();
+            GET_FAILURE_REQUEST_DURATION_SECONDS.observe(saturating_elapsed_seconds(start));
         }
     }
     GET_REQUEST_TOTAL.inc();
@@ -138,14 +142,22 @@ async fn get(co: &Collection, key: Vec<u8>) {
 
 async fn put(co: &Collection, key: Vec<u8>, value: Vec<u8>) {
     trace!("send put request");
-    let _timer = GET_REQUEST_DURATION_SECONDS.start_timer();
+    let start = Instant::now();
     match co.put(key, value).await {
         Ok(_) => {
             PUT_SUCCESS_REQUEST_TOTAL.inc();
+            PUT_SUCCESS_REQUEST_DURATION_SECONDS.observe(saturating_elapsed_seconds(start));
         }
         Err(_) => {
             PUT_FAILURE_REQUEST_TOTAL.inc();
+            PUT_FAILURE_REQUEST_DURATION_SECONDS.observe(saturating_elapsed_seconds(start));
         }
     }
     PUT_REQUEST_TOTAL.inc();
+}
+
+#[inline]
+fn saturating_elapsed_seconds(instant: Instant) -> f64 {
+    let now = Instant::now();
+    now.saturating_duration_since(instant).as_secs_f64()
 }

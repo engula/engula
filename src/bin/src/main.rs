@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+mod bench;
 
 use clap::{Parser, Subcommand};
 use engula_server::{Error, Result};
@@ -33,12 +34,17 @@ impl Command {
 #[derive(Subcommand)]
 enum SubCommand {
     Start(StartCommand),
+    Bench(bench::BenchCommand),
 }
 
 impl SubCommand {
     fn run(self) -> Result<()> {
         match self {
             SubCommand::Start(cmd) => cmd.run(),
+            SubCommand::Bench(cmd) => {
+                cmd.run();
+                Ok(())
+            }
         }
     }
 }

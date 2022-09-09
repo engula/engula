@@ -11,10 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-mod config;
-mod metrics;
-mod worker;
-
 use std::{sync::mpsc, time::Duration};
 
 use clap::Parser;
@@ -23,7 +19,7 @@ use engula_server::runtime::{sync::WaitGroup, Shutdown, ShutdownNotifier};
 use tokio::{runtime::Runtime, select};
 use tracing::{debug, info};
 
-use crate::{config::*, metrics::*, worker::*};
+use super::{config::*, report, report::ReportContext, worker::*};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -35,66 +31,62 @@ struct Context {
 
 #[derive(Parser)]
 #[clap(name = "engula", version, author, about)]
-struct Command {
+pub struct Command {
     #[clap(long)]
     conf: Option<String>,
 }
 
-fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_level(true)
-        .with_max_level(tracing::Level::INFO)
-        .with_thread_ids(true)
-        .init();
+impl Command {
+    pub fn run(self) {
+        let cfg = load_config(self).unwrap();
 
-    let cfg = load_config().unwrap();
+        info!("config {:#?}", cfg);
 
-    info!("config {:#?}", cfg);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(cfg.num_threads)
+            .build()
+            .unwrap();
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(cfg.num_threads)
-        .build()
-        .unwrap();
+        let co = runtime
+            .block_on(async { open_collection(&cfg).await })
+            .expect("open collection");
+        let notifier = ShutdownNotifier::default();
+        let ctx = Context {
+            wait_group: WaitGroup::new(),
+            shutdown: notifier.subscribe(),
+            runtime,
+        };
 
-    let co = runtime.block_on(async { open_collection(&cfg).await })?;
-    let notifier = ShutdownNotifier::default();
-    let ctx = Context {
-        wait_group: WaitGroup::new(),
-        shutdown: notifier.subscribe(),
-        runtime,
-    };
+        let (send, recv) = mpsc::channel();
+        let handle = ctx.runtime.spawn(async move {
+            notifier.ctrl_c().await;
+            info!("receive CTRL-C, exit");
+            send.send(()).unwrap_or_default();
+        });
 
-    let (send, recv) = mpsc::channel();
-    let handle = ctx.runtime.spawn(async move {
-        notifier.ctrl_c().await;
-        info!("receive CTRL-C, exit");
-        send.send(()).unwrap_or_default();
-    });
+        info!("spawn {} workers", cfg.worker.num_worker);
+        let report_waiter = spawn_reporter(&ctx, cfg.clone());
 
-    info!("spawn {} workers", cfg.worker.num_worker);
-    let report_waiter = spawn_reporter(&ctx, cfg.clone());
-
-    let num_op = cfg.operation / cfg.worker.num_worker;
-    for i in 0..cfg.worker.num_worker {
-        spawn_worker(&ctx, cfg.clone(), i, num_op, co.clone());
-        if let Some(interval) = cfg.worker.start_intervals {
-            if recv.recv_timeout(interval).is_ok() {
-                break;
+        let num_op = cfg.operation / cfg.worker.num_worker;
+        for i in 0..cfg.worker.num_worker {
+            spawn_worker(&ctx, cfg.clone(), i, num_op, co.clone());
+            if let Some(interval) = cfg.worker.start_intervals {
+                if recv.recv_timeout(interval).is_ok() {
+                    break;
+                }
             }
         }
+
+        info!("all workers are spawned, wait ...");
+
+        let wait_group = ctx.wait_group;
+        ctx.runtime.block_on(async move {
+            wait_group.wait().await;
+            handle.abort();
+            report_waiter.wait().await;
+        });
     }
-
-    info!("all workers are spawned, wait ...");
-
-    let wait_group = ctx.wait_group;
-    ctx.runtime.block_on(async move {
-        wait_group.wait().await;
-        handle.abort();
-        report_waiter.wait().await;
-    });
-
-    Ok(())
 }
 
 fn spawn_worker(ctx: &Context, cfg: AppConfig, i: usize, num_op: usize, co: Collection) {
@@ -169,39 +161,28 @@ fn spawn_reporter(ctx: &Context, cfg: AppConfig) -> WaitGroup {
     let wait_group = WaitGroup::new();
     let cloned_wait_group = wait_group.clone();
     ctx.runtime.spawn(async move {
+        let mut ctx = ReportContext::default();
         select! {
             _ = shutdown => {},
-            _ = reporter_main(cfg) => {},
+            _ = reporter_main(cfg, &mut ctx) => {},
         }
-        report();
+        report::display(&mut ctx);
         drop(wait_group);
     });
     cloned_wait_group
 }
 
-async fn reporter_main(cfg: AppConfig) {
+async fn reporter_main(cfg: AppConfig, ctx: &mut ReportContext) {
     let mut interval = tokio::time::interval(cfg.report_interval);
-    interval.tick().await;
     loop {
         interval.tick().await;
-        report();
+        report::display(ctx);
     }
 }
 
-fn report() {
-    info!("GET total {}", GET_REQUEST_TOTAL.get());
-    info!("GET success total {}", GET_SUCCESS_REQUEST_TOTAL.get());
-    info!("GET failure total {}", GET_FAILURE_REQUEST_TOTAL.get());
-
-    info!("PUT total {}", PUT_REQUEST_TOTAL.get());
-    info!("PUT success total {}", PUT_SUCCESS_REQUEST_TOTAL.get());
-    info!("PUT failure total {}", PUT_FAILURE_REQUEST_TOTAL.get());
-}
-
-fn load_config() -> Result<AppConfig> {
+fn load_config(cmd: Command) -> Result<AppConfig> {
     use ::config::{Config, Environment, File};
 
-    let cmd = Command::parse();
     let mut builder = Config::builder()
         .add_source(Config::try_from(&AppConfig::default()).unwrap())
         .set_default("addrs", vec!["127.0.0.1:21805"])?;
