@@ -199,7 +199,7 @@ impl SnapManager {
         let parent = dir_name.parent();
         match parent {
             Some(parent) if parent == replica.base_dir => {
-                let name = dir_name.file_name().unwrap().to_string_lossy().to_owned();
+                let name = dir_name.file_name().unwrap().to_string_lossy().into_owned();
                 let snapshot_index = name.parse::<usize>().expect("install invalid snapshot dir");
                 let snapshot_id = format!("{}", snapshot_index).as_bytes().to_owned();
                 debug_assert!(snapshot_index < replica.next_snapshot_index);
@@ -211,7 +211,7 @@ impl SnapManager {
 
                 replica.push(SnapshotInfo {
                     snapshot_id: snapshot_id.clone(),
-                    base_dir: replica.base_dir.join(name.as_ref()),
+                    base_dir: replica.base_dir.join(name),
                     meta: meta.clone(),
                     ref_count: 0,
                     created_at: Instant::now(),
@@ -298,8 +298,7 @@ impl ReplicaSnapManager {
     fn push(&mut self, info: SnapshotInfo) {
         let index = self
             .snapshots
-            .binary_search_by(|i| i.snapshot_id.cmp(&info.snapshot_id))
-            .into_ok_or_err();
+            .partition_point(|i| i.snapshot_id < info.snapshot_id);
         self.snapshots.insert(index, info);
     }
 
@@ -431,7 +430,7 @@ mod tests {
         async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
             info!("create snapshot at: {}", base_dir.display());
             if let Some(parent) = base_dir.parent() {
-                std::fs::create_dir_all(&parent)?;
+                std::fs::create_dir_all(parent)?;
             }
             std::fs::write(base_dir, &self.content)?;
             info!("write snapshot content");
@@ -453,7 +452,7 @@ mod tests {
     impl SnapshotBuilder for MultiFilesSnapshotBuilder {
         async fn checkpoint(&self, base_dir: &Path) -> Result<(ApplyState, GroupDesc)> {
             info!("create snapshot at: {}", base_dir.display());
-            std::fs::create_dir_all(&base_dir)?;
+            std::fs::create_dir_all(base_dir)?;
             let file_1 = base_dir.join("1");
             let file_2 = base_dir.join("2");
             std::fs::write(file_1, &self.content_1)?;

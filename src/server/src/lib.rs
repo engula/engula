@@ -15,8 +15,7 @@
 #![feature(cursor_remaining)]
 #![feature(drain_filter)]
 #![feature(linked_list_cursors)]
-#![feature(result_into_ok_or_err)]
-#![feature(path_try_exists)]
+#![feature(fs_try_exists)]
 
 mod bootstrap;
 mod discovery;
