@@ -157,7 +157,6 @@ fn histogram_diff(
 pub(super) fn display(earlier_ctx: &mut ReportContext) {
     let mut current_ctx = ReportContext::default();
     let summary = diff(&current_ctx, earlier_ctx);
-    std::mem::swap(earlier_ctx, &mut current_ctx);
 
     display_histogram(
         "GET",
@@ -183,6 +182,7 @@ pub(super) fn display(earlier_ctx: &mut ReportContext) {
         summary.interval,
         current_ctx.put_failure.get_histogram().get_sample_count(),
     );
+    std::mem::swap(earlier_ctx, &mut current_ctx);
 }
 
 fn display_histogram(name: &str, h: &Histogram, interval: Duration, count: u64) {
