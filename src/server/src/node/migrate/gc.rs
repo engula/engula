@@ -44,11 +44,14 @@ async fn collect_chunks(
     let mut snapshot = group_engine.snapshot(shard_id, snapshot_mode)?;
     let mut buf = Vec::with_capacity(cfg.shard_gc_keys);
     for mvcc_iter in snapshot.iter() {
-        buf.extend(mvcc_iter.map(|e| (e.user_key().to_owned(), e.version())));
+        let mvcc_iter = mvcc_iter?;
+        for entry in mvcc_iter {
+            let e = entry?;
+            buf.push((e.user_key().to_owned(), e.version()));
+        }
         if buf.len() >= cfg.shard_gc_keys {
             break;
         }
     }
-    snapshot.status()?;
     Ok(buf)
 }

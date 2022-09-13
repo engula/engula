@@ -71,10 +71,11 @@ async fn purge_versions(
     let snapshot_mode = SnapshotMode::Key { key };
     let mut snapshot = engine.snapshot(shard_id, snapshot_mode)?;
     if let Some(iter) = snapshot.mvcc_iter() {
+        let iter = iter?;
         for entry in iter {
+            let entry = entry?;
             engine.delete(wb, shard_id, key, entry.version())?;
         }
     }
-    snapshot.status()?;
     Ok(())
 }
