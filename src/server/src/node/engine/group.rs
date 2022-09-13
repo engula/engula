@@ -18,11 +18,12 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
     sync::{Arc, RwLock},
+    time::{Duration, Instant},
 };
 
 use engula_api::{server::v1::*, shard};
 use prost::Message;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::*, Error, Result};
 
@@ -126,6 +127,11 @@ pub enum SnapshotMode<'a> {
 struct ColumnFamilyDecorator<'a, 'b> {
     cf_handle: Arc<rocksdb::BoundColumnFamily<'b>>,
     wb: &'a mut rocksdb::WriteBatch,
+}
+
+struct SlowIoGuard {
+    threshold: u64,
+    start: Instant,
 }
 
 impl GroupEngine {
@@ -345,7 +351,12 @@ impl GroupEngine {
         } else {
             opts.disable_wal(true);
         }
-        self.raw_db.write_opt(wb.inner, &opts)?;
+
+        {
+            let engine_slow_io_threshold_ms: Option<u64> = None;
+            let _slow_io_guard = engine_slow_io_threshold_ms.map(SlowIoGuard::new);
+            self.raw_db.write_opt(wb.inner, &opts)?;
+        }
 
         if wb.descriptor.is_some() || wb.migration_state.is_some() {
             self.apply_core_states(wb.descriptor, wb.migration_state);
@@ -905,6 +916,29 @@ impl Deref for WriteBatch {
 impl DerefMut for WriteBatch {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+impl SlowIoGuard {
+    fn new(threshold: u64) -> Self {
+        use rocksdb::perf::*;
+
+        set_perf_stats(PerfStatsLevel::EnableTime);
+        SlowIoGuard {
+            threshold,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for SlowIoGuard {
+    fn drop(&mut self) {
+        use rocksdb::perf::*;
+        if self.start.elapsed() >= Duration::from_millis(self.threshold) {
+            warn!("rocksdb slow io: {}", PerfContext::default().report(true));
+        }
+
+        set_perf_stats(PerfStatsLevel::Disable);
     }
 }
 
