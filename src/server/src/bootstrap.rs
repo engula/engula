@@ -108,10 +108,6 @@ async fn bootstrap_services(
     Ok(())
 }
 
-pub(crate) fn open_engine_with_default_config<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
-    open_engine(&DbConfig::default(), path)
-}
-
 pub(crate) fn open_engine<P: AsRef<Path>>(cfg: &DbConfig, path: P) -> Result<rocksdb::DB> {
     use rocksdb::{BlockBasedIndexType, BlockBasedOptions, Cache, Options, DB};
 
@@ -365,4 +361,9 @@ pub(crate) async fn build_provider(config: &Config, executor: Executor) -> Resul
         executor,
     });
     Ok(provider)
+}
+
+#[cfg(test)]
+pub(crate) fn open_engine_with_default_config<P: AsRef<Path>>(path: P) -> Result<rocksdb::DB> {
+    open_engine(&DbConfig::default(), path)
 }
