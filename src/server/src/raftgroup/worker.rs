@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use engula_api::server::v1::{ChangeReplicas, RaftRole, ReplicaDesc};
 use futures::{
@@ -36,7 +41,7 @@ use super::{
 use crate::{
     runtime::Executor,
     serverpb::v1::{EvalResult, RaftMessage},
-    Result,
+    RaftConfig, Result,
 };
 
 pub enum Request {
@@ -105,6 +110,11 @@ pub trait StateObserver: Send {
     fn on_state_updated(&mut self, leader_id: u64, voted_for: u64, term: u64, role: RaftRole);
 }
 
+struct SlowIoGuard {
+    threshold: u64,
+    start: Instant,
+}
+
 struct AdvanceImpl<'a> {
     group_id: u64,
     replica_id: u64,
@@ -169,6 +179,7 @@ pub struct RaftWorker<M: StateMachine>
 where
     Self: Send,
 {
+    cfg: RaftConfig,
     executor: Executor,
     request_sender: mpsc::Sender<Request>,
     request_receiver: mpsc::Receiver<Request>,
@@ -221,6 +232,7 @@ where
         );
 
         Ok(RaftWorker {
+            cfg: raft_mgr.cfg.clone(),
             executor: raft_mgr.executor().clone(),
             request_sender,
             request_receiver,
@@ -243,14 +255,14 @@ where
     }
 
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
-    pub async fn run(mut self, tick_interval_ms: u64) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         debug!(
             "group {} replica {} raft worker is running",
             self.group_id, self.desc.id
         );
 
         // WARNING: the underlying instant isn't steady.
-        let mut interval = tokio::time::interval(Duration::from_millis(tick_interval_ms));
+        let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
         while !self.request_receiver.is_terminated() {
             if !self.raft_node.has_ready() {
                 futures::select_biased! {
@@ -283,6 +295,7 @@ where
                 replica_cache: &mut self.replica_cache,
             };
             if let Some(write_task) = self.raft_node.advance(&mut template) {
+                let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
                 let mut batch = LogBatch::default();
                 self.raft_node
                     .mut_store()
@@ -466,6 +479,23 @@ where
             first_index,
             last_index,
             peers: peer_states,
+        }
+    }
+}
+
+impl SlowIoGuard {
+    fn new(threshold: u64) -> Self {
+        SlowIoGuard {
+            threshold,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for SlowIoGuard {
+    fn drop(&mut self) {
+        if self.start.elapsed() >= Duration::from_millis(self.threshold) {
+            warn!("raft engine slow io: {:?}", raft_engine::get_perf_context());
         }
     }
 }
