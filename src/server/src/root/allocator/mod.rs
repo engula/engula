@@ -18,8 +18,8 @@ use engula_api::server::v1::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use self::{node_balancer::*, policy_shard_cnt::ShardCountPolicy, source::NodeFilter};
-use super::{metrics, OngoingStats, RootShared};
+use self::{replica_balancer::*, source::NodeFilter};
+use super::{metrics, RootShared};
 use crate::{
     bootstrap::{REPLICA_PER_GROUP, ROOT_GROUP_ID},
     Result,
@@ -28,22 +28,17 @@ use crate::{
 #[cfg(test)]
 mod sim_test;
 
-mod node_balancer;
-mod policy_leader_cnt;
+mod leader_balancer;
 mod policy_replica_cnt;
-mod policy_shard_cnt;
+mod replica_balancer;
+mod shard_balancer;
 mod source;
 
-pub use node_balancer::BalancePolicy;
-pub use policy_leader_cnt::LeaderCountPolicy;
+pub use leader_balancer::LeaderBalancer;
 pub use policy_replica_cnt::ReplicaCountPolicy;
+pub use replica_balancer::{BalancePolicy, ReplicaBalancer};
+pub use shard_balancer::ShardBalancer;
 pub use source::{AllocSource, SysAllocSource};
-
-#[derive(Clone, Debug)]
-pub enum ReplicaRoleAction {
-    Replica(ReplicaAction),
-    Leader(LeaderAction),
-}
 
 #[derive(Clone, Debug)]
 pub enum GroupAction {
@@ -51,22 +46,6 @@ pub enum GroupAction {
     Add(usize),
     Remove(Vec<u64>),
 }
-
-#[derive(Clone, Debug)]
-pub enum ReplicaAction {
-    Migrate(ReallocateReplica),
-}
-
-#[derive(Clone, Debug)]
-pub enum ShardAction {
-    Migrate(ReallocateShard),
-}
-
-#[derive(Clone, Debug)]
-pub enum LeaderAction {
-    Shed(TransferLeader),
-}
-
 #[derive(Debug, Clone)]
 pub struct TransferLeader {
     pub group: u64,
@@ -85,9 +64,9 @@ pub struct ReallocateReplica {
 
 #[derive(Clone, Debug)]
 pub struct ReallocateShard {
-    pub shard: u64,
-    pub source_group: u64,
+    pub source_group: GroupDesc,
     pub target_group: u64,
+    pub shard: u64,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -130,33 +109,26 @@ impl RootConfig {
     }
 }
 
-pub struct NodeBalanceAction {
-    pub group_id: u64,
-    pub epoch: u64,
+pub struct ReplicaBalanceAction {
+    pub group: GroupDesc,
     pub source_node: u64,
     pub dest_node: u64,
+    pub shed_leader: bool,
+    pub source_replica_id: u64,
+    pub source_term: u64,
 }
 
 #[derive(Clone)]
 pub struct Allocator<T: AllocSource> {
     alloc_source: Arc<T>,
-    ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
-    balancer: node_balancer::NodeBalancer<T>,
 }
 
 impl<T: AllocSource> Allocator<T> {
-    pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
-        let balancer = node_balancer::NodeBalancer::new(
-            alloc_source.to_owned(),
-            ongoing_stats.to_owned(),
-            config.to_owned(),
-        );
+    pub fn new(alloc_source: Arc<T>, config: RootConfig) -> Self {
         Self {
             alloc_source,
             config,
-            ongoing_stats,
-            balancer,
         }
     }
 
@@ -198,36 +170,6 @@ impl<T: AllocSource> Allocator<T> {
             std::cmp::Ordering::Equal => GroupAction::Noop,
         })
     }
-
-    pub async fn compute_shard_action(&self) -> Result<Vec<ShardAction>> {
-        if !self.config.enable_shard_balance {
-            return Ok(vec![]);
-        }
-
-        self.alloc_source.refresh_all().await?;
-
-        if self.alloc_source.nodes(NodeFilter::All).len() >= self.config.replicas_per_group {
-            let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
-            if !actions.is_empty() {
-                metrics::RECONCILE_ALREADY_BALANCED_INFO
-                    .group_shard_count
-                    .set(0);
-                return Ok(actions);
-            }
-        }
-        metrics::RECONCILE_ALREADY_BALANCED_INFO
-            .group_shard_count
-            .set(1);
-        Ok(Vec::new())
-    }
-
-    pub async fn compute_balance_action(
-        &self,
-        policy: &(dyn BalancePolicy + Send + Sync + 'static),
-    ) -> Result<Vec<NodeBalanceAction>> {
-        self.balancer.compute_balance_action(policy).await
-    }
-
     /// Allocate new replica in one group.
     pub async fn allocate_group_replica(
         &self,
@@ -248,7 +190,7 @@ impl<T: AllocSource> Allocator<T> {
             .map(|node| NodeCandidate {
                 node: node.to_owned(),
                 disk_full: check_node_full(&node),
-                balance_value: policy.balance_value(self.ongoing_stats.to_owned(), &node) as f64,
+                balance_value: policy.balance_value(&BalanceContext::default(), &node) as f64, // TODO: ...
                 ..Default::default()
             })
             .collect::<Vec<_>>();
@@ -275,13 +217,6 @@ impl<T: AllocSource> Allocator<T> {
             .take(wanted_count)
             .map(|n| n.node)
             .collect())
-    }
-
-    /// Find a group to place shard.
-    pub async fn place_group_for_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
-        self.alloc_source.refresh_all().await?;
-
-        ShardCountPolicy::with(self.alloc_source.to_owned()).allocate_shard(n)
     }
 }
 

@@ -14,21 +14,11 @@
 
 use tracing::info;
 
-use super::{node_balancer::*, *};
+use super::{replica_balancer::*, *};
 use crate::root::metrics::ROOT_NODE_REPLICA_MEAN_COUNT;
 
-#[derive(Clone, Copy)]
-pub struct ReplicaCountPolicy {
-    pub goal: BalanceGoal,
-}
-
-impl Default for ReplicaCountPolicy {
-    fn default() -> Self {
-        Self {
-            goal: BalanceGoal::ReplicaConvergence,
-        }
-    }
-}
+#[derive(Clone, Copy, Default)]
+pub struct ReplicaCountPolicy {}
 
 impl BalancePolicy for ReplicaCountPolicy {
     fn should_balance(&self, rep: &PotentialReplacement) -> bool {
@@ -89,22 +79,22 @@ impl BalancePolicy for ReplicaCountPolicy {
         } else {
             0.0
         };
-        info!("DEBUG: type: {:?}, min: {min}, max: {max}, mean: {mean}, current: {current}, bs: {balance_score}, cs: {converges_score}, src: {:?}, target: {:?}", self.goal(), node, cands);
+        info!("DEBUG: replica cnt balance, min: {min}, max: {max}, mean: {mean}, current: {current}, bs: {balance_score}, cs: {converges_score}, src: {:?}, target: {:?}", node, cands);
         (balance_score, converges_score)
     }
 
-    fn balance_value(&self, _ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64 {
-        let cnt = n.capacity.as_ref().unwrap().replica_count as i64;
-        // let delta = ongoing_stats.get_node_delta(n.id);
-        // cnt += delta.replica_count;
-        // if cnt < 0 {
-        // cnt = 0;
-        // }
+    fn balance_value(&self, ctx: &BalanceContext, n: &NodeDesc) -> u64 {
+        let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
+        let delta = ctx.get(n.id);
+        cnt += delta;
+        if cnt < 0 {
+            cnt = 0;
+        }
         cnt as u64
     }
 
-    fn goal(&self) -> BalanceGoal {
-        self.goal
+    fn delta_value(&self) -> i64 {
+        1
     }
 }
 

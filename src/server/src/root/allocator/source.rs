@@ -23,7 +23,6 @@ use super::RootShared;
 use crate::{root::liveness::Liveness, Result};
 
 pub enum NodeFilter {
-    All,
     #[allow(dead_code)]
     Alive,
     Schedulable,
@@ -89,7 +88,6 @@ impl AllocSource for SysAllocSource {
     fn nodes(&self, filter: NodeFilter) -> Vec<NodeDesc> {
         let all_nodes = { self.nodes.lock().unwrap().clone() };
         match filter {
-            NodeFilter::All => all_nodes,
             NodeFilter::Alive => all_nodes
                 .into_iter()
                 .filter(|n| !self.liveness.get(&n.id).is_dead())

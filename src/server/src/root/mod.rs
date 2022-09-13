@@ -44,8 +44,12 @@ pub use self::{
     watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use self::{
-    allocator::SysAllocSource, bg_job::Jobs, diagnosis::Metadata, schedule::ReconcileScheduler,
-    schema::ReplicaNodes, store::RootStore,
+    allocator::{LeaderBalancer, ReplicaBalancer, ShardBalancer, SysAllocSource},
+    bg_job::Jobs,
+    diagnosis::Metadata,
+    schedule::ReconcileScheduler,
+    schema::ReplicaNodes,
+    store::RootStore,
 };
 use crate::{
     bootstrap::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
@@ -106,25 +110,39 @@ impl Root {
             cfg.root.liveness_threshold_sec,
         )));
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
-        let alloc = Arc::new(allocator::Allocator::new(
-            info,
-            ongoing_stats.clone(),
+        let replica_balancer = Arc::new(ReplicaBalancer::new(
+            shared.clone(),
+            info.to_owned(),
             cfg.root.to_owned(),
         ));
+        let leader_balancer = Arc::new(LeaderBalancer::with(
+            info.to_owned(),
+            shared.clone(),
+            cfg.root.to_owned(),
+        ));
+        let shard_balancer = Arc::new(ShardBalancer::with(
+            shared.clone(),
+            info.to_owned(),
+            cfg.root.to_owned(),
+        ));
+        let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
         let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let jobs = Arc::new(Jobs::new(
             shared.to_owned(),
             alloc.to_owned(),
             heartbeat_queue.to_owned(),
+            shard_balancer.to_owned(),
         ));
-        let sched_ctx = schedule::ScheduleContext::new(
-            shared.clone(),
-            alloc.clone(),
-            heartbeat_queue.clone(),
-            ongoing_stats.clone(),
-            jobs.to_owned(),
-            cfg.root.to_owned(),
-        );
+        let sched_ctx = schedule::ScheduleContext {
+            shared: shared.clone(),
+            alloc: alloc.clone(),
+            leader_balancer,
+            replica_balancer,
+            shard_balancer,
+            heartbeat_queue: heartbeat_queue.clone(),
+            jobs: jobs.to_owned(),
+            cfg: cfg.root.to_owned(),
+        };
         let scheduler = Arc::new(schedule::ReconcileScheduler::new(sched_ctx));
         Self {
             cfg: cfg.root,
@@ -1229,6 +1247,7 @@ impl OngoingStats {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_node_delta(&self, node: u64) -> NodeDelta {
         let mut rs = NodeDelta::default();
         if let Some(sched_node_delta) = {

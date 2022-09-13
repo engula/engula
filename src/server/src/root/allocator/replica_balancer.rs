@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tracing::info;
+use engula_client::{GroupClient, RouterGroupState};
+use tracing::{info, warn};
 
 use super::*;
 
@@ -106,10 +107,20 @@ struct BalanceOption {
     candidates: Vec<NodeCandidate>,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum BalanceGoal {
-    ReplicaConvergence,
-    LeaderConvergence,
+#[derive(Default)]
+pub struct BalanceContext {
+    delta_value: HashMap<u64 /* node */, i64 /* delta value */>,
+}
+
+impl BalanceContext {
+    pub fn get(&self, node: u64) -> i64 {
+        *self.delta_value.get(&node).unwrap_or(&0)
+    }
+
+    pub fn update(&mut self, node: u64, v: i64) {
+        let old = self.get(node);
+        self.delta_value.insert(node, old + v);
+    }
 }
 
 pub trait BalancePolicy {
@@ -122,40 +133,62 @@ pub trait BalancePolicy {
         from: bool,
     ) -> (f64 /* balance_score */, f64 /* converges_score */);
 
-    fn balance_value(&self, ongoing_stats: Arc<OngoingStats>, n: &NodeDesc) -> u64;
+    fn balance_value(&self, ctx: &BalanceContext, n: &NodeDesc) -> u64;
 
-    fn goal(&self) -> BalanceGoal;
+    fn delta_value(&self) -> i64;
 }
 
 #[derive(Clone)]
-pub struct NodeBalancer<T: AllocSource> {
+pub struct ReplicaBalancer<T: AllocSource> {
+    shared: Arc<RootShared>,
     alloc_source: Arc<T>,
-    ongoing_stats: Arc<OngoingStats>,
     config: RootConfig,
 }
 
-impl<T: AllocSource> NodeBalancer<T> {
-    pub fn new(alloc_source: Arc<T>, ongoing_stats: Arc<OngoingStats>, config: RootConfig) -> Self {
+impl<T: AllocSource> ReplicaBalancer<T> {
+    pub fn new(shared: Arc<RootShared>, alloc_source: Arc<T>, config: RootConfig) -> Self {
         Self {
+            shared,
             alloc_source,
-            ongoing_stats,
             config,
         }
     }
 }
 
-impl<T: AllocSource> NodeBalancer<T> {
-    pub async fn compute_balance_action(
+impl<T: AllocSource> ReplicaBalancer<T> {
+    pub async fn need_balance(
         &self,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
-    ) -> Result<Vec<NodeBalanceAction>> {
-        if !self.config.enable_replica_balance {
-            return Ok(vec![]);
-        }
-
+    ) -> Result<bool> {
         self.alloc_source.refresh_all().await?;
+        Ok(self
+            .compute_balance_action(&BalanceContext::default(), policy)
+            .await?
+            .is_some())
+    }
 
-        let mut gaction = Vec::new();
+    pub async fn balance_replica(
+        &self,
+        policy: &(dyn BalancePolicy + Send + Sync + 'static),
+    ) -> Result<()> {
+        self.alloc_source.refresh_all().await?;
+        let mut ctx = BalanceContext::default();
+        while let Some(action) = self.compute_balance_action(&ctx, policy).await? {
+            self.reallocate_replica(&action).await?;
+            ctx.update(action.source_node, -policy.delta_value());
+            ctx.update(action.dest_node, policy.delta_value());
+        }
+        Ok(())
+    }
+
+    async fn compute_balance_action(
+        &self,
+        ctx: &BalanceContext,
+        policy: &(dyn BalancePolicy + Send + Sync + 'static),
+    ) -> Result<Option<ReplicaBalanceAction>> {
+        if !self.config.enable_replica_balance {
+            return Ok(None);
+        }
         let groups = self.alloc_source.groups();
         for (group_id, desc) in &groups {
             if *group_id == ROOT_GROUP_ID {
@@ -172,22 +205,18 @@ impl<T: AllocSource> NodeBalancer<T> {
                 // after it leave middle status.
                 continue;
             }
-            let mut balance_opts = self.try_balance(policy, desc, true).await?;
+            let balance_opts = self.try_balance_group(ctx, policy, desc, true).await?;
             if balance_opts.is_none() {
                 continue;
             }
-            let (source_node, dest_node, reason) = balance_opts.take().unwrap();
-            let epoch = desc.epoch;
-            info!("try balance replica, group: {group_id}, epoch: {epoch}, src_node: {source_node}, dest_node: {dest_node}, reason: {reason}");
-            gaction.push(NodeBalanceAction {
-                group_id: group_id.to_owned(),
-                epoch: desc.epoch,
-                source_node,
-                dest_node,
-            });
-            return Ok(gaction);
+            let action = balance_opts.unwrap();
+            info!(
+                "try balance replica, group: {group_id}, epoch: {}, src_node: {}, dest_node: {}",
+                action.group.epoch, action.source_node, action.dest_node
+            );
+            return Ok(Some(action));
         }
-        Ok(vec![])
+        Ok(None)
     }
 
     fn best_balance_target(
@@ -255,12 +284,13 @@ impl<T: AllocSource> NodeBalancer<T> {
         new_target.to_owned()
     }
 
-    async fn try_balance(
+    async fn try_balance_group(
         &self,
+        ctx: &BalanceContext,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
         group: &GroupDesc,
         within_voter: bool,
-    ) -> Result<Option<(u64, u64, String)>> {
+    ) -> Result<Option<ReplicaBalanceAction>> {
         let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
         // Prepare related replicas, it make them into three categories:
@@ -318,27 +348,7 @@ impl<T: AllocSource> NodeBalancer<T> {
             if disk_full {
                 require_transfer_from = true;
             }
-            match policy.goal() {
-                BalanceGoal::ReplicaConvergence => {}
-                BalanceGoal::LeaderConvergence => {
-                    let r = group.replicas.iter().find(|r| r.node_id == repl_node.id);
-                    if r.is_none() {
-                        continue;
-                    }
-                    let rs = self.alloc_source.replica_state(&r.unwrap().id);
-                    if rs.is_none() {
-                        continue;
-                    }
-                    if !matches!(
-                        RaftRole::from_i32(rs.unwrap().role).unwrap(),
-                        RaftRole::Leader
-                    ) {
-                        continue;
-                    }
-                }
-            }
-            let balance_value =
-                policy.balance_value(self.ongoing_stats.to_owned(), repl_node) as f64;
+            let balance_value = policy.balance_value(ctx, repl_node) as f64;
             moveable_candidates.insert(
                 repl_node.id,
                 NodeCandidate {
@@ -362,16 +372,8 @@ impl<T: AllocSource> NodeBalancer<T> {
                 .filter(|n| move_candidate.node.id != n.id)
                 .filter(|n| !excluded_replicas.iter().any(|r| r.node_id == n.id))
             {
-                match policy.goal() {
-                    BalanceGoal::ReplicaConvergence => {}
-                    BalanceGoal::LeaderConvergence => {
-                        if !voters.iter().any(|v| v.node_id == n.id) {
-                            continue;
-                        }
-                    }
-                }
                 let disk_full = check_node_full(n);
-                let balance_value = policy.balance_value(self.ongoing_stats.to_owned(), n) as f64;
+                let balance_value = policy.balance_value(ctx, n) as f64;
                 let cand = NodeCandidate {
                     node: n.to_owned(),
                     disk_full,
@@ -417,20 +419,14 @@ impl<T: AllocSource> NodeBalancer<T> {
                 .get(&potential_replacement.existing.node.id)
                 .unwrap()
                 .to_owned();
-            ex_cand.balance_value =
-                policy.balance_value(self.ongoing_stats.to_owned(), &ex_cand.node) as f64;
+            ex_cand.balance_value = policy.balance_value(ctx, &ex_cand.node) as f64;
             (ex_cand.balance_score, ex_cand.converges_score) =
                 policy.balance_score(&ex_cand, &potential_replacement.candidates, true);
 
             let mut candidates = Vec::new();
             for candidate_node in &potential_replacement.candidates {
-                match policy.goal() {
-                    BalanceGoal::ReplicaConvergence => {
-                        if moveable_candidates.contains_key(&candidate_node.node.id) {
-                            continue;
-                        }
-                    }
-                    BalanceGoal::LeaderConvergence => {}
+                if moveable_candidates.contains_key(&candidate_node.node.id) {
+                    continue;
                 }
                 let mut c = candidate_node.to_owned();
                 (c.balance_score, c.converges_score) =
@@ -463,115 +459,88 @@ impl<T: AllocSource> NodeBalancer<T> {
             return Ok(None);
         }
 
-        match policy.goal() {
-            BalanceGoal::ReplicaConvergence => {
-                // check the result of simulate remove after running options, and skip option if
-                // new-added replica be removed in next turn.
-                loop {
-                    let (target, existing) = self.best_balance_target(&mut balance_opts);
-                    info!(
-                        "balance replica need {:?} transfer: {:?} target: {:?}, from: {:?}",
-                        policy.goal(),
-                        balance_opts,
-                        target,
-                        existing,
-                    );
-                    if target.is_none() {
-                        break;
-                    }
-                    let mut exist_replica_candidates = replica_to_balance.to_owned();
-                    let fake_new_replica = ReplicaDesc {
-                        id: exist_replica_candidates.iter().map(|r| r.id).max().unwrap() + 1,
-                        node_id: target.as_ref().unwrap().node.id,
+        // check the result of simulate remove after running options, and skip option if
+        // new-added replica be removed in next turn.
+        loop {
+            let (target, existing) = self.best_balance_target(&mut balance_opts);
+            info!(
+                "balance replica move: {:?} target: {:?}, from: {:?}",
+                balance_opts, target, existing,
+            );
+            if target.is_none() {
+                break;
+            }
+            let mut exist_replica_candidates = replica_to_balance.to_owned();
+            let fake_new_replica = ReplicaDesc {
+                id: exist_replica_candidates.iter().map(|r| r.id).max().unwrap() + 1,
+                node_id: target.as_ref().unwrap().node.id,
+                ..Default::default()
+            };
+            exist_replica_candidates.push(&fake_new_replica);
+
+            let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
+            let replica_candidates = exist_replica_candidates
+                .iter()
+                .map(|r| {
+                    let n = nodes.iter().find(|n| n.id == r.node_id).unwrap();
+                    let mut n = NodeCandidate {
+                        node: n.to_owned(),
+                        balance_value: (policy.balance_value(ctx, n)) as f64,
                         ..Default::default()
                     };
-                    exist_replica_candidates.push(&fake_new_replica);
-
-                    let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
-                    let replica_candidates = exist_replica_candidates
-                        .iter()
-                        .map(|r| {
-                            let n = nodes.iter().find(|n| n.id == r.node_id).unwrap();
-                            let mut n = NodeCandidate {
-                                node: n.to_owned(),
-                                balance_value: (policy
-                                    .balance_value(self.ongoing_stats.to_owned(), n))
-                                    as f64,
-                                ..Default::default()
-                            };
-                            if n.node.id == fake_new_replica.node_id {
-                                n.balance_value += 1.0 // TODO: add qps instead of 1 when using qps
-                            }
-                            n
-                        })
-                        .collect::<Vec<_>>();
-
-                    // TODO: filter out out-of-date replicas from replica_candidates.
-
-                    let remove_candidate = self.sim_remove_target(
-                        policy,
-                        replica_candidates,
-                        exist_replica_candidates,
-                        other_replicas.to_owned(),
-                        within_voter,
-                    )?;
-
-                    if remove_candidate.is_none() {
-                        return Ok(None);
+                    if n.node.id == fake_new_replica.node_id {
+                        n.balance_value += 1.0 // TODO: add qps instead of 1 when using qps
                     }
+                    n
+                })
+                .collect::<Vec<_>>();
 
-                    if remove_candidate.as_ref().unwrap().node.id
-                        != target.as_ref().unwrap().node.id
-                    {
-                        return Ok(Some((
-                            remove_candidate.as_ref().unwrap().node.id,
-                            target.as_ref().unwrap().node.id,
-                            format!(
-                                "{}({})=>{}({})",
-                                remove_candidate.as_ref().unwrap().balance_value,
-                                remove_candidate
-                                    .as_ref()
-                                    .unwrap()
-                                    .node
-                                    .capacity
-                                    .as_ref()
-                                    .unwrap()
-                                    .replica_count,
-                                target.as_ref().unwrap().balance_value,
-                                target
-                                    .as_ref()
-                                    .unwrap()
-                                    .node
-                                    .capacity
-                                    .as_ref()
-                                    .unwrap()
-                                    .replica_count,
-                            ),
-                        )));
-                    }
-                }
-                Ok(None)
+            // TODO: filter out out-of-date replicas from replica_candidates.
+
+            let remove_candidate = self.sim_remove_target(
+                policy,
+                replica_candidates,
+                exist_replica_candidates,
+                other_replicas.to_owned(),
+                within_voter,
+            )?;
+
+            if remove_candidate.is_none() {
+                return Ok(None);
             }
-            BalanceGoal::LeaderConvergence => {
-                let (target, existing) = self.best_balance_target(&mut balance_opts);
-                info!(
-                    "balance leader need {:?} transfer: {:?} ,target: {:?} ,from: {:?}",
-                    policy.goal(),
-                    balance_opts,
-                    target,
-                    existing,
-                );
-                if let Some(target) = target {
-                    Ok(Some((
-                        existing.as_ref().unwrap().node.id,
-                        target.node.id,
-                        "".to_owned(),
-                    )))
+
+            if remove_candidate.as_ref().unwrap().node.id == target.as_ref().unwrap().node.id {
+                continue;
+            }
+            let source_node = remove_candidate.as_ref().unwrap().node.id;
+            let source_repl = group
+                .replicas
+                .iter()
+                .find(|r| r.node_id == source_node)
+                .unwrap();
+            let (shed_leader, source_replica_id, source_term) =
+                if let Some(source_repl_state) = self.alloc_source.replica_state(&source_repl.id) {
+                    (
+                        matches!(
+                            RaftRole::from_i32(source_repl_state.role).unwrap(),
+                            RaftRole::Leader
+                        ),
+                        source_repl_state.replica_id,
+                        source_repl_state.term,
+                    )
                 } else {
-                    Ok(None)
-                }
-            }
+                    (false, 0, 0)
+                };
+            return Ok(Some(ReplicaBalanceAction {
+                group: group.to_owned(),
+                source_node,
+                dest_node: target.as_ref().unwrap().node.id,
+                shed_leader,
+                source_replica_id,
+                source_term,
+            }));
         }
+        Ok(None)
     }
 
     fn sim_remove_target(
@@ -640,5 +609,127 @@ impl<T: AllocSource> NodeBalancer<T> {
         }
 
         Ok(None)
+    }
+
+    async fn reallocate_replica(&self, action: &ReplicaBalanceAction) -> Result<()> {
+        let schema = self.shared.schema()?;
+        let group_desc = action.group.to_owned();
+
+        if action.shed_leader {
+            let transferee = group_desc
+                .replicas
+                .iter()
+                .find(|r| r.node_id != action.source_node)
+                .unwrap();
+            let r = self
+                .try_transfer_leader(
+                    group_desc.to_owned(),
+                    (action.source_replica_id, action.source_term),
+                    transferee.id,
+                )
+                .await;
+            match r {
+                Ok(_) => {}
+                Err(err) => {
+                    warn!(group = group_desc.id, replica = transferee.id, err = ?err, "shed leader in source replica fail, retry in next tick");
+                    metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc();
+                    return Err(err);
+                }
+            };
+        }
+
+        info!(
+            group = group_desc.id,
+            src_node = action.source_node,
+            dest_node = action.dest_node,
+            "start move replica"
+        );
+
+        let src_replica = group_desc
+            .replicas
+            .iter()
+            .find(|r| r.id == action.source_replica_id)
+            .unwrap();
+
+        let next_replica = schema.next_replica_id().await?;
+
+        match self
+            .try_move_replica(
+                group_desc.to_owned(),
+                (action.source_replica_id, action.source_term),
+                ReplicaDesc {
+                    id: next_replica,
+                    node_id: action.dest_node,
+                    role: ReplicaRole::Voter as i32,
+                },
+                src_replica.to_owned(),
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                warn!(
+                    group = group_desc.id,
+                    src_node = action.source_node,
+                    dest_node = action.dest_node,
+                    err = ?err,
+                    "move replica meet error and retry later"
+                );
+                metrics::RECONCILE_RETRY_TASK_TOTAL.reallocate_replica.inc();
+                Err(err)
+            }
+        }
+    }
+
+    async fn try_transfer_leader(
+        &self,
+        group: GroupDesc,
+        leader_state: (u64 /* id */, u64 /* term */),
+        target_replica: u64,
+    ) -> Result<()> {
+        let group_state = RouterGroupState {
+            id: group.id,
+            epoch: group.epoch,
+            leader_state: Some(leader_state),
+            replicas: group
+                .replicas
+                .iter()
+                .map(|g| (g.id, g.to_owned()))
+                .collect::<HashMap<_, _>>(),
+        };
+        let mut group_client = GroupClient::new(
+            group_state,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client.transfer_leader(target_replica).await?;
+        Ok(())
+    }
+
+    async fn try_move_replica(
+        &self,
+        group: GroupDesc,
+        leader_state: (u64 /* id */, u64 /* term */),
+        incoming_replica: ReplicaDesc,
+        outgoing_replica: ReplicaDesc,
+    ) -> Result<ScheduleState> {
+        let mut group_client = GroupClient::new(
+            RouterGroupState {
+                id: group.id,
+                epoch: group.epoch,
+                leader_state: Some(leader_state),
+                replicas: group
+                    .replicas
+                    .iter()
+                    .map(|g| (g.id, g.to_owned()))
+                    .collect::<HashMap<_, _>>(),
+            },
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        let current_state = group_client
+            .move_replicas(vec![incoming_replica], vec![outgoing_replica])
+            .await?;
+        Ok(current_state)
     }
 }

@@ -15,21 +15,33 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use engula_api::server::v1::{GroupDesc, ShardDesc};
+use engula_client::GroupClient;
 use tracing::trace;
 
-use super::{AllocSource, ReallocateShard, ShardAction};
-use crate::{bootstrap::ROOT_GROUP_ID, root::allocator::BalanceStatus, Result};
+use super::{AllocSource, ReallocateShard};
+use crate::{
+    bootstrap::ROOT_GROUP_ID,
+    root::{allocator::BalanceStatus, RootShared},
+    Result, RootConfig,
+};
 
-pub struct ShardCountPolicy<T: AllocSource> {
+pub struct ShardBalancer<T: AllocSource> {
+    shared: Arc<RootShared>,
     alloc_source: Arc<T>,
+    config: RootConfig,
 }
 
-impl<T: AllocSource> ShardCountPolicy<T> {
-    pub fn with(alloc_source: Arc<T>) -> Self {
-        Self { alloc_source }
+impl<T: AllocSource> ShardBalancer<T> {
+    pub fn with(shared: Arc<RootShared>, alloc_source: Arc<T>, config: RootConfig) -> Self {
+        Self {
+            shared,
+            alloc_source,
+            config,
+        }
     }
 
-    pub fn allocate_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
+    pub async fn allocate_shard(&self, n: usize) -> Result<Vec<GroupDesc>> {
+        self.alloc_source.refresh_all().await?;
         let mut groups = self.current_user_groups();
         if groups.is_empty() {
             return Ok(vec![]);
@@ -38,7 +50,28 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         Ok(groups.into_iter().take(n).collect())
     }
 
-    pub fn compute_balance(&self) -> Result<Vec<ShardAction>> {
+    pub async fn need_balance(&self) -> Result<bool> {
+        Ok(self.compute_balance().await?.is_some())
+    }
+
+    pub async fn balance_shard(&self) -> Result<()> {
+        while let Some(action) = self.compute_balance().await? {
+            self.try_migrate_shard(
+                action.source_group.to_owned(),
+                action.target_group,
+                action.shard,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn compute_balance(&self) -> Result<Option<ReallocateShard>> {
+        if !self.config.enable_shard_balance {
+            return Ok(None);
+        }
+        self.alloc_source.refresh_all().await?;
+
         let mean_cnt = self.mean_shard_count();
         let candicate_groups = self.current_user_groups();
 
@@ -53,11 +86,11 @@ impl<T: AllocSource> ShardCountPolicy<T> {
                 break;
             }
             if let Some(action) = self.rebalance_target(src_group, &ranked_candicates) {
-                return Ok(vec![action]);
+                return Ok(Some(action));
             }
         }
 
-        Ok(vec![])
+        Ok(None)
     }
 
     fn mean_shard_count(&self) -> f64 {
@@ -107,7 +140,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         &self,
         source_group: &GroupDesc,
         ranked_candicates: &[(GroupDesc, BalanceStatus)],
-    ) -> Option<ShardAction> {
+    ) -> Option<ReallocateShard> {
         let mean = self.mean_shard_count();
         for (target, state) in ranked_candicates.iter().rev() {
             if *state != BalanceStatus::Underfull {
@@ -118,11 +151,11 @@ impl<T: AllocSource> ShardCountPolicy<T> {
                 continue;
             }
             let source_shard = self.preferred_remove_shard(source_group, target)?;
-            return Some(ShardAction::Migrate(ReallocateShard {
+            return Some(ReallocateShard {
+                source_group: source_group.to_owned(),
                 shard: source_shard.id,
-                source_group: source_group.id,
                 target_group: target.id,
-            }));
+            });
         }
         None
     }
@@ -144,5 +177,27 @@ impl<T: AllocSource> ShardCountPolicy<T> {
             .filter(|g| g.id != ROOT_GROUP_ID)
             .map(ToOwned::to_owned)
             .collect()
+    }
+
+    async fn try_migrate_shard(
+        &self,
+        src_group: GroupDesc,
+        target_group: u64,
+        shard: u64,
+    ) -> Result<()> {
+        let shard_desc = src_group.shards.iter().find(|s| s.id == shard).ok_or(
+            crate::Error::AbortScheduleTask("migrate shard has be moved out"),
+        )?;
+
+        let mut group_client = GroupClient::lazy(
+            target_group,
+            self.shared.provider.router.clone(),
+            self.shared.provider.conn_manager.clone(),
+        );
+        group_client
+            .accept_shard(src_group.id, src_group.epoch, shard_desc)
+            .await?;
+        // TODO: handle src_group epoch not match?
+        Ok(())
     }
 }

@@ -42,11 +42,13 @@ impl Jobs {
         root_shared: Arc<RootShared>,
         alloc: Arc<Allocator<SysAllocSource>>,
         heartbeat_queue: Arc<HeartbeatQueue>,
+        shard_balancer: Arc<ShardBalancer<SysAllocSource>>,
     ) -> Self {
         Self {
             core: JobCore {
                 root_shared,
                 alloc,
+                shard_balancer,
                 heartbeat_queue,
                 mem_jobs: Default::default(),
                 res_locks: Default::default(),
@@ -154,7 +156,7 @@ impl Jobs {
                 break;
             }
             let shard = shard.unwrap();
-            let groups = self.core.alloc.place_group_for_shard(1).await?;
+            let groups = self.core.shard_balancer.allocate_shard(1).await?;
             if groups.is_empty() {
                 return Err(crate::Error::ResourceExhausted("no engouth groups".into()));
             }
@@ -631,6 +633,7 @@ struct JobCore {
     res_locks: Arc<Mutex<HashSet<Vec<u8>>>>,
     alloc: Arc<Allocator<SysAllocSource>>,
     heartbeat_queue: Arc<HeartbeatQueue>,
+    shard_balancer: Arc<ShardBalancer<SysAllocSource>>,
     enable: atomic::AtomicBool,
 }
 
