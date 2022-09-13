@@ -75,14 +75,14 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::{bootstrap::open_engine, runtime::ExecutorOwner};
+    use crate::{bootstrap::open_engine_with_default_config, runtime::ExecutorOwner};
 
     #[test]
     fn destory_replica_ignore_not_existed_column_families() {
         let tmp_dir = TempDir::new("destory_replica_ignore_not_existed_column_families").unwrap();
         let db_path = tmp_dir.path().join("db");
         let log_path = tmp_dir.path().join("log");
-        let raw_db = Arc::new(open_engine(&db_path).unwrap());
+        let raw_db = Arc::new(open_engine_with_default_config(&db_path).unwrap());
         let group_id = 1;
         let replica_id = 1;
         let state_engine = StateEngine::new(raw_db.clone()).unwrap();

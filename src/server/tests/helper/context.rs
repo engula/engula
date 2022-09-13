@@ -17,7 +17,7 @@ use engula_server::{
     node::replica::{ReplicaConfig, ReplicaTestingKnobs},
     raftgroup::RaftTestingKnobs,
     runtime::{ExecutorConfig, ExecutorOwner, ShutdownNotifier},
-    Config, NodeConfig, RaftConfig, RootConfig,
+    Config, DbConfig, NodeConfig, RaftConfig, RootConfig,
 };
 use tempdir::TempDir;
 use tracing::info;
@@ -153,6 +153,7 @@ impl TestContext {
             },
             root,
             executor: ExecutorConfig::default(),
+            db: DbConfig::default(),
         };
         let notifier = ShutdownNotifier::new();
         let shutdown = notifier.subscribe();

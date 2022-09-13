@@ -18,60 +18,37 @@
 #![feature(fs_try_exists)]
 
 mod bootstrap;
+mod config;
 mod discovery;
 mod error;
+mod root;
+mod schedule;
+mod service;
+
 pub mod node;
 pub mod raftgroup;
-mod root;
 pub mod runtime;
-mod schedule;
 pub mod serverpb;
-mod service;
 
 use std::{path::PathBuf, sync::Arc};
 
 use engula_client::{ConnManager, RootClient, Router};
-use node::{resolver::AddressResolver, StateEngine};
-use runtime::{Executor, ExecutorConfig};
-use serde::{Deserialize, Serialize};
 use tonic::async_trait;
 
 pub use crate::{
     bootstrap::run,
+    config::*,
     error::{Error, Result},
     node::NodeConfig,
     raftgroup::RaftConfig,
     root::{diagnosis, RootConfig},
+    runtime::ExecutorConfig,
     service::Server,
 };
-
-#[derive(Default, Clone, Debug, Deserialize, Serialize)]
-pub struct Config {
-    /// The root dir of engula server.
-    pub root_dir: PathBuf,
-
-    pub addr: String,
-
-    pub cpu_nums: u32,
-
-    pub init: bool,
-
-    pub enable_proxy_service: bool,
-
-    pub join_list: Vec<String>,
-
-    #[serde(default)]
-    pub node: NodeConfig,
-
-    #[serde(default)]
-    pub raft: RaftConfig,
-
-    #[serde(default)]
-    pub root: RootConfig,
-
-    #[serde(default)]
-    pub executor: ExecutorConfig,
-}
+use crate::{
+    node::{resolver::AddressResolver, StateEngine},
+    runtime::Executor,
+};
 
 pub(crate) struct Provider {
     pub log_path: PathBuf,
