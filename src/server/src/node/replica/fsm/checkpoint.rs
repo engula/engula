@@ -47,7 +47,6 @@ impl SnapshotBuilder for GroupSnapshotBuilder {
                 break;
             }
         }
-        iter.status()?;
 
         let apply_state = iter.apply_state().clone();
         let descriptor = iter.descriptor().clone();
@@ -68,7 +67,8 @@ async fn write_partial_to_file(
     let file = base_dir.join(format!("{}.sst", file_no));
     let mut writer: Option<SstFileWriter> = None;
     let mut index = 0;
-    for (key, value) in iter.by_ref() {
+    for item in iter.by_ref() {
+        let (key, value) = item?;
         if writer.is_none() {
             debug!("create sst file: {}", file.display());
             let raw_writer = SstFileWriter::create(&opts);

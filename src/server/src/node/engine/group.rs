@@ -235,12 +235,13 @@ impl GroupEngine {
     pub async fn get(&self, shard_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let snapshot_mode = SnapshotMode::Key { key };
         let mut snapshot = self.snapshot(shard_id, snapshot_mode)?;
-        if let Some(mut iter) = snapshot.mvcc_iter() {
+        if let Some(iter) = snapshot.mvcc_iter() {
+            let mut iter = iter?;
             if let Some(entry) = iter.next() {
+                let entry = entry?;
                 return Ok(entry.value().map(ToOwned::to_owned));
             }
         }
-        snapshot.status()?;
         Ok(None)
     }
 
@@ -498,17 +499,13 @@ impl<'a> RawIterator<'a> {
     pub fn descriptor(&self) -> &GroupDesc {
         &self.descriptor
     }
-
-    #[inline]
-    pub fn status(&mut self) -> Result<()> {
-        db_iterator_status(&mut self.db_iter, true)
-    }
 }
 
 impl<'a> Iterator for RawIterator<'a> {
     /// Key value pairs.
     type Item = <rocksdb::DBIterator<'a> as Iterator>::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.db_iter.next()
     }
@@ -564,17 +561,11 @@ impl<'a> Snapshot<'a> {
     }
 
     #[inline]
-    pub fn mvcc_iter<'b>(&'b mut self) -> Option<MvccIterator<'a, 'b>> {
+    pub fn mvcc_iter<'b>(&'b mut self) -> Option<Result<MvccIterator<'a, 'b>>> {
         self.next_mvcc_iterator()
     }
 
-    #[inline]
-    pub fn status(&self) -> Result<()> {
-        self.core.borrow().db_iter.status()?;
-        Ok(())
-    }
-
-    fn next_mvcc_iterator<'b>(&'b self) -> Option<MvccIterator<'a, 'b>> {
+    fn next_mvcc_iterator<'b>(&'b self) -> Option<Result<MvccIterator<'a, 'b>>> {
         let mut core = self.core.borrow_mut();
         loop {
             if let Some(entry) = core.cached_entry.as_ref() {
@@ -589,36 +580,40 @@ impl<'a> Snapshot<'a> {
                 // TODO(walter) support seek to next user key to skip old versions.
                 if !core.is_current_key(entry.user_key()) {
                     core.current_key = Some(entry.user_key().to_owned());
-                    return Some(MvccIterator { snapshot: self });
+                    return Some(Ok(MvccIterator { snapshot: self }));
                 }
             }
 
-            core.next_entry(self.collection_id)?;
+            if let Err(err) = core.next_entry(self.collection_id)? {
+                return Some(Err(err));
+            }
         }
     }
 
-    fn next_mvcc_entry(&self) -> Option<MvccEntry> {
+    fn next_mvcc_entry(&self) -> Option<Result<MvccEntry>> {
         let mut core = self.core.borrow_mut();
         loop {
             if let Some(entry) = core.cached_entry.take() {
                 if core.is_current_key(entry.user_key()) {
-                    return Some(entry);
+                    return Some(Ok(entry));
                 } else {
                     core.cached_entry = Some(entry);
                     return None;
                 }
             }
 
-            core.next_entry(self.collection_id)?;
+            if let Err(err) = core.next_entry(self.collection_id)? {
+                return Some(Err(err));
+            }
         }
     }
 }
 
 impl<'a> SnapshotCore<'a> {
-    fn next_entry(&mut self, collection_id: u64) -> Option<()> {
-        let (key, value) = match self.db_iter.next() {
-            Some(v) => v,
-            None => return None,
+    fn next_entry(&mut self, collection_id: u64) -> Option<Result<()>> {
+        let (key, value) = match self.db_iter.next()? {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err.into())),
         };
 
         let prefix = &key[..core::mem::size_of::<u64>()];
@@ -627,7 +622,7 @@ impl<'a> SnapshotCore<'a> {
         }
 
         self.cached_entry = Some(MvccEntry::new(self.expect_slot.is_some(), key, value));
-        Some(())
+        Some(Ok(()))
     }
 
     #[inline]
@@ -640,15 +635,15 @@ impl<'a> SnapshotCore<'a> {
 }
 
 impl<'a, 'b> Iterator for UserDataIterator<'a, 'b> {
-    type Item = MvccIterator<'a, 'b>;
+    type Item = Result<MvccIterator<'a, 'b>>;
 
-    fn next(&mut self) -> Option<MvccIterator<'a, 'b>> {
+    fn next(&mut self) -> Option<Result<MvccIterator<'a, 'b>>> {
         self.snapshot.next_mvcc_iterator()
     }
 }
 
 impl<'a, 'b> Iterator for MvccIterator<'a, 'b> {
-    type Item = MvccEntry;
+    type Item = Result<MvccEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.snapshot.next_mvcc_entry()
@@ -962,15 +957,6 @@ mod internal {
     }
 }
 
-fn db_iterator_status(db_iter: &mut rocksdb::DBIterator<'_>, allow_not_found: bool) -> Result<()> {
-    debug_assert!(!db_iter.valid());
-    match db_iter.status() {
-        Ok(()) if allow_not_found => Ok(()),
-        Ok(()) => Err(Error::InvalidData("no such key exists".into())),
-        Err(err) => Err(err.into()),
-    }
-}
-
 fn next_message<T: prost::Message + Default>(
     db_iter: &mut rocksdb::DBIterator<'_>,
     key: &[u8],
@@ -978,11 +964,10 @@ fn next_message<T: prost::Message + Default>(
     use rocksdb::{Direction, IteratorMode};
 
     db_iter.set_mode(IteratorMode::From(key, Direction::Forward));
-    if let Some((_, value)) = db_iter.next() {
-        Ok(T::decode(&*value).expect("should encoded with T"))
-    } else {
-        db_iterator_status(db_iter, false)?;
-        unreachable!()
+    match db_iter.next() {
+        Some(Ok((_, value))) => Ok(T::decode(&*value).expect("should encoded with T")),
+        Some(Err(err)) => Err(err.into()),
+        None => Err(Error::InvalidData("no such key exists".into())),
     }
 }
 
@@ -1150,16 +1135,16 @@ mod tests {
         let mut user_data_iter = snapshot.iter();
         {
             // key 123456
-            let mut mvcc_iter = user_data_iter.next().unwrap();
-            let entry = mvcc_iter.next().unwrap();
+            let mut mvcc_iter = user_data_iter.next().unwrap().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456");
             assert_eq!(entry.version(), 256);
 
-            let entry = mvcc_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456");
             assert_eq!(entry.version(), 5);
 
-            let entry = mvcc_iter.next().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456");
             assert_eq!(entry.version(), 1);
 
@@ -1168,14 +1153,13 @@ mod tests {
 
         {
             // key 123456789
-            let mut mvcc_iter = user_data_iter.next().unwrap();
-            let entry = mvcc_iter.next().unwrap();
+            let mut mvcc_iter = user_data_iter.next().unwrap().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456789");
             assert_eq!(entry.version(), 0);
 
             assert!(mvcc_iter.next().is_none());
         }
-        assert!(snapshot.status().is_ok());
     }
 
     #[test]
@@ -1219,23 +1203,21 @@ mod tests {
         let mut user_data_iter = snapshot.iter();
         {
             // key 123456
-            let mut mvcc_iter = user_data_iter.next().unwrap();
-            let entry = mvcc_iter.next().unwrap();
+            let mut mvcc_iter = user_data_iter.next().unwrap().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456");
             assert_eq!(entry.version(), 256);
         }
 
         {
             // key 123456789, user_data_iter should skip the iterated keys.
-            let mut mvcc_iter = user_data_iter.next().unwrap();
-            let entry = mvcc_iter.next().unwrap();
+            let mut mvcc_iter = user_data_iter.next().unwrap().unwrap();
+            let entry = mvcc_iter.next().unwrap().unwrap();
             assert_eq!(entry.user_key(), b"123456789");
             assert_eq!(entry.version(), 0);
 
             assert!(mvcc_iter.next().is_none());
         }
-
-        assert!(snapshot.status().is_ok());
     }
 
     #[test]
@@ -1282,7 +1264,6 @@ mod tests {
             let mut user_data_iter = snapshot.iter();
             assert!(user_data_iter.next().is_some());
             assert!(user_data_iter.next().is_none());
-            assert!(snapshot.status().is_ok());
         }
 
         {
@@ -1292,7 +1273,6 @@ mod tests {
             let mut user_data_iter = snapshot.iter();
             assert!(user_data_iter.next().is_some());
             assert!(user_data_iter.next().is_none());
-            assert!(snapshot.status().is_ok());
         }
 
         {
@@ -1301,7 +1281,6 @@ mod tests {
             let mut snapshot = group_engine.snapshot(1, snapshot_mode).unwrap();
             let mut user_data_iter = snapshot.iter();
             assert!(user_data_iter.next().is_none());
-            assert!(snapshot.status().is_ok());
         }
     }
 
@@ -1380,8 +1359,8 @@ mod tests {
         let snapshot_mode = SnapshotMode::default();
         let mut snapshot = group_engine.snapshot(1, snapshot_mode).unwrap();
         let mut user_data_iter = snapshot.iter();
-        let mut mvcc_key_iter = user_data_iter.next().unwrap();
-        let entry = mvcc_key_iter.next().unwrap();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap().unwrap();
+        let entry = mvcc_key_iter.next().unwrap().unwrap();
         assert_eq!(entry.user_key(), b"a");
         assert!(user_data_iter.next().is_none());
 
@@ -1389,12 +1368,10 @@ mod tests {
         let snapshot_mode = SnapshotMode::default();
         let mut snapshot = group_engine.snapshot(2, snapshot_mode).unwrap();
         let mut user_data_iter = snapshot.iter();
-        let mut mvcc_key_iter = user_data_iter.next().unwrap();
-        let entry = mvcc_key_iter.next().unwrap();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap().unwrap();
+        let entry = mvcc_key_iter.next().unwrap().unwrap();
         assert_eq!(entry.user_key(), b"b");
         assert!(user_data_iter.next().is_none());
-
-        assert!(snapshot.status().is_ok());
     }
 
     #[test]
@@ -1450,8 +1427,8 @@ mod tests {
         let snapshot_mode = SnapshotMode::default();
         let mut snapshot = group_engine.snapshot(1, snapshot_mode).unwrap();
         let mut user_data_iter = snapshot.iter();
-        let mut mvcc_key_iter = user_data_iter.next().unwrap();
-        let entry = mvcc_key_iter.next().unwrap();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap().unwrap();
+        let entry = mvcc_key_iter.next().unwrap().unwrap();
         assert_eq!(entry.user_key(), b"a");
         assert!(user_data_iter.next().is_none());
 
@@ -1459,12 +1436,10 @@ mod tests {
         let snapshot_mode = SnapshotMode::default();
         let mut snapshot = group_engine.snapshot(2, snapshot_mode).unwrap();
         let mut user_data_iter = snapshot.iter();
-        let mut mvcc_key_iter = user_data_iter.next().unwrap();
-        let entry = mvcc_key_iter.next().unwrap();
+        let mut mvcc_key_iter = user_data_iter.next().unwrap().unwrap();
+        let entry = mvcc_key_iter.next().unwrap().unwrap();
         assert_eq!(entry.user_key(), b"b");
         assert!(user_data_iter.next().is_none());
-
-        assert!(snapshot.status().is_ok());
     }
 
     #[test]

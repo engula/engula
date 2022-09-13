@@ -318,7 +318,9 @@ impl Schema {
         };
         let mut nodes = Vec::new();
         for mvcc in snapshot.iter() {
+            let mvcc = mvcc?;
             for entry in mvcc {
+                let entry = entry?;
                 if let Some(val) = entry.value() {
                     nodes.push(
                         NodeDesc::decode(val)

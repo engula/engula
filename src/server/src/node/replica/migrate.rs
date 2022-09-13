@@ -43,9 +43,11 @@ impl Replica {
             },
         };
         let mut snapshot = self.group_engine.snapshot(shard_id, snapshot_mode)?;
-        for mut key_iter in snapshot.iter() {
+        for key_iter in snapshot.iter() {
+            let mut key_iter = key_iter?;
             // NOTICE: Only migrate the first version.
             if let Some(entry) = key_iter.next() {
+                let entry = entry?;
                 if entry.user_key() == last_key {
                     continue;
                 }

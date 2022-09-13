@@ -166,23 +166,27 @@ impl StateEngine {
 
 impl<'a> Iterator for ReplicaStateIterator<'a> {
     /// (group id, replica id, replica state)
-    type Item = (u64, u64, ReplicaLocalState);
+    type Item = Result<(u64, u64, ReplicaLocalState)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((key, value)) = self.inner.next() {
-            if !key.starts_with(keys::replica_state_end()) {
-                let replica_id = keys::parse_replica_id(&key).expect("valid replica state key");
-                let replica_meta =
-                    ReplicaMeta::decode(value.as_ref()).expect("valid ReplicaMeta format");
-                return Some((
-                    replica_meta.group_id,
-                    replica_id,
-                    ReplicaLocalState::from_i32(replica_meta.state)
-                        .expect("valid ReplicaLocalState value"),
-                ));
+        match self.inner.next()? {
+            Ok((key, value)) => {
+                if !key.starts_with(keys::replica_state_end()) {
+                    let replica_id = keys::parse_replica_id(&key).expect("valid replica state key");
+                    let replica_meta =
+                        ReplicaMeta::decode(value.as_ref()).expect("valid ReplicaMeta format");
+                    Some(Ok((
+                        replica_meta.group_id,
+                        replica_id,
+                        ReplicaLocalState::from_i32(replica_meta.state)
+                            .expect("valid ReplicaLocalState value"),
+                    )))
+                } else {
+                    None
+                }
             }
+            Err(err) => Some(Err(err.into())),
         }
-        None
     }
 }
 
