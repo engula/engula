@@ -499,11 +499,6 @@ impl<'a> RawIterator<'a> {
     pub fn descriptor(&self) -> &GroupDesc {
         &self.descriptor
     }
-
-    // #[inline]
-    // pub fn status(&mut self) -> Result<()> {
-    //     db_iterator_status(&mut self.db_iter, true)
-    // }
 }
 
 impl<'a> Iterator for RawIterator<'a> {
