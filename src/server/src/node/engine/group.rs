@@ -1103,9 +1103,9 @@ mod tests {
         let tmp_dir = TempDir::new("engula").unwrap().into_path();
         let db_dir = tmp_dir.join("db");
 
-        use crate::bootstrap::open_engine;
+        use crate::bootstrap::open_engine_with_default_config;
 
-        let db = open_engine(db_dir).unwrap();
+        let db = open_engine_with_default_config(db_dir).unwrap();
         let db = Arc::new(db);
         let group_engine =
             executor.block_on(async move { GroupEngine::create(db.clone(), 1, 1).await.unwrap() });

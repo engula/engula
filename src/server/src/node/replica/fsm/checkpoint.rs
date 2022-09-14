@@ -174,9 +174,9 @@ mod tests {
     };
 
     async fn create_engine(dir: &Path, group_id: u64, shard_id: u64) -> GroupEngine {
-        use crate::bootstrap::open_engine;
+        use crate::bootstrap::open_engine_with_default_config;
 
-        let db = open_engine(dir).unwrap();
+        let db = open_engine_with_default_config(dir).unwrap();
         let db = Arc::new(db);
 
         let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
