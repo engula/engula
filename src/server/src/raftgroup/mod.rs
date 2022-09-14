@@ -77,6 +77,11 @@ pub struct RaftConfig {
     /// Default: 10K
     pub max_inflight_msgs: usize,
 
+    /// Log slow io requests if it exceeds the specified threshold.
+    ///
+    /// Default: disabled
+    pub engine_slow_io_threshold_ms: Option<u64>,
+
     #[serde(skip)]
     pub testing_knobs: RaftTestingKnobs,
 }
@@ -163,12 +168,11 @@ impl RaftManager {
             RaftWorker::open(group_id, replica_id, node_id, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
 
-        let tick_interval_ms = self.cfg.tick_interval_ms;
         let tag = &group_id.to_le_bytes();
         self.executor
             .spawn(Some(tag), TaskPriority::High, async move {
                 // TODO(walter) handle result.
-                worker.run(tick_interval_ms).await.unwrap();
+                worker.run().await.unwrap();
                 drop(wait_group);
             });
         Ok(facade)
@@ -183,6 +187,7 @@ impl Default for RaftConfig {
             election_tick: 3,
             max_size_per_msg: 64 * 1024 * 1024,
             max_inflight_msgs: 10 * 1000,
+            engine_slow_io_threshold_ms: None,
             testing_knobs: RaftTestingKnobs::default(),
         }
     }
