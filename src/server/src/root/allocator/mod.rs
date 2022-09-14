@@ -185,15 +185,17 @@ impl<T: AllocSource> Allocator<T> {
 
         let policy = ReplicaCountPolicy::default();
 
-        let candidate_nodes = candidate_nodes
-            .into_iter()
-            .map(|node| NodeCandidate {
-                node: node.to_owned(),
-                disk_full: check_node_full(&node),
-                balance_value: policy.balance_value(&BalanceContext::default(), &node) as f64, // TODO: ...
-                ..Default::default()
-            })
-            .collect::<Vec<_>>();
+        let candidate_nodes =
+            candidate_nodes
+                .into_iter()
+                .map(|node| NodeCandidate {
+                    node: node.to_owned(),
+                    disk_full: check_node_full(&node),
+                    balance_value: policy.balance_value(&BalanceTickContext::default(), &node)
+                        as f64, // TODO: ...
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
 
         let mut candidate_nodes = candidate_nodes
             .iter()

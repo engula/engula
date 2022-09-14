@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use engula_client::{GroupClient, RouterGroupState};
+use tokio::time::Instant;
 use tracing::{info, warn};
 
 use super::*;
+use crate::root::{HeartbeatQueue, HeartbeatTask};
 
 #[derive(Default, Clone, Debug)]
 pub struct NodeCandidate {
@@ -108,11 +112,11 @@ struct BalanceOption {
 }
 
 #[derive(Default)]
-pub struct BalanceContext {
+pub struct BalanceTickContext {
     delta_value: HashMap<u64 /* node */, i64 /* delta value */>,
 }
 
-impl BalanceContext {
+impl BalanceTickContext {
     pub fn get(&self, node: u64) -> i64 {
         *self.delta_value.get(&node).unwrap_or(&0)
     }
@@ -133,7 +137,7 @@ pub trait BalancePolicy {
         from: bool,
     ) -> (f64 /* balance_score */, f64 /* converges_score */);
 
-    fn balance_value(&self, ctx: &BalanceContext, n: &NodeDesc) -> u64;
+    fn balance_value(&self, ctx: &BalanceTickContext, n: &NodeDesc) -> u64;
 
     fn delta_value(&self) -> i64;
 }
@@ -143,14 +147,21 @@ pub struct ReplicaBalancer<T: AllocSource> {
     shared: Arc<RootShared>,
     alloc_source: Arc<T>,
     config: RootConfig,
+    heartbeat_queue: Arc<HeartbeatQueue>,
 }
 
 impl<T: AllocSource> ReplicaBalancer<T> {
-    pub fn new(shared: Arc<RootShared>, alloc_source: Arc<T>, config: RootConfig) -> Self {
+    pub fn new(
+        shared: Arc<RootShared>,
+        alloc_source: Arc<T>,
+        config: RootConfig,
+        heartbeat_queue: Arc<HeartbeatQueue>,
+    ) -> Self {
         Self {
             shared,
             alloc_source,
             config,
+            heartbeat_queue,
         }
     }
 }
@@ -162,7 +173,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
     ) -> Result<bool> {
         self.alloc_source.refresh_all().await?;
         Ok(self
-            .compute_balance_action(&BalanceContext::default(), policy)
+            .compute_balance_action(&BalanceTickContext::default(), policy)
             .await?
             .is_some())
     }
@@ -172,18 +183,43 @@ impl<T: AllocSource> ReplicaBalancer<T> {
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
     ) -> Result<()> {
         self.alloc_source.refresh_all().await?;
-        let mut ctx = BalanceContext::default();
-        while let Some(action) = self.compute_balance_action(&ctx, policy).await? {
+        let mut related_nodes = HashSet::new();
+        let mut tick_ctx = BalanceTickContext::default();
+        while let Some(action) = self.compute_balance_action(&tick_ctx, policy).await? {
+            info!(
+                "try balance replica, group: {}, epoch: {}, src_node: {}, dest_node: {}",
+                action.group.id, action.group.epoch, action.source_node, action.dest_node
+            );
+
             self.reallocate_replica(&action).await?;
-            ctx.update(action.source_node, -policy.delta_value());
-            ctx.update(action.dest_node, policy.delta_value());
+
+            related_nodes.insert(action.source_node);
+            related_nodes.insert(action.dest_node);
+
+            tick_ctx.update(action.source_node, -policy.delta_value());
+            tick_ctx.update(action.dest_node, policy.delta_value());
+        }
+        if !related_nodes.is_empty() {
+            info!("schedule heartbeat after repl balance");
+            let now = Instant::now();
+            for n in &related_nodes {
+                self.heartbeat_queue
+                    .try_schedule(
+                        vec![HeartbeatTask {
+                            node_id: n.to_owned(),
+                        }],
+                        now,
+                    )
+                    .await;
+            }
+            info!("schedule heartbeat after repl balance, done");
         }
         Ok(())
     }
 
     async fn compute_balance_action(
         &self,
-        ctx: &BalanceContext,
+        ctx: &BalanceTickContext,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
     ) -> Result<Option<ReplicaBalanceAction>> {
         if !self.config.enable_replica_balance {
@@ -210,10 +246,6 @@ impl<T: AllocSource> ReplicaBalancer<T> {
                 continue;
             }
             let action = balance_opts.unwrap();
-            info!(
-                "try balance replica, group: {group_id}, epoch: {}, src_node: {}, dest_node: {}",
-                action.group.epoch, action.source_node, action.dest_node
-            );
             return Ok(Some(action));
         }
         Ok(None)
@@ -286,7 +318,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
 
     async fn try_balance_group(
         &self,
-        ctx: &BalanceContext,
+        ctx: &BalanceTickContext,
         policy: &(dyn BalancePolicy + Send + Sync + 'static),
         group: &GroupDesc,
         within_voter: bool,
@@ -621,6 +653,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
                 .iter()
                 .find(|r| r.node_id != action.source_node)
                 .unwrap();
+            info!("need transfer leader before reallocate replica, group: {}, src_node: {}, dest_node: {}", group_desc.id, action.source_node, transferee.node_id);
             let r = self
                 .try_transfer_leader(
                     group_desc.to_owned(),
@@ -637,13 +670,6 @@ impl<T: AllocSource> ReplicaBalancer<T> {
                 }
             };
         }
-
-        info!(
-            group = group_desc.id,
-            src_node = action.source_node,
-            dest_node = action.dest_node,
-            "start move replica"
-        );
 
         let src_replica = group_desc
             .replicas
@@ -713,6 +739,13 @@ impl<T: AllocSource> ReplicaBalancer<T> {
         incoming_replica: ReplicaDesc,
         outgoing_replica: ReplicaDesc,
     ) -> Result<ScheduleState> {
+        let (src_node, dest_node) = (outgoing_replica.node_id, incoming_replica.node_id);
+        info!(
+            group = group.id,
+            src_node = src_node,
+            dest_node = dest_node,
+            "start move replica"
+        );
         let mut group_client = GroupClient::new(
             RouterGroupState {
                 id: group.id,
@@ -730,6 +763,13 @@ impl<T: AllocSource> ReplicaBalancer<T> {
         let current_state = group_client
             .move_replicas(vec![incoming_replica], vec![outgoing_replica])
             .await?;
+
+        info!(
+            group = group.id,
+            src_node = src_node,
+            dest_node = dest_node,
+            "move replica submitted"
+        );
         Ok(current_state)
     }
 }

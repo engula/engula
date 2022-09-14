@@ -83,7 +83,7 @@ impl BalancePolicy for ReplicaCountPolicy {
         (balance_score, converges_score)
     }
 
-    fn balance_value(&self, ctx: &BalanceContext, n: &NodeDesc) -> u64 {
+    fn balance_value(&self, ctx: &BalanceTickContext, n: &NodeDesc) -> u64 {
         let mut cnt = n.capacity.as_ref().unwrap().replica_count as i64;
         let delta = ctx.get(n.id);
         cnt += delta;

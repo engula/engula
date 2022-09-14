@@ -109,16 +109,19 @@ impl Root {
         let liveness = Arc::new(liveness::Liveness::new(Duration::from_secs(
             cfg.root.liveness_threshold_sec,
         )));
+        let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let info = Arc::new(SysAllocSource::new(shared.clone(), liveness.to_owned()));
         let replica_balancer = Arc::new(ReplicaBalancer::new(
             shared.clone(),
             info.to_owned(),
             cfg.root.to_owned(),
+            heartbeat_queue.to_owned(),
         ));
         let leader_balancer = Arc::new(LeaderBalancer::with(
             info.to_owned(),
             shared.clone(),
             cfg.root.to_owned(),
+            heartbeat_queue.clone(),
         ));
         let shard_balancer = Arc::new(ShardBalancer::with(
             shared.clone(),
@@ -126,7 +129,6 @@ impl Root {
             cfg.root.to_owned(),
         ));
         let alloc = Arc::new(allocator::Allocator::new(info, cfg.root.to_owned()));
-        let heartbeat_queue = Arc::new(HeartbeatQueue::default());
         let jobs = Arc::new(Jobs::new(
             shared.to_owned(),
             alloc.to_owned(),

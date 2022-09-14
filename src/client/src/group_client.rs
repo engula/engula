@@ -20,7 +20,7 @@ use std::{
 };
 
 use engula_api::{
-    server::v1::{group_request_union::Request, group_response_union::Response, *},
+    server::v1::{self, group_request_union::Request, group_response_union::Response, *},
     shard,
 };
 use futures::{FutureExt, StreamExt};
@@ -530,10 +530,25 @@ impl GroupClient {
         let op = |ctx: InvokeContext, client: NodeClient| {
             let incoming_voters = incoming_voters.to_owned();
             let outgoing_voters = outgoing_voters.to_owned();
+            let move_leader = outgoing_voters.iter().any(|r| r.node_id == ctx.node_id);
             let req = RequestBatchBuilder::new(ctx.node_id)
                 .move_replica(ctx.group_id, ctx.epoch, incoming_voters, outgoing_voters)
                 .build();
             async move {
+                if move_leader {
+                    use prost::Message;
+                    let fake_error_to_retry = v1::Error::not_match(GroupDesc {
+                        id: ctx.group_id,
+                        epoch: 0,
+                        shards: vec![],
+                        replicas: vec![],
+                    });
+                    return Err(Status::with_details(
+                        Code::Unknown,
+                        "fake retry error",
+                        fake_error_to_retry.encode_to_vec().into(),
+                    ));
+                }
                 let resp = client
                     .batch_group_requests(req)
                     .await
