@@ -264,64 +264,79 @@ where
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
         while !self.request_receiver.is_terminated() {
-            if !self.raft_node.has_ready() {
-                futures::select_biased! {
-                    _ = interval.tick().fuse() => {
-                        self.raft_node.tick();
-                        self.compact_log();
-                    },
-                    request = self.request_receiver.next() => match request {
-                        Some(request) => {
-                            self.handle_request(request)?;
-                        },
-                        None => break,
-                    },
-                }
-            }
-
-            while let Ok(Some(request)) = self.request_receiver.try_next() {
-                self.handle_request(request)?;
-            }
-
-            RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
-            let mut template = AdvanceImpl {
-                replica_id: self.desc.id,
-                group_id: self.group_id,
-                desc: self.desc.clone(),
-                channels: &mut self.channels,
-                trans_mgr: &self.trans_mgr,
-                snap_mgr: &self.snap_mgr,
-                observer: &mut self.observer,
-                replica_cache: &mut self.replica_cache,
-            };
-            if let Some(write_task) = self.raft_node.advance(&mut template) {
-                let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
-                let mut batch = LogBatch::default();
-                self.raft_node
-                    .mut_store()
-                    .write(&mut batch, &write_task)
-                    .expect("write log batch");
-                self.engine.write(&mut batch, false).unwrap();
-                let post_ready = write_task.post_ready();
-                self.raft_node.post_advance(post_ready, &mut template);
-            }
-
-            if self.raft_node.mut_store().create_snapshot.get() {
-                self.raft_node.mut_store().create_snapshot.set(false);
-                super::snap::dispatch_creating_snap_task(
-                    &self.executor,
-                    self.desc.id,
-                    self.request_sender.clone(),
-                    self.raft_node.mut_state_machine(),
-                    self.snap_mgr.clone(),
-                );
-            }
+            self.maintenance(&mut interval).await?;
+            self.consume_requests()?;
+            self.dispatch()?;
+            crate::runtime::yield_now().await;
         }
 
         debug!(
             "group {} replica {} raft worker is quit",
             self.group_id, self.desc.id
         );
+
+        Ok(())
+    }
+
+    async fn maintenance(&mut self, interval: &mut tokio::time::Interval) -> Result<()> {
+        if !self.raft_node.has_ready() {
+            futures::select_biased! {
+                _ = interval.tick().fuse() => {
+                    self.raft_node.tick();
+                    self.compact_log();
+                },
+                request = self.request_receiver.next() => match request {
+                    Some(request) => {
+                        self.handle_request(request)?;
+                    },
+                    None => {},
+                },
+            }
+        }
+        Ok(())
+    }
+
+    fn consume_requests(&mut self) -> Result<()> {
+        while let Ok(Some(request)) = self.request_receiver.try_next() {
+            self.handle_request(request)?;
+        }
+        Ok(())
+    }
+
+    fn dispatch(&mut self) -> Result<()> {
+        RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
+        let mut template = AdvanceImpl {
+            replica_id: self.desc.id,
+            group_id: self.group_id,
+            desc: self.desc.clone(),
+            channels: &mut self.channels,
+            trans_mgr: &self.trans_mgr,
+            snap_mgr: &self.snap_mgr,
+            observer: &mut self.observer,
+            replica_cache: &mut self.replica_cache,
+        };
+        if let Some(write_task) = self.raft_node.advance(&mut template) {
+            let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
+            let mut batch = LogBatch::default();
+            self.raft_node
+                .mut_store()
+                .write(&mut batch, &write_task)
+                .expect("write log batch");
+            self.engine.write(&mut batch, false).unwrap();
+            let post_ready = write_task.post_ready();
+            self.raft_node.post_advance(post_ready, &mut template);
+        }
+
+        if self.raft_node.mut_store().create_snapshot.get() {
+            self.raft_node.mut_store().create_snapshot.set(false);
+            super::snap::dispatch_creating_snap_task(
+                &self.executor,
+                self.desc.id,
+                self.request_sender.clone(),
+                self.raft_node.mut_state_machine(),
+                self.snap_mgr.clone(),
+            );
+        }
 
         Ok(())
     }
