@@ -30,7 +30,6 @@ pub struct Config {
 
     pub init: bool,
 
-    pub num_conn: usize,
     pub enable_proxy_service: bool,
 
     pub join_list: Vec<String>,
