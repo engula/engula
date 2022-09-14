@@ -83,4 +83,13 @@ pub mod v1 {
             self.get_shard_desc().id
         }
     }
+
+    impl From<&raft::eraftpb::Entry> for EntryId {
+        fn from(e: &raft::eraftpb::Entry) -> Self {
+            EntryId {
+                index: e.index,
+                term: e.term,
+            }
+        }
+    }
 }

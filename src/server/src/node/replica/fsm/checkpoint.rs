@@ -169,7 +169,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        node::{engine::WriteBatch, GroupEngine},
+        node::{
+            engine::{WriteBatch, WriteStates},
+            GroupEngine,
+        },
         runtime::ExecutorOwner,
     };
 
@@ -180,23 +183,21 @@ mod tests {
         let db = Arc::new(db);
 
         let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
-        let mut wb = WriteBatch::default();
-        group_engine.set_group_desc(
-            &mut wb,
-            &GroupDesc {
-                id: group_id,
-                shards: vec![ShardDesc {
-                    id: shard_id,
-                    collection_id: 1,
-                    partition: Some(Partition::Range(RangePartition {
-                        start: vec![],
-                        end: vec![],
-                    })),
-                }],
-                ..Default::default()
-            },
-        );
-        group_engine.commit(wb, false).unwrap();
+        let wb = WriteBatch::default();
+        let mut states = WriteStates::default();
+        states.descriptor = Some(GroupDesc {
+            id: group_id,
+            shards: vec![ShardDesc {
+                id: shard_id,
+                collection_id: 1,
+                partition: Some(Partition::Range(RangePartition {
+                    start: vec![],
+                    end: vec![],
+                })),
+            }],
+            ..Default::default()
+        });
+        group_engine.commit(wb, states, false).unwrap();
 
         group_engine
     }
