@@ -143,9 +143,9 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
 name = "bindgen"
-version = "0.59.2"
+version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd2a9a458e8f4304c52c43ebb0cfbd520289f8379a52e329a38afda99bf8eb8"
+checksum = "062dddbc1ba4aca46de6338e2bf87771414c335f7b2f2036e8f3e9befebf88e6"
 dependencies = [
  "bitflags",
  "cexpr",
@@ -579,6 +579,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2",
+ "sysinfo",
  "tempdir",
  "thiserror",
  "tokio",
@@ -1054,8 +1055,8 @@ dependencies = [
 
 [[package]]
 name = "librocksdb-sys"
-version = "0.7.0+7.1.2"
-source = "git+https://github.com/w41ter/rust-rocksdb.git#83d6af3cecba1dca9c00e36373537bc4e24b4d27"
+version = "0.8.0+7.4.4"
+source = "git+https://github.com/w41ter/rust-rocksdb.git?branch=v7.4.4-patched#d156898d660714310b64f21626e1c9a0e74a0864"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -1063,6 +1064,8 @@ dependencies = [
  "glob",
  "libc",
  "libz-sys",
+ "lz4-sys",
+ "zstd-sys",
 ]
 
 [[package]]
@@ -1211,6 +1214,15 @@ checksum = "a8903e5a29a317527874d0402f867152a3d21c908bb0b933e416c65e301d4c36"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c28774a7fd2fbb4f0babd8237ce554b73af68021b5f695a3cebd6c59bac0980f"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -1940,11 +1952,12 @@ dependencies = [
 
 [[package]]
 name = "rocksdb"
-version = "0.18.0"
-source = "git+https://github.com/w41ter/rust-rocksdb.git#83d6af3cecba1dca9c00e36373537bc4e24b4d27"
+version = "0.19.0"
+source = "git+https://github.com/w41ter/rust-rocksdb.git?branch=v7.4.4-patched#d156898d660714310b64f21626e1c9a0e74a0864"
 dependencies = [
  "libc",
  "librocksdb-sys",
+ "serde",
 ]
 
 [[package]]
@@ -2251,6 +2264,21 @@ name = "sync_wrapper"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20518fe4a4c9acf048008599e464deb21beeae3d3578418951a189c235a7a9a8"
+
+[[package]]
+name = "sysinfo"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ae2421f3e16b3afd4aa692d23b83d0ba42ee9b0081d5deeb7d21428d7195fb1"
+dependencies = [
+ "cfg-if",
+ "core-foundation-sys",
+ "libc",
+ "ntapi",
+ "once_cell",
+ "rayon",
+ "winapi",
+]
 
 [[package]]
 name = "take_mut"
@@ -2896,4 +2924,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
 dependencies = [
  "linked-hash-map",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.1+zstd.1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fd07cbbc53846d9145dbffdf6dd09a7a0aa52be46741825f5c97bdd4f73f12b"
+dependencies = [
+ "cc",
+ "libc",
 ]

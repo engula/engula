@@ -152,7 +152,8 @@ impl Node {
 
         let node_id = node_ident.node_id;
         let it = self.provider.state_engine.iterate_replica_states().await;
-        for (group_id, replica_id, state) in it {
+        for entry in it {
+            let (group_id, replica_id, state) = entry?;
             if state == ReplicaLocalState::Terminated {
                 setup_destory_replica(
                     group_id,
@@ -795,6 +796,7 @@ mod tests {
         node.state_engine()
             .iterate_replica_states()
             .await
+            .map(|e| e.unwrap())
             .filter(|(_, id, _)| *id == replica_id)
             .map(|(_, _, state)| state)
             .next()

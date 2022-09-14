@@ -29,12 +29,13 @@ pub async fn prefix_list(
     let snapshot_mode = SnapshotMode::Prefix { key: prefix };
     let mut snapshot = engine.snapshot(req.shard_id, snapshot_mode)?;
     let mut values = Vec::new();
-    for mut mvcc_iter in snapshot.iter() {
-        if let Some(value) = mvcc_iter
-            .next()
-            .and_then(|e| e.value().map(ToOwned::to_owned))
-        {
-            values.push(value);
+    for mvcc_iter in snapshot.iter() {
+        let mut mvcc_iter = mvcc_iter?;
+        if let Some(entry) = mvcc_iter.next() {
+            let entry = entry?;
+            if let Some(value) = entry.value().map(ToOwned::to_owned) {
+                values.push(value);
+            }
         }
     }
     Ok(ShardPrefixListResponse { values })
