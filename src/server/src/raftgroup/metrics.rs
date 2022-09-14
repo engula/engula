@@ -181,6 +181,43 @@ lazy_static! {
         "The total of worker advance of raftgroup",
     )
     .unwrap();
+    pub static ref RAFTGROUP_WORKER_ADVANCE_DURATION_SECONDS: Histogram = register_histogram!(
+        "raftgroup_worker_advance_duration_seconds",
+        "The intervals of worker advance of raftgroup",
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
+    )
+    .unwrap();
+    pub static ref RAFTGROUP_WORKER_REQUEST_IN_QUEUE_DURATION_SECONDS: Histogram =
+        register_histogram!(
+            "raftgroup_worker_request_in_queue_duration_seconds",
+            "The intervals of worker request in queue",
+            exponential_buckets(0.00005, 1.8, 26).unwrap()
+        )
+        .unwrap();
+    pub static ref RAFTGROUP_WORKER_COMPACT_LOG_DURATION_SECONDS: Histogram = register_histogram!(
+        "raftgroup_worker_compact_log_duration_seconds",
+        "The intervals of worker compact log of raftgroup",
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
+    )
+    .unwrap();
+    pub static ref RAFTGROUP_WORKER_APPLY_DURATION_SECONDS: Histogram = register_histogram!(
+        "raftgroup_worker_apply_duration_seconds",
+        "The intervals of worker apply of raftgroup",
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
+    )
+    .unwrap();
+    pub static ref RAFTGROUP_WORKER_TAKE_REQUESTS_DURATION_SECONDS: Histogram =
+        register_histogram!(
+            "raftgroup_worker_take_requests_duration_seconds",
+            "The intervals of worker take requests",
+            exponential_buckets(0.00005, 1.8, 26).unwrap()
+        )
+        .unwrap();
+    pub static ref RAFTGROUP_WORKER_APPLY_ENTRIES_SIZE: Histogram = register_histogram!(
+        "raftgroup_worker_apply_entries_size",
+        "The size of entries to apply",
+    )
+    .unwrap();
 }
 
 pub fn take_read_metrics(read_policy: ReadPolicy) -> &'static Histogram {
@@ -237,7 +274,7 @@ pub fn take_apply_snapshot_metrics() -> &'static Histogram {
     &RAFTGROUP_APPLY_SNAPSHOT_DURATION_SECONDS
 }
 
-fn elapsed_seconds(instant: Instant) -> f64 {
+pub fn elapsed_seconds(instant: Instant) -> f64 {
     let d = instant.elapsed();
     d.as_secs() as f64 + (d.subsec_nanos() as f64) / 1e9
 }

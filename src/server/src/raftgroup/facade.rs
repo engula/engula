@@ -57,6 +57,7 @@ impl RaftNodeFacade {
 
         let request = Request::Propose {
             eval_result,
+            start: start_at,
             sender,
         };
 
