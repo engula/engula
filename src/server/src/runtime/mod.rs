@@ -47,9 +47,18 @@ pub struct ExecutorConfig {
 /// A handle that awaits the result of a task.
 ///
 /// Dropping a [`JoinHandle`] will detach the task, meaning that there is no longer
-/// a handle to the task and no way to `join` on it.
+/// a handle to the task and no way to `join` on it. If you want cancel tasks when
+/// dropping a handle, use [`DispatchHandle`].
 #[derive(Debug)]
 pub struct JoinHandle<T> {
+    inner: tokio::task::JoinHandle<T>,
+}
+
+/// A handle that awaits the result of a task.
+///
+/// Dropping a [`DispatchHandle`] will abort the underlying task.
+#[derive(Debug)]
+pub struct DispatchHandle<T> {
     inner: tokio::task::JoinHandle<T>,
 }
 
@@ -120,6 +129,28 @@ impl Executor {
         JoinHandle { inner }
     }
 
+    /// Dispatch a task.
+    ///
+    /// [`tag`]: specify the tag of task, the underlying scheduler should ensure that all tasks
+    ///          with the same tag will be scheduled on the same core.
+    /// [`priority`]: specify the task priority.
+    pub fn dispatch<F, T>(
+        &self,
+        tag: Option<&[u8]>,
+        priority: TaskPriority,
+        future: F,
+    ) -> DispatchHandle<F::Output>
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        // TODO(walter) support per thread task set.
+        let _ = tag;
+        take_spawn_metrics(priority);
+        let inner = self.handle.spawn(future);
+        DispatchHandle { inner }
+    }
+
     /// Runs a future to completion on the executor. This is the executor’s entry point.
     pub fn block_on<F, T>(&self, future: F) -> T
     where
@@ -139,6 +170,24 @@ impl<T> Future for JoinHandle<T> {
             Poll::Ready(Ok(v)) => Poll::Ready(v),
             Poll::Ready(Err(e)) => panic!("{:?}", e),
         }
+    }
+}
+
+impl<T> Future for DispatchHandle<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.inner).poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok(v)) => Poll::Ready(v),
+            Poll::Ready(Err(e)) => panic!("{:?}", e),
+        }
+    }
+}
+
+impl<T> Drop for DispatchHandle<T> {
+    fn drop(&mut self) {
+        self.inner.abort();
     }
 }
 

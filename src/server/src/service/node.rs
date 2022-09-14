@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use engula_api::server::v1::*;
-use futures::{channel::mpsc, StreamExt};
 use tonic::{Request, Response, Status};
 
 use super::metrics::*;
@@ -33,36 +32,32 @@ impl node_server::Node for Server {
         let batch_request = request.into_inner();
         record_latency!(take_batch_request_metrics(&batch_request));
 
-        let (sender, mut receiver) = mpsc::channel(batch_request.requests.len());
-        for (index, request) in batch_request.requests.into_iter().enumerate() {
+        let num_requests = batch_request.requests.len();
+        let mut handles = Vec::with_capacity(num_requests);
+        for request in batch_request.requests.into_iter() {
             let server = self.clone();
             let task_tag = request.group_id.to_le_bytes();
-            let mut task_tx = sender.clone();
-            self.node.executor().spawn(
+            let handle = self.node.executor().dispatch(
                 Some(task_tag.as_slice()),
                 TaskPriority::Middle,
                 async move {
                     record_latency_opt!(take_group_request_metrics(&request));
-                    let response = server
+                    server
                         .node
                         .execute_request(request)
                         .await
-                        .unwrap_or_else(error_to_response);
-                    task_tx.try_send((index, response)).unwrap_or_default();
+                        .unwrap_or_else(error_to_response)
                 },
             );
+            handles.push(handle);
         }
-        drop(sender);
 
-        let mut responses = vec![];
-        while let Some((index, response)) = receiver.next().await {
-            responses.push((index, response));
+        let mut responses = Vec::with_capacity(num_requests);
+        for handle in handles {
+            responses.push(handle.await);
         }
-        responses.sort_unstable_by_key(|(index, _)| *index);
 
-        Ok(Response::new(BatchResponse {
-            responses: responses.into_iter().map(|(_, resp)| resp).collect(),
-        }))
+        Ok(Response::new(BatchResponse { responses }))
     }
 
     async fn get_root(
