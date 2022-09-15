@@ -300,8 +300,7 @@ where
     fn consume_requests(&mut self) -> Result<()> {
         while let Ok(Some(request)) = self.request_receiver.try_next() {
             self.handle_request(request)?;
-            if self.accumulated_bytes >= 128 << 10 {
-                // 128KB
+            if self.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
                 break;
             }
         }

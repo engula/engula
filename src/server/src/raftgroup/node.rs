@@ -107,6 +107,7 @@ where
             check_quorum: true,
             max_size_per_msg: cfg.max_size_per_msg,
             max_inflight_msgs: cfg.max_inflight_msgs,
+            max_committed_size_per_ready: cfg.max_io_batch_size,
             read_only_option: ReadOnlyOption::Safe,
             ..Default::default()
         };
