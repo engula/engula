@@ -325,6 +325,27 @@ impl<T: AllocSource> ReplicaBalancer<T> {
     ) -> Result<Option<ReplicaBalanceAction>> {
         let nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
+        let mut leader_repl = None;
+        for repl in &group.replicas {
+            if let Some(repl_state) = self.alloc_source.replica_state(&repl.id) {
+                if matches!(
+                    RaftRole::from_i32(repl_state.role).unwrap(),
+                    RaftRole::Leader
+                ) {
+                    leader_repl = Some((repl_state.replica_id, repl_state.term));
+                    break;
+                }
+            }
+        }
+        if leader_repl.is_none() {
+            info!(
+                group = group.id,
+                "group leader no avaliable, skip this group in this tick"
+            );
+            return Ok(None);
+        }
+        let (leader_replica_id, leader_replica_term) = leader_repl.take().unwrap();
+
         // Prepare related replicas, it make them into three categories:
         // 1. `replica_to_balance`: the replicas that participate in balance
         // 2. `other_replica`: the replicas that not participate in balance but existed in the group
@@ -493,12 +514,9 @@ impl<T: AllocSource> ReplicaBalancer<T> {
 
         // check the result of simulate remove after running options, and skip option if
         // new-added replica be removed in next turn.
+        let mut need_shed_leader_opts = Vec::new();
         loop {
-            let (target, existing) = self.best_balance_target(&mut balance_opts);
-            info!(
-                "balance replica move: {:?} target: {:?}, from: {:?}",
-                balance_opts, target, existing,
-            );
+            let (target, _existing) = self.best_balance_target(&mut balance_opts);
             if target.is_none() {
                 break;
             }
@@ -538,7 +556,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
             )?;
 
             if remove_candidate.is_none() {
-                return Ok(None);
+                continue;
             }
 
             if remove_candidate.as_ref().unwrap().node.id == target.as_ref().unwrap().node.id {
@@ -550,29 +568,22 @@ impl<T: AllocSource> ReplicaBalancer<T> {
                 .iter()
                 .find(|r| r.node_id == source_node)
                 .unwrap();
-            let (shed_leader, source_replica_id, source_term) =
-                if let Some(source_repl_state) = self.alloc_source.replica_state(&source_repl.id) {
-                    (
-                        matches!(
-                            RaftRole::from_i32(source_repl_state.role).unwrap(),
-                            RaftRole::Leader
-                        ),
-                        source_repl_state.replica_id,
-                        source_repl_state.term,
-                    )
-                } else {
-                    (false, 0, 0)
-                };
-            return Ok(Some(ReplicaBalanceAction {
+            let opt = ReplicaBalanceAction {
                 group: group.to_owned(),
                 source_node,
                 dest_node: target.as_ref().unwrap().node.id,
-                shed_leader,
-                source_replica_id,
-                source_term,
-            }));
+                shed_leader: source_repl.id == leader_replica_id,
+                source_replica_id: source_repl.id,
+                leader_replica_id,
+                leader_replica_term,
+            };
+            if opt.shed_leader {
+                need_shed_leader_opts.push(opt);
+                continue;
+            }
+            return Ok(Some(opt));
         }
-        Ok(None)
+        Ok(need_shed_leader_opts.into_iter().next())
     }
 
     fn sim_remove_target(
@@ -657,7 +668,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
             let r = self
                 .try_transfer_leader(
                     group_desc.to_owned(),
-                    (action.source_replica_id, action.source_term),
+                    (action.source_replica_id, action.leader_replica_term),
                     transferee.id,
                 )
                 .await;
@@ -682,7 +693,7 @@ impl<T: AllocSource> ReplicaBalancer<T> {
         match self
             .try_move_replica(
                 group_desc.to_owned(),
-                (action.source_replica_id, action.source_term),
+                (action.leader_replica_id, action.leader_replica_term),
                 ReplicaDesc {
                     id: next_replica,
                     node_id: action.dest_node,

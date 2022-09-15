@@ -115,7 +115,8 @@ pub struct ReplicaBalanceAction {
     pub dest_node: u64,
     pub shed_leader: bool,
     pub source_replica_id: u64,
-    pub source_term: u64,
+    pub leader_replica_id: u64,
+    pub leader_replica_term: u64,
 }
 
 #[derive(Clone)]

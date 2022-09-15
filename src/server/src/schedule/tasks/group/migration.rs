@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use tracing::debug;
+use tracing::{debug, info};
 
 use super::ActionTaskWithLocks;
 use crate::{
@@ -94,7 +94,10 @@ impl Task for ReplicaMigration {
                     .unwrap_or_default();
             }
         }
-
+        info!(
+            "wait next migrate replica task, {}, {}",
+            ctx.group_id, ctx.replica_id,
+        );
         self.providers.move_replicas.watch(self.id());
         TaskState::Pending(None)
     }

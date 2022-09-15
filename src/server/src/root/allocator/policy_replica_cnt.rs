@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tracing::info;
+use tracing::{debug, info};
 
 use super::{replica_balancer::*, *};
 use crate::root::metrics::ROOT_NODE_REPLICA_MEAN_COUNT;
@@ -79,7 +79,7 @@ impl BalancePolicy for ReplicaCountPolicy {
         } else {
             0.0
         };
-        info!("DEBUG: replica cnt balance, min: {min}, max: {max}, mean: {mean}, current: {current}, bs: {balance_score}, cs: {converges_score}, src: {:?}, target: {:?}", node, cands);
+        debug!("replica cnt balance, min: {min}, max: {max}, mean: {mean}, current: {current}, bs: {balance_score}, cs: {converges_score}, src: {:?}, target: {:?}", node, cands);
         (balance_score, converges_score)
     }
 
