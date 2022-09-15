@@ -44,6 +44,24 @@ lazy_static! {
     )
     .unwrap();
     pub static ref EXECUTOR_SPAWN_TOTAL: SpawnTotal = SpawnTotal::from(&EXECUTOR_SPAWN_TOTAL_VEC);
+    pub static ref EXECUTOR_TASK_FIRST_POLL_DURATION_SECONDS: Histogram = register_histogram!(
+        "executor_task_first_poll_duration_seconds",
+        "The interval between spawn and first poll of a task",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
+    )
+    .unwrap();
+    pub static ref EXECUTOR_TASK_POLL_DURATION_SECONDS: Histogram = register_histogram!(
+        "executor_task_poll_duration_seconds",
+        "The interval of poll of a task",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
+    )
+    .unwrap();
+    pub static ref EXECUTOR_TASK_EXECUTE_DURATION_SECONDS: Histogram = register_histogram!(
+        "executor_task_execute_duration_seconds",
+        "The interval of execution of a task",
+        exponential_buckets(0.00005, 1.8, 26).unwrap(),
+    )
+    .unwrap();
 }
 
 #[inline]

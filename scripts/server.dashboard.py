@@ -475,6 +475,12 @@ def executor_panels():
         "Executor",
         simple_total("Total park", "executor_park_total"),
         vector_total("Total spawn", "executor_spawn_total", "priority", "priority"),
+        simple_duration_seconds("First poll duration",
+                                "executor_task_first_poll_duration_seconds"),
+        simple_duration_seconds("Poll duration",
+                                "executor_task_poll_duration_seconds"),
+        simple_duration_seconds("Execute duration",
+                                "executor_task_execute_duration_seconds"),
     )
 
 
