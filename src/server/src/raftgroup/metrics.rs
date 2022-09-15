@@ -206,13 +206,18 @@ lazy_static! {
         exponential_buckets(0.00005, 1.8, 26).unwrap()
     )
     .unwrap();
-    pub static ref RAFTGROUP_WORKER_TAKE_REQUESTS_DURATION_SECONDS: Histogram =
+    pub static ref RAFTGROUP_WORKER_CONSUME_REQUESTS_DURATION_SECONDS: Histogram =
         register_histogram!(
-            "raftgroup_worker_take_requests_duration_seconds",
-            "The intervals of worker take requests",
+            "raftgroup_worker_consume_requests_duration_seconds",
+            "The intervals of worker consume requests",
             exponential_buckets(0.00005, 1.8, 26).unwrap()
         )
         .unwrap();
+    pub static ref RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE: Histogram = register_histogram!(
+        "raftgroup_worker_accumulated_bytes_size",
+        "THe accumulated bytes size of each batching of raft worker",
+    )
+    .unwrap();
     pub static ref RAFTGROUP_WORKER_APPLY_ENTRIES_SIZE: Histogram = register_histogram!(
         "raftgroup_worker_apply_entries_size",
         "The size of entries to apply",
