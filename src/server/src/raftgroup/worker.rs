@@ -285,11 +285,8 @@ where
                     self.raft_node.tick();
                     self.compact_log();
                 },
-                request = self.request_receiver.next() => match request {
-                    Some(request) => {
-                        self.handle_request(request)?;
-                    },
-                    None => {},
+                request = self.request_receiver.next() => if let Some(req) = request {
+                    self.handle_request(req)?;
                 },
             }
         }
