@@ -216,11 +216,13 @@ lazy_static! {
     pub static ref RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE: Histogram = register_histogram!(
         "raftgroup_worker_accumulated_bytes_size",
         "THe accumulated bytes size of each batching of raft worker",
+        exponential_buckets(256.0, 1.8, 22).unwrap(),
     )
     .unwrap();
     pub static ref RAFTGROUP_WORKER_APPLY_ENTRIES_SIZE: Histogram = register_histogram!(
         "raftgroup_worker_apply_entries_size",
         "The size of entries to apply",
+        exponential_buckets(1.0, 1.8, 22).unwrap(),
     )
     .unwrap();
 }
