@@ -420,6 +420,7 @@ where
                     msg,
                 );
             } else {
+                self.accumulated_bytes += msg.entries.iter().map(|e| e.data.len()).sum::<usize>();
                 self.raft_node.step(msg)?;
             }
         }
