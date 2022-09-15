@@ -184,19 +184,21 @@ mod tests {
 
         let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
         let wb = WriteBatch::default();
-        let mut states = WriteStates::default();
-        states.descriptor = Some(GroupDesc {
-            id: group_id,
-            shards: vec![ShardDesc {
-                id: shard_id,
-                collection_id: 1,
-                partition: Some(Partition::Range(RangePartition {
-                    start: vec![],
-                    end: vec![],
-                })),
-            }],
+        let states = WriteStates {
+            descriptor: Some(GroupDesc {
+                id: group_id,
+                shards: vec![ShardDesc {
+                    id: shard_id,
+                    collection_id: 1,
+                    partition: Some(Partition::Range(RangePartition {
+                        start: vec![],
+                        end: vec![],
+                    })),
+                }],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         group_engine.commit(wb, states, false).unwrap();
 
         group_engine

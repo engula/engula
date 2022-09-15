@@ -1114,16 +1114,18 @@ mod tests {
             executor.block_on(async move { GroupEngine::create(db.clone(), 1, 1).await.unwrap() });
 
         let wb = WriteBatch::default();
-        let mut states = WriteStates::default();
-        states.descriptor = Some(GroupDesc {
-            id: group_id,
-            shards: vec![ShardDesc {
-                id: shard_id,
-                collection_id: 1,
-                partition: Some(Partition::Range(RangePartition { start, end })),
-            }],
+        let states = WriteStates {
+            descriptor: Some(GroupDesc {
+                id: group_id,
+                shards: vec![ShardDesc {
+                    id: shard_id,
+                    collection_id: 1,
+                    partition: Some(Partition::Range(RangePartition { start, end })),
+                }],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
 
         group_engine.commit(wb, states, false).unwrap();
 
@@ -1374,29 +1376,32 @@ mod tests {
         // Add new shard
         use shard_desc::*;
         let wb = WriteBatch::default();
-        let mut states = WriteStates::default();
-        states.descriptor = Some(GroupDesc {
-            id: 1,
-            shards: vec![
-                ShardDesc {
-                    id: 1,
-                    collection_id: 1,
-                    partition: Some(Partition::Range(RangePartition {
-                        start: vec![],
-                        end: b"b".to_vec(),
-                    })),
-                },
-                ShardDesc {
-                    id: 2,
-                    collection_id: 1,
-                    partition: Some(Partition::Range(RangePartition {
-                        start: b"b".to_vec(),
-                        end: vec![],
-                    })),
-                },
-            ],
+        let states = WriteStates {
+            descriptor: Some(GroupDesc {
+                id: 1,
+                shards: vec![
+                    ShardDesc {
+                        id: 1,
+                        collection_id: 1,
+                        partition: Some(Partition::Range(RangePartition {
+                            start: vec![],
+                            end: b"b".to_vec(),
+                        })),
+                    },
+                    ShardDesc {
+                        id: 2,
+                        collection_id: 1,
+                        partition: Some(Partition::Range(RangePartition {
+                            start: b"b".to_vec(),
+                            end: vec![],
+                        })),
+                    },
+                ],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
+
         group_engine.commit(wb, states, false).unwrap();
 
         // Iterate shard 1
@@ -1432,29 +1437,31 @@ mod tests {
         // Add new shard
         use shard_desc::*;
         let wb = WriteBatch::default();
-        let mut states = WriteStates::default();
-        states.descriptor = Some(GroupDesc {
-            id: 1,
-            shards: vec![
-                ShardDesc {
-                    id: 1,
-                    collection_id: 1,
-                    partition: Some(Partition::Hash(HashPartition {
-                        slot_id: shard_1_slot_id,
-                        slots,
-                    })),
-                },
-                ShardDesc {
-                    id: 2,
-                    collection_id: 1,
-                    partition: Some(Partition::Hash(HashPartition {
-                        slot_id: shard_2_slot_id,
-                        slots,
-                    })),
-                },
-            ],
+        let states = WriteStates {
+            descriptor: Some(GroupDesc {
+                id: 1,
+                shards: vec![
+                    ShardDesc {
+                        id: 1,
+                        collection_id: 1,
+                        partition: Some(Partition::Hash(HashPartition {
+                            slot_id: shard_1_slot_id,
+                            slots,
+                        })),
+                    },
+                    ShardDesc {
+                        id: 2,
+                        collection_id: 1,
+                        partition: Some(Partition::Hash(HashPartition {
+                            slot_id: shard_2_slot_id,
+                            slots,
+                        })),
+                    },
+                ],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         group_engine.commit(wb, states, false).unwrap();
 
         let mut wb = WriteBatch::default();
