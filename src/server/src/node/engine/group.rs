@@ -38,6 +38,7 @@ pub struct WriteStates {
 }
 
 #[derive(Default)]
+#[repr(transparent)]
 pub struct WriteBatch {
     inner: rocksdb::WriteBatch,
 }
@@ -169,9 +170,11 @@ impl GroupEngine {
         };
 
         // The group descriptor should be persisted into disk.
-        let mut states = WriteStates::default();
-        states.apply_state = Some(ApplyState { index: 0, term: 0 });
-        states.descriptor = Some(desc.clone());
+        let states = WriteStates {
+            apply_state: Some(ApplyState { index: 0, term: 0 }),
+            descriptor: Some(desc),
+            ..Default::default()
+        };
         engine.commit(WriteBatch::default(), states, true)?;
 
         // Flush mem tables so that subsequent `ReadTier::Persisted` can be executed.
@@ -872,10 +875,10 @@ impl<'a, 'b> rocksdb::WriteBatchIterator for ColumnFamilyDecorator<'a, 'b> {
 }
 
 impl WriteBatch {
+    #[inline]
     pub fn new(content: &[u8]) -> Self {
         WriteBatch {
             inner: rocksdb::WriteBatch::new(content),
-            ..Default::default()
         }
     }
 }
@@ -1110,20 +1113,19 @@ mod tests {
         let group_engine =
             executor.block_on(async move { GroupEngine::create(db.clone(), 1, 1).await.unwrap() });
 
-        let mut wb = WriteBatch::default();
-        group_engine.set_group_desc(
-            &mut wb,
-            &GroupDesc {
-                id: group_id,
-                shards: vec![ShardDesc {
-                    id: shard_id,
-                    collection_id: 1,
-                    partition: Some(Partition::Range(RangePartition { start, end })),
-                }],
-                ..Default::default()
-            },
-        );
-        group_engine.commit(wb, false).unwrap();
+        let wb = WriteBatch::default();
+        let mut states = WriteStates::default();
+        states.descriptor = Some(GroupDesc {
+            id: group_id,
+            shards: vec![ShardDesc {
+                id: shard_id,
+                collection_id: 1,
+                partition: Some(Partition::Range(RangePartition { start, end })),
+            }],
+            ..Default::default()
+        });
+
+        group_engine.commit(wb, states, false).unwrap();
 
         group_engine
     }
@@ -1163,7 +1165,9 @@ mod tests {
                 .put(&mut wb, 1, payload.key, b"", payload.version)
                 .unwrap();
         }
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         let mut snapshot = group_engine.snapshot(1, SnapshotMode::default()).unwrap();
         let mut user_data_iter = snapshot.iter();
@@ -1231,7 +1235,9 @@ mod tests {
                 .put(&mut wb, 1, payload.key, b"", payload.version)
                 .unwrap();
         }
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         let mut snapshot = group_engine.snapshot(1, SnapshotMode::default()).unwrap();
         let mut user_data_iter = snapshot.iter();
@@ -1289,7 +1295,9 @@ mod tests {
                 .put(&mut wb, 1, payload.key, b"", payload.version)
                 .unwrap();
         }
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         {
             // Target key `123456`
@@ -1336,7 +1344,9 @@ mod tests {
         group_engine
             .put(&mut wb, 1, b"b12345678", b"124", 124)
             .unwrap();
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         executor.block_on(async move {
             let v = group_engine.get(1, b"a12345678").await.unwrap();
@@ -1357,37 +1367,37 @@ mod tests {
         group_engine.tombstone(&mut wb, 1, b"a", 124).unwrap();
         group_engine.put(&mut wb, 1, b"b", b"123", 123).unwrap();
         group_engine.put(&mut wb, 1, b"b", b"124", 124).unwrap();
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         // Add new shard
         use shard_desc::*;
-        let mut wb = WriteBatch::default();
-        group_engine.set_group_desc(
-            &mut wb,
-            &GroupDesc {
-                id: 1,
-                shards: vec![
-                    ShardDesc {
-                        id: 1,
-                        collection_id: 1,
-                        partition: Some(Partition::Range(RangePartition {
-                            start: vec![],
-                            end: b"b".to_vec(),
-                        })),
-                    },
-                    ShardDesc {
-                        id: 2,
-                        collection_id: 1,
-                        partition: Some(Partition::Range(RangePartition {
-                            start: b"b".to_vec(),
-                            end: vec![],
-                        })),
-                    },
-                ],
-                ..Default::default()
-            },
-        );
-        group_engine.commit(wb, false).unwrap();
+        let wb = WriteBatch::default();
+        let mut states = WriteStates::default();
+        states.descriptor = Some(GroupDesc {
+            id: 1,
+            shards: vec![
+                ShardDesc {
+                    id: 1,
+                    collection_id: 1,
+                    partition: Some(Partition::Range(RangePartition {
+                        start: vec![],
+                        end: b"b".to_vec(),
+                    })),
+                },
+                ShardDesc {
+                    id: 2,
+                    collection_id: 1,
+                    partition: Some(Partition::Range(RangePartition {
+                        start: b"b".to_vec(),
+                        end: vec![],
+                    })),
+                },
+            ],
+            ..Default::default()
+        });
+        group_engine.commit(wb, states, false).unwrap();
 
         // Iterate shard 1
         let snapshot_mode = SnapshotMode::default();
@@ -1421,33 +1431,31 @@ mod tests {
 
         // Add new shard
         use shard_desc::*;
-        let mut wb = WriteBatch::default();
-        group_engine.set_group_desc(
-            &mut wb,
-            &GroupDesc {
-                id: 1,
-                shards: vec![
-                    ShardDesc {
-                        id: 1,
-                        collection_id: 1,
-                        partition: Some(Partition::Hash(HashPartition {
-                            slot_id: shard_1_slot_id,
-                            slots,
-                        })),
-                    },
-                    ShardDesc {
-                        id: 2,
-                        collection_id: 1,
-                        partition: Some(Partition::Hash(HashPartition {
-                            slot_id: shard_2_slot_id,
-                            slots,
-                        })),
-                    },
-                ],
-                ..Default::default()
-            },
-        );
-        group_engine.commit(wb, false).unwrap();
+        let wb = WriteBatch::default();
+        let mut states = WriteStates::default();
+        states.descriptor = Some(GroupDesc {
+            id: 1,
+            shards: vec![
+                ShardDesc {
+                    id: 1,
+                    collection_id: 1,
+                    partition: Some(Partition::Hash(HashPartition {
+                        slot_id: shard_1_slot_id,
+                        slots,
+                    })),
+                },
+                ShardDesc {
+                    id: 2,
+                    collection_id: 1,
+                    partition: Some(Partition::Hash(HashPartition {
+                        slot_id: shard_2_slot_id,
+                        slots,
+                    })),
+                },
+            ],
+            ..Default::default()
+        });
+        group_engine.commit(wb, states, false).unwrap();
 
         let mut wb = WriteBatch::default();
 
@@ -1455,7 +1463,9 @@ mod tests {
         group_engine.tombstone(&mut wb, 1, b"a", 124).unwrap();
         group_engine.put(&mut wb, 2, b"b", b"123", 123).unwrap();
         group_engine.put(&mut wb, 2, b"b", b"124", 124).unwrap();
-        group_engine.commit(wb, false).unwrap();
+        group_engine
+            .commit(wb, WriteStates::default(), false)
+            .unwrap();
 
         // Iterate shard 1
         let snapshot_mode = SnapshotMode::default();
@@ -1488,6 +1498,6 @@ mod tests {
         engine_1.put(&mut wb, 1, b"a", b"", 123).unwrap();
         engine_1.put(&mut wb, 1, b"b", b"123", 123).unwrap();
 
-        engine_2.commit(wb, false).unwrap();
+        engine_2.commit(wb, WriteStates::default(), false).unwrap();
     }
 }

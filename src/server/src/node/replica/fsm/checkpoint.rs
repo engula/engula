@@ -211,7 +211,7 @@ mod tests {
                 .put(&mut wb, shard_id, key.as_bytes(), &value, 0)
                 .unwrap();
         }
-        engine.commit(wb, false).unwrap();
+        engine.commit(wb, WriteStates::default(), false).unwrap();
     }
 
     // This test aims to fix bug:
