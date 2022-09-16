@@ -170,6 +170,24 @@ impl Replica {
         self.evaluate_command(&exec_ctx, request).await
     }
 
+    /// Execute group request. instead of be blocked, it will returns `Error::ServiceIsBusy` if
+    /// it could not success to take acl guard.
+    pub(crate) async fn try_execute(
+        &self,
+        mut exec_ctx: ExecCtx,
+        request: &Request,
+    ) -> Result<Response> {
+        if self.info.is_terminated() {
+            return Err(Error::GroupNotFound(self.info.group_id));
+        }
+
+        let _acl_guard = self
+            .try_take_acl_guard(request)
+            .ok_or(Error::ServiceIsBusy("try_take_acl_guard"));
+        self.check_request_early(&mut exec_ctx, request)?;
+        self.evaluate_command(&exec_ctx, request).await
+    }
+
     pub async fn on_leader(&self, source: &'static str, immediate: bool) -> Result<Option<u64>> {
         use futures::future::poll_fn;
 
@@ -264,6 +282,15 @@ impl Replica {
     #[inline]
     async fn take_read_acl_guard(&self) -> MetaAclGuard {
         MetaAclGuard::Read(self.meta_acl.read().await)
+    }
+
+    #[inline]
+    fn try_take_acl_guard<'a>(&'a self, request: &'a Request) -> Option<MetaAclGuard<'a>> {
+        if is_change_meta_request(request) && !matches!(request, Request::MoveReplicas(_)) {
+            self.meta_acl.try_write().ok().map(MetaAclGuard::Write)
+        } else {
+            self.meta_acl.try_read().ok().map(MetaAclGuard::Read)
+        }
     }
 
     /// Delegates the eval method for the given `Request`.

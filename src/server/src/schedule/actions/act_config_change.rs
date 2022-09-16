@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use engula_api::server::v1::{group_request_union::Request, *};
 use tracing::{info, warn};
 
 use super::{Action, ActionState};
 use crate::{
-    node::replica::ExecCtx,
+    node::{replica::ExecCtx, Replica},
     schedule::{event_source::EventSource, provider::GroupProviders, scheduler::ScheduleContext},
 };
 
@@ -42,27 +42,19 @@ pub struct ReplaceVoters {
 #[crate::async_trait]
 impl Action for AddLearners {
     async fn setup(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
-        let group_id = ctx.group_id;
-        let replica_id = ctx.replica_id;
-
         let changes = ChangeReplicas {
             changes: self.learners.iter().map(replica_as_learner).collect(),
         };
         let cc = ChangeReplicasRequest {
             change_replicas: Some(changes),
         };
-        let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
-        if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!(
-                "group {group_id} replica {replica_id} task {task_id} abort adding learners: {e}"
-            );
-            ActionState::Aborted
-        } else {
-            info!("group {group_id} replica {replica_id} task {task_id} add learners success");
+        let action_state =
+            try_execute(ctx.replica.as_ref(), task_id, &req, "adding learners").await;
+        if matches!(&action_state, ActionState::Done) {
             self.providers.descriptor.watch(task_id);
-            ActionState::Done
         }
+        action_state
     }
 
     async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
@@ -85,9 +77,6 @@ impl Action for AddLearners {
 #[crate::async_trait]
 impl Action for RemoveLearners {
     async fn setup(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
-        let group_id = ctx.group_id;
-        let replica_id = ctx.replica_id;
-
         let changes = ChangeReplicas {
             changes: self
                 .learners
@@ -98,18 +87,13 @@ impl Action for RemoveLearners {
         let cc = ChangeReplicasRequest {
             change_replicas: Some(changes),
         };
-        let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
-        if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!(
-                "group {group_id} replica {replica_id} task {task_id} abort removing learners: {e}"
-            );
-            ActionState::Aborted
-        } else {
-            info!("group {group_id} replica {replica_id} task {task_id} remove learners success");
+        let action_state =
+            try_execute(ctx.replica.as_ref(), task_id, &req, "removing learners").await;
+        if matches!(&action_state, ActionState::Done) {
             self.providers.descriptor.watch(task_id);
-            ActionState::Done
         }
+        action_state
     }
 
     async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
@@ -129,9 +113,6 @@ impl Action for RemoveLearners {
 #[crate::async_trait]
 impl Action for ReplaceVoters {
     async fn setup(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
-        let group_id = ctx.group_id;
-        let replica_id = ctx.replica_id;
-
         let mut changes = self
             .incoming_voters
             .iter()
@@ -141,18 +122,13 @@ impl Action for ReplaceVoters {
         let cc = ChangeReplicasRequest {
             change_replicas: Some(ChangeReplicas { changes }),
         };
-        let exec_ctx = ExecCtx::with_epoch(ctx.replica.epoch());
         let req = Request::ChangeReplicas(cc);
-        if let Err(e) = ctx.replica.execute(exec_ctx, &req).await {
-            warn!(
-                "group {group_id} replica {replica_id} task {task_id} abort replacing voters: {e}"
-            );
-            ActionState::Aborted
-        } else {
-            info!("group {group_id} replica {replica_id} task {task_id} replace voters success");
+        let action_state =
+            try_execute(ctx.replica.as_ref(), task_id, &req, "replacing voters").await;
+        if matches!(&action_state, ActionState::Done) {
             self.providers.descriptor.watch(task_id);
-            ActionState::Done
         }
+        action_state
     }
 
     async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
@@ -173,6 +149,38 @@ impl Action for ReplaceVoters {
         } else {
             self.providers.descriptor.watch(task_id);
             ActionState::Pending(None)
+        }
+    }
+}
+
+fn try_execute<'a>(
+    replica: &'a Replica,
+    task_id: u64,
+    request: &'a Request,
+    desc: &'static str,
+) -> impl std::future::Future<Output = ActionState> + 'a {
+    async move {
+        use crate::Error;
+
+        let info = replica.replica_info();
+        let group_id = info.group_id;
+        let replica_id = info.replica_id;
+
+        let exec_ctx = ExecCtx::with_epoch(replica.epoch());
+        match replica.try_execute(exec_ctx, request).await {
+            Err(Error::ServiceIsBusy(msg)) if msg == "try_take_acl_guard" => {
+                ActionState::Pending(Some(Duration::from_millis(100)))
+            }
+            Err(e) => {
+                warn!("group {group_id} replica {replica_id} task {task_id} abort {desc}: {e}");
+                ActionState::Aborted
+            }
+            Ok(_) => {
+                info!(
+                    "group {group_id} replica {replica_id} task {task_id} execute {desc} success"
+                );
+                ActionState::Done
+            }
         }
     }
 }
