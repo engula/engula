@@ -16,6 +16,7 @@
 #![feature(drain_filter)]
 #![feature(linked_list_cursors)]
 #![feature(fs_try_exists)]
+#![feature(let_else)]
 
 mod bootstrap;
 mod config;

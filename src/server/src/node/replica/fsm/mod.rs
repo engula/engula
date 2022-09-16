@@ -24,7 +24,7 @@ use tracing::{info, trace, warn};
 
 use super::{ReplicaConfig, ReplicaInfo};
 use crate::{
-    node::engine::{GroupEngine, WriteBatch},
+    node::engine::{GroupEngine, WriteBatch, WriteStates},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
     serverpb::v1::*,
     Result,
@@ -59,6 +59,9 @@ where
     group_engine: GroupEngine,
     observer: Box<dyn StateMachineObserver>,
 
+    plugged_write_batches: Vec<WriteBatch>,
+    plugged_write_states: WriteStates,
+
     /// Whether `GroupDesc` changes during apply.
     desc_updated: bool,
     migration_state_updated: bool,
@@ -80,6 +83,8 @@ impl GroupStateMachine {
             info,
             group_engine,
             observer,
+            plugged_write_batches: Vec::default(),
+            plugged_write_states: WriteStates::default(),
             desc_updated: false,
             migration_state_updated: false,
             last_applied_term: apply_state.term,
@@ -88,15 +93,9 @@ impl GroupStateMachine {
 }
 
 impl GroupStateMachine {
-    fn apply_change_replicas(
-        &mut self,
-        index: u64,
-        term: u64,
-        change_replicas: ChangeReplicas,
-    ) -> Result<()> {
+    fn apply_change_replicas(&mut self, change_replicas: ChangeReplicas) -> Result<()> {
         let local_id = self.info.replica_id;
-        let mut wb = WriteBatch::default();
-        let mut desc = self.group_engine.descriptor();
+        let mut desc = self.descriptor();
         match ChangeReplicaKind::new(&change_replicas) {
             ChangeReplicaKind::LeaveJoint => apply_leave_joint(local_id, &mut desc),
             ChangeReplicaKind::EnterJoint => {
@@ -108,52 +107,41 @@ impl GroupStateMachine {
         }
         desc.epoch += 1;
         self.desc_updated = true;
-        self.group_engine.set_apply_state(&mut wb, index, term);
-        self.group_engine.set_group_desc(&mut wb, &desc);
-        self.group_engine.commit(wb, false)?;
+        self.plugged_write_states.descriptor = Some(desc);
 
         Ok(())
     }
 
-    fn apply_proposal(&mut self, index: u64, term: u64, eval_result: EvalResult) -> Result<()> {
-        let mut wb = if let Some(wb) = eval_result.batch {
-            WriteBatch::new(&wb.data)
-        } else {
-            WriteBatch::default()
-        };
+    fn apply_proposal(&mut self, eval_result: EvalResult) -> Result<()> {
+        if let Some(wb) = eval_result.batch {
+            self.plugged_write_batches.push(WriteBatch::new(&wb.data));
+        }
 
         if let Some(op) = eval_result.op {
-            let mut desc = self.group_engine.descriptor();
+            let mut desc = self.descriptor();
             if let Some(AddShard { shard: Some(shard) }) = op.add_shard {
                 for existed_shard in &desc.shards {
                     if existed_shard.id == shard.id {
                         todo!("shard {} already existed in group", shard.id);
                     }
                 }
+                info!("group {} add shard {}", self.info.group_id, shard.id);
                 self.desc_updated = true;
                 desc.epoch += 1;
                 desc.shards.push(shard);
             }
             if let Some(m) = op.migration {
-                self.apply_migration_event(&mut wb, m, &mut desc);
+                self.apply_migration_event(m, &mut desc);
             }
 
             // Any sync_op will update group desc.
-            self.group_engine.set_group_desc(&mut wb, &desc);
+            self.plugged_write_states.descriptor = Some(desc);
         }
-
-        self.group_engine.set_apply_state(&mut wb, index, term);
-        self.group_engine.commit(wb, false)?;
 
         Ok(())
     }
 
-    fn apply_migration_event(
-        &mut self,
-        wb: &mut WriteBatch,
-        migration: Migration,
-        group_desc: &mut GroupDesc,
-    ) {
+    fn apply_migration_event(&mut self, migration: Migration, group_desc: &mut GroupDesc) {
         let event = MigrationEvent::from_i32(migration.event).expect("unknown migration event");
         if let Some(desc) = migration.migration_desc.as_ref() {
             info!(
@@ -182,7 +170,7 @@ impl GroupStateMachine {
                     step: MigrationStep::Prepare as i32,
                 };
                 debug_assert!(state.migration_desc.is_some());
-                self.group_engine.set_migration_state(wb, &state);
+                self.plugged_write_states.migration_state = Some(state);
                 self.migration_state_updated = true;
             }
             MigrationEvent::Ingest => {
@@ -198,7 +186,7 @@ impl GroupStateMachine {
                 debug_assert!(state.step == MigrationStep::Migrating as i32);
                 state.last_migrated_key = migration.last_ingested_key;
 
-                self.group_engine.set_migration_state(wb, &state);
+                self.plugged_write_states.migration_state = Some(state);
             }
             MigrationEvent::Commit => {
                 let mut state = self.must_migration_state();
@@ -207,7 +195,7 @@ impl GroupStateMachine {
                         || state.step == MigrationStep::Prepare as i32
                 );
                 state.step = MigrationStep::Migrated as i32;
-                self.group_engine.set_migration_state(wb, &state);
+                self.plugged_write_states.migration_state = Some(state);
                 self.migration_state_updated = true;
             }
             MigrationEvent::Apply => {
@@ -218,7 +206,7 @@ impl GroupStateMachine {
                 self.apply_migration(group_desc, desc);
 
                 state.step = MigrationStep::Finished as i32;
-                self.group_engine.set_migration_state(wb, &state);
+                self.plugged_write_states.migration_state = Some(state);
                 self.migration_state_updated = true;
             }
             MigrationEvent::Abort => {
@@ -226,7 +214,7 @@ impl GroupStateMachine {
                 debug_assert!(state.step == MigrationStep::Prepare as i32);
 
                 state.step = MigrationStep::Aborted as i32;
-                self.group_engine.set_migration_state(wb, &state);
+                self.plugged_write_states.migration_state = Some(state);
                 self.migration_state_updated = true;
             }
         }
@@ -290,19 +278,39 @@ impl GroupStateMachine {
 }
 
 impl StateMachine for GroupStateMachine {
-    // FIXME(walter) support async?
+    #[inline]
+    fn start_plug(&mut self) -> Result<()> {
+        assert!(self.plugged_write_batches.is_empty());
+        assert!(self.plugged_write_states.apply_state.is_none());
+        Ok(())
+    }
+
     fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> Result<()> {
         trace!("apply entry index {} term {}", index, term);
         match entry {
             ApplyEntry::Empty => {}
             ApplyEntry::ConfigChange { change_replicas } => {
-                self.apply_change_replicas(index, term, change_replicas)?;
+                self.apply_change_replicas(change_replicas)?;
             }
             ApplyEntry::Proposal { eval_result } => {
-                self.apply_proposal(index, term, eval_result)?;
+                self.apply_proposal(eval_result)?;
             }
         }
+        self.plugged_write_states.apply_state = Some(ApplyState { index, term });
 
+        Ok(())
+    }
+
+    fn finish_plug(&mut self) -> Result<()> {
+        let Some(ApplyState { term, .. }) = self.plugged_write_states.apply_state else {
+            panic!("invoke GroupStateMachine::finish_plug but WriteStates::apply_states is None");
+        };
+        self.group_engine.group_commit(
+            self.plugged_write_batches.as_slice(),
+            std::mem::take(&mut self.plugged_write_states),
+            false,
+        )?;
+        self.plugged_write_batches.clear();
         self.flush_updated_events(term);
 
         Ok(())
@@ -335,7 +343,10 @@ impl StateMachine for GroupStateMachine {
 
     #[inline]
     fn descriptor(&self) -> GroupDesc {
-        self.group_engine.descriptor()
+        self.plugged_write_states
+            .descriptor
+            .clone()
+            .unwrap_or_else(|| self.group_engine.descriptor())
     }
 }
 

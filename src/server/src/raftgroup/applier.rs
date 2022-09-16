@@ -25,7 +25,10 @@ use raft::{
 };
 
 use super::{fsm::StateMachine, storage::Storage, ApplyEntry};
-use crate::{serverpb::v1::EvalResult, Error, Result};
+use crate::{
+    serverpb::v1::{EntryId, EvalResult},
+    Error, Result,
+};
 
 struct ProposalContext {
     index: u64,
@@ -148,6 +151,8 @@ impl<M: StateMachine> Applier<M> {
         replica_cache: &mut ReplicaCache,
         committed_entries: Vec<Entry>,
     ) -> u64 {
+        self.state_machine.start_plug().expect("start_plug");
+        let mut entry_ids = Vec::with_capacity(committed_entries.len());
         for entry in committed_entries {
             if entry.index != self.last_applied_index + 1 && self.last_applied_index != 0 {
                 panic!("group {} apply entries: log is not discontinuous, last applied index {}, entry index {}",
@@ -155,8 +160,7 @@ impl<M: StateMachine> Applier<M> {
             }
 
             self.last_applied_index = entry.index;
-            let index = entry.index;
-            let term = entry.term;
+            entry_ids.push(EntryId::from(&entry));
             match entry.get_entry_type() {
                 EntryType::EntryNormal if entry.data.is_empty() => {
                     self.state_machine
@@ -169,9 +173,12 @@ impl<M: StateMachine> Applier<M> {
                     self.apply_conf_change(raw_node, replica_cache, entry)
                 }
             }
-
-            self.response_proposal(index, term);
         }
+        self.state_machine.finish_plug().expect("finish_plug");
+
+        entry_ids
+            .into_iter()
+            .for_each(|EntryId { index, term }| self.response_proposal(index, term));
 
         // Since the `last_applied_index` updated, try advance cached read states.
         self.response_cached_read_states();
@@ -225,6 +232,7 @@ impl<M: StateMachine> Applier<M> {
             .expect("apply normal entry");
     }
 
+    #[inline]
     fn response_proposal(&mut self, index: u64, term: u64) {
         if self
             .proposal_queue

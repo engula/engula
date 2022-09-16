@@ -15,7 +15,7 @@
 # limitations under the License.
 
 ###### CONFIG ######
-MODE=release
+MODE=debug
 
 # The working dir of the target cluster envs.
 BASE_DIR=$(pwd)/cluster_test

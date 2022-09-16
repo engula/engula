@@ -506,6 +506,10 @@ mod tests {
         flushed_index: u64,
     }
     impl StateMachine for SimpleStateMachine {
+        fn start_plug(&mut self) -> crate::Result<()> {
+            Ok(())
+        }
+
         #[allow(unused)]
         fn apply(
             &mut self,
@@ -513,6 +517,10 @@ mod tests {
             term: u64,
             entry: crate::raftgroup::ApplyEntry,
         ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn finish_plug(&mut self) -> crate::Result<()> {
             Ok(())
         }
 
@@ -777,6 +785,10 @@ mod tests {
         }
 
         impl StateMachine for CheckIndexStateMachine {
+            fn start_plug(&mut self) -> crate::Result<()> {
+                Ok(())
+            }
+
             #[allow(unused)]
             fn apply(
                 &mut self,
@@ -786,6 +798,10 @@ mod tests {
             ) -> crate::Result<()> {
                 assert_eq!(self.flushed_index + 1, index);
                 self.flushed_index = index;
+                Ok(())
+            }
+
+            fn finish_plug(&mut self) -> crate::Result<()> {
                 Ok(())
             }
 

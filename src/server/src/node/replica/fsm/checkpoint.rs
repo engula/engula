@@ -169,7 +169,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        node::{engine::WriteBatch, GroupEngine},
+        node::{
+            engine::{WriteBatch, WriteStates},
+            GroupEngine,
+        },
         runtime::ExecutorOwner,
     };
 
@@ -180,10 +183,9 @@ mod tests {
         let db = Arc::new(db);
 
         let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
-        let mut wb = WriteBatch::default();
-        group_engine.set_group_desc(
-            &mut wb,
-            &GroupDesc {
+        let wb = WriteBatch::default();
+        let states = WriteStates {
+            descriptor: Some(GroupDesc {
                 id: group_id,
                 shards: vec![ShardDesc {
                     id: shard_id,
@@ -194,9 +196,10 @@ mod tests {
                     })),
                 }],
                 ..Default::default()
-            },
-        );
-        group_engine.commit(wb, false).unwrap();
+            }),
+            ..Default::default()
+        };
+        group_engine.commit(wb, states, false).unwrap();
 
         group_engine
     }
@@ -210,7 +213,7 @@ mod tests {
                 .put(&mut wb, shard_id, key.as_bytes(), &value, 0)
                 .unwrap();
         }
-        engine.commit(wb, false).unwrap();
+        engine.commit(wb, WriteStates::default(), false).unwrap();
     }
 
     // This test aims to fix bug:
