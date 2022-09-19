@@ -195,6 +195,8 @@ where
     observer: Box<dyn StateObserver>,
     replica_cache: ReplicaCache,
 
+    accumulated_bytes: usize,
+
     marker: PhantomData<M>,
 }
 
@@ -245,6 +247,7 @@ where
             engine: raft_mgr.engine.clone(),
             observer,
             replica_cache,
+            accumulated_bytes: 0,
             marker: PhantomData,
         })
     }
@@ -264,6 +267,7 @@ where
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
         while !self.request_receiver.is_terminated() {
+            self.accumulated_bytes = 0;
             self.maintenance(&mut interval).await?;
             self.consume_requests()?;
             self.dispatch()?;
@@ -296,6 +300,9 @@ where
     fn consume_requests(&mut self) -> Result<()> {
         while let Ok(Some(request)) = self.request_receiver.try_next() {
             self.handle_request(request)?;
+            if self.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
+                break;
+            }
         }
         Ok(())
     }
@@ -412,6 +419,7 @@ where
                     msg,
                 );
             } else {
+                self.accumulated_bytes += msg.entries.iter().map(|e| e.data.len()).sum::<usize>();
                 self.raft_node.step(msg)?;
             }
         }
@@ -422,6 +430,7 @@ where
         use prost::Message;
 
         let data = eval_result.encode_to_vec();
+        self.accumulated_bytes += data.len();
         self.raft_node.propose(data, vec![], sender);
     }
 
