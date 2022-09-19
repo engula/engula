@@ -300,7 +300,7 @@ where
     }
 
     fn consume_requests(&mut self) -> Result<()> {
-        record_latency!(&RAFTGROUP_WORKER_TAKE_REQUESTS_DURATION_SECONDS);
+        record_latency!(&RAFTGROUP_WORKER_CONSUME_REQUESTS_DURATION_SECONDS);
         while let Ok(Some(request)) = self.request_receiver.try_next() {
             self.handle_request(request)?;
             if self.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
@@ -311,6 +311,7 @@ where
     }
 
     fn dispatch(&mut self) -> Result<()> {
+        RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE.observe(self.accumulated_bytes as f64);
         RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
         record_latency!(&RAFTGROUP_WORKER_ADVANCE_DURATION_SECONDS);
         let mut template = AdvanceImpl {

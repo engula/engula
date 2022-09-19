@@ -256,9 +256,31 @@ def raft_service_panels():
     )
 
 
-def raft_group_panels():
+def raft_group_worker_panels():
     return row_panels(
-        "Raft Group",
+        "Raft Group - Worker",
+        simple_total("advance total",
+                     "raftgroup_worker_advance_total"),
+        simple_histogram_size("advance accumulated bytes",
+                              "raftgroup_worker_accumulated_bytes_size",
+                              unit=BYTES_FORMAT),
+        simple_duration_seconds("request in queue duration",
+                                "raftgroup_worker_request_in_queue_duration_seconds"),
+        simple_duration_seconds("consume requests duration",
+                                "raftgroup_worker_consume_requests_duration_seconds"),
+        simple_duration_seconds("advance node duration",
+                                "raftgroup_worker_advance_duration_seconds"),
+        simple_duration_seconds("worker apply duration",
+                                "raftgroup_worker_apply_duration_seconds"),
+        simple_histogram_size("apply entries batch size",
+                              "raftgroup_worker_apply_entries_size"),
+        simple_duration_seconds("compact log duration",
+                                "raftgroup_worker_compact_log_duration_seconds"),
+    )
+
+def raft_group_request_panels():
+    return row_panels(
+        "Raft Group - Request",
         vector_total("raft propose qps", "raftgroup_propose_total", "type"),
         vector_duration_seconds("raft propose duration",
                                 "raftgroup_propose_duration_seconds", "type"),
@@ -270,20 +292,6 @@ def raft_group_panels():
         simple_total("raft transfer leader qps",
                      "raftgroup_transfer_leader_total"),
         simple_total("raft unreachable qps", "raftgroup_unreachable_total"),
-        simple_total("raft worker advance total",
-                     "raftgroup_worker_advance_total"),
-        simple_duration_seconds("raft request in queue duration",
-                                "raftgroup_worker_request_in_queue_duration_seconds"),
-        simple_duration_seconds("raft compact log duration",
-                                "raftgroup_worker_compact_log_duration_seconds"),
-        simple_duration_seconds("worker take requests duration",
-                                "raftgroup_worker_take_requests_duration_seconds"),
-        simple_duration_seconds("worker advance duration",
-                                "raftgroup_worker_advance_duration_seconds"),
-        simple_duration_seconds("worker apply duration",
-                                "raftgroup_worker_apply_duration_seconds"),
-        simple_histogram_size("worker apply entries batch size",
-                              "raftgroup_worker_apply_entries_size"),
     )
 
 
@@ -491,7 +499,8 @@ dashboard = Dashboard(
         node_panels(),
         node_job_panels(),
         raft_service_panels(),
-        raft_group_panels(),
+        raft_group_worker_panels(),
+        raft_group_request_panels(),
         raft_group_snapshot_panels(),
         raft_engine_panels(),
         root_cluster_overview_panels(),
