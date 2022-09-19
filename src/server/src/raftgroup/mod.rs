@@ -126,7 +126,6 @@ impl RaftManager {
         create_dir_all_if_not_exists(&snap_dir)?;
         let engine_cfg = Config {
             dir: engine_dir.to_str().unwrap().to_owned(),
-            batch_compression_threshold: raft_engine::ReadableSize::kb(32),
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
