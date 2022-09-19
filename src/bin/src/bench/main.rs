@@ -121,7 +121,7 @@ async fn create_or_open_collection(
     collection: &str,
     num_shards: u32,
 ) -> Result<Collection> {
-    let partition = Partition::Hash { slots: num_shards};
+    let partition = Partition::Hash { slots: num_shards };
     match db
         .create_collection(collection.to_owned(), Some(partition))
         .await
