@@ -20,8 +20,10 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
+    time::{Duration, Instant},
 };
 
+use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 pub use tokio::select;
 
@@ -125,7 +127,7 @@ impl Executor {
         // TODO(walter) support per thread task set.
         let _ = tag;
         take_spawn_metrics(priority);
-        let inner = self.handle.spawn(future);
+        let inner = self.handle.spawn(FutureWrapper::new(future));
         JoinHandle { inner }
     }
 
@@ -147,7 +149,7 @@ impl Executor {
         // TODO(walter) support per thread task set.
         let _ = tag;
         take_spawn_metrics(priority);
-        let inner = self.handle.spawn(future);
+        let inner = self.handle.spawn(FutureWrapper::new(future));
         DispatchHandle { inner }
     }
 
@@ -193,4 +195,64 @@ impl<T> Drop for DispatchHandle<T> {
 
 pub async fn yield_now() {
     tokio::task::yield_now().await;
+}
+
+enum TaskState {
+    First(Instant),
+    Polled(Duration),
+}
+
+#[pin_project]
+struct FutureWrapper<F: Future> {
+    #[pin]
+    inner: F,
+    state: TaskState,
+}
+
+impl<F: Future> FutureWrapper<F> {
+    fn new(inner: F) -> Self {
+        FutureWrapper {
+            state: TaskState::First(Instant::now()),
+            inner,
+        }
+    }
+}
+
+impl<F: Future> Future for FutureWrapper<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let mut duration = match this.state {
+            TaskState::First(create) => {
+                EXECUTOR_TASK_FIRST_POLL_DURATION_SECONDS.observe(create.elapsed().as_secs_f64());
+                Duration::ZERO
+            }
+            TaskState::Polled(duration) => *duration,
+        };
+
+        let start = Instant::now();
+        let output = Pin::new(&mut this.inner).poll(cx);
+        let elapsed = start.elapsed();
+        EXECUTOR_TASK_POLL_DURATION_SECONDS.observe(elapsed.as_secs_f64());
+        if !should_skip_slow_log::<F>() && elapsed >= Duration::from_micros(1000) {
+            tracing::warn!(
+                "future poll() execute total {elapsed:?}: {}",
+                std::any::type_name::<F>(),
+            );
+        }
+
+        duration += elapsed;
+        *this.state = TaskState::Polled(duration);
+        if !matches!(&output, Poll::Pending) {
+            EXECUTOR_TASK_EXECUTE_DURATION_SECONDS.observe(duration.as_secs_f64());
+        }
+
+        output
+    }
+}
+
+#[inline]
+const fn should_skip_slow_log<F: Future>() -> bool {
+    const_str::contains!(std::any::type_name::<F>(), "start_raft_group")
 }

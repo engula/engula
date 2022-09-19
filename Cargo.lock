@@ -307,6 +307,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-str"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f421161cb492475f1661ddc9815a745a1c894592070661180fdec3d4872e9c3"
+
+[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,6 +563,7 @@ name = "engula-server"
 version = "0.4.0"
 dependencies = [
  "async-stream",
+ "const-str",
  "crc32fast",
  "ctor",
  "engula-api",
@@ -566,6 +573,7 @@ dependencies = [
  "lazy_static",
  "num_cpus",
  "paste",
+ "pin-project",
  "prometheus",
  "prometheus-static-metric",
  "prost 0.11.0",
