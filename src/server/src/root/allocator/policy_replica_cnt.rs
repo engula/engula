@@ -140,8 +140,11 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
                 if *g == ROOT_GROUP_ID {
                     return false;
                 }
-                if let Some(node_ids) = group_nodes.get(g) {
-                    if !node_ids.contains(&target.id) {
+                if let Some(exist_nodes) = group_nodes.get(g) {
+                    if exist_nodes.len() < REPLICA_PER_GROUP {
+                        return false;
+                    }
+                    if !exist_nodes.contains(&target.id) {
                         return true;
                     }
                 }
