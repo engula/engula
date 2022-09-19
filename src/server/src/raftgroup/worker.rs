@@ -39,6 +39,7 @@ use super::{
     RaftManager, ReadPolicy,
 };
 use crate::{
+    record_latency,
     runtime::Executor,
     serverpb::v1::{EvalResult, RaftMessage},
     RaftConfig, Result,
@@ -51,6 +52,7 @@ pub enum Request {
     },
     Propose {
         eval_result: EvalResult,
+        start: Instant,
         sender: oneshot::Sender<Result<()>>,
     },
     CreateSnapshotFinished,
@@ -298,6 +300,7 @@ where
     }
 
     fn consume_requests(&mut self) -> Result<()> {
+        record_latency!(&RAFTGROUP_WORKER_TAKE_REQUESTS_DURATION_SECONDS);
         while let Ok(Some(request)) = self.request_receiver.try_next() {
             self.handle_request(request)?;
             if self.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
@@ -309,6 +312,7 @@ where
 
     fn dispatch(&mut self) -> Result<()> {
         RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
+        record_latency!(&RAFTGROUP_WORKER_ADVANCE_DURATION_SECONDS);
         let mut template = AdvanceImpl {
             replica_id: self.desc.id,
             group_id: self.group_id,
@@ -349,8 +353,9 @@ where
         match request {
             Request::Propose {
                 eval_result,
+                start,
                 sender,
-            } => self.handle_proposal(eval_result, sender),
+            } => self.handle_proposal(eval_result, start, sender),
             Request::Read { policy, sender } => self.handle_read(policy, sender),
             Request::ChangeConfig { change, sender } => self.handle_conf_change(change, sender),
             Request::CreateSnapshotFinished => {
@@ -426,12 +431,18 @@ where
         Ok(())
     }
 
-    fn handle_proposal(&mut self, eval_result: EvalResult, sender: oneshot::Sender<Result<()>>) {
+    fn handle_proposal(
+        &mut self,
+        eval_result: EvalResult,
+        start: Instant,
+        sender: oneshot::Sender<Result<()>>,
+    ) {
         use prost::Message;
 
         let data = eval_result.encode_to_vec();
         self.accumulated_bytes += data.len();
         self.raft_node.propose(data, vec![], sender);
+        RAFTGROUP_WORKER_REQUEST_IN_QUEUE_DURATION_SECONDS.observe(elapsed_seconds(start));
     }
 
     fn handle_conf_change(&mut self, change: ChangeReplicas, sender: oneshot::Sender<Result<()>>) {
@@ -454,6 +465,7 @@ where
     }
 
     fn compact_log(&mut self) {
+        record_latency!(&RAFTGROUP_WORKER_COMPACT_LOG_DURATION_SECONDS);
         let mut to = self.raft_node.mut_state_machine().flushed_index();
 
         let status = self.raft_node.raft_status();

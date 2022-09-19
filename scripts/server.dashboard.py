@@ -142,16 +142,16 @@ def raw_histogram(title, metric, unit, *group):
         targets=[
             Target(
                 datasource=datasource,
-                expr='histogram_quantile(0.99, sum(rate({}_bucket[1m])) by ({}))'
+                expr='histogram_quantile(0.9999, sum(rate({}_bucket[1m])) by ({}))'
                 .format(metric, le_group),
-                legendFormat="{}99%".format(legend_prefix),
+                legendFormat="{}99.99%".format(legend_prefix),
                 refId='A',
             ),
             Target(
                 datasource=datasource,
-                expr='histogram_quantile(0.95, sum(rate({}_bucket[1m])) by ({}))'
+                expr='histogram_quantile(0.99, sum(rate({}_bucket[1m])) by ({}))'
                 .format(metric, le_group),
-                legendFormat="{}95%".format(legend_prefix),
+                legendFormat="{}99%".format(legend_prefix),
                 refId='B',
             ),
             avg_target,
@@ -272,6 +272,18 @@ def raft_group_panels():
         simple_total("raft unreachable qps", "raftgroup_unreachable_total"),
         simple_total("raft worker advance total",
                      "raftgroup_worker_advance_total"),
+        simple_duration_seconds("raft request in queue duration",
+                                "raftgroup_worker_request_in_queue_duration_seconds"),
+        simple_duration_seconds("raft compact log duration",
+                                "raftgroup_worker_compact_log_duration_seconds"),
+        simple_duration_seconds("worker take requests duration",
+                                "raftgroup_worker_take_requests_duration_seconds"),
+        simple_duration_seconds("worker advance duration",
+                                "raftgroup_worker_advance_duration_seconds"),
+        simple_duration_seconds("worker apply duration",
+                                "raftgroup_worker_apply_duration_seconds"),
+        simple_histogram_size("worker apply entries batch size",
+                              "raftgroup_worker_apply_entries_size"),
     )
 
 

@@ -26,6 +26,8 @@ use raft::{
 
 use super::{fsm::StateMachine, storage::Storage, ApplyEntry};
 use crate::{
+    raftgroup::metrics::*,
+    record_latency,
     serverpb::v1::{EntryId, EvalResult},
     Error, Result,
 };
@@ -151,6 +153,9 @@ impl<M: StateMachine> Applier<M> {
         replica_cache: &mut ReplicaCache,
         committed_entries: Vec<Entry>,
     ) -> u64 {
+        record_latency!(&RAFTGROUP_WORKER_APPLY_DURATION_SECONDS);
+        RAFTGROUP_WORKER_APPLY_ENTRIES_SIZE.observe(committed_entries.len() as f64);
+
         self.state_machine.start_plug().expect("start_plug");
         let mut entry_ids = Vec::with_capacity(committed_entries.len());
         for entry in committed_entries {
