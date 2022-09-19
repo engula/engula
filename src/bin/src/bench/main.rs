@@ -116,8 +116,12 @@ async fn create_or_open_database(client: &EngulaClient, database: &str) -> Resul
     }
 }
 
-async fn create_or_open_collection(db: &Database, collection: &str) -> Result<Collection> {
-    let partition = Partition::Hash { slots: 32 };
+async fn create_or_open_collection(
+    db: &Database,
+    collection: &str,
+    num_shards: u32,
+) -> Result<Collection> {
+    let partition = Partition::Hash { slots: num_shards };
     match db
         .create_collection(collection.to_owned(), Some(partition))
         .await
@@ -147,7 +151,7 @@ async fn open_collection(cfg: &AppConfig) -> Result<Collection> {
     let co = match database.open_collection(cfg.database.clone()).await {
         Ok(co) => co,
         Err(AppError::NotFound(_)) if cfg.create_if_missing => {
-            create_or_open_collection(&database, &cfg.collection).await?
+            create_or_open_collection(&database, &cfg.collection, cfg.num_shards).await?
         }
         Err(e) => {
             return Err(e.into());
