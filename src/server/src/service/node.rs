@@ -17,7 +17,9 @@ use tonic::{Request, Response, Status};
 
 use super::metrics::*;
 use crate::{
-    node::migrate::ShardChunkStream, record_latency, record_latency_opt, runtime::TaskPriority,
+    node::migrate::ShardChunkStream,
+    record_latency, record_latency_opt,
+    runtime::{DispatchHandle, TaskPriority},
     Error, Server,
 };
 
@@ -31,33 +33,27 @@ impl node_server::Node for Server {
     ) -> Result<Response<BatchResponse>, Status> {
         let batch_request = request.into_inner();
         record_latency!(take_batch_request_metrics(&batch_request));
-
-        let num_requests = batch_request.requests.len();
-        let mut handles = Vec::with_capacity(num_requests);
-        for request in batch_request.requests.into_iter() {
+        if batch_request.requests.len() == 1 {
+            let request = batch_request
+                .requests
+                .into_iter()
+                .next()
+                .expect("already checked");
             let server = self.clone();
-            let task_tag = request.group_id.to_le_bytes();
-            let handle = self.node.executor().dispatch(
-                Some(task_tag.as_slice()),
-                TaskPriority::Middle,
-                async move {
-                    record_latency_opt!(take_group_request_metrics(&request));
-                    server
-                        .node
-                        .execute_request(request)
-                        .await
-                        .unwrap_or_else(error_to_response)
-                },
-            );
-            handles.push(handle);
-        }
+            let response =
+                Box::pin(async move { server.submit_group_request(&request).await }).await;
+            Ok(Response::new(BatchResponse {
+                responses: vec![response],
+            }))
+        } else {
+            let handles = self.submit_group_requests(batch_request.requests);
+            let mut responses = Vec::with_capacity(handles.len());
+            for handle in handles {
+                responses.push(handle.await);
+            }
 
-        let mut responses = Vec::with_capacity(num_requests);
-        for handle in handles {
-            responses.push(handle.await);
+            Ok(Response::new(BatchResponse { responses }))
         }
-
-        Ok(Response::new(BatchResponse { responses }))
     }
 
     async fn get_root(
@@ -179,6 +175,32 @@ impl Server {
             self.node.update_root(root).await?;
         }
         Ok(SyncRootResponse {})
+    }
+
+    async fn submit_group_request(&self, request: &GroupRequest) -> GroupResponse {
+        record_latency_opt!(take_group_request_metrics(request));
+        self.node
+            .execute_request(request)
+            .await
+            .unwrap_or_else(error_to_response)
+    }
+
+    fn submit_group_requests(
+        &self,
+        requests: Vec<GroupRequest>,
+    ) -> Vec<DispatchHandle<GroupResponse>> {
+        let mut handles = Vec::with_capacity(requests.len());
+        for request in requests.into_iter() {
+            let server = self.clone();
+            let task_tag = request.group_id.to_le_bytes();
+            let handle = self.node.executor().dispatch(
+                Some(task_tag.as_slice()),
+                TaskPriority::Middle,
+                async move { server.submit_group_request(&request).await },
+            );
+            handles.push(handle);
+        }
+        handles
     }
 }
 

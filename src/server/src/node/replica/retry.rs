@@ -26,19 +26,21 @@ use crate::{
 };
 
 /// A wrapper function that detects and completes retries as quickly as possible.
+#[inline]
 pub async fn execute(
     replica: &Replica,
-    exec_ctx: ExecCtx,
-    request: GroupRequest,
+    exec_ctx: &ExecCtx,
+    request: &GroupRequest,
 ) -> Result<GroupResponse> {
     execute_internal(None, replica, exec_ctx, request).await
 }
 
+#[inline]
 pub async fn forwardable_execute(
     migrate_ctrl: &MigrateController,
     replica: &Replica,
-    exec_ctx: ExecCtx,
-    request: GroupRequest,
+    exec_ctx: &ExecCtx,
+    request: &GroupRequest,
 ) -> Result<GroupResponse> {
     execute_internal(Some(migrate_ctrl), replica, exec_ctx, request).await
 }
@@ -46,9 +48,10 @@ pub async fn forwardable_execute(
 async fn execute_internal(
     migrate_ctrl: Option<&MigrateController>,
     replica: &Replica,
-    mut exec_ctx: ExecCtx,
-    request: GroupRequest,
+    exec_ctx: &ExecCtx,
+    request: &GroupRequest,
 ) -> Result<GroupResponse> {
+    let mut exec_ctx = exec_ctx.clone();
     exec_ctx.epoch = request.epoch;
 
     let request = request
@@ -60,7 +63,8 @@ async fn execute_internal(
     // TODO(walter) detect group request timeout.
     let mut freshed_descriptor = None;
     loop {
-        match replica.execute(exec_ctx.clone(), request).await {
+        exec_ctx.reset();
+        match replica.execute(&mut exec_ctx, request).await {
             Ok(resp) => {
                 let resp = if let Some(descriptor) = freshed_descriptor {
                     GroupResponse::with_error(resp, Error::EpochNotMatch(descriptor).into())
