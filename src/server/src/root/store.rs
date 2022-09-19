@@ -109,6 +109,6 @@ impl RootStore {
             request: Some(GroupRequestUnion { request: Some(req) }),
         };
 
-        execute(&self.replica, ExecCtx::default(), request).await
+        execute(&self.replica, &ExecCtx::default(), &request).await
     }
 }

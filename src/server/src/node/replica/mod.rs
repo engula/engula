@@ -158,7 +158,7 @@ impl Replica {
     /// Execute group request and fill response.
     pub(crate) async fn execute(
         &self,
-        mut exec_ctx: ExecCtx,
+        exec_ctx: &mut ExecCtx,
         request: &Request,
     ) -> Result<Response> {
         if self.info.is_terminated() {
@@ -166,8 +166,8 @@ impl Replica {
         }
 
         let _acl_guard = self.take_acl_guard(request).await;
-        self.check_request_early(&mut exec_ctx, request)?;
-        self.evaluate_command(&exec_ctx, request).await
+        self.check_request_early(exec_ctx, request)?;
+        self.evaluate_command(exec_ctx, request).await
     }
 
     /// Execute group request. instead of be blocked, it will returns `Error::ServiceIsBusy` if
@@ -263,7 +263,7 @@ impl Replica {
 
 impl Replica {
     #[inline]
-    async fn take_acl_guard<'a>(&'a self, request: &'a Request) -> MetaAclGuard<'a> {
+    async fn take_acl_guard(&self, request: &Request) -> MetaAclGuard {
         // `Request::MoveReplicas` is very special, it doesn't modify the metadata directly,
         // instead, it does some config changes asynchronously, so there's no need for a write lock
         // here.
@@ -359,15 +359,10 @@ impl Replica {
         };
 
         if let Some(eval_result) = eval_result_opt {
-            self.propose(eval_result).await?;
+            self.raft_node.clone().propose(eval_result).await?;
         }
 
         Ok(resp)
-    }
-
-    async fn propose(&self, eval_result: EvalResult) -> Result<()> {
-        self.raft_node.clone().propose(eval_result).await?;
-        Ok(())
     }
 
     fn check_request_early(&self, exec_ctx: &mut ExecCtx, req: &Request) -> Result<()> {
@@ -484,6 +479,10 @@ impl ExecCtx {
             forward_shard_id: Some(shard_id),
             ..Default::default()
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.migration_desc = None;
     }
 
     #[inline]
