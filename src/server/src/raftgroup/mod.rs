@@ -87,6 +87,11 @@ pub struct RaftConfig {
     /// Default: disabled
     pub engine_slow_io_threshold_ms: Option<u64>,
 
+    /// Enable recycle log files to reduce allocating overhead?
+    ///
+    /// Default: false
+    pub enable_log_recycle: bool,
+
     #[serde(skip)]
     pub testing_knobs: RaftTestingKnobs,
 }
@@ -126,6 +131,7 @@ impl RaftManager {
         create_dir_all_if_not_exists(&snap_dir)?;
         let engine_cfg = Config {
             dir: engine_dir.to_str().unwrap().to_owned(),
+            enable_log_recycle: cfg.enable_log_recycle,
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
@@ -194,6 +200,7 @@ impl Default for RaftConfig {
             max_io_batch_size: 128 << 10,
             max_inflight_msgs: 10 * 1000,
             engine_slow_io_threshold_ms: None,
+            enable_log_recycle: false,
             testing_knobs: RaftTestingKnobs::default(),
         }
     }
