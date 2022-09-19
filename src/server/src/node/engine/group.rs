@@ -23,12 +23,21 @@ use std::{
 
 use engula_api::{server::v1::*, shard};
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::*, Error, Result};
 
 /// The collection id of local states, which allows commit without replicating.
 pub const LOCAL_COLLECTION_ID: u64 = 0;
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct EngineConfig {
+    /// Log slow io requests if it exceeds the specified threshold.
+    ///
+    /// Default: disabled
+    pub engine_slow_io_threshold_ms: Option<u64>,
+}
 
 #[derive(Default)]
 pub struct WriteStates {
@@ -53,6 +62,7 @@ pub struct GroupEngine
 where
     Self: Send,
 {
+    cfg: EngineConfig,
     name: String,
     raw_db: Arc<rocksdb::DB>,
     core: Arc<RwLock<GroupEngineCore>>,
@@ -141,7 +151,12 @@ struct SlowIoGuard {
 
 impl GroupEngine {
     /// Create a new instance of group engine.
-    pub async fn create(raw_db: Arc<rocksdb::DB>, group_id: u64, replica_id: u64) -> Result<Self> {
+    pub async fn create(
+        cfg: &EngineConfig,
+        raw_db: Arc<rocksdb::DB>,
+        group_id: u64,
+        replica_id: u64,
+    ) -> Result<Self> {
         use rocksdb::Options;
 
         let name = Self::cf_name(group_id, replica_id);
@@ -160,6 +175,7 @@ impl GroupEngine {
             .cf_handle(&name)
             .expect("cf must exists because it just created");
         let engine = GroupEngine {
+            cfg: cfg.clone(),
             name,
             raw_db: raw_db.clone(),
             core: Arc::new(RwLock::new(GroupEngineCore {
@@ -185,6 +201,7 @@ impl GroupEngine {
 
     /// Open the exists instance of group engine.
     pub async fn open(
+        cfg: &EngineConfig,
         raw_db: Arc<rocksdb::DB>,
         group_id: u64,
         replica_id: u64,
@@ -212,6 +229,7 @@ impl GroupEngine {
         };
 
         Ok(Some(GroupEngine {
+            cfg: cfg.clone(),
             name,
             raw_db: raw_db.clone(),
             core: Arc::new(RwLock::new(core)),
@@ -355,8 +373,7 @@ impl GroupEngine {
         }
 
         {
-            let engine_slow_io_threshold_ms: Option<u64> = None;
-            let _slow_io_guard = engine_slow_io_threshold_ms.map(SlowIoGuard::new);
+            let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
             self.raw_db.write_opt(inner_wb, &opts)?;
         }
 
@@ -1110,8 +1127,11 @@ mod tests {
 
         let db = open_engine_with_default_config(db_dir).unwrap();
         let db = Arc::new(db);
-        let group_engine =
-            executor.block_on(async move { GroupEngine::create(db.clone(), 1, 1).await.unwrap() });
+        let group_engine = executor.block_on(async move {
+            GroupEngine::create(&EngineConfig::default(), db.clone(), 1, 1)
+                .await
+                .unwrap()
+        });
 
         let wb = WriteBatch::default();
         let states = WriteStates {
