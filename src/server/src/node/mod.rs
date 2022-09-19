@@ -417,7 +417,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn execute_request(&self, request: GroupRequest) -> Result<GroupResponse> {
+    pub async fn execute_request(&self, request: &GroupRequest) -> Result<GroupResponse> {
         use self::replica::retry::forwardable_execute;
 
         let replica = match self.replica_route_table.find(request.group_id) {
@@ -427,7 +427,7 @@ impl Node {
             }
         };
 
-        forwardable_execute(&self.migrate_ctrl, &replica, ExecCtx::default(), request).await
+        forwardable_execute(&self.migrate_ctrl, &replica, &ExecCtx::default(), request).await
     }
 
     pub async fn pull_shard_chunks(&self, request: PullRequest) -> Result<ShardChunkStream> {
@@ -474,7 +474,7 @@ impl Node {
         };
 
         let exec_ctx = ExecCtx::forward(request.shard_id);
-        let resp = execute(&replica, exec_ctx, group_request).await?;
+        let resp = execute(&replica, &exec_ctx, &group_request).await?;
         debug_assert!(resp.response.is_some());
         Ok(ForwardResponse {
             response: resp.response,
@@ -1064,7 +1064,7 @@ mod tests {
             let replica = node.replica_table().find(group_id).unwrap();
             replica.on_leader("test", false).await.unwrap();
             for _ in 0..100 {
-                let ctx = ExecCtx::with_epoch(replica.epoch());
+                let mut ctx = ExecCtx::with_epoch(replica.epoch());
                 let request = Request::Put(ShardPutRequest {
                     shard_id,
                     put: Some(PutRequest {
@@ -1072,7 +1072,7 @@ mod tests {
                         value: vec![0u8; 10],
                     }),
                 });
-                replica.execute(ctx, &request).await.unwrap();
+                replica.execute(&mut ctx, &request).await.unwrap();
             }
         });
     }
@@ -1145,7 +1145,7 @@ mod tests {
             let replica = node.replica_table().find(group_id).unwrap();
             replica.on_leader("test", false).await.unwrap();
             for _ in 0..100 {
-                let ctx = ExecCtx::with_epoch(replica.epoch());
+                let mut ctx = ExecCtx::with_epoch(replica.epoch());
                 let request = Request::Put(ShardPutRequest {
                     shard_id,
                     put: Some(PutRequest {
@@ -1153,7 +1153,7 @@ mod tests {
                         value: vec![0u8; 10],
                     }),
                 });
-                replica.execute(ctx, &request).await.unwrap();
+                replica.execute(&mut ctx, &request).await.unwrap();
             }
         });
     }
