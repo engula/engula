@@ -154,12 +154,23 @@ impl Executor {
     }
 
     /// Runs a future to completion on the executor. This is the executor’s entry point.
+    #[inline]
     pub fn block_on<F, T>(&self, future: F) -> T
     where
         F: Future<Output = T> + Send,
         T: Send + 'static,
     {
         self.handle.block_on(future)
+    }
+
+    #[inline]
+    pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let inner = self.handle.spawn_blocking(func);
+        JoinHandle { inner }
     }
 }
 
