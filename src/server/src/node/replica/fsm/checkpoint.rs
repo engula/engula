@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use crate::{
         node::{
-            engine::{WriteBatch, WriteStates},
+            engine::{EngineConfig, WriteBatch, WriteStates},
             GroupEngine,
         },
         runtime::ExecutorOwner,
@@ -182,7 +182,9 @@ mod tests {
         let db = open_engine_with_default_config(dir).unwrap();
         let db = Arc::new(db);
 
-        let group_engine = GroupEngine::create(db.clone(), group_id, 1).await.unwrap();
+        let group_engine = GroupEngine::create(&EngineConfig::default(), db.clone(), group_id, 1)
+            .await
+            .unwrap();
         let wb = WriteBatch::default();
         let states = WriteStates {
             descriptor: Some(GroupDesc {

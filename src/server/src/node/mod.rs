@@ -31,15 +31,16 @@ use futures::{channel::mpsc, lock::Mutex};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
+use self::{
+    engine::EngineConfig,
+    job::StateChannel,
+    migrate::{MigrateController, ShardChunkStream},
+    replica::ReplicaConfig,
+};
 pub use self::{
     engine::{GroupEngine, StateEngine},
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
-};
-use self::{
-    job::StateChannel,
-    migrate::{MigrateController, ShardChunkStream},
-    replica::ReplicaConfig,
 };
 use crate::{
     bootstrap::ROOT_GROUP_ID,
@@ -63,7 +64,11 @@ pub struct NodeConfig {
     /// Default: 256.
     pub shard_gc_keys: usize,
 
+    #[serde(default)]
     pub replica: ReplicaConfig,
+
+    #[serde(default)]
+    pub engine: EngineConfig,
 }
 
 struct ReplicaContext {
@@ -327,8 +332,14 @@ impl Node {
     ) -> Result<ReplicaContext> {
         use crate::schedule::setup_scheduler;
 
-        let group_engine =
-            open_group_engine(self.provider.raw_db.clone(), group_id, desc.id, local_state).await?;
+        let group_engine = open_group_engine(
+            &self.cfg.engine,
+            self.provider.raw_db.clone(),
+            group_id,
+            desc.id,
+            local_state,
+        )
+        .await?;
         let wait_group = WaitGroup::new();
         let (sender, receiver) = mpsc::unbounded();
 
@@ -707,20 +718,22 @@ impl Default for NodeConfig {
             shard_chunk_size: 64 * 1024 * 1024,
             shard_gc_keys: 256,
             replica: ReplicaConfig::default(),
+            engine: EngineConfig::default(),
         }
     }
 }
 
 async fn open_group_engine(
+    cfg: &EngineConfig,
     raw_db: Arc<rocksdb::DB>,
     group_id: u64,
     replica_id: u64,
     replica_state: ReplicaLocalState,
 ) -> Result<GroupEngine> {
-    match GroupEngine::open(raw_db.clone(), group_id, replica_id).await? {
+    match GroupEngine::open(cfg, raw_db.clone(), group_id, replica_id).await? {
         Some(group_engine) => Ok(group_engine),
         None if matches!(replica_state, ReplicaLocalState::Initial) => {
-            GroupEngine::create(raw_db, group_id, replica_id).await
+            GroupEngine::create(cfg, raw_db, group_id, replica_id).await
         }
         None => {
             panic!("group {group_id} replica {replica_id} open group engine: no such group engine exists");
