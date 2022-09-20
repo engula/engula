@@ -20,7 +20,6 @@ use engula_api::server::v1::{
     ChangeReplica, ChangeReplicaType, ChangeReplicas, GroupDesc, MigrationDesc, ReplicaDesc,
     ReplicaRole,
 };
-use futures::TryFutureExt;
 use tracing::{info, trace, warn};
 
 use super::{ReplicaConfig, ReplicaInfo};
