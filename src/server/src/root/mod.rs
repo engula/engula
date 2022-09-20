@@ -1102,7 +1102,7 @@ impl HeartbeatQueue {
         if !core.enable {
             return;
         }
-        for task in tasks {
+        for (i, task) in tasks.into_iter().enumerate() {
             let node = task.node_id;
             if let Some((scheduled_key, old_when)) =
                 core.node_scheduled.get(&node).map(ToOwned::to_owned)
@@ -1118,6 +1118,9 @@ impl HeartbeatQueue {
                 let key = core.delay.insert_at(QueueTask::Heartbeat(task), when);
                 core.node_scheduled.insert(node, (key, when));
                 trace!(node=node, when=?when, "schedule next heartbeat");
+            }
+            if i % 10 == 0 {
+                crate::runtime::yield_now().await;
             }
         }
     }

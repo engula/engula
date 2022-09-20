@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashSet, ops::Add, sync::Arc, time::Duration, vec};
+use std::{collections::HashSet, ops::Add, sync::Arc, vec};
 
 use engula_api::server::v1::{
     watch_response::{update_event, UpdateEvent},
     *,
 };
-use futures::future::join_all;
 use tokio::time::Instant;
 use tracing::{info, trace, warn};
 
@@ -32,8 +31,8 @@ use crate::{
 impl Root {
     pub async fn send_heartbeat(&self, schema: Arc<Schema>, tasks: &[HeartbeatTask]) -> Result<()> {
         let cur_node_id = self.current_node_id();
-        let nodes = schema.list_node().await?;
-        let nodes = nodes
+        let all_nodes = schema.list_node().await?;
+        let nodes = all_nodes
             .iter()
             .filter(|n| tasks.iter().any(|t| t.node_id == n.id))
             .collect::<Vec<_>>();
@@ -79,21 +78,35 @@ impl Root {
         let resps = {
             let _timer = metrics::HEARTBEAT_NODES_RPC_DURATION_SECONDS.start_timer();
             metrics::HEARTBEAT_NODES_BATCH_SIZE.set(nodes.len() as i64);
-            let mut futs = Vec::new();
+            let mut handles = Vec::new();
             for n in &nodes {
                 trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
-                let fut = self.try_send_heartbeat(
-                    n.addr.to_owned(),
-                    &piggybacks,
-                    Duration::from_secs(self.cfg.heartbeat_timeout_sec),
+                let piggybacks = piggybacks.to_owned();
+                let client = self.get_node_client(n.addr.to_owned()).await?;
+                let handle = self.shared.provider.executor.spawn(
+                    None,
+                    crate::runtime::TaskPriority::Low,
+                    async move {
+                        client
+                            .root_heartbeat(HeartbeatRequest {
+                                piggybacks,
+                                timestamp: 0, // TODO: use hlc
+                            })
+                            .await
+                    },
                 );
-                futs.push(fut);
+                handles.push(handle);
             }
-            join_all(futs).await
+            let mut resps = Vec::with_capacity(handles.len());
+            for handle in handles.into_iter() {
+                resps.push(handle.await)
+            }
+            resps
         };
 
         let last_heartbeat = Instant::now();
         let mut heartbeat_tasks = Vec::new();
+        let groups = schema.list_group().await?;
         for (i, resp) in resps.iter().enumerate() {
             let n = nodes.get(i).unwrap();
             match resp {
@@ -104,10 +117,11 @@ impl Root {
                             piggyback_response::Info::SyncRoot(_)
                             | piggyback_response::Info::CollectMigrationState(_) => {}
                             piggyback_response::Info::CollectStats(ref resp) => {
-                                self.handle_collect_stats(&schema, resp, n.id).await?
+                                self.handle_collect_stats(&schema, resp, n.to_owned())
+                                    .await?
                             }
                             piggyback_response::Info::CollectGroupDetail(ref resp) => {
-                                self.handle_group_detail(&schema, resp).await?
+                                self.handle_group_detail(&schema, resp, &groups).await?
                             }
                             piggyback_response::Info::CollectScheduleState(ref resp) => {
                                 self.handle_schedule_state(resp).await?
@@ -123,7 +137,10 @@ impl Root {
                     warn!(node = n.id, target = ?n.addr, err = ?err, "send heartbeat error");
                 }
             }
-            heartbeat_tasks.push(HeartbeatTask { node_id: n.id })
+            heartbeat_tasks.push(HeartbeatTask { node_id: n.id });
+            if i % 10 == 0 {
+                crate::runtime::yield_now().await;
+            }
         }
         self.heartbeat_queue
             .try_schedule(
@@ -135,48 +152,30 @@ impl Root {
         Ok(())
     }
 
-    async fn try_send_heartbeat(
-        &self,
-        addr: String,
-        piggybacks: &[PiggybackRequest],
-        _timeout: Duration,
-    ) -> Result<HeartbeatResponse> {
-        let client = self.get_node_client(addr).await?;
-        let resp = client
-            .root_heartbeat(HeartbeatRequest {
-                piggybacks: piggybacks.to_owned(),
-                timestamp: 0, // TODO: use hlc
-            })
-            .await?;
-        Ok(resp)
-    }
-
     async fn handle_collect_stats(
         &self,
         schema: &Schema,
         resp: &CollectStatsResponse,
-        node_id: u64,
+        node: &NodeDesc,
     ) -> Result<()> {
         if let Some(ns) = &resp.node_stats {
-            if let Some(mut node) = schema.get_node(node_id).await? {
-                let _timer =
-                    super::metrics::HEARTBEAT_HANDLE_NODE_STATS_DURATION_SECONDS.start_timer();
-                let new_group_count = ns.group_count as u64;
-                let new_leader_count = ns.leader_count as u64;
-                let mut cap = node.capacity.take().unwrap();
-                if new_group_count != cap.replica_count || new_leader_count != cap.leader_count {
-                    super::metrics::HEARTBEAT_UPDATE_NODE_STATS_TOTAL.inc();
-                    cap.replica_count = new_group_count;
-                    cap.leader_count = new_leader_count;
-                    info!(
-                        node = node_id,
-                        replica_count = cap.replica_count,
-                        leader_count = cap.leader_count,
-                        "update node stats by heartbeat response",
-                    );
-                    node.capacity = Some(cap);
-                    schema.update_node(node).await?;
-                }
+            let mut node = node.to_owned();
+            let _timer = super::metrics::HEARTBEAT_HANDLE_NODE_STATS_DURATION_SECONDS.start_timer();
+            let new_group_count = ns.group_count as u64;
+            let new_leader_count = ns.leader_count as u64;
+            let mut cap = node.capacity.take().unwrap();
+            if new_group_count != cap.replica_count || new_leader_count != cap.leader_count {
+                super::metrics::HEARTBEAT_UPDATE_NODE_STATS_TOTAL.inc();
+                cap.replica_count = new_group_count;
+                cap.leader_count = new_leader_count;
+                info!(
+                    node = node.id,
+                    replica_count = cap.replica_count,
+                    leader_count = cap.leader_count,
+                    "update node stats by heartbeat response",
+                );
+                node.capacity = Some(cap);
+                schema.update_node(node).await?;
             }
         }
         Ok(())
@@ -186,11 +185,12 @@ impl Root {
         &self,
         schema: &Schema,
         resp: &CollectGroupDetailResponse,
+        groups: &[GroupDesc],
     ) -> Result<()> {
         let _timer = super::metrics::HEARTBEAT_HANDLE_GROUP_DETAIL_DURATION_SECONDS.start_timer();
         let mut update_events = Vec::new();
         for desc in &resp.group_descs {
-            if let Some(ex) = schema.get_group(desc.id).await? {
+            if let Some(ex) = groups.iter().find(|g| g.id == desc.id) {
                 if desc.epoch <= ex.epoch {
                     continue;
                 }

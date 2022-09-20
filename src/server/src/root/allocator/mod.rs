@@ -190,7 +190,8 @@ impl<T: AllocSource> Allocator<T> {
             return Ok(vec![]);
         }
 
-        self.alloc_source.refresh_all().await?;
+        // compute_group_action refreshed.
+        // self.alloc_source.refresh_all().await?;
 
         // TODO: try qps rebalance.
 
@@ -210,7 +211,8 @@ impl<T: AllocSource> Allocator<T> {
             return Ok(vec![]);
         }
 
-        self.alloc_source.refresh_all().await?;
+        // always follow comput_replica_role_action() so no need refresh
+        // self.alloc_source.refresh_all().await?;
 
         if self.alloc_source.nodes(NodeFilter::All).len() >= self.config.replicas_per_group {
             let actions = ShardCountPolicy::with(self.alloc_source.to_owned()).compute_balance()?;
@@ -250,7 +252,7 @@ impl<T: AllocSource> Allocator<T> {
         if !self.config.enable_leader_balance {
             return Ok(vec![]);
         }
-        self.alloc_source.refresh_all().await?;
+        // self.alloc_source.refresh_all().await?;
         match LeaderCountPolicy::with(self.alloc_source.to_owned()).compute_balance()? {
             LeaderAction::Noop => {}
             e @ LeaderAction::Shed { .. } => return Ok(vec![e]),
