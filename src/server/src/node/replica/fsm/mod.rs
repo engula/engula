@@ -271,9 +271,14 @@ impl GroupStateMachine {
 
     #[inline]
     fn must_migration_state(&self) -> MigrationState {
-        self.group_engine
-            .migration_state()
-            .expect("The MigrationState should exist")
+        self.plugged_write_states
+            .migration_state
+            .clone()
+            .unwrap_or_else(|| {
+                self.group_engine
+                    .migration_state()
+                    .expect("The MigrationState should exist")
+            })
     }
 }
 
