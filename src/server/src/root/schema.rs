@@ -935,7 +935,9 @@ impl Schema {
 
     async fn get(&self, collection_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let shard_id = Self::system_shard_id(collection_id);
-        self.store.get(shard_id, key).await
+        let rs = self.store.get(shard_id, key).await;
+        crate::runtime::yield_now().await;
+        rs
     }
 
     async fn delete(&self, collection_id: u64, key: &[u8]) -> Result<()> {
@@ -944,7 +946,9 @@ impl Schema {
     }
 
     async fn list(&self, collection_id: u64) -> Result<Vec<Vec<u8>>> {
-        self.list_prefix(collection_id, &[]).await
+        let rs = self.list_prefix(collection_id, &[]).await;
+        crate::runtime::yield_now().await;
+        rs
     }
 
     async fn list_prefix(&self, collection_id: u64, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {

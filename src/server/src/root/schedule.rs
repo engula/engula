@@ -50,7 +50,7 @@ impl ReconcileScheduler {
     }
 
     pub async fn step_one(&self) -> Duration {
-        let cr = self.check(1).await; // TODO: take care self.tasks then can give more > 1 value here.
+        let cr = self.check().await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
             let _step_timer = metrics::RECONCILE_STEP_DURATION_SECONDS.start_timer();
             let immediately_next = self.advance_tasks().await;
@@ -92,7 +92,7 @@ impl ReconcileScheduler {
         Ok(false)
     }
 
-    pub async fn check(&self, max_try_per_tick: u64) -> Result<bool> {
+    pub async fn check(&self) -> Result<bool> {
         let _timer = super::metrics::RECONCILE_CHECK_DURATION_SECONDS.start_timer();
         let group_action = self.ctx.alloc.compute_group_action().await?;
         if let GroupAction::Add(cnt) = group_action {
@@ -121,60 +121,55 @@ impl ReconcileScheduler {
             .cluster_groups
             .set(1);
 
-        let mut ractions = self.comput_replica_role_action().await?;
-        let mut sactions = self.ctx.alloc.compute_shard_action().await?;
-        for _ in 0..max_try_per_tick {
-            if ractions.is_empty() && sactions.is_empty() {
-                break;
-            }
+        let ractions = self.comput_replica_role_action().await?;
+        let sactions = self.ctx.alloc.compute_shard_action().await?;
+        if ractions.is_empty() && sactions.is_empty() {
+            return Ok(!self.is_empty().await);
+        }
 
-            for action in ractions {
-                match action {
-                    ReplicaRoleAction::Replica(ReplicaAction::Migrate(action)) => {
-                        self.setup_task(ReconcileTask {
-                            task: Some(reconcile_task::Task::ReallocateReplica(
-                                ReallocateReplicaTask {
-                                    group: action.group,
-                                    src_node: action.source_node,
-                                    src_replica: action.source_replica,
-                                    dest_node: Some(action.target_node),
-                                    dest_replica: None,
-                                },
-                            )),
-                        })
-                        .await;
-                    }
-                    ReplicaRoleAction::Leader(LeaderAction::Shed(action)) => {
-                        self.setup_task(ReconcileTask {
-                            task: Some(reconcile_task::Task::TransferGroupLeader(
-                                TransferGroupLeaderTask {
-                                    group: action.group,
-                                    target_replica: action.target_replica,
-                                    src_node: action.src_node,
-                                    dest_node: action.target_node,
-                                },
-                            )),
-                        })
-                        .await;
-                    }
-                    _ => {}
+        for action in ractions {
+            match action {
+                ReplicaRoleAction::Replica(ReplicaAction::Migrate(action)) => {
+                    self.setup_task(ReconcileTask {
+                        task: Some(reconcile_task::Task::ReallocateReplica(
+                            ReallocateReplicaTask {
+                                group: action.group,
+                                src_node: action.source_node,
+                                src_replica: action.source_replica,
+                                dest_node: Some(action.target_node),
+                                dest_replica: None,
+                            },
+                        )),
+                    })
+                    .await;
                 }
+                ReplicaRoleAction::Leader(LeaderAction::Shed(action)) => {
+                    self.setup_task(ReconcileTask {
+                        task: Some(reconcile_task::Task::TransferGroupLeader(
+                            TransferGroupLeaderTask {
+                                group: action.group,
+                                target_replica: action.target_replica,
+                                src_node: action.src_node,
+                                dest_node: action.target_node,
+                            },
+                        )),
+                    })
+                    .await;
+                }
+                _ => {}
             }
+        }
 
-            for action in sactions {
-                let ShardAction::Migrate(action) = action;
-                self.setup_task(ReconcileTask {
-                    task: Some(reconcile_task::Task::MigrateShard(MigrateShardTask {
-                        shard: action.shard,
-                        src_group: action.source_group,
-                        dest_group: action.target_group,
-                    })),
-                })
-                .await;
-            }
-
-            ractions = self.comput_replica_role_action().await?;
-            sactions = self.ctx.alloc.compute_shard_action().await?;
+        for action in sactions {
+            let ShardAction::Migrate(action) = action;
+            self.setup_task(ReconcileTask {
+                task: Some(reconcile_task::Task::MigrateShard(MigrateShardTask {
+                    shard: action.shard,
+                    src_group: action.source_group,
+                    dest_group: action.target_group,
+                })),
+            })
+            .await;
         }
 
         Ok(!self.is_empty().await)
