@@ -160,24 +160,25 @@ impl<T: AllocSource> Allocator<T> {
         if self.alloc_source.nodes(NodeFilter::NotDecommissioned).len()
             < self.config.replicas_per_group
         {
-            // group alloctor start work after node_count > replicas_per_group.
+            // group allocator start work after node_count > replicas_per_group.
             return Ok(GroupAction::Noop);
         }
 
-        Ok(match self.current_groups().cmp(&self.desired_groups()) {
+        let desired_groups = self.desired_groups(self.config.replicas_per_group);
+        Ok(match self.current_groups().cmp(&desired_groups) {
             std::cmp::Ordering::Less => {
                 // it happend when:
                 // - new join node
                 // - increase cpu quota for exist node(e.g. via cgroup)
-                // - increate replica_num configuration
-                GroupAction::Add(self.desired_groups() - self.current_groups())
+                // - increase replica_num configuration
+                GroupAction::Add(desired_groups - self.current_groups())
             }
             std::cmp::Ordering::Greater => {
                 // it happens when:
                 //  - joined node exit
                 //  - decrease cpu quota for exist node(e.g. via cgroup)
                 //  - decrease replica_num configuration
-                let want_remove = self.current_groups() - self.desired_groups();
+                let want_remove = self.current_groups() - desired_groups;
                 GroupAction::Remove(self.preferred_remove_groups(want_remove))
             }
             std::cmp::Ordering::Equal => GroupAction::Noop,
@@ -266,7 +267,7 @@ impl<T: AllocSource> Allocator<T> {
         // TODO:
         // 1 remove groups from unreachable nodes that indicated by NodeLiveness(they also need
         // repair replicas).
-        // 2 remove groups from unmatch cpu-quota nodes.
+        // 2 remove groups from unmatched cpu-quota nodes.
         // 3. remove groups with lowest migration cost.
         self.alloc_source
             .nodes(NodeFilter::NotDecommissioned)
@@ -276,14 +277,20 @@ impl<T: AllocSource> Allocator<T> {
             .collect()
     }
 
-    fn desired_groups(&self) -> usize {
-        let total_cpus = self
-            .alloc_source
-            .nodes(NodeFilter::NotDecommissioned)
+    fn desired_groups(&self, replicas_per_group: usize) -> usize {
+        let nodes = self.alloc_source.nodes(NodeFilter::NotDecommissioned);
+        let total_nodes = nodes.len();
+        let total_cpus = nodes
             .iter()
             .map(|n| n.capacity.as_ref().unwrap().cpu_nums)
             .fold(0_f64, |acc, x| acc + x);
-        total_cpus as usize
+
+        // We want only one worker per core serving a group, and we also want at least
+        // one group per machine.
+        std::cmp::max(
+            (total_cpus / replicas_per_group as f64) as usize,
+            total_nodes,
+        )
     }
 
     fn current_groups(&self) -> usize {
