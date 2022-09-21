@@ -209,10 +209,15 @@ impl Default for RaftConfig {
 }
 
 fn start_purging_expired_files(executor: &Executor, engine: Arc<raft_engine::Engine>) {
+    let cloned_executor = executor.clone();
     executor.spawn(None, TaskPriority::IoLow, async move {
         loop {
             crate::runtime::time::sleep(Duration::from_secs(10)).await;
-            match engine.purge_expired_files() {
+            let cloned_engine = engine.clone();
+            match cloned_executor
+                .spawn_blocking(move || cloned_engine.purge_expired_files())
+                .await
+            {
                 Err(e) => {
                     warn!("raft engine purge expired files: {e:?}")
                 }

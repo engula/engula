@@ -244,7 +244,6 @@ fn sim_boostrap_join_node_balance() {
         let act = a.compute_group_action().await.unwrap();
         match act {
             GroupAction::Add(n) => {
-                assert!(matches!(n, 2));
                 for _ in 0..n {
                     let nodes = a
                         .allocate_group_replica(vec![], REPLICA_PER_GROUP)
