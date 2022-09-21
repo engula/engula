@@ -15,7 +15,7 @@
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use engula_api::server::v1::{NodeDesc, RaftRole, ReplicaDesc, ReplicaRole};
-use tracing::trace;
+use tracing::debug;
 
 use super::{source::NodeFilter, AllocSource, BalanceStatus, LeaderAction, TransferLeader};
 use crate::{bootstrap::ROOT_GROUP_ID, Result};
@@ -44,7 +44,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
         let mean = self.mean_leader_count(NodeFilter::Schedulable);
         let candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
         let ranked_nodes = Self::rank_nodes_for_leader(candidate_nodes, mean);
-        trace!(
+        debug!(
             scored_nodes = ?ranked_nodes.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, n.capacity.as_ref().unwrap().leader_count, s)).collect::<Vec<_>>(),
             mean = mean,
             "node ranked by leader count",
@@ -168,9 +168,7 @@ impl<T: AllocSource> LeaderCountPolicy<T> {
     }
 
     fn leader_balance_state(replica_num: f64, mean: f64) -> BalanceStatus {
-        const THRESHOLD_FRACTION: f64 = 0.05;
-        const MIN_RANGE_DELTA: f64 = 2.0;
-        let delta = f64::min(mean as f64 * THRESHOLD_FRACTION, MIN_RANGE_DELTA);
+        let delta = 0.5;
         if replica_num > mean + delta {
             return BalanceStatus::Overfull;
         }

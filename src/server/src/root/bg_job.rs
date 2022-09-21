@@ -159,7 +159,11 @@ impl Jobs {
                 return Err(crate::Error::ResourceExhausted("no engouth groups".into()));
             }
             let group = groups.first().unwrap();
-            info!("try create shard at group {}", group.id);
+            info!(
+                "try create shard at group {}, shards: {}",
+                group.id,
+                group.shards.len()
+            );
             if let Err(err) = self.try_create_shard(group.id, &shard).await {
                 error!(group=group.id, shard=shard.id, err=?err, "create collection shard error and try to rollback");
                 create_collection.remark = format!("{err:?}");

@@ -15,7 +15,7 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use engula_api::server::v1::{GroupDesc, ShardDesc};
-use tracing::trace;
+use tracing::debug;
 
 use super::{AllocSource, ReallocateShard, ShardAction};
 use crate::{bootstrap::ROOT_GROUP_ID, root::allocator::BalanceStatus, Result};
@@ -43,7 +43,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
         let candicate_groups = self.current_user_groups();
 
         let ranked_candicates = Self::rank_group_for_balance(candicate_groups, mean_cnt);
-        trace!(
+        debug!(
             scored_nodes = ?ranked_candicates.iter().map(|(g, s)| format!("{}-{}({:?})", g.id, g.shards.len(), s)).collect::<Vec<_>>(),
             mean = mean_cnt,
             "group ranked by shard count",
@@ -91,9 +91,7 @@ impl<T: AllocSource> ShardCountPolicy<T> {
     }
 
     fn group_balance_state(shard_num: f64, mean: f64) -> BalanceStatus {
-        const THRESHOLD_FRACTION: f64 = 0.05;
-        const MIN_RANGE_DELTA: f64 = 2.0;
-        let delta = f64::min(mean as f64 * THRESHOLD_FRACTION, MIN_RANGE_DELTA);
+        let delta = 0.5;
         if shard_num > mean + delta {
             return BalanceStatus::Overfull;
         }
@@ -124,6 +122,10 @@ impl<T: AllocSource> ShardCountPolicy<T> {
                 target_group: target.id,
             }));
         }
+        debug!(
+            "skip balance group:{} due to no suitable target",
+            source_group.id
+        );
         None
     }
 

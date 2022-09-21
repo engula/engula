@@ -18,7 +18,7 @@ use engula_api::server::v1::*;
 use engula_client::GroupClient;
 use prometheus::HistogramTimer;
 use tokio::{sync::Mutex, time::Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::{allocator::*, metrics, *};
 use crate::{
@@ -53,13 +53,13 @@ impl ReconcileScheduler {
         let cr = self.check().await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
             let _step_timer = metrics::RECONCILE_STEP_DURATION_SECONDS.start_timer();
-            let immediately_next = self.advance_tasks().await;
-            if immediately_next {
-                self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await;
-                return Duration::ZERO;
-            }
+            self.advance_tasks().await;
         }
         Duration::from_secs(self.ctx.cfg.schedule_interval_sec)
+    }
+
+    pub async fn wait_one_heartbeat_tick(&self) {
+        self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await
     }
 
     pub async fn setup_task(&self, task: ReconcileTask) {
@@ -700,6 +700,7 @@ impl ScheduleContext {
         group_client
             .accept_shard(src_group.id, src_group.epoch, shard_desc)
             .await?;
+        debug!("migrate shard submitted, group: {}", src_group.id);
         // TODO: handle src_group epoch not match?
         Ok(())
     }
