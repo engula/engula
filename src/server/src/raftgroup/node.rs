@@ -21,6 +21,7 @@ use tracing::{info, trace};
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
+    monitor::{record_perf_point, AdvancePerfContext},
     snap::apply::apply_snapshot,
     storage::Storage,
     RaftManager, SnapManager,
@@ -267,7 +268,11 @@ where
     }
 
     /// Advance raft node, persist, apply entries and send messages.
-    pub(super) fn advance(&mut self, template: &mut impl AdvanceTemplate) -> Option<WriteTask> {
+    pub(super) fn advance(
+        &mut self,
+        perf_ctx: &mut AdvancePerfContext,
+        template: &mut impl AdvanceTemplate,
+    ) -> Option<WriteTask> {
         self.advance_read_requests();
         if !self.raw_node.has_ready() {
             if !self.read_states.is_empty() {
@@ -277,6 +282,7 @@ where
             return None;
         }
 
+        record_perf_point(&mut perf_ctx.take_ready);
         let mut ready = self.raw_node.ready();
         if let Some(ss) = ready.ss() {
             let state = match ss.raft_state {
@@ -294,16 +300,17 @@ where
         }
 
         if !ready.messages().is_empty() {
+            record_perf_point(&mut perf_ctx.send_message);
             template.send_messages(ready.take_messages());
         }
 
-        self.handle_apply(template, &mut ready);
+        self.handle_apply(perf_ctx, template, &mut ready);
 
         let write_task = self.build_write_task(&mut ready);
         if write_task.is_none() {
             let post_ready = PostReady::new(&mut ready);
             self.raw_node.advance_append_async(ready);
-            self.post_advance(post_ready, template);
+            self.post_advance(perf_ctx, post_ready, template);
         } else {
             self.raw_node.advance_append_async(ready);
         }
@@ -312,10 +319,12 @@ where
 
     pub(super) fn post_advance(
         &mut self,
+        perf_ctx: &mut AdvancePerfContext,
         post_ready: PostReady,
         sender: &mut impl AdvanceTemplate,
     ) {
         if !post_ready.persisted_messages.is_empty() {
+            record_perf_point(&mut perf_ctx.send_message);
             sender.send_messages(post_ready.persisted_messages);
         }
 
@@ -350,7 +359,12 @@ where
         self.raw_node.raft.raft_log.committed
     }
 
-    fn handle_apply(&mut self, template: &mut impl AdvanceTemplate, ready: &mut Ready) {
+    fn handle_apply(
+        &mut self,
+        perf_ctx: &mut AdvancePerfContext,
+        template: &mut impl AdvanceTemplate,
+        ready: &mut Ready,
+    ) {
         if !self.read_states.is_empty() {
             self.applier
                 .apply_read_states(std::mem::take(&mut self.read_states));
@@ -367,6 +381,7 @@ where
             );
             let replica_cache = template.mut_replica_cache();
             let applied = self.applier.apply_entries(
+                &mut perf_ctx.applier,
                 &mut self.raw_node,
                 replica_cache,
                 ready.take_committed_entries(),
@@ -918,14 +933,14 @@ mod tests {
                 snap_mgr: snap_mgr.clone(),
                 replica_cache: ReplicaCache::default(),
             };
-
-            while let Some(task) = node.advance(&mut template) {
+            let mut perf_ctx = AdvancePerfContext::default();
+            while let Some(task) = node.advance(&mut perf_ctx, &mut template) {
                 let mut batch = LogBatch::default();
                 node.mut_store()
                     .write(&mut batch, &task)
                     .expect("write log batch");
                 engine.write(&mut batch, false).unwrap();
-                node.post_advance(task.post_ready(), &mut template)
+                node.post_advance(&mut perf_ctx, task.post_ready(), &mut template)
             }
             assert!(node.mut_state_machine().flushed_index() >= 100);
         });
