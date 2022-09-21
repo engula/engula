@@ -45,7 +45,10 @@ pub fn make_admin_service(server: Server) -> AdminService {
             self::cluster::UncordonHandle::new(server.to_owned()),
         )
         .route("/drain", self::cluster::DrainHandle::new(server.to_owned()))
-        .route("/node_status", self::cluster::StatusHandle::new(server.to_owned()))
+        .route(
+            "/node_status",
+            self::cluster::StatusHandle::new(server.to_owned()),
+        )
         .route("/monitor/raft", self::monitor::MonitorHandle::new(server));
     let api = Router::nest("/admin", router);
     AdminService::new(api)
