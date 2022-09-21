@@ -954,10 +954,13 @@ impl SlowIoGuard {
 impl Drop for SlowIoGuard {
     fn drop(&mut self) {
         use rocksdb::perf::*;
+
+        let mut perf_ctx = PerfContext::default();
         if self.start.elapsed() >= Duration::from_millis(self.threshold) {
-            warn!("rocksdb slow io: {}", PerfContext::default().report(true));
+            warn!("rocksdb slow io: {}", perf_ctx.report(true));
         }
 
+        perf_ctx.reset();
         set_perf_stats(PerfStatsLevel::Disable);
     }
 }
