@@ -49,13 +49,18 @@ pub struct AdvancePerfContext {
 
 #[inline]
 pub(crate) fn record_perf_point(hold: &mut u64) {
+    *hold = perf_point_micros();
+}
+
+#[inline]
+pub(crate) fn perf_point_micros() -> u64 {
     if cfg!(target_os = "linux") {
         let mut t = MaybeUninit::uninit();
         unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, t.as_mut_ptr()) };
         let now: libc::timespec = unsafe { t.assume_init() };
         let micros = now.tv_nsec / 1000;
-        *hold = (now.tv_sec * 1000 * 1000 + micros) as u64;
+        (now.tv_sec * 1000 * 1000 + micros) as u64
     } else {
-        *hold = 0;
+        0
     }
 }
