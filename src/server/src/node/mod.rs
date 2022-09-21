@@ -413,9 +413,14 @@ impl Node {
 
     // Update recent known root nodes.
     pub async fn update_root(&self, root_desc: RootDesc) -> Result<()> {
-        // TODO(walter) reject staled update root request.
-        self.state_engine().save_root_desc(root_desc).await?;
-        self.reload_root_from_engine().await
+        let local_root_desc = self.get_root().await;
+        if local_root_desc == root_desc {
+            Ok(())
+        } else {
+            // TODO(walter) reject staled update root request.
+            self.state_engine().save_root_desc(root_desc).await?;
+            self.reload_root_from_engine().await
+        }
     }
 
     pub async fn reload_root_from_engine(&self) -> Result<()> {
