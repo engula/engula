@@ -23,7 +23,6 @@ pub mod route_table;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
 };
 
 use engula_api::server::v1::*;
@@ -493,6 +492,8 @@ impl Node {
 
     // This request is issued by dest group.
     pub async fn migrate(&self, request: MigrateRequest) -> Result<MigrateResponse> {
+        use self::replica::retry::do_migration;
+
         let desc = request
             .desc
             .ok_or_else(|| Error::InvalidArgument("MigrateRequest::desc".to_owned()))?;
@@ -511,29 +512,12 @@ impl Node {
             }
         };
 
-        loop {
-            match MigrateAction::from_i32(request.action) {
-                Some(MigrateAction::Setup) => {
-                    match replica.setup_migration(&desc).await {
-                        Ok(()) => {
-                            return Ok(MigrateResponse {});
-                        }
-                        Err(Error::ServiceIsBusy(_)) => {
-                            // already exists a migration task
-                            crate::runtime::time::sleep(Duration::from_micros(200)).await;
-                        }
-                        Err(e) => {
-                            return Err(e);
-                        }
-                    };
-                }
-                Some(MigrateAction::Commit) => {
-                    replica.commit_migration(&desc).await?;
-                    return Ok(MigrateResponse {});
-                }
-                _ => return Err(Error::InvalidArgument("unknown action".to_owned())),
-            }
-        }
+        let Some(action) = MigrateAction::from_i32(request.action) else {
+            return Err(Error::InvalidArgument("unknown action".to_owned()));
+        };
+
+        do_migration(&replica, action, &desc).await?;
+        Ok(MigrateResponse {})
     }
 
     #[inline]
