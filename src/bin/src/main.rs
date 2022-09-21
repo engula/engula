@@ -107,6 +107,13 @@ impl StartCommand {
 }
 
 fn main() -> Result<()> {
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("panic occurred: {}", info);
+        default_panic(info);
+        std::process::abort();
+    }));
+
     let filter_layer = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
         .unwrap();
