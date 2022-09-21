@@ -19,7 +19,6 @@ use std::{
 };
 
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
-use tracing::trace;
 
 use super::{source::NodeFilter, *};
 use crate::{bootstrap::ROOT_GROUP_ID, root::OngoingStats, Result};
@@ -62,7 +61,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
         let candidate_nodes = self.alloc_source.nodes(NodeFilter::Schedulable);
 
         let ranked_candidates = self.rank_node_for_balance(candidate_nodes, mean_cnt);
-        trace!(
+        tracing::debug!(
             scored_nodes = ?ranked_candidates.iter().map(|(n, s)| format!("{}-{}({:?})", n.id, self.node_replica_count(n), s)).collect::<Vec<_>>(),
             mean = mean_cnt,
             "node ranked by replica count",
