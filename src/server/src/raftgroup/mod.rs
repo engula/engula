@@ -69,12 +69,12 @@ pub struct RaftConfig {
 
     /// Limit the entries batched in an append message(in size). 0 means one entry per message.
     ///
-    /// Default: 128KB
+    /// Default: 64KB
     pub max_size_per_msg: u64,
 
     /// Limit the total bytes per io batch requests.
     ///
-    /// Default: 128KB
+    /// Default: 64KB
     pub max_io_batch_size: u64,
 
     /// Limit the number of inflights messages which send to one peer.
@@ -196,8 +196,8 @@ impl Default for RaftConfig {
             tick_interval_ms: 500,
             max_inflight_requests: 102400,
             election_tick: 3,
-            max_size_per_msg: 128 << 10,
-            max_io_batch_size: 128 << 10,
+            max_size_per_msg: 64 << 10,
+            max_io_batch_size: 64 << 10,
             max_inflight_msgs: 10 * 1000,
             engine_slow_io_threshold_ms: None,
             enable_log_recycle: false,
