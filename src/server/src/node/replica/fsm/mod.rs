@@ -30,6 +30,9 @@ use crate::{
     Result,
 };
 
+const SHARD_UPDATE_DELTA: u64 = 1 << 32;
+const CONFIG_CHANGE_DELTA: u64 = 1;
+
 #[derive(Debug)]
 enum ChangeReplicaKind {
     Simple,
@@ -105,7 +108,7 @@ impl GroupStateMachine {
                 apply_simple_change(local_id, &mut desc, &change_replicas.changes[0])
             }
         }
-        desc.epoch += 1;
+        desc.epoch += CONFIG_CHANGE_DELTA;
         self.desc_updated = true;
         self.plugged_write_states.descriptor = Some(desc);
 
@@ -127,7 +130,7 @@ impl GroupStateMachine {
                 }
                 info!("group {} add shard {}", self.info.group_id, shard.id);
                 self.desc_updated = true;
-                desc.epoch += 1;
+                desc.epoch += SHARD_UPDATE_DELTA;
                 desc.shards.push(shard);
             }
             if let Some(m) = op.migration {
@@ -223,7 +226,9 @@ impl GroupStateMachine {
     fn apply_migration(&mut self, group_desc: &mut GroupDesc, desc: &MigrationDesc) {
         let shard_desc = desc.get_shard_desc();
 
-        group_desc.epoch += 1;
+        let inherited_epoch = std::cmp::max(desc.src_group_epoch, desc.dest_group_epoch);
+        let inherited_epoch = std::cmp::max(group_desc.epoch, inherited_epoch);
+        group_desc.epoch = inherited_epoch + SHARD_UPDATE_DELTA;
         let msg = if desc.src_group_id == group_desc.id {
             group_desc.shards.drain_filter(|r| r.id == shard_desc.id);
             "shard migrated out"
