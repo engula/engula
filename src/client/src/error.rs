@@ -248,7 +248,11 @@ pub fn transport_io_err(err: &std::io::Error) -> bool {
 
 pub fn transport_err(status: &tonic::Status) -> bool {
     use tonic::Code;
-    if status.code() == Code::Unknown && status.message().starts_with("transport error") {
+    if (status.code() == Code::Unknown && status.message().starts_with("transport error"))
+        // error trying to connect: tcp connect error: Connection reset by peer (os error 104)
+        || (status.code() == Code::Unavailable
+            && status.message().starts_with("error trying to connect"))
+    {
         let mut cause = status.source();
         while let Some(err) = cause {
             if let Some(err) = err.downcast_ref::<std::io::Error>() {
