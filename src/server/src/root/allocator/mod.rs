@@ -117,7 +117,7 @@ impl Default for RootConfig {
             enable_leader_balance: true,
             liveness_threshold_sec: 30,
             heartbeat_timeout_sec: 4,
-            schedule_interval_sec: 1,
+            schedule_interval_sec: 3,
             max_create_group_retry_before_rollback: 10,
         }
     }

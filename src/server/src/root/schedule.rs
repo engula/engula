@@ -53,13 +53,13 @@ impl ReconcileScheduler {
         let cr = self.check().await; // TODO: take care self.tasks then can give more > 1 value here.
         if cr.is_ok() && cr.unwrap() {
             let _step_timer = metrics::RECONCILE_STEP_DURATION_SECONDS.start_timer();
-            let immediately_next = self.advance_tasks().await;
-            if immediately_next {
-                self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await;
-                return Duration::ZERO;
-            }
+            self.advance_tasks().await;
         }
         Duration::from_secs(self.ctx.cfg.schedule_interval_sec)
+    }
+
+    pub async fn wait_one_heartbeat_tick(&self) {
+        self.ctx.heartbeat_queue.wait_one_heartbeat_tick().await
     }
 
     pub async fn setup_task(&self, task: ReconcileTask) {
@@ -700,7 +700,38 @@ impl ScheduleContext {
         group_client
             .accept_shard(src_group.id, src_group.epoch, shard_desc)
             .await?;
+
+        let mut hearbeat_nodes = Vec::new();
+        let src_node = self.find_leader_node(target_group)?;
+        if let Some(node_id) = src_node {
+            hearbeat_nodes.push(HeartbeatTask { node_id })
+        }
+        let target_node = self.find_leader_node(src_group.id)?;
+        if let Some(node_id) = target_node {
+            hearbeat_nodes.push(HeartbeatTask { node_id })
+        }
+        self.heartbeat_queue
+            .try_schedule(hearbeat_nodes, Instant::now())
+            .await;
+
+        info!(
+            "migrate shard submitted, shard: {shard}, from: {}, to: {target_group}, {:?}->{:?}",
+            src_group.id, src_node, target_node,
+        );
         // TODO: handle src_group epoch not match?
         Ok(())
+    }
+
+    fn find_leader_node(&self, group: u64) -> Result<Option<u64>> {
+        let group_router = self.shared.provider.router.find_group(group)?;
+        if group_router.leader_state.is_none() {
+            return Ok(None);
+        }
+        let (leader_repl, _) = group_router.leader_state.unwrap();
+        Ok(group_router
+            .replicas
+            .iter()
+            .find(|(_, r)| r.id == leader_repl)
+            .map(|(_, r)| r.node_id))
     }
 }

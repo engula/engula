@@ -21,7 +21,7 @@ use engula_api::server::v1::NodeStatus;
 use prometheus::{core::Collector, *};
 use prometheus_static_metric::make_static_metric;
 
-use crate::Server;
+use crate::{bootstrap::ROOT_GROUP_ID, Server};
 
 make_static_metric! {
     struct NodeTotal: IntGauge {
@@ -136,6 +136,9 @@ impl RootCollector {
             self.shared.groups.set(info.groups.len() as i64);
             self.shared.shard_counts.reset();
             for g in &info.groups {
+                if g.id == ROOT_GROUP_ID {
+                    continue;
+                }
                 self.shared
                     .shard_counts
                     .with_label_values(&[&g.id.to_string()])

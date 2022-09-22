@@ -193,7 +193,7 @@ impl Replica {
 
         let _acl_guard = self
             .try_take_acl_guard(request)
-            .ok_or(Error::ServiceIsBusy("try_take_acl_guard"));
+            .ok_or(Error::ServiceIsBusy("try_take_acl_guard"))?;
         self.check_request_early(&mut exec_ctx, request)?;
         self.evaluate_command(&exec_ctx, request).await
     }

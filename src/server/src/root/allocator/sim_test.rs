@@ -303,24 +303,6 @@ fn sim_boostrap_join_node_balance() {
         p.display();
 
         println!("8. balance replica between nodes");
-        let racts = a.compute_replica_action().await.unwrap();
-        assert!(!racts.is_empty());
-        for act in &racts {
-            match act {
-                ReplicaAction::Migrate(ReallocateReplica {
-                    group,
-                    source_node: _,
-                    source_replica,
-                    target_node,
-                }) => {
-                    println!(
-                        "move group {} replica {} to {}",
-                        group, source_replica, target_node.id
-                    );
-                    p.move_replica(*source_replica, target_node.id)
-                }
-            }
-        }
         loop {
             let racts = a.compute_replica_action().await.unwrap();
             if racts.is_empty() {

@@ -313,6 +313,7 @@ impl Root {
         while let Ok(Some(_)) = root_replica.to_owned().on_leader("root", true).await {
             let next_interval = self.scheduler.step_one().await;
             crate::runtime::time::sleep(next_interval).await;
+            self.scheduler.wait_one_heartbeat_tick().await;
         }
         info!("node {node_id} current root node drop leader");
 
@@ -500,6 +501,7 @@ impl Root {
         let groups = schema.list_group().await?;
         let replicas = groups
             .iter()
+            .filter(|g| g.id != ROOT_GROUP_ID)
             .flat_map(|g| g.replicas.iter().map(|r| (r, g.id)).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         let states = schema.list_replica_state().await?;
