@@ -33,12 +33,14 @@ use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
     metrics::*,
+    monitor::WorkerPerfContext,
     node::RaftNode,
     snap::{apply::apply_snapshot, RecycleSnapMode, SnapManager},
     transport::{Channel, TransportManager},
     RaftManager, ReadPolicy,
 };
 use crate::{
+    raftgroup::monitor::record_perf_point,
     record_latency,
     runtime::Executor,
     serverpb::v1::{EvalResult, RaftMessage},
@@ -74,6 +76,7 @@ pub enum Request {
         target_id: u64,
     },
     State(oneshot::Sender<RaftGroupState>),
+    Monitor(oneshot::Sender<Box<WorkerPerfContext>>),
     Start,
 }
 
@@ -197,9 +200,14 @@ where
     observer: Box<dyn StateObserver>,
     replica_cache: ReplicaCache,
 
-    accumulated_bytes: usize,
-
     marker: PhantomData<M>,
+}
+
+#[derive(Default)]
+struct WorkerContext {
+    accumulated_bytes: usize,
+    perf_ctx: WorkerPerfContext,
+    monitors: Vec<oneshot::Sender<Box<WorkerPerfContext>>>,
 }
 
 impl<M> RaftWorker<M>
@@ -249,7 +257,6 @@ where
             engine: raft_mgr.engine.clone(),
             observer,
             replica_cache,
-            accumulated_bytes: 0,
             marker: PhantomData,
         })
     }
@@ -269,10 +276,11 @@ where
         // WARNING: the underlying instant isn't steady.
         let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
         while !self.request_receiver.is_terminated() {
-            self.accumulated_bytes = 0;
-            self.maintenance(&mut interval).await?;
-            self.consume_requests()?;
-            self.dispatch()?;
+            let mut ctx = WorkerContext::default();
+            self.maintenance(&mut ctx, &mut interval).await?;
+            self.consume_requests(&mut ctx)?;
+            self.dispatch(&mut ctx)?;
+            self.finish_round(ctx);
             crate::runtime::yield_now().await;
         }
 
@@ -284,34 +292,40 @@ where
         Ok(())
     }
 
-    async fn maintenance(&mut self, interval: &mut tokio::time::Interval) -> Result<()> {
+    async fn maintenance(
+        &mut self,
+        ctx: &mut WorkerContext,
+        interval: &mut tokio::time::Interval,
+    ) -> Result<()> {
         if !self.raft_node.has_ready() {
             futures::select_biased! {
                 _ = interval.tick().fuse() => {
                     self.raft_node.tick();
-                    self.compact_log();
+                    self.compact_log(ctx);
                 },
                 request = self.request_receiver.next() => if let Some(req) = request {
-                    self.handle_request(req)?;
+                    self.handle_request(ctx, req)?;
                 },
             }
+            record_perf_point(&mut ctx.perf_ctx.wake);
         }
         Ok(())
     }
 
-    fn consume_requests(&mut self) -> Result<()> {
+    fn consume_requests(&mut self, ctx: &mut WorkerContext) -> Result<()> {
         record_latency!(&RAFTGROUP_WORKER_CONSUME_REQUESTS_DURATION_SECONDS);
+        record_perf_point(&mut ctx.perf_ctx.consume_requests);
         while let Ok(Some(request)) = self.request_receiver.try_next() {
-            self.handle_request(request)?;
-            if self.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
+            self.handle_request(ctx, request)?;
+            if ctx.accumulated_bytes >= self.cfg.max_io_batch_size as usize {
                 break;
             }
         }
         Ok(())
     }
 
-    fn dispatch(&mut self) -> Result<()> {
-        RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE.observe(self.accumulated_bytes as f64);
+    fn dispatch(&mut self, ctx: &mut WorkerContext) -> Result<()> {
+        RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE.observe(ctx.accumulated_bytes as f64);
         RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
         record_latency!(&RAFTGROUP_WORKER_ADVANCE_DURATION_SECONDS);
         let mut template = AdvanceImpl {
@@ -324,16 +338,23 @@ where
             observer: &mut self.observer,
             replica_cache: &mut self.replica_cache,
         };
-        if let Some(write_task) = self.raft_node.advance(&mut template) {
-            let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
+        if let Some(write_task) = self
+            .raft_node
+            .advance(&mut ctx.perf_ctx.advance, &mut template)
+        {
             let mut batch = LogBatch::default();
             self.raft_node
                 .mut_store()
                 .write(&mut batch, &write_task)
                 .expect("write log batch");
+
+            let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
+            record_perf_point(&mut ctx.perf_ctx.write);
+            ctx.perf_ctx.num_writes = write_task.entries.len();
             self.engine.write(&mut batch, false).unwrap();
             let post_ready = write_task.post_ready();
-            self.raft_node.post_advance(post_ready, &mut template);
+            self.raft_node
+                .post_advance(&mut ctx.perf_ctx.advance, post_ready, &mut template);
         }
 
         if self.raft_node.mut_store().create_snapshot.get() {
@@ -350,13 +371,24 @@ where
         Ok(())
     }
 
-    fn handle_request(&mut self, request: Request) -> Result<()> {
+    fn finish_round(&self, mut ctx: WorkerContext) {
+        record_perf_point(&mut ctx.perf_ctx.finish);
+        ctx.perf_ctx.accumulated_bytes = ctx.accumulated_bytes;
+        for sender in ctx.monitors {
+            sender
+                .send(Box::new(ctx.perf_ctx.clone()))
+                .unwrap_or_default();
+        }
+    }
+
+    fn handle_request(&mut self, ctx: &mut WorkerContext, request: Request) -> Result<()> {
+        ctx.perf_ctx.num_requests += 1;
         match request {
             Request::Propose {
                 eval_result,
                 start,
                 sender,
-            } => self.handle_proposal(eval_result, start, sender),
+            } => self.handle_proposal(ctx, eval_result, start, sender),
             Request::Read { policy, sender } => self.handle_read(policy, sender),
             Request::ChangeConfig { change, sender } => self.handle_conf_change(change, sender),
             Request::CreateSnapshotFinished => {
@@ -368,7 +400,7 @@ where
                 self.raft_node.transfer_leader(target_id);
             }
             Request::Message(msg) => {
-                self.handle_msg(msg)?;
+                self.handle_msg(ctx, msg)?;
             }
             Request::Unreachable { target_id } => {
                 self.raft_node.report_unreachable(target_id);
@@ -403,12 +435,15 @@ where
                     .send(self.raft_group_state(first_index, last_index))
                     .unwrap_or_default();
             }
+            Request::Monitor(sender) => {
+                ctx.monitors.push(sender);
+            }
             Request::Start => {}
         }
         Ok(())
     }
 
-    fn handle_msg(&mut self, raft_msg: RaftMessage) -> Result<()> {
+    fn handle_msg(&mut self, ctx: &mut WorkerContext, raft_msg: RaftMessage) -> Result<()> {
         let from_replica = raft_msg.from_replica.unwrap();
         self.replica_cache.insert(from_replica.clone());
         for msg in raft_msg.messages {
@@ -425,7 +460,8 @@ where
                     msg,
                 );
             } else {
-                self.accumulated_bytes += msg.entries.iter().map(|e| e.data.len()).sum::<usize>();
+                ctx.accumulated_bytes += msg.entries.iter().map(|e| e.data.len()).sum::<usize>();
+                ctx.perf_ctx.num_step_msg += 1;
                 self.raft_node.step(msg)?;
             }
         }
@@ -434,6 +470,7 @@ where
 
     fn handle_proposal(
         &mut self,
+        ctx: &mut WorkerContext,
         eval_result: EvalResult,
         start: Instant,
         sender: oneshot::Sender<Result<()>>,
@@ -441,7 +478,8 @@ where
         use prost::Message;
 
         let data = eval_result.encode_to_vec();
-        self.accumulated_bytes += data.len();
+        ctx.accumulated_bytes += data.len();
+        ctx.perf_ctx.num_proposal += 1;
         self.raft_node.propose(data, vec![], sender);
         RAFTGROUP_WORKER_REQUEST_IN_QUEUE_DURATION_SECONDS.observe(elapsed_seconds(start));
     }
@@ -465,8 +503,9 @@ where
         }
     }
 
-    fn compact_log(&mut self) {
+    fn compact_log(&mut self, ctx: &mut WorkerContext) {
         record_latency!(&RAFTGROUP_WORKER_COMPACT_LOG_DURATION_SECONDS);
+        record_perf_point(&mut ctx.perf_ctx.compact_log);
         let mut to = self.raft_node.mut_state_machine().flushed_index();
 
         let status = self.raft_node.raft_status();

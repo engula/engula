@@ -34,11 +34,21 @@ pub use self::state::{LeaseState, LeaseStateObserver};
 use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
-    raftgroup::{write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy},
+    raftgroup::{
+        perf_point_micros, write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy,
+        WorkerPerfContext,
+    },
     schedule::MoveReplicasProvider,
     serverpb::v1::*,
     Error, Result,
 };
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct ReplicaPerfContext {
+    pub raft: Box<WorkerPerfContext>,
+    pub take_acl_guard: u64,
+    pub propose: u64,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct ReplicaTestingKnobs {
@@ -258,6 +268,18 @@ impl Replica {
     #[inline]
     pub fn schedule_state(&self) -> ScheduleState {
         self.lease_state.lock().unwrap().schedule_state.clone()
+    }
+
+    pub async fn monitor(&self) -> Result<ReplicaPerfContext> {
+        let take_acl_guard = perf_point_micros();
+        let _acl_guard = self.take_read_acl_guard().await;
+        let propose = perf_point_micros();
+        let raft = self.raft_node.clone().monitor().await?;
+        Ok(ReplicaPerfContext {
+            take_acl_guard,
+            propose,
+            raft,
+        })
     }
 }
 

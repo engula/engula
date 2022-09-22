@@ -24,9 +24,9 @@ use raft::{
     RawNode, ReadState,
 };
 
-use super::{fsm::StateMachine, storage::Storage, ApplyEntry};
+use super::{fsm::StateMachine, monitor::ApplierPerfContext, storage::Storage, ApplyEntry};
 use crate::{
-    raftgroup::metrics::*,
+    raftgroup::{metrics::*, monitor::record_perf_point},
     record_latency,
     serverpb::v1::{EntryId, EvalResult},
     Error, Result,
@@ -149,6 +149,7 @@ impl<M: StateMachine> Applier<M> {
     /// Apply entries and invoke proposal & read response.
     pub(super) fn apply_entries(
         &mut self,
+        perf_ctx: &mut ApplierPerfContext,
         raw_node: &mut RawNode<Storage>,
         replica_cache: &mut ReplicaCache,
         committed_entries: Vec<Entry>,
@@ -156,6 +157,8 @@ impl<M: StateMachine> Applier<M> {
         record_latency!(&RAFTGROUP_WORKER_APPLY_DURATION_SECONDS);
         RAFTGROUP_WORKER_APPLY_ENTRIES_SIZE.observe(committed_entries.len() as f64);
 
+        perf_ctx.num_committed = committed_entries.len();
+        record_perf_point(&mut perf_ctx.start_plug);
         self.state_machine.start_plug().expect("start_plug");
         let mut entry_ids = Vec::with_capacity(committed_entries.len());
         for entry in committed_entries {
@@ -179,8 +182,11 @@ impl<M: StateMachine> Applier<M> {
                 }
             }
         }
+
+        record_perf_point(&mut perf_ctx.finish_plug);
         self.state_machine.finish_plug().expect("finish_plug");
 
+        record_perf_point(&mut perf_ctx.response_proposals);
         entry_ids
             .into_iter()
             .for_each(|EntryId { index, term }| self.response_proposal(index, term));

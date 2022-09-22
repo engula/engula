@@ -20,7 +20,7 @@ use futures::channel::{mpsc, oneshot};
 use super::{
     metrics::*,
     worker::{RaftGroupState, Request},
-    ReadPolicy,
+    ReadPolicy, WorkerPerfContext,
 };
 use crate::{
     record_latency,
@@ -115,6 +115,14 @@ impl RaftNodeFacade {
         RAFTGROUP_UNREACHABLE_TOTAL.inc();
         self.send(Request::Unreachable { target_id })
             .unwrap_or_default()
+    }
+
+    pub async fn monitor(&mut self) -> Result<Box<WorkerPerfContext>> {
+        let (sender, receiver) = oneshot::channel();
+        if self.send(Request::Monitor(sender)).is_err() {
+            return Err(crate::Error::ServiceIsBusy("raft"));
+        }
+        Ok(receiver.await?)
     }
 
     pub fn terminate(&mut self) {

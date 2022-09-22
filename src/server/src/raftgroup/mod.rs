@@ -15,6 +15,7 @@ mod applier;
 mod facade;
 mod fsm;
 mod metrics;
+mod monitor;
 mod node;
 pub mod snap;
 mod storage;
@@ -34,6 +35,7 @@ use self::worker::RaftWorker;
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
+    monitor::*,
     snap::SnapManager,
     storage::{destory as destory_storage, write_initial_state},
     transport::{retrive_snapshot, AddressResolver, TransportManager},

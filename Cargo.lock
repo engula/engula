@@ -571,6 +571,7 @@ dependencies = [
  "futures",
  "http-body",
  "lazy_static",
+ "libc",
  "num_cpus",
  "paste",
  "pin-project",
