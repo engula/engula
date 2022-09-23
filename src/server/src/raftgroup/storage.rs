@@ -315,10 +315,11 @@ impl raft::Storage for Storage {
         let cache_low = self.cache.first_index().unwrap_or(u64::MAX);
         if cache_low > low {
             // TODO(walter) support load entries asynchronously.
+            let end = std::cmp::min(cache_low, high);
             if let Err(e) = self.engine.fetch_entries_to::<MessageExtTyped>(
                 self.replica_id,
                 low,
-                std::cmp::min(cache_low, high),
+                end,
                 Some(max_size),
                 &mut entries,
             ) {
@@ -328,13 +329,18 @@ impl raft::Storage for Storage {
                 );
                 return Err(other_store_error(e));
             }
+            if entries.len() < (end - low) as usize {
+                // not all entries fetched, since the max size is exceeded.
+                return Ok(entries);
+            }
         }
 
         if cache_low < high {
+            let fetched_size = entries.iter().map(|e| e.data.len()).sum::<usize>();
             self.cache.fetch_entries_to(
                 std::cmp::max(low, cache_low),
                 high,
-                max_size,
+                max_size.saturating_sub(fetched_size),
                 &mut entries,
             );
         }
@@ -660,6 +666,7 @@ mod tests {
                 let mut e = Entry::default();
                 e.set_index(idx);
                 e.set_term(term);
+                e.set_data(vec![0; 1024]);
                 e
             })
             .collect();
@@ -920,5 +927,130 @@ mod tests {
             raft_storage_apply_snapshot().await;
             open_empty_raft_storage_after_applying_snapshot().await;
         });
+    }
+
+    #[test]
+    fn fetch_entries_from_both_engine_and_cache_should_be_continuously() {
+        let owner = ExecutorOwner::new(1);
+        owner.executor().block_on(async move {
+            let dir = TempDir::new("raft-storage").unwrap();
+
+            let cfg = Config {
+                dir: dir.path().join("db").to_str().unwrap().to_owned(),
+                ..Default::default()
+            };
+            let engine = Arc::new(Engine::open(cfg).unwrap());
+
+            write_initial_state(&RaftConfig::default(), engine.as_ref(), 1, vec![], vec![])
+                .await
+                .unwrap();
+
+            let snap_mgr = SnapManager::new(dir.path().join("snap"));
+            let mut storage = Storage::open(
+                &RaftConfig::default(),
+                1,
+                0,
+                ConfState::default(),
+                engine.clone(),
+                snap_mgr,
+            )
+            .await
+            .unwrap();
+            insert_entries(engine.clone(), &mut storage, mocked_entries(None)).await;
+            validate_term(&storage, mocked_entries(None));
+            validate_entries(&storage, mocked_entries(None));
+            let first_index = mocked_entries(None).first().unwrap().0;
+            let last_index = mocked_entries(None).last().unwrap().0;
+            validate_range(&storage, first_index, last_index);
+
+            // 1. apply all entries in term 2.
+            storage.post_apply(mocked_entries(Some(2)).last().unwrap().0);
+            validate_term(&storage, mocked_entries(None));
+            validate_entries(&storage, mocked_entries(None));
+            validate_range(&storage, first_index, last_index);
+
+            pub fn assert_no_missing_entries(entries: &[Entry]) {
+                let first_index = entries.first().map(|v| v.index);
+                let last_index = entries.last().map(|v| v.index);
+                if let (Some(first_index), Some(last_index)) = (first_index, last_index) {
+                    let size = (last_index - first_index) as usize;
+                    if entries.len() <= size {
+                        panic!("some entries are missing");
+                    }
+                }
+            }
+
+            let entries = <Storage as raft::Storage>::entries(
+                &storage,
+                first_index,
+                last_index,
+                Some(1024 * 2),
+                GetEntriesContext::empty(false),
+            )
+            .unwrap();
+            assert_no_missing_entries(&entries);
+
+            let entries = <Storage as raft::Storage>::entries(
+                &storage,
+                first_index,
+                last_index,
+                Some(1024 * 6),
+                GetEntriesContext::empty(false),
+            )
+            .unwrap();
+            assert_no_missing_entries(&entries);
+        });
+    }
+
+    fn make_entries(entries: Vec<(u64, u64)>) -> Vec<Entry> {
+        entries
+            .into_iter()
+            .map(|(idx, term)| {
+                let mut e = Entry::default();
+                e.set_index(idx);
+                e.set_term(term);
+                e
+            })
+            .collect()
+    }
+
+    #[test]
+    fn entry_cache_truncated_append() {
+        struct TestCase {
+            base: Vec<(u64, u64)>,
+            append: Vec<(u64, u64)>,
+            expect: Vec<(u64, u64)>,
+        }
+
+        let tests = vec![
+            TestCase {
+                base: vec![(1, 1), (2, 1), (3, 1)],
+                append: vec![(2, 2), (3, 2), (4, 2)],
+                expect: vec![(1, 1), (2, 2), (3, 2), (4, 2)],
+            },
+            TestCase {
+                base: vec![(1, 1), (2, 1), (3, 1)],
+                append: vec![(1, 2), (2, 2), (3, 2), (4, 2)],
+                expect: vec![(1, 2), (2, 2), (3, 2), (4, 2)],
+            },
+            TestCase {
+                base: vec![(1, 1), (2, 1), (3, 1)],
+                append: vec![(4, 2)],
+                expect: vec![(1, 1), (2, 1), (3, 1), (4, 2)],
+            },
+            TestCase {
+                base: vec![(1, 1), (2, 1), (3, 1)],
+                append: vec![(3, 2)],
+                expect: vec![(1, 1), (2, 1), (3, 2)],
+            },
+        ];
+
+        for t in tests {
+            let mut cache = EntryCache::new();
+            cache.append(&make_entries(t.base));
+            cache.append(&make_entries(t.append));
+
+            assert_eq!(cache.entries, make_entries(t.expect));
+        }
     }
 }
