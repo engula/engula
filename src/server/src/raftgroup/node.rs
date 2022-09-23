@@ -511,7 +511,7 @@ mod tests {
     use super::*;
     use crate::{
         node::RaftRouteTable,
-        raftgroup::{write_initial_state, AddressResolver, TransportManager},
+        raftgroup::{io::LogWriter, write_initial_state, AddressResolver, TransportManager},
         runtime::ExecutorOwner,
         serverpb::v1::{ApplyState, EvalResult, SnapshotMeta},
         RaftConfig,
@@ -867,11 +867,13 @@ mod tests {
             let snap_mgr = SnapManager::new(snap_dir.clone());
             let resolver = Arc::new(MockedAddressResolver {});
             let transport_mgr = TransportManager::build(resolver, RaftRouteTable::new()).await;
+            let log_writer = LogWriter::new(64 << 10, engine.clone());
             let raft_mgr = RaftManager {
                 cfg: RaftConfig::default(),
                 engine: engine.clone(),
                 transport_mgr,
                 snap_mgr: snap_mgr.clone(),
+                log_writer,
             };
 
             // 1. initial storage with log entries in [0, 100), all entries are committed.

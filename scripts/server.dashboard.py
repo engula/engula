@@ -270,6 +270,8 @@ def raft_group_worker_panels():
                                 "raftgroup_worker_consume_requests_duration_seconds"),
         simple_duration_seconds("advance node duration",
                                 "raftgroup_worker_advance_duration_seconds"),
+        simple_duration_seconds("worker write duration",
+                                "raftgroup_worker_write_duration_seconds"),
         simple_duration_seconds("worker apply duration",
                                 "raftgroup_worker_apply_duration_seconds"),
         simple_histogram_size("apply entries batch size",

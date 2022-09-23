@@ -206,6 +206,12 @@ lazy_static! {
         exponential_buckets(0.00005, 1.8, 26).unwrap()
     )
     .unwrap();
+    pub static ref RAFTGROUP_WORKER_WRITE_DURATION_SECONDS: Histogram = register_histogram!(
+        "raftgroup_worker_write_duration_seconds",
+        "The intervals of worker write of raftgroup",
+        exponential_buckets(0.00005, 1.8, 26).unwrap()
+    )
+    .unwrap();
     pub static ref RAFTGROUP_WORKER_CONSUME_REQUESTS_DURATION_SECONDS: Histogram =
         register_histogram!(
             "raftgroup_worker_consume_requests_duration_seconds",

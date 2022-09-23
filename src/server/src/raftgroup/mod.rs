@@ -14,34 +14,34 @@
 mod applier;
 mod facade;
 mod fsm;
+mod io;
 mod metrics;
 mod monitor;
 mod node;
 pub mod snap;
 mod storage;
-mod transport;
 mod worker;
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc};
 
 use engula_api::server::v1::*;
 use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
 
-use self::worker::RaftWorker;
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
+    io::{retrive_snapshot, AddressResolver, TransportManager},
     monitor::*,
     snap::SnapManager,
     storage::{destory as destory_storage, write_initial_state},
-    transport::{retrive_snapshot, AddressResolver, TransportManager},
     worker::{RaftGroupState, StateObserver},
 };
+use self::{io::LogWriter, worker::RaftWorker};
 use crate::{
+    raftgroup::io::start_purging_expired_files,
     runtime::{sync::WaitGroup, TaskPriority},
     Result,
 };
@@ -114,6 +114,7 @@ pub enum ReadPolicy {
 pub struct RaftManager {
     pub cfg: RaftConfig,
     engine: Arc<raft_engine::Engine>,
+    log_writer: LogWriter,
     transport_mgr: TransportManager,
     snap_mgr: SnapManager,
 }
@@ -136,12 +137,14 @@ impl RaftManager {
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
         start_purging_expired_files(engine.clone()).await;
+        let log_writer = LogWriter::new(cfg.max_io_batch_size, engine.clone());
         let snap_mgr = SnapManager::recovery(snap_dir).await?;
         Ok(RaftManager {
             cfg,
             engine,
             transport_mgr,
             snap_mgr,
+            log_writer,
         })
     }
 
@@ -172,11 +175,11 @@ impl RaftManager {
         let worker =
             RaftWorker::open(group_id, replica_id, node_id, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
-
+        let log_writer = self.log_writer.clone();
         let tag = &group_id.to_le_bytes();
         crate::runtime::current().spawn(Some(tag), TaskPriority::High, async move {
             // TODO(walter) handle result.
-            worker.run().await.unwrap();
+            worker.run(log_writer).await.unwrap();
             drop(wait_group);
         });
         Ok(facade)
@@ -197,29 +200,6 @@ impl Default for RaftConfig {
             testing_knobs: RaftTestingKnobs::default(),
         }
     }
-}
-
-async fn start_purging_expired_files(engine: Arc<raft_engine::Engine>) {
-    crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
-        let executor = crate::runtime::current();
-        loop {
-            crate::runtime::time::sleep(Duration::from_secs(10)).await;
-            let cloned_engine = engine.clone();
-            match executor
-                .spawn_blocking(move || cloned_engine.purge_expired_files())
-                .await
-            {
-                Err(e) => {
-                    warn!("raft engine purge expired files: {e:?}")
-                }
-                Ok(replicas) => {
-                    if !replicas.is_empty() {
-                        debug!("raft engine purge expired files, replicas {replicas:?} is too old")
-                    }
-                }
-            }
-        }
-    });
 }
 
 fn encode_to_conf_change(change_replicas: ChangeReplicas) -> ConfChangeV2 {

@@ -17,9 +17,9 @@ use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 use futures::{channel::mpsc, StreamExt};
 use tracing::{debug, warn};
 
-use super::RaftNodeFacade;
 use crate::{
     node::route_table::RaftRouteTable,
+    raftgroup::RaftNodeFacade,
     runtime::TaskPriority,
     serverpb::v1::{raft_client::RaftClient, RaftMessage, SnapshotChunk, SnapshotRequest},
     Result,
