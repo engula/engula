@@ -452,7 +452,7 @@ impl EntryCache {
         let start_index = begin.checked_sub(cache_low).unwrap() as usize;
 
         let mut fetched_size: usize = 0;
-        let end_index = start_index
+        let mut end_index = start_index
             + self
                 .entries
                 .iter()
@@ -463,6 +463,10 @@ impl EntryCache {
                     fetched_size <= max_size
                 })
                 .count();
+        if self.entries.iter().skip(start_index).take(limit).count() > 0 && start_index == end_index
+        {
+            end_index += 1;
+        }
         entries.extend(self.entries.range(start_index..end_index).cloned());
         fetched_size
     }
@@ -1052,5 +1056,26 @@ mod tests {
 
             assert_eq!(cache.entries, make_entries(t.expect));
         }
+    }
+
+    #[test]
+    fn fetch_over_max_size_entry_from_cache() {
+        let mut cache = EntryCache::new();
+        let e = {
+            let mut e = Entry::default();
+            e.set_index(1);
+            e.set_term(1);
+            e.set_data(vec![0; 1024]);
+            e
+        };
+        cache.append(&[e.to_owned()]);
+
+        let mut entries = Vec::new();
+        cache.fetch_entries_to(2, 3, 10, &mut entries);
+        assert!(entries.is_empty());
+
+        let mut entries = Vec::new();
+        cache.fetch_entries_to(1, 2, 10, &mut entries);
+        assert_eq!(entries, vec![e]);
     }
 }
