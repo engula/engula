@@ -46,7 +46,7 @@ pub(crate) fn setup_scheduler(
 
     let group_id = replica.replica_info().group_id;
     let tag = &group_id.to_le_bytes();
-    let executor = provider.executor.clone();
+    let executor = crate::runtime::current();
     executor.spawn(Some(tag), TaskPriority::Low, async move {
         scheduler_main(
             cfg,

@@ -32,11 +32,9 @@ pub(crate) fn setup(provider: &Provider) -> StateChannel {
     let (sender, receiver) = mpsc::unbounded();
 
     let client = provider.root_client.clone();
-    provider
-        .executor
-        .spawn(None, TaskPriority::IoHigh, async move {
-            report_state_worker(receiver, client).await;
-        });
+    crate::runtime::current().spawn(None, TaskPriority::IoHigh, async move {
+        report_state_worker(receiver, client).await;
+    });
 
     StateChannel::new(sender)
 }

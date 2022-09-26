@@ -42,7 +42,7 @@ pub use self::{
     worker::{RaftGroupState, StateObserver},
 };
 use crate::{
-    runtime::{sync::WaitGroup, Executor, TaskPriority},
+    runtime::{sync::WaitGroup, TaskPriority},
     Result,
 };
 
@@ -113,17 +113,15 @@ pub enum ReadPolicy {
 #[derive(Clone)]
 pub struct RaftManager {
     pub cfg: RaftConfig,
-    executor: Executor,
     engine: Arc<raft_engine::Engine>,
     transport_mgr: TransportManager,
     snap_mgr: SnapManager,
 }
 
 impl RaftManager {
-    pub(crate) fn open(
+    pub(crate) async fn open(
         cfg: RaftConfig,
         log_path: &Path,
-        executor: Executor,
         transport_mgr: TransportManager,
     ) -> Result<Self> {
         use raft_engine::{Config, Engine};
@@ -137,11 +135,10 @@ impl RaftManager {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
-        start_purging_expired_files(&executor, engine.clone());
-        let snap_mgr = SnapManager::recovery(&executor, snap_dir)?;
+        start_purging_expired_files(engine.clone()).await;
+        let snap_mgr = SnapManager::recovery(snap_dir).await?;
         Ok(RaftManager {
             cfg,
-            executor,
             engine,
             transport_mgr,
             snap_mgr,
@@ -163,11 +160,6 @@ impl RaftManager {
         self.engine.raft_groups()
     }
 
-    #[inline]
-    pub fn executor(&self) -> &Executor {
-        &self.executor
-    }
-
     pub async fn start_raft_group<M: 'static + StateMachine>(
         &self,
         group_id: u64,
@@ -182,12 +174,11 @@ impl RaftManager {
         let facade = RaftNodeFacade::open(worker.request_sender());
 
         let tag = &group_id.to_le_bytes();
-        self.executor
-            .spawn(Some(tag), TaskPriority::High, async move {
-                // TODO(walter) handle result.
-                worker.run().await.unwrap();
-                drop(wait_group);
-            });
+        crate::runtime::current().spawn(Some(tag), TaskPriority::High, async move {
+            // TODO(walter) handle result.
+            worker.run().await.unwrap();
+            drop(wait_group);
+        });
         Ok(facade)
     }
 }
@@ -208,13 +199,13 @@ impl Default for RaftConfig {
     }
 }
 
-fn start_purging_expired_files(executor: &Executor, engine: Arc<raft_engine::Engine>) {
-    let cloned_executor = executor.clone();
-    executor.spawn(None, TaskPriority::IoLow, async move {
+async fn start_purging_expired_files(engine: Arc<raft_engine::Engine>) {
+    crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
+        let executor = crate::runtime::current();
         loop {
             crate::runtime::time::sleep(Duration::from_secs(10)).await;
             let cloned_engine = engine.clone();
-            match cloned_executor
+            match executor
                 .spawn_blocking(move || cloned_engine.purge_expired_files())
                 .await
             {

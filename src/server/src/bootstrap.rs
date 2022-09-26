@@ -46,8 +46,8 @@ lazy_static::lazy_static! {
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     executor.block_on(async {
-        let provider = build_provider(&config, executor.clone()).await?;
-        let node = Node::new(config.clone(), provider.clone())?;
+        let provider = build_provider(&config).await?;
+        let node = Node::new(config.clone(), provider.clone()).await?;
 
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
@@ -333,7 +333,7 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn build_provider(config: &Config, executor: Executor) -> Result<Arc<Provider>> {
+pub(crate) async fn build_provider(config: &Config) -> Result<Arc<Provider>> {
     let db_path = config.root_dir.join("db");
     let log_path = config.root_dir.join("log");
     let raw_db = Arc::new(open_engine(&config.db, &db_path)?);
@@ -358,7 +358,6 @@ pub(crate) async fn build_provider(config: &Config, executor: Executor) -> Resul
         address_resolver,
         raw_db,
         state_engine,
-        executor,
     });
     Ok(provider)
 }

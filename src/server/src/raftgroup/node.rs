@@ -854,7 +854,6 @@ mod tests {
         }
 
         let owner = ExecutorOwner::new(1);
-        let executor = owner.executor();
         owner.executor().block_on(async {
             use raft_engine::Config;
 
@@ -867,11 +866,9 @@ mod tests {
             let snap_dir = dir.path().join("snap");
             let snap_mgr = SnapManager::new(snap_dir.clone());
             let resolver = Arc::new(MockedAddressResolver {});
-            let transport_mgr =
-                TransportManager::build(executor.clone(), resolver, RaftRouteTable::new());
+            let transport_mgr = TransportManager::build(resolver, RaftRouteTable::new()).await;
             let raft_mgr = RaftManager {
                 cfg: RaftConfig::default(),
-                executor,
                 engine: engine.clone(),
                 transport_mgr,
                 snap_mgr: snap_mgr.clone(),

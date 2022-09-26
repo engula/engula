@@ -64,7 +64,7 @@ impl MigrateController {
     }
 
     /// Watch migration state and do the corresponding step.
-    pub fn watch_state_changes(
+    pub async fn watch_state_changes(
         &self,
         replica: Arc<Replica>,
         mut receiver: mpsc::UnboundedReceiver<MigrationState>,
@@ -113,7 +113,8 @@ impl MigrateController {
                 "migration state watcher is stopped",
             );
             drop(wait_group);
-        });
+        })
+        .await;
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
@@ -136,19 +137,16 @@ impl MigrateController {
         Ok(resp.unwrap())
     }
 
-    fn spawn_group_task<F, T>(&self, group_id: u64, future: F)
+    async fn spawn_group_task<F, T>(&self, group_id: u64, future: F)
     where
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        use crate::runtime::TaskPriority;
+        use crate::runtime::{current, TaskPriority};
 
         let tag_owner = group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
-        self.shared
-            .provider
-            .executor
-            .spawn(tag, TaskPriority::IoHigh, future);
+        current().spawn(tag, TaskPriority::IoHigh, future);
     }
 }
 

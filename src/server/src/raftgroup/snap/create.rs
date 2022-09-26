@@ -28,20 +28,19 @@ use crate::{
         StateMachine,
     },
     record_latency,
-    runtime::{Executor, TaskPriority},
+    runtime::TaskPriority,
     serverpb::v1::{SnapshotFile, SnapshotMeta},
     Result,
 };
 
 pub fn dispatch_creating_snap_task(
-    executor: &Executor,
     replica_id: u64,
     mut sender: mpsc::Sender<Request>,
     state_machine: &impl StateMachine,
     snap_mgr: SnapManager,
 ) {
     let builder = state_machine.snapshot_builder();
-    executor.spawn(None, TaskPriority::IoLow, async move {
+    crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
         match create_snapshot(replica_id, &snap_mgr, builder).await {
             Ok(_) => {
                 info!("replica {replica_id} create snapshot success");

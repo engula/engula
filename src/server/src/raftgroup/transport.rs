@@ -20,7 +20,7 @@ use tracing::{debug, warn};
 use super::RaftNodeFacade;
 use crate::{
     node::route_table::RaftRouteTable,
-    runtime::{Executor, TaskPriority},
+    runtime::TaskPriority,
     serverpb::v1::{raft_client::RaftClient, RaftMessage, SnapshotChunk, SnapshotRequest},
     Result,
 };
@@ -60,7 +60,6 @@ pub struct TransportManager
 where
     Self: Send + Sync,
 {
-    executor: Executor,
     resolver: Arc<dyn AddressResolver>,
     sender: mpsc::UnboundedSender<StreamingRequest>,
     route_table: RaftRouteTable,
@@ -100,21 +99,16 @@ impl Channel {
 }
 
 impl TransportManager {
-    pub fn build(
-        executor: Executor,
-        resolver: Arc<dyn AddressResolver>,
-        route_table: RaftRouteTable,
-    ) -> Self {
+    pub async fn build(resolver: Arc<dyn AddressResolver>, route_table: RaftRouteTable) -> Self {
         let (sender, receiver) = mpsc::unbounded();
         let mgr = TransportManager {
-            executor,
             resolver,
             sender,
             route_table,
         };
 
         let cloned_mgr = mgr.clone();
-        mgr.executor.spawn(None, TaskPriority::Low, async move {
+        crate::runtime::current().spawn(None, TaskPriority::Low, async move {
             cloned_mgr.run(receiver).await;
         });
         mgr
@@ -145,7 +139,7 @@ impl TransportManager {
                 raft_node,
                 request,
             };
-            self.executor.spawn(None, TaskPriority::IoHigh, async move {
+            crate::runtime::current().spawn(None, TaskPriority::IoHigh, async move {
                 task.run().await;
             });
         }

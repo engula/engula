@@ -193,7 +193,7 @@ impl Server {
         for request in requests.into_iter() {
             let server = self.clone();
             let task_tag = request.group_id.to_le_bytes();
-            let handle = self.node.executor().dispatch(
+            let handle = crate::runtime::current().dispatch(
                 Some(task_tag.as_slice()),
                 TaskPriority::Middle,
                 async move { server.submit_group_request(&request).await },
