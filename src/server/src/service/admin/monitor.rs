@@ -62,10 +62,7 @@ impl super::service::HttpHandle for MonitorHandle {
         let start = perf_point_micros();
 
         // We also need to record the delay from task spawn to execute.
-        let replica_perf_ctx = self
-            .server
-            .node
-            .executor()
+        let replica_perf_ctx = crate::runtime::current()
             .dispatch(
                 None,
                 TaskPriority::Low,

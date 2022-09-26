@@ -30,11 +30,7 @@ use raft::prelude::{Snapshot, SnapshotMetadata};
 use tracing::{error, info, warn};
 
 pub use self::{create::dispatch_creating_snap_task, download::dispatch_downloading_snap_task};
-use crate::{
-    runtime::{Executor, TaskPriority},
-    serverpb::v1::SnapshotMeta,
-    Result,
-};
+use crate::{runtime::TaskPriority, serverpb::v1::SnapshotMeta, Result};
 
 const SNAP_DATA: &str = "DATA";
 const SNAP_TEMP: &str = "TEMP";
@@ -107,11 +103,11 @@ impl SnapManager {
         }
     }
 
-    pub fn recovery<P: AsRef<Path>>(executor: &Executor, root_dir: P) -> Result<SnapManager> {
+    pub fn recovery<P: AsRef<Path>>(root_dir: P) -> Result<SnapManager> {
         use prost::Message;
 
         let (mut sender, receiver) = mpsc::unbounded();
-        executor.spawn(None, TaskPriority::IoLow, async move {
+        crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
             recycle_snapshot(receiver).await;
         });
 
@@ -481,14 +477,13 @@ mod tests {
     #[test]
     fn recovery() {
         let owner = ExecutorOwner::new(1);
-        let executor = owner.executor();
         owner.executor().block_on(async move {
             let root_dir = TempDir::new("snap-recovery").unwrap();
             std::fs::create_dir_all(&root_dir).unwrap();
 
             let replica_id_1: u64 = 1;
             let replica_id_2: u64 = 2;
-            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+            let snap_manager = SnapManager::recovery(&root_dir).unwrap();
 
             let snap_id_1 = build_snapshot(&snap_manager, replica_id_1, 1, vec![1]).await;
             let snap_id_2 = build_snapshot(&snap_manager, replica_id_1, 2, vec![2]).await;
@@ -497,7 +492,7 @@ mod tests {
 
             drop(snap_manager);
 
-            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+            let snap_manager = SnapManager::recovery(&root_dir).unwrap();
             for snap_id in &replica_snaps_1 {
                 assert!(
                     snap_manager
@@ -519,13 +514,12 @@ mod tests {
     #[test]
     fn send_and_save_snapshot() {
         let owner = ExecutorOwner::new(1);
-        let executor = owner.executor();
         owner.executor().block_on(async move {
             let root_dir = TempDir::new("download-snapshot").unwrap();
             std::fs::create_dir_all(&root_dir).unwrap();
 
             let replica_id: u64 = 1;
-            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+            let snap_manager = SnapManager::recovery(&root_dir).unwrap();
 
             // Prepare snapshot
             let content = vec![1, 2, 3, 4, 5, 6, 7];
@@ -557,13 +551,12 @@ mod tests {
     #[test]
     fn send_and_save_snapshot_with_multi_files() {
         let owner = ExecutorOwner::new(1);
-        let executor = owner.executor();
         owner.executor().block_on(async move {
             let root_dir = TempDir::new("download-snapshot-multi-files").unwrap();
             std::fs::create_dir_all(&root_dir).unwrap();
 
             let replica_id: u64 = 1;
-            let snap_manager = SnapManager::recovery(&executor, &root_dir).unwrap();
+            let snap_manager = SnapManager::recovery(&root_dir).unwrap();
 
             // Prepare snapshot
             let content_1 = vec![1, 2, 3, 4, 5, 6, 7, 1];

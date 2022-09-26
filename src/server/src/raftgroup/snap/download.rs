@@ -28,7 +28,7 @@ use super::SnapManager;
 use crate::{
     raftgroup::{metrics::*, retrive_snapshot, worker::Request, TransportManager},
     record_latency,
-    runtime::{Executor, TaskPriority},
+    runtime::TaskPriority,
     serverpb::v1::{snapshot_chunk, SnapshotChunk, SnapshotFile, SnapshotMeta},
     Error, Result,
 };
@@ -163,7 +163,6 @@ impl PartialFile {
 }
 
 pub fn dispatch_downloading_snap_task(
-    executor: &Executor,
     replica_id: u64,
     mut sender: mpsc::Sender<Request>,
     snap_mgr: SnapManager,
@@ -171,7 +170,7 @@ pub fn dispatch_downloading_snap_task(
     from_replica: ReplicaDesc,
     mut msg: Message,
 ) {
-    executor.spawn(None, TaskPriority::IoLow, async move {
+    crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
         match download_snap(replica_id, tran_mgr, snap_mgr, from_replica, &msg).await {
             Ok(snap_id) => {
                 msg.snapshot.as_mut().unwrap().data = snap_id;

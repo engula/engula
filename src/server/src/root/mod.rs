@@ -148,27 +148,19 @@ impl Root {
 
     pub async fn bootstrap(&self, node: &Node) -> Result<Vec<NodeDesc>> {
         let root = self.clone();
-        self.shared
-            .provider
-            .executor
-            .spawn(None, TaskPriority::Middle, async move {
-                root.run_heartbeat().await;
-            });
+        let executor = crate::runtime::current();
+        executor.spawn(None, TaskPriority::Middle, async move {
+            root.run_heartbeat().await;
+        });
         let root = self.clone();
-        self.shared
-            .provider
-            .executor
-            .spawn(None, TaskPriority::Low, async move {
-                root.run_background_jobs().await;
-            });
+        executor.spawn(None, TaskPriority::Low, async move {
+            root.run_background_jobs().await;
+        });
         let replica_table = node.replica_table().clone();
         let root = self.clone();
-        self.shared
-            .provider
-            .executor
-            .spawn(None, TaskPriority::Middle, async move {
-                root.run_schedule(replica_table).await;
-            });
+        executor.spawn(None, TaskPriority::Middle, async move {
+            root.run_schedule(replica_table).await;
+        });
 
         if let Some(replica) = node.replica_table().current_root_replica(None) {
             let engine = replica.group_engine();
@@ -1341,8 +1333,7 @@ mod root_test {
     ) -> (Root, Node) {
         use crate::bootstrap::build_provider;
 
-        let provider =
-            executor.block_on(async { build_provider(config, executor.clone()).await.unwrap() });
+        let provider = executor.block_on(async { build_provider(config).await.unwrap() });
         let root = Root::new(provider.clone(), node_ident, config.clone());
         let node = Node::new(config.clone(), provider).unwrap();
         (root, node)

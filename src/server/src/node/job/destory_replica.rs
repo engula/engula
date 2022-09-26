@@ -35,15 +35,13 @@ pub(crate) fn setup(
     let tag = &group_id.to_le_bytes();
     let state_engine = provider.state_engine.clone();
     let raw_db = provider.raw_db.clone();
-    provider
-        .executor
-        .spawn(Some(tag), TaskPriority::IoLow, async move {
-            if let Err(err) =
-                destory_replica(group_id, replica_id, state_engine, raw_db, raft_engine).await
-            {
-                error!("destory group engine: {}, group {}", err, group_id);
-            }
-        });
+    crate::runtime::current().spawn(Some(tag), TaskPriority::IoLow, async move {
+        if let Err(err) =
+            destory_replica(group_id, replica_id, state_engine, raw_db, raft_engine).await
+        {
+            error!("destory group engine: {}, group {}", err, group_id);
+        }
+    });
 }
 
 async fn destory_replica(

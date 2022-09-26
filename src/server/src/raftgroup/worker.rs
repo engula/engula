@@ -42,7 +42,6 @@ use super::{
 use crate::{
     raftgroup::monitor::record_perf_point,
     record_latency,
-    runtime::Executor,
     serverpb::v1::{EvalResult, RaftMessage},
     RaftConfig, Result,
 };
@@ -185,7 +184,6 @@ where
     Self: Send,
 {
     cfg: RaftConfig,
-    executor: Executor,
     request_sender: mpsc::Sender<Request>,
     request_receiver: mpsc::Receiver<Request>,
 
@@ -245,7 +243,6 @@ where
 
         Ok(RaftWorker {
             cfg: raft_mgr.cfg.clone(),
-            executor: raft_mgr.executor().clone(),
             request_sender,
             request_receiver,
             group_id,
@@ -360,7 +357,6 @@ where
         if self.raft_node.mut_store().create_snapshot.get() {
             self.raft_node.mut_store().create_snapshot.set(false);
             super::snap::dispatch_creating_snap_task(
-                &self.executor,
                 self.desc.id,
                 self.request_sender.clone(),
                 self.raft_node.mut_state_machine(),
@@ -451,7 +447,6 @@ where
                 // TODO(walter) In order to avoid useless downloads, should check whether this
                 // snapshot will be accept.
                 super::snap::dispatch_downloading_snap_task(
-                    &self.executor,
                     self.desc.id,
                     self.request_sender.clone(),
                     self.snap_mgr.clone(),

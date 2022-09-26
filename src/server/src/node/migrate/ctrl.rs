@@ -141,14 +141,11 @@ impl MigrateController {
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        use crate::runtime::TaskPriority;
+        use crate::runtime::{current, TaskPriority};
 
         let tag_owner = group_id.to_le_bytes();
         let tag = Some(tag_owner.as_slice());
-        self.shared
-            .provider
-            .executor
-            .spawn(tag, TaskPriority::IoHigh, future);
+        current().spawn(tag, TaskPriority::IoHigh, future);
     }
 }
 

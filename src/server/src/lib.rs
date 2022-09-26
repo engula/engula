@@ -38,6 +38,7 @@ use std::{path::PathBuf, sync::Arc};
 use engula_client::{ConnManager, RootClient, Router};
 use tonic::async_trait;
 
+use crate::node::{resolver::AddressResolver, StateEngine};
 pub use crate::{
     bootstrap::run,
     config::*,
@@ -48,10 +49,6 @@ pub use crate::{
     runtime::ExecutorConfig,
     service::Server,
 };
-use crate::{
-    node::{resolver::AddressResolver, StateEngine},
-    runtime::Executor,
-};
 
 pub(crate) struct Provider {
     pub log_path: PathBuf,
@@ -61,7 +58,6 @@ pub(crate) struct Provider {
 
     pub address_resolver: Arc<AddressResolver>,
     pub conn_manager: ConnManager,
-    pub executor: Executor,
     pub root_client: RootClient,
     pub router: Router,
     pub raw_db: Arc<rocksdb::DB>,
