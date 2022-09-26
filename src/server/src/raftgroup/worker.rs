@@ -32,11 +32,11 @@ use tracing::{debug, warn};
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
+    io::{Channel, LogWriter, TransportManager},
     metrics::*,
     monitor::WorkerPerfContext,
     node::RaftNode,
     snap::{apply::apply_snapshot, RecycleSnapMode, SnapManager},
-    transport::{Channel, TransportManager},
     RaftManager, ReadPolicy,
 };
 use crate::{
@@ -264,21 +264,21 @@ where
     }
 
     /// Poll requests and messages, forward both to `RaftNode`, and advance `RaftNode`.
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(mut self, log_writer: LogWriter) -> Result<()> {
         debug!(
             "group {} replica {} raft worker is running",
             self.group_id, self.desc.id
         );
 
         // WARNING: the underlying instant isn't steady.
+        let mut log_writer = log_writer;
         let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
         while !self.request_receiver.is_terminated() {
             let mut ctx = WorkerContext::default();
             self.maintenance(&mut ctx, &mut interval).await?;
             self.consume_requests(&mut ctx)?;
-            self.dispatch(&mut ctx)?;
+            self.dispatch(&mut ctx, &mut log_writer).await?;
             self.finish_round(ctx);
-            crate::runtime::yield_now().await;
         }
 
         debug!(
@@ -321,7 +321,7 @@ where
         Ok(())
     }
 
-    fn dispatch(&mut self, ctx: &mut WorkerContext) -> Result<()> {
+    async fn dispatch(&mut self, ctx: &mut WorkerContext, writer: &mut LogWriter) -> Result<()> {
         RAFTGROUP_WORKER_ACCUMULATED_BYTES_SIZE.observe(ctx.accumulated_bytes as f64);
         RAFTGROUP_WORKER_ADVANCE_TOTAL.inc();
         record_latency!(&RAFTGROUP_WORKER_ADVANCE_DURATION_SECONDS);
@@ -348,7 +348,11 @@ where
             let _slow_io_guard = self.cfg.engine_slow_io_threshold_ms.map(SlowIoGuard::new);
             record_perf_point(&mut ctx.perf_ctx.write);
             ctx.perf_ctx.num_writes = write_task.entries.len();
-            self.engine.write(&mut batch, false).unwrap();
+            {
+                record_latency!(&RAFTGROUP_WORKER_WRITE_DURATION_SECONDS);
+                // TODO(walter) handle io error.
+                writer.submit(batch).await.unwrap_or(Ok(())).unwrap();
+            }
             let post_ready = write_task.post_ready();
             self.raft_node
                 .post_advance(&mut ctx.perf_ctx.advance, post_ready, &mut template);
