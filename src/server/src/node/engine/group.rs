@@ -26,6 +26,7 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::RawDb;
 use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::*, Error, Result};
 
 /// The collection id of local states, which allows commit without replicating.
@@ -64,7 +65,7 @@ where
 {
     cfg: EngineConfig,
     name: String,
-    raw_db: Arc<rocksdb::DB>,
+    raw_db: Arc<RawDb>,
     core: Arc<RwLock<GroupEngineCore>>,
 }
 
@@ -153,16 +154,14 @@ impl GroupEngine {
     /// Create a new instance of group engine.
     pub async fn create(
         cfg: &EngineConfig,
-        raw_db: Arc<rocksdb::DB>,
+        raw_db: Arc<RawDb>,
         group_id: u64,
         replica_id: u64,
     ) -> Result<Self> {
-        use rocksdb::Options;
-
         let name = Self::cf_name(group_id, replica_id);
         info!("group {group_id} replica {replica_id} create group engine, cf name is {name}");
         debug_assert!(raw_db.cf_handle(&name).is_none());
-        raw_db.create_cf(&name, &Options::default())?;
+        raw_db.create_cf(&name)?;
 
         let desc = GroupDesc {
             id: group_id,
@@ -202,7 +201,7 @@ impl GroupEngine {
     /// Open the exists instance of group engine.
     pub async fn open(
         cfg: &EngineConfig,
-        raw_db: Arc<rocksdb::DB>,
+        raw_db: Arc<RawDb>,
         group_id: u64,
         replica_id: u64,
     ) -> Result<Option<Self>> {
@@ -237,7 +236,7 @@ impl GroupEngine {
     }
 
     /// Destory a group engine.
-    pub async fn destory(group_id: u64, replica_id: u64, raw_db: Arc<rocksdb::DB>) -> Result<()> {
+    pub async fn destory(group_id: u64, replica_id: u64, raw_db: Arc<RawDb>) -> Result<()> {
         let name = Self::cf_name(group_id, replica_id);
         raw_db.drop_cf(&name)?;
         info!("destory column family {}", name);
@@ -431,10 +430,10 @@ impl GroupEngine {
 
     /// Ingest data into group engine.
     pub fn ingest<P: AsRef<Path>>(&self, files: Vec<P>) -> Result<()> {
-        use rocksdb::{IngestExternalFileOptions, Options};
+        use rocksdb::IngestExternalFileOptions;
 
         self.raw_db.drop_cf(&self.name)?;
-        self.raw_db.create_cf(&self.name, &Options::default())?;
+        self.raw_db.create_cf(&self.name)?;
 
         let opts = IngestExternalFileOptions::default();
         let cf_handle = self.cf_handle();
@@ -971,7 +970,7 @@ mod internal {
     use super::*;
 
     pub(super) fn descriptor(
-        db: &rocksdb::DB,
+        db: &RawDb,
         cf_handle: &impl rocksdb::AsColumnFamilyRef,
     ) -> Result<GroupDesc> {
         let value = db
@@ -981,7 +980,7 @@ mod internal {
     }
 
     pub(super) fn migration_state(
-        db: &rocksdb::DB,
+        db: &RawDb,
         cf_handle: &impl rocksdb::AsColumnFamilyRef,
     ) -> Result<Option<MigrationState>> {
         if let Some(v) = db.get_pinned_cf(cf_handle, keys::migrate_state())? {
@@ -992,7 +991,7 @@ mod internal {
     }
 
     pub(super) fn flushed_apply_state(
-        db: &rocksdb::DB,
+        db: &RawDb,
         cf_handle: &impl rocksdb::AsColumnFamilyRef,
     ) -> Result<ApplyState> {
         use rocksdb::{ReadOptions, ReadTier};

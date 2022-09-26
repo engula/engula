@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use self::{
-    engine::EngineConfig,
+    engine::{EngineConfig, RawDb},
     job::StateChannel,
     migrate::{MigrateController, ShardChunkStream},
     replica::ReplicaConfig,
@@ -719,7 +719,7 @@ impl Default for NodeConfig {
 
 async fn open_group_engine(
     cfg: &EngineConfig,
-    raw_db: Arc<rocksdb::DB>,
+    raw_db: Arc<RawDb>,
     group_id: u64,
     replica_id: u64,
     replica_state: ReplicaLocalState,
