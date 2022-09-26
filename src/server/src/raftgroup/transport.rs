@@ -99,7 +99,7 @@ impl Channel {
 }
 
 impl TransportManager {
-    pub fn build(resolver: Arc<dyn AddressResolver>, route_table: RaftRouteTable) -> Self {
+    pub async fn build(resolver: Arc<dyn AddressResolver>, route_table: RaftRouteTable) -> Self {
         let (sender, receiver) = mpsc::unbounded();
         let mgr = TransportManager {
             resolver,

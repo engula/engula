@@ -47,7 +47,7 @@ lazy_static::lazy_static! {
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     executor.block_on(async {
         let provider = build_provider(&config).await?;
-        let node = Node::new(config.clone(), provider.clone())?;
+        let node = Node::new(config.clone(), provider.clone()).await?;
 
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;

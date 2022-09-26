@@ -866,7 +866,7 @@ mod tests {
             let snap_dir = dir.path().join("snap");
             let snap_mgr = SnapManager::new(snap_dir.clone());
             let resolver = Arc::new(MockedAddressResolver {});
-            let transport_mgr = TransportManager::build(resolver, RaftRouteTable::new());
+            let transport_mgr = TransportManager::build(resolver, RaftRouteTable::new()).await;
             let raft_mgr = RaftManager {
                 cfg: RaftConfig::default(),
                 engine: engine.clone(),

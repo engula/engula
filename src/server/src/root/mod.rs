@@ -1322,20 +1322,16 @@ mod root_test {
         bootstrap::{bootstrap_cluster, INITIAL_EPOCH, ROOT_GROUP_ID},
         node::Node,
         root::Root,
-        runtime::{Executor, ExecutorOwner},
+        runtime::ExecutorOwner,
         serverpb::v1::NodeIdent,
     };
 
-    fn create_root_and_node(
-        config: &Config,
-        executor: Executor,
-        node_ident: &NodeIdent,
-    ) -> (Root, Node) {
+    async fn create_root_and_node(config: &Config, node_ident: &NodeIdent) -> (Root, Node) {
         use crate::bootstrap::build_provider;
 
-        let provider = executor.block_on(async { build_provider(config).await.unwrap() });
+        let provider = build_provider(config).await.unwrap();
         let root = Root::new(provider.clone(), node_ident, config.clone());
-        let node = Node::new(config.clone(), provider).unwrap();
+        let node = Node::new(config.clone(), provider).await.unwrap();
         (root, node)
     }
 
@@ -1354,8 +1350,8 @@ mod root_test {
             node_id: 1,
         };
 
-        let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
+            let (root, node) = create_root_and_node(&config, &ident).await;
             bootstrap_cluster(&node, "0.0.0.0:8888").await.unwrap();
             node.bootstrap(&ident).await.unwrap();
             root.bootstrap(&node).await.unwrap();
@@ -1378,8 +1374,8 @@ mod root_test {
             node_id: 1,
         };
 
-        let (root, node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
+            let (root, node) = create_root_and_node(&config, &ident).await;
             node.bootstrap(&ident).await.unwrap();
             node.create_replica(
                 3,
@@ -1411,8 +1407,8 @@ mod root_test {
             root_dir: tmp_dir.path().to_owned(),
             ..Default::default()
         };
-        let (root, _node) = create_root_and_node(&config, executor.to_owned(), &ident);
         executor.block_on(async {
+            let (root, _node) = create_root_and_node(&config, &ident).await;
             let hub = root.watcher_hub();
             let _create_db1_event = Some(update_event::Event::Database(DatabaseDesc {
                 id: 1,

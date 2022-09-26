@@ -119,7 +119,7 @@ pub struct RaftManager {
 }
 
 impl RaftManager {
-    pub(crate) fn open(
+    pub(crate) async fn open(
         cfg: RaftConfig,
         log_path: &Path,
         transport_mgr: TransportManager,
@@ -135,8 +135,8 @@ impl RaftManager {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg)?);
-        start_purging_expired_files(engine.clone());
-        let snap_mgr = SnapManager::recovery(snap_dir)?;
+        start_purging_expired_files(engine.clone()).await;
+        let snap_mgr = SnapManager::recovery(snap_dir).await?;
         Ok(RaftManager {
             cfg,
             engine,
@@ -199,7 +199,7 @@ impl Default for RaftConfig {
     }
 }
 
-fn start_purging_expired_files(engine: Arc<raft_engine::Engine>) {
+async fn start_purging_expired_files(engine: Arc<raft_engine::Engine>) {
     crate::runtime::current().spawn(None, TaskPriority::IoLow, async move {
         let executor = crate::runtime::current();
         loop {

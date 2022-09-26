@@ -116,11 +116,12 @@ where
 }
 
 impl Node {
-    pub(crate) fn new(cfg: Config, provider: Arc<Provider>) -> Result<Self> {
+    pub(crate) async fn new(cfg: Config, provider: Arc<Provider>) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
         let trans_mgr =
-            TransportManager::build(provider.address_resolver.clone(), raft_route_table.clone());
-        let raft_mgr = RaftManager::open(cfg.raft.clone(), &provider.log_path, trans_mgr)?;
+            TransportManager::build(provider.address_resolver.clone(), raft_route_table.clone())
+                .await;
+        let raft_mgr = RaftManager::open(cfg.raft.clone(), &provider.log_path, trans_mgr).await?;
         let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
         Ok(Node {
             cfg: cfg.node,
@@ -372,7 +373,8 @@ impl Node {
 
         // Setup jobs
         self.migrate_ctrl
-            .watch_state_changes(replica.clone(), receiver, wait_group.clone());
+            .watch_state_changes(replica.clone(), receiver, wait_group.clone())
+            .await;
 
         setup_scheduler(
             self.cfg.replica.clone(),
@@ -794,7 +796,7 @@ mod tests {
 
         let provider = build_provider(&config).await.unwrap();
 
-        Node::new(config, provider).unwrap()
+        Node::new(config, provider).await.unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {
