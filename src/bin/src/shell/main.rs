@@ -14,8 +14,9 @@
 
 use std::{collections::HashMap, io::Write, time::Duration};
 
-use clap::{Parser, __macro_refs::once_cell::sync::OnceCell};
+use clap::Parser;
 use engula_client::{AppError, ClientOptions, Collection, Database, EngulaClient, Partition};
+use lazy_static::lazy_static;
 use rustyline::{error::ReadlineError, Editor};
 
 type ParseResult<T = Request> = std::result::Result<T, String>;
@@ -42,19 +43,13 @@ impl Command {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Token {
-    GET,
-    PUT,
-    DELETE,
-    HELP,
-    HINT,
-    TIMEOUT,
-    IF,
-    NOT,
-    EXISTS,
-    EXPECT,
-    CONFIG,
-    DB,
-    COLL,
+    Get,
+    Put,
+    Delete,
+    Help,
+    Config,
+    Db,
+    Coll,
 }
 
 enum Request {
@@ -109,9 +104,9 @@ impl Session {
                 let db = self.open_database(&db).await?;
                 let coll = self.open_collection(&db, &coll).await?;
                 if let Some(value) = coll.get(key).await? {
-                    std::io::stdout().write(&value)?;
+                    std::io::stdout().write_all(&value)?;
                 }
-                std::io::stdout().write(&[b'\n'])?;
+                std::io::stdout().write_all(&[b'\n'])?;
                 std::io::stdout().flush()?;
                 Ok(())
             }
@@ -138,11 +133,11 @@ impl Session {
     fn parse_request(&self, input: &[u8]) -> ParseResult {
         let input = skip_space(input);
         match next_token(input) {
-            Some((input, Token::GET)) => self.parse_get_request(input),
-            Some((input, Token::PUT)) => self.parse_put_request(input),
-            Some((input, Token::DELETE)) => self.parse_delete_request(input),
-            Some((input, Token::CONFIG)) => self.parse_config_request(input),
-            Some((_, Token::HELP)) => Ok(Request::Usage),
+            Some((input, Token::Get)) => self.parse_get_request(input),
+            Some((input, Token::Put)) => self.parse_put_request(input),
+            Some((input, Token::Delete)) => self.parse_delete_request(input),
+            Some((input, Token::Config)) => self.parse_config_request(input),
+            Some((_, Token::Help)) => Ok(Request::Usage),
             _ => {
                 if is_eof(input) {
                     Ok(Request::None)
@@ -161,8 +156,8 @@ impl Session {
             return Err("expect key, but nothing are found".to_owned());
         };
 
-        let (input, db) = self.parse_or_get_config(input, Token::DB, CONFIG_DB)?;
-        let (input, coll) = self.parse_or_get_config(input, Token::COLL, CONFIG_COLL)?;
+        let (input, db) = self.parse_or_get_config(input, Token::Db, CONFIG_DB)?;
+        let (input, coll) = self.parse_or_get_config(input, Token::Coll, CONFIG_COLL)?;
 
         must_eof(input)?;
 
@@ -180,8 +175,8 @@ impl Session {
             return Err("expect value, but nothing are found".to_owned());
         };
 
-        let (input, db) = self.parse_or_get_config(input, Token::DB, CONFIG_DB)?;
-        let (input, coll) = self.parse_or_get_config(input, Token::COLL, CONFIG_COLL)?;
+        let (input, db) = self.parse_or_get_config(input, Token::Db, CONFIG_DB)?;
+        let (input, coll) = self.parse_or_get_config(input, Token::Coll, CONFIG_COLL)?;
 
         must_eof(input)?;
 
@@ -199,8 +194,8 @@ impl Session {
             return Err("expect key, but nothing are found".to_owned());
         };
 
-        let (input, db) = self.parse_or_get_config(input, Token::DB, CONFIG_DB)?;
-        let (input, coll) = self.parse_or_get_config(input, Token::COLL, CONFIG_COLL)?;
+        let (input, db) = self.parse_or_get_config(input, Token::Db, CONFIG_DB)?;
+        let (input, coll) = self.parse_or_get_config(input, Token::Coll, CONFIG_COLL)?;
 
         must_eof(input)?;
 
@@ -213,7 +208,7 @@ impl Session {
             return Err("expect key, but nothing are found".to_owned());
         };
         let key =
-            String::from_utf8(key).map_err(|_| format!("the key is invalid UTF-8 sequence"))?;
+            String::from_utf8(key).map_err(|_| "the key is invalid UTF-8 sequence".to_string())?;
 
         let input = skip_space(input);
         let Some((input, value)) = read_entry(input) else {
@@ -221,7 +216,7 @@ impl Session {
         };
 
         let value =
-            String::from_utf8(value).map_err(|_| format!("the value is invalid UTF-8 sequence"))?;
+            String::from_utf8(value).map_err(|_| "the key is invalid UTF-8 sequence".to_string())?;
         must_eof(input)?;
 
         Ok(Request::Config { key, value })
@@ -337,7 +332,7 @@ impl Session {
                     co
                 }
                 Err(AppError::NotFound(_)) if create_if_missing => {
-                    self.create_or_open_collection(&db, coll, 64).await?
+                    self.create_or_open_collection(db, coll, 64).await?
                 }
                 Err(e) => {
                     return Err(e.into());
@@ -363,11 +358,11 @@ async fn editor_main(addrs: Vec<String>) {
                 }
             }
             Err(ReadlineError::Interrupted) => {
-                std::io::stderr().write(b"CTRL-C\n").unwrap_or_default();
+                std::io::stderr().write_all(b"CTRL-C\n").unwrap_or_default();
                 break;
             }
             Err(ReadlineError::Eof) => {
-                std::io::stderr().write(b"CTRL-D\n").unwrap_or_default();
+                std::io::stderr().write_all(b"CTRL-D\n").unwrap_or_default();
                 break;
             }
             Err(err) => {
@@ -381,7 +376,7 @@ async fn editor_main(addrs: Vec<String>) {
 }
 
 fn o(msg: &str) -> Result<()> {
-    std::io::stderr().write(msg.as_bytes())?;
+    std::io::stderr().write_all(msg.as_bytes())?;
     Ok(())
 }
 
@@ -416,7 +411,7 @@ fn skip_space(input: &[u8]) -> &[u8] {
             return &input[i..];
         }
     }
-    return &input[input.len()..];
+    &input[input.len()..]
 }
 
 fn is_eof(input: &[u8]) -> bool {
@@ -491,23 +486,20 @@ fn read_entry(input: &[u8]) -> Option<(&[u8], Vec<u8>)> {
     }
 }
 
-fn global_token_map() -> &'static HashMap<Vec<u8>, Token> {
-    static INSTANCE: OnceCell<HashMap<Vec<u8>, Token>> = OnceCell::new();
-    INSTANCE.get_or_init(|| {
+lazy_static! {
+    static ref INSTANCE: HashMap<Vec<u8>, Token> = {
         let mut m = HashMap::new();
-        m.insert(Vec::from(&b"get"[..]), Token::GET);
-        m.insert(Vec::from(&b"put"[..]), Token::PUT);
-        m.insert(Vec::from(&b"delete"[..]), Token::DELETE);
-        m.insert(Vec::from(&b"help"[..]), Token::HELP);
-        m.insert(Vec::from(&b"config"[..]), Token::CONFIG);
-        m.insert(Vec::from(&b"db"[..]), Token::DB);
-        m.insert(Vec::from(&b"coll"[..]), Token::COLL);
-        m.insert(Vec::from(&b"hint"[..]), Token::HINT);
-        m.insert(Vec::from(&b"timeout"[..]), Token::TIMEOUT);
-        m.insert(Vec::from(&b"if"[..]), Token::IF);
-        m.insert(Vec::from(&b"not"[..]), Token::NOT);
-        m.insert(Vec::from(&b"exists"[..]), Token::EXISTS);
-        m.insert(Vec::from(&b"expect"[..]), Token::EXPECT);
+        m.insert(Vec::from(&b"get"[..]), Token::Get);
+        m.insert(Vec::from(&b"put"[..]), Token::Put);
+        m.insert(Vec::from(&b"delete"[..]), Token::Delete);
+        m.insert(Vec::from(&b"help"[..]), Token::Help);
+        m.insert(Vec::from(&b"config"[..]), Token::Config);
+        m.insert(Vec::from(&b"db"[..]), Token::Db);
+        m.insert(Vec::from(&b"coll"[..]), Token::Coll);
         m
-    })
+    };
+}
+
+fn global_token_map() -> &'static HashMap<Vec<u8>, Token> {
+    &INSTANCE
 }
