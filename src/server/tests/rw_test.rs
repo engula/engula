@@ -15,6 +15,7 @@ mod helper;
 
 use engula_api::server::v1::ReplicaRole;
 use engula_client::{ClientOptions, EngulaClient, Partition};
+use rand::{prelude::SmallRng, Rng, SeedableRng};
 use tracing::info;
 
 use crate::helper::{client::*, context::*, init::setup_panic_hook, runtime::*};
@@ -239,5 +240,45 @@ fn operation_with_shard_migration() {
             .await
             .unwrap();
         assert_ne!(source_state.id, prev_group_id);
+    });
+}
+
+#[test]
+#[ignore]
+fn single_server_large_read_write() {
+    fn next_bytes(rng: &mut SmallRng, range: std::ops::Range<usize>) -> Vec<u8> {
+        const BYTES: &[u8; 62] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let len = rng.gen_range(range);
+        let mut buf = vec![0u8; len];
+        rng.fill(buf.as_mut_slice());
+        buf.iter_mut().for_each(|v| *v = BYTES[(*v % 62) as usize]);
+        buf
+    }
+
+    block_on_current(async move {
+        let mut ctx = TestContext::new("rw_test__single_server_large_read_write");
+        ctx.disable_all_balance();
+        let nodes = ctx.bootstrap_servers(1).await;
+        let c = ClusterClient::new(nodes).await;
+        let app = c.app_client().await;
+
+        let db = app.create_database("test_db".to_string()).await.unwrap();
+        let co = db
+            .create_collection("test_co".to_string(), Some(Partition::Range {}))
+            .await
+            .unwrap();
+        c.assert_collection_ready(&co.desc()).await;
+
+        let mut rng = SmallRng::seed_from_u64(0);
+        let leading = 10;
+        for id in 0..655350 {
+            let key = format!("user{id:0leading$}").into_bytes();
+            let value = next_bytes(&mut rng, 1024..1025);
+            co.put(key, value).await.unwrap();
+        }
+        for id in 0..655350 {
+            let key = format!("user{id:0leading$}").into_bytes();
+            assert!(co.get(key).await.unwrap().is_some());
+        }
     });
 }
