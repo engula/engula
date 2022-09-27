@@ -16,6 +16,7 @@ use std::{sync::mpsc, time::Duration};
 use clap::Parser;
 use engula_client::{AppError, ClientOptions, Collection, Database, EngulaClient, Partition};
 use engula_server::runtime::{sync::WaitGroup, Shutdown, ShutdownNotifier};
+use rand::{rngs::OsRng, RngCore};
 use tokio::{runtime::Runtime, select, time::MissedTickBehavior};
 use tracing::{debug, info};
 
@@ -65,12 +66,18 @@ impl Command {
             send.send(()).unwrap_or_default();
         });
 
-        info!("spawn {} workers", cfg.worker.num_worker);
+        let base_seed = cfg.seed.unwrap_or_else(|| OsRng.next_u64());
+
+        info!(
+            "spawn {} workers with base seed {base_seed}",
+            cfg.worker.num_worker
+        );
         let report_waiter = spawn_reporter(&ctx, cfg.clone());
 
         let num_op = cfg.operation / cfg.worker.num_worker;
         for i in 0..cfg.worker.num_worker {
-            spawn_worker(&ctx, cfg.clone(), i, num_op, co.clone());
+            let seed = base_seed + i as u64;
+            spawn_worker(&ctx, cfg.clone(), i, seed, num_op, co.clone());
             if let Some(interval) = cfg.worker.start_intervals {
                 if recv.recv_timeout(interval).is_ok() {
                     break;
@@ -89,10 +96,10 @@ impl Command {
     }
 }
 
-fn spawn_worker(ctx: &Context, cfg: AppConfig, i: usize, num_op: usize, co: Collection) {
-    debug!("spawn worker {i}");
+fn spawn_worker(ctx: &Context, cfg: AppConfig, i: usize, seed: u64, num_op: usize, co: Collection) {
+    debug!("spawn worker {i} with seed {seed}");
 
-    let job = Job::new(co, num_op, cfg);
+    let job = Job::new(co, seed, num_op, cfg);
     let shutdown = ctx.shutdown.clone();
     let wait_group = ctx.wait_group.clone();
     ctx.runtime.spawn(async move {

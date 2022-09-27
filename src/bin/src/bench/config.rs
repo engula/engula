@@ -29,6 +29,8 @@ pub struct AppConfig {
     pub num_shards: u32,
     pub create_if_missing: bool,
 
+    pub seed: Option<u64>,
+
     pub data: DataConfig,
     pub key: KeyConfig,
     pub worker: WorkerConfig,
@@ -45,6 +47,7 @@ impl Default for AppConfig {
             collection: "table".into(),
             num_shards: 64,
             create_if_missing: true,
+            seed: None,
             data: DataConfig::default(),
             key: KeyConfig::default(),
             worker: WorkerConfig::default(),

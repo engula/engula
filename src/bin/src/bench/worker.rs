@@ -81,13 +81,13 @@ impl Generator {
 }
 
 impl Job {
-    pub fn new(co: Collection, num_op: usize, cfg: AppConfig) -> Job {
+    pub fn new(co: Collection, seed: u64, num_op: usize, cfg: AppConfig) -> Job {
         let limited = cfg.data.limited;
         Job {
             co,
             consumed: 0,
             num_op,
-            gen: Generator::new(0, cfg, 0..limited),
+            gen: Generator::new(seed, cfg, 0..limited),
         }
     }
 }
