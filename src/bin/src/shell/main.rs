@@ -385,9 +385,9 @@ fn usage() -> Result<()> {
     o("commands: \n")?;
     o("\t help             \t show usage\n")?;
     o("\t config key value \t global parameters, supported [database, collection, create-if-missing]\n")?;
-    o("\t get key [database <db-name>] [collection <co-name>]\n")?;
-    o("\t put key value [database <db-name>] [collection <co-name>]\n")?;
-    o("\t delete key [database <db-name>] [collection <co-name>]\n")?;
+    o("\t get key [db <db-name>] [coll <co-name>]\n")?;
+    o("\t put key value [db <db-name>] [coll <co-name>]\n")?;
+    o("\t delete key [db <db-name>] [coll <co-name>]\n")?;
     Ok(())
 }
 
