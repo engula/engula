@@ -215,8 +215,8 @@ impl Session {
             return Err("expect value, but nothing are found".to_owned());
         };
 
-        let value =
-            String::from_utf8(value).map_err(|_| "the key is invalid UTF-8 sequence".to_string())?;
+        let value = String::from_utf8(value)
+            .map_err(|_| "the key is invalid UTF-8 sequence".to_string())?;
         must_eof(input)?;
 
         Ok(Request::Config { key, value })
