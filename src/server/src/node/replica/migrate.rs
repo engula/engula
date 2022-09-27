@@ -241,7 +241,9 @@ impl Replica {
             debug_assert_eq!(epoch, lease_state.descriptor.epoch);
             Ok(true)
         } else if !lease_state.is_same_migration(desc) {
-            Err(Error::ServiceIsBusy("already exists a migration request"))
+            // This migration needs to be rollback too, because the epoch will be bumped once the
+            // former migration finished.
+            Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
         } else {
             info!(
                 replica = info.replica_id,
