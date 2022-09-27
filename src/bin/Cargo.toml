@@ -19,6 +19,7 @@ config = { version = "0.13.2", features = ["toml"] }
 lazy_static = "1.4.0"
 num_cpus = "1.13.1"
 rand = { version = "0.8.5", features = ["small_rng"] }
+rustyline = "10.0.0"
 serde = { version = "1.0.144", features = ["derive"] }
 paste = "1.0"
 prometheus = "0.13.2"
