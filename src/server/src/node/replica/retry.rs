@@ -25,6 +25,28 @@ use crate::{
     Error, Result,
 };
 
+pub async fn do_migration(
+    replica: &Replica,
+    action: MigrateAction,
+    desc: &MigrationDesc,
+) -> Result<()> {
+    loop {
+        let resp = match action {
+            MigrateAction::Setup => replica.setup_migration(desc).await,
+            MigrateAction::Commit => replica.commit_migration(desc).await,
+        };
+        match resp {
+            Ok(()) => return Ok(()),
+            Err(Error::ServiceIsBusy(_)) | Err(Error::GroupNotReady(_)) => {
+                // sleep and retry.
+                NODE_RETRY_TOTAL.inc();
+                crate::runtime::time::sleep(Duration::from_micros(200)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
 /// A wrapper function that detects and completes retries as quickly as possible.
 #[inline]
 pub async fn execute(
