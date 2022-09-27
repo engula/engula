@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use std::{
-    future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -21,6 +20,7 @@ use std::{
 use engula_api::server::v1::*;
 use engula_client::MigrateClient;
 use futures::StreamExt;
+use tracing::warn;
 
 use crate::{
     node::{metrics::take_pull_shard_metrics, Replica},
@@ -43,33 +43,47 @@ pub async fn pull_shard(
     Ok(())
 }
 
-pub struct ShardChunkStream {
+fn shard_chunk_stream(
     shard_id: u64,
     chunk_size: usize,
-    last_key: Vec<u8>,
+    mut last_key: Vec<u8>,
     replica: Arc<Replica>,
+) -> impl futures::Stream<Item = std::result::Result<ShardChunk, tonic::Status>> {
+    async_stream::try_stream! {
+        loop {
+            match replica
+                .fetch_shard_chunk(shard_id, &last_key, chunk_size)
+                .await
+            {
+                Ok(shard_chunk) => {
+                    if shard_chunk.data.is_empty() {
+                        break;
+                    }
+
+                    last_key = shard_chunk.data.last().as_ref().unwrap().key.clone();
+                    yield shard_chunk;
+                },
+                Err(e) => {
+                    warn!("shard {shard_id} fetch shard chunk: {e:?}");
+                    Err(e)?;
+                    unreachable!();
+                }
+            }
+        }
+    }
+}
+
+type ShardChunkResult = std::result::Result<ShardChunk, tonic::Status>;
+
+pub struct ShardChunkStream {
+    inner: Pin<Box<dyn futures::Stream<Item = ShardChunkResult> + Send + 'static>>,
 }
 
 impl ShardChunkStream {
     pub fn new(shard_id: u64, chunk_size: usize, last_key: Vec<u8>, replica: Arc<Replica>) -> Self {
+        let inner = shard_chunk_stream(shard_id, chunk_size, last_key, replica);
         ShardChunkStream {
-            shard_id,
-            chunk_size,
-            last_key,
-            replica,
-        }
-    }
-
-    async fn next_shard_chunk(&mut self) -> Result<Option<ShardChunk>> {
-        let shard_chunk = self
-            .replica
-            .fetch_shard_chunk(self.shard_id, &self.last_key, self.chunk_size)
-            .await?;
-        if shard_chunk.data.is_empty() {
-            Ok(None)
-        } else {
-            self.last_key = shard_chunk.data.last().as_ref().unwrap().key.clone();
-            Ok(Some(shard_chunk))
+            inner: Box::pin(inner),
         }
     }
 }
@@ -78,12 +92,7 @@ impl futures::Stream for ShardChunkStream {
     type Item = std::result::Result<ShardChunk, tonic::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let future = self.get_mut().next_shard_chunk();
-        futures::pin_mut!(future);
-        match future.poll(cx) {
-            Poll::Ready(Ok(chunk)) => Poll::Ready(chunk.map(Ok)),
-            Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err.into()))),
-            Poll::Pending => Poll::Pending,
-        }
+        let me = self.get_mut();
+        Pin::new(&mut me.inner).poll_next(cx)
     }
 }
