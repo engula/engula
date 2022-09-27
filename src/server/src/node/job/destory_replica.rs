@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tracing::error;
 
 use crate::{
-    node::{metrics::*, GroupEngine, StateEngine},
+    node::{engine::RawDb, metrics::*, GroupEngine, StateEngine},
     raftgroup::destory_storage,
     record_latency,
     runtime::TaskPriority,
@@ -48,7 +48,7 @@ async fn destory_replica(
     group_id: u64,
     replica_id: u64,
     state_engine: StateEngine,
-    raw_db: Arc<rocksdb::DB>,
+    raw_db: Arc<RawDb>,
     raft_engine: Arc<raft_engine::Engine>,
 ) -> Result<()> {
     record_latency!(take_destory_replica_metrics());

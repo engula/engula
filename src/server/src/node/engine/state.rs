@@ -17,6 +17,7 @@ use std::sync::Arc;
 use engula_api::server::v1::*;
 use prost::Message;
 
+use super::RawDb;
 use crate::{serverpb::v1::*, Result};
 
 const STATE_CF_NAME: &str = "state";
@@ -35,7 +36,7 @@ pub struct StateEngine
 where
     Self: Send + Sync,
 {
-    raw_db: Arc<rocksdb::DB>,
+    raw_db: Arc<RawDb>,
 }
 
 pub struct ReplicaStateIterator<'a> {
@@ -43,12 +44,9 @@ pub struct ReplicaStateIterator<'a> {
 }
 
 impl StateEngine {
-    pub fn new(raw_db: Arc<rocksdb::DB>) -> Result<Self> {
+    pub fn new(raw_db: Arc<RawDb>) -> Result<Self> {
         if raw_db.cf_handle(STATE_CF_NAME).is_none() {
-            use rocksdb::Options;
-            let mut opts = Options::default();
-            opts.create_missing_column_families(true);
-            raw_db.create_cf(STATE_CF_NAME, &opts)?;
+            raw_db.create_cf(STATE_CF_NAME)?;
         }
         Ok(StateEngine { raw_db })
     }
