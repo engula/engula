@@ -157,7 +157,7 @@ impl DbConfig {
 impl Default for DbConfig {
     fn default() -> Self {
         DbConfig {
-            max_background_jobs: 2,
+            max_background_jobs: adaptive_max_background_jobs(),
             max_sub_compactions: 1,
             max_manifest_file_size: 1 << 30,
             bytes_per_sync: 1 << 20,
@@ -169,7 +169,7 @@ impl Default for DbConfig {
             block_size: 4 << 10,
             block_cache_size: adaptive_block_cache_size(),
             write_buffer_size: 64 << 20,
-            max_write_buffer_number: 3,
+            max_write_buffer_number: 5,
             min_write_buffer_number_to_merge: 1,
 
             num_levels: 7,
@@ -210,4 +210,9 @@ fn adaptive_block_cache_size() -> usize {
     use sysinfo::{RefreshKind, System, SystemExt};
     let info = System::new_with_specifics(RefreshKind::new().with_memory());
     (info.total_memory() / 2) as usize
+}
+
+fn adaptive_max_background_jobs() -> i32 {
+    use std::cmp::{max, min};
+    max(min(num_cpus::get() as i32, 8), 2)
 }
