@@ -43,6 +43,7 @@ enum TaskState {
 pub struct ExecutorConfig {
     pub event_interval: Option<u32>,
     pub global_event_interval: Option<u32>,
+    pub max_blocking_threads: Option<usize>,
 }
 
 /// A handle that awaits the result of a task.
@@ -96,6 +97,8 @@ impl ExecutorOwner {
             .enable_all()
             .event_interval(cfg.event_interval.unwrap_or(61))
             .global_queue_interval(cfg.global_event_interval.unwrap_or(64))
+            .max_blocking_threads(cfg.max_blocking_threads.unwrap_or(2))
+            .thread_keep_alive(Duration::from_secs(60))
             .on_thread_park(|| {
                 EXECUTOR_PARK_TOTAL.inc();
             })
