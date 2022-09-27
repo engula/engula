@@ -70,4 +70,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --workspace -- --nocapture --quiet
+        args: --workspace -- --nocapture --quiet --test-threads=1
