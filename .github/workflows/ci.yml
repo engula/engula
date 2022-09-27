@@ -24,6 +24,11 @@ env:
 on:
   push:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "scripts/**"
+      - "conf/**"
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
