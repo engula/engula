@@ -16,6 +16,7 @@ use std::{
     collections::HashMap,
     marker::PhantomData,
     sync::Arc,
+    task::Context,
     time::{Duration, Instant},
 };
 
@@ -27,6 +28,7 @@ use futures::{
 };
 use raft::{prelude::*, SoftState, StateRole};
 use raft_engine::{Engine, LogBatch};
+use tokio::time::{interval, Interval, MissedTickBehavior};
 use tracing::{debug, warn};
 
 use super::{
@@ -270,9 +272,10 @@ where
             self.group_id, self.desc.id
         );
 
-        // WARNING: the underlying instant isn't steady.
         let mut log_writer = log_writer;
-        let mut interval = tokio::time::interval(Duration::from_millis(self.cfg.tick_interval_ms));
+        // WARNING: the underlying instant isn't steady.
+        let mut interval = interval(Duration::from_millis(self.cfg.tick_interval_ms));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         while !self.request_receiver.is_terminated() {
             let mut ctx = WorkerContext::default();
             self.maintenance(&mut ctx, &mut interval).await?;
@@ -292,21 +295,36 @@ where
     async fn maintenance(
         &mut self,
         ctx: &mut WorkerContext,
-        interval: &mut tokio::time::Interval,
+        interval: &mut Interval,
     ) -> Result<()> {
         if !self.raft_node.has_ready() {
-            futures::select_biased! {
+            crate::runtime::select! {
+                biased;
                 _ = interval.tick().fuse() => {
-                    self.raft_node.tick();
-                    self.compact_log(ctx);
+                    self.on_tick_fire(ctx);
                 },
-                request = self.request_receiver.next() => if let Some(req) = request {
-                    self.handle_request(ctx, req)?;
+                request = self.request_receiver.next() => {
+                    if let Some(req) = request {
+                        self.handle_request(ctx, req)?;
+                    }
                 },
             }
             record_perf_point(&mut ctx.perf_ctx.wake);
+        } else {
+            // Because the raft node is still in the ready state, there is no need for a block to
+            // wait for a new input event, but the tick may be ready at this time, and we need to
+            // process it first to avoid the tick delay being too long.
+            let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+            if interval.poll_tick(&mut cx).is_ready() {
+                self.on_tick_fire(ctx);
+            }
         }
         Ok(())
+    }
+
+    fn on_tick_fire(&mut self, ctx: &mut WorkerContext) {
+        self.raft_node.tick();
+        self.compact_log(ctx);
     }
 
     fn consume_requests(&mut self, ctx: &mut WorkerContext) -> Result<()> {
