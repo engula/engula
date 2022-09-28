@@ -283,9 +283,13 @@ impl GroupClient {
                 self.access_node_id = None;
                 Ok(())
             }
-            // If the exact epoch is required, don't retry if epoch isn't matched.
-            Error::EpochNotMatch(group_desc) if !opt.accurate_epoch => {
-                self.apply_epoch_not_match_status(group_desc, opt)
+            Error::EpochNotMatch(group_desc) => {
+                // If the exact epoch is required, don't retry if epoch isn't matched.
+                if !opt.accurate_epoch {
+                    self.apply_epoch_not_match_status(group_desc, opt)
+                } else {
+                    Err(Error::EpochNotMatch(group_desc))
+                }
             }
             e => {
                 warn!(
