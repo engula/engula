@@ -192,9 +192,9 @@ impl Server {
         let mut handles = Vec::with_capacity(requests.len());
         for request in requests.into_iter() {
             let server = self.clone();
-            let task_tag = request.group_id.to_le_bytes();
+            let group_id = request.group_id;
             let handle = crate::runtime::current().dispatch(
-                Some(task_tag.as_slice()),
+                Some(group_id),
                 TaskPriority::Middle,
                 async move { server.submit_group_request(&request).await },
             );

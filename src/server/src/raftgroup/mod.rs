@@ -176,8 +176,7 @@ impl RaftManager {
             RaftWorker::open(group_id, replica_id, node_id, state_machine, self, observer).await?;
         let facade = RaftNodeFacade::open(worker.request_sender());
         let log_writer = self.log_writer.clone();
-        let tag = &group_id.to_le_bytes();
-        crate::runtime::current().spawn(Some(tag), TaskPriority::High, async move {
+        crate::runtime::current().spawn(Some(group_id), TaskPriority::High, async move {
             // TODO(walter) handle result.
             worker.run(log_writer).await.unwrap();
             drop(wait_group);

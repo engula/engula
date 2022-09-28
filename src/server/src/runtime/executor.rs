@@ -122,7 +122,7 @@ impl Executor {
     /// [`priority`]: specify the task priority.
     pub fn spawn<F, T>(
         &self,
-        tag: Option<&[u8]>,
+        tag: Option<u64>,
         priority: TaskPriority,
         future: F,
     ) -> JoinHandle<F::Output>
@@ -144,7 +144,7 @@ impl Executor {
     /// [`priority`]: specify the task priority.
     pub fn dispatch<F, T>(
         &self,
-        tag: Option<&[u8]>,
+        tag: Option<u64>,
         priority: TaskPriority,
         future: F,
     ) -> DispatchHandle<F::Output>
