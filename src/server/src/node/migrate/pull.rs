@@ -48,7 +48,7 @@ fn shard_chunk_stream(
     chunk_size: usize,
     mut last_key: Vec<u8>,
     replica: Arc<Replica>,
-) -> impl futures::Stream<Item = std::result::Result<ShardChunk, tonic::Status>> {
+) -> impl futures::Stream<Item = Result<ShardChunk, tonic::Status>> {
     async_stream::try_stream! {
         loop {
             match replica
@@ -73,7 +73,7 @@ fn shard_chunk_stream(
     }
 }
 
-type ShardChunkResult = std::result::Result<ShardChunk, tonic::Status>;
+type ShardChunkResult = Result<ShardChunk, tonic::Status>;
 
 pub struct ShardChunkStream {
     inner: Pin<Box<dyn futures::Stream<Item = ShardChunkResult> + Send + 'static>>,
@@ -89,7 +89,7 @@ impl ShardChunkStream {
 }
 
 impl futures::Stream for ShardChunkStream {
-    type Item = std::result::Result<ShardChunk, tonic::Status>;
+    type Item = Result<ShardChunk, tonic::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let me = self.get_mut();

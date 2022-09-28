@@ -173,7 +173,7 @@ pub async fn retrive_snapshot(
     trans_mgr: &TransportManager,
     target_replica: ReplicaDesc,
     snapshot_id: Vec<u8>,
-) -> Result<impl futures::Stream<Item = std::result::Result<SnapshotChunk, tonic::Status>>> {
+) -> Result<impl futures::Stream<Item = Result<SnapshotChunk, tonic::Status>>> {
     let node_desc = resolve_address(&*trans_mgr.resolver, target_replica.node_id).await?;
     let address = format!("http://{}", node_desc.addr);
     let mut client = RaftClient::connect(address).await?;

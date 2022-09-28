@@ -26,7 +26,7 @@ use engula_api::server::v1::{
 use futures::Stream;
 use tokio::sync::{RwLock, RwLockWriteGuard};
 
-use crate::Error;
+use crate::{Error, Result};
 
 #[derive(Default)]
 pub struct WatchHub {
@@ -146,7 +146,7 @@ impl Watcher {
 }
 
 impl Stream for Watcher {
-    type Item = std::result::Result<WatchResponse, tonic::Status>;
+    type Item = Result<WatchResponse, tonic::Status>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,

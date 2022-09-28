@@ -22,10 +22,7 @@ use crate::{record_latency, root::Watcher, Error, Result, Server};
 impl root_server::Root for Server {
     type WatchStream = Watcher;
 
-    async fn admin(
-        &self,
-        req: Request<AdminRequest>,
-    ) -> std::result::Result<Response<AdminResponse>, Status> {
+    async fn admin(&self, req: Request<AdminRequest>) -> Result<Response<AdminResponse>, Status> {
         record_latency!(take_admin_request_metrics());
         let req = req.into_inner();
         let res = self.handle_admin(req).await?;
@@ -35,7 +32,7 @@ impl root_server::Root for Server {
     async fn watch(
         &self,
         req: Request<WatchRequest>,
-    ) -> std::result::Result<Response<Self::WatchStream>, Status> {
+    ) -> Result<Response<Self::WatchStream>, Status> {
         record_latency!(take_watch_request_metrics());
         let req = req.into_inner();
         let watcher = self
@@ -47,7 +44,7 @@ impl root_server::Root for Server {
     async fn join(
         &self,
         request: Request<JoinNodeRequest>,
-    ) -> std::result::Result<Response<JoinNodeResponse>, Status> {
+    ) -> Result<Response<JoinNodeResponse>, Status> {
         record_latency!(take_join_request_metrics());
         let request = request.into_inner();
         let capacity = request
@@ -66,7 +63,7 @@ impl root_server::Root for Server {
     async fn report(
         &self,
         request: Request<ReportRequest>,
-    ) -> std::result::Result<Response<ReportResponse>, Status> {
+    ) -> Result<Response<ReportResponse>, Status> {
         record_latency!(take_report_request_metrics());
         let request = request.into_inner();
         self.wrap(self.root.report(request.updates).await).await?;
@@ -76,7 +73,7 @@ impl root_server::Root for Server {
     async fn alloc_replica(
         &self,
         request: Request<AllocReplicaRequest>,
-    ) -> std::result::Result<Response<AllocReplicaResponse>, Status> {
+    ) -> Result<Response<AllocReplicaResponse>, Status> {
         record_latency!(take_alloc_replica_request_metrics());
         let req = request.into_inner();
         let replicas = self

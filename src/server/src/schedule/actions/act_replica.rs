@@ -18,7 +18,7 @@ use engula_api::server::v1::*;
 use tracing::{debug, info, warn};
 
 use super::{Action, ActionState};
-use crate::{root::RemoteStore, schedule::scheduler::ScheduleContext, Provider};
+use crate::{root::RemoteStore, schedule::scheduler::ScheduleContext, Provider, Result};
 
 pub(crate) struct CreateReplicas {
     pub replicas: Vec<ReplicaDesc>,
@@ -50,7 +50,7 @@ impl CreateReplicas {
         group_id: u64,
         r: &ReplicaDesc,
         provider: &Provider,
-    ) -> std::result::Result<(), engula_client::Error> {
+    ) -> Result<(), engula_client::Error> {
         let addr = provider.router.find_node_addr(r.node_id)?;
         let client = provider.conn_manager.get_node_client(addr)?;
         let desc = GroupDesc {
@@ -113,7 +113,7 @@ impl RemoveReplica {
         r: &ReplicaDesc,
         group: GroupDesc,
         provider: &Provider,
-    ) -> std::result::Result<(), engula_client::Error> {
+    ) -> Result<(), engula_client::Error> {
         let addr = provider.router.find_node_addr(r.node_id)?;
         let client = provider.conn_manager.get_node_client(addr)?;
         client.remove_replica(r.id, group.clone()).await?;

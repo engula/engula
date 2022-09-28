@@ -23,6 +23,8 @@ use futures::{
     StreamExt,
 };
 
+use crate::Result;
+
 #[derive(Clone)]
 pub struct LogWriter {
     sender: mpsc::Sender<LogRequest>,
@@ -38,7 +40,7 @@ struct LogRequest {
     sender: oneshot::Sender<LogResponse>,
 }
 
-type LogResponse = std::result::Result<(), String>;
+type LogResponse = Result<(), String>;
 
 impl LogWriter {
     pub fn new(max_io_batch_size: u64, engine: Arc<raft_engine::Engine>) -> LogWriter {

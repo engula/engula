@@ -208,7 +208,7 @@ pub(super) async fn save_snapshot<S>(
     mut chunk_stream: S,
 ) -> Result<Vec<u8>>
 where
-    S: futures::Stream<Item = std::result::Result<SnapshotChunk, tonic::Status>> + Unpin,
+    S: futures::Stream<Item = Result<SnapshotChunk, tonic::Status>> + Unpin,
 {
     let base_dir = snap_mgr.create(replica_id);
     info!(
