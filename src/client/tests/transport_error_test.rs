@@ -168,8 +168,8 @@ async fn broken_pipe() {
 }
 
 // TODO: it is difficult to reproduce `connection reset` error in different env.
-// #[tokio::test]
-#[allow(dead_code)]
+#[tokio::test]
+#[ignore]
 async fn connection_closed() {
     if cfg!(target_os = "macos") {
         return;
