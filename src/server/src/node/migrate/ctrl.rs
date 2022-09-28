@@ -77,47 +77,45 @@ impl MigrateController {
         let group_id = info.group_id;
 
         let ctrl = self.clone();
-        current()
-            .spawn(Some(group_id), TaskPriority::High, async move {
-                let mut coord: Option<MigrationCoordinator> = None;
-                while let Some(state) = receiver.next().await {
-                    debug!(
-                        replica = replica_id,
-                        group = group_id,
-                        "on migration step: {:?}",
-                        MigrationStep::from_i32(state.step)
-                    );
-                    let desc = state.get_migration_desc();
-                    if coord.is_none() || coord.as_ref().unwrap().desc != *desc {
-                        let target_group_id = if desc.src_group_id == group_id {
-                            desc.dest_group_id
-                        } else {
-                            desc.src_group_id
-                        };
-                        let client = MigrateClient::new(
-                            target_group_id,
-                            ctrl.shared.provider.router.clone(),
-                            ctrl.shared.provider.conn_manager.clone(),
-                        );
-                        coord = Some(MigrationCoordinator {
-                            cfg: ctrl.shared.cfg.clone(),
-                            replica_id,
-                            group_id,
-                            replica: replica.clone(),
-                            client,
-                            desc: desc.clone(),
-                        });
-                    }
-                    coord.as_mut().unwrap().next_step(state).await;
-                }
+        current().spawn(Some(group_id), TaskPriority::High, async move {
+            let mut coord: Option<MigrationCoordinator> = None;
+            while let Some(state) = receiver.next().await {
                 debug!(
                     replica = replica_id,
                     group = group_id,
-                    "migration state watcher is stopped",
+                    "on migration step: {:?}",
+                    MigrationStep::from_i32(state.step)
                 );
-                drop(wait_group);
-            })
-            .await;
+                let desc = state.get_migration_desc();
+                if coord.is_none() || coord.as_ref().unwrap().desc != *desc {
+                    let target_group_id = if desc.src_group_id == group_id {
+                        desc.dest_group_id
+                    } else {
+                        desc.src_group_id
+                    };
+                    let client = MigrateClient::new(
+                        target_group_id,
+                        ctrl.shared.provider.router.clone(),
+                        ctrl.shared.provider.conn_manager.clone(),
+                    );
+                    coord = Some(MigrationCoordinator {
+                        cfg: ctrl.shared.cfg.clone(),
+                        replica_id,
+                        group_id,
+                        replica: replica.clone(),
+                        client,
+                        desc: desc.clone(),
+                    });
+                }
+                coord.as_mut().unwrap().next_step(state).await;
+            }
+            debug!(
+                replica = replica_id,
+                group = group_id,
+                "migration state watcher is stopped",
+            );
+            drop(wait_group);
+        });
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
