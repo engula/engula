@@ -93,8 +93,6 @@ pub enum Error {
 
 impl From<tonic::Status> for Error {
     fn from(status: tonic::Status) -> Self {
-        use engula_api::server::v1;
-        use prost::Message;
         use tonic::Code;
 
         match status.code() {
@@ -107,13 +105,8 @@ impl From<tonic::Status> for Error {
             Code::ResourceExhausted => Error::ResourceExhausted(status.message().into()),
             Code::NotFound => Error::NotFound(status.message().into()),
             Code::Internal => Error::Internal(status.message().into()),
-            Code::Unknown if !status.details().is_empty() => v1::Error::decode(status.details())
-                .map(Into::into)
-                .unwrap_or_else(|_| Error::Rpc(status)),
-            Code::Unavailable | Code::Unknown if transport_err(&status) => Error::Transport(status),
-            Code::Unavailable | Code::Unknown if retryable_rpc_err(&status) => {
-                Error::Connect(status)
-            }
+            Code::Unknown => from_source_or_details(status),
+            Code::Unavailable => from_source(status),
             _ => Error::Rpc(status),
         }
     }
@@ -247,19 +240,40 @@ pub fn transport_io_err(err: &std::io::Error) -> bool {
 }
 
 pub fn transport_err(status: &tonic::Status) -> bool {
-    use tonic::Code;
-    if (status.code() == Code::Unknown && status.message().starts_with("transport error"))
-        // error trying to connect: tcp connect error: Connection reset by peer (os error 104)
-        || (status.code() == Code::Unavailable
-            && status.message().starts_with("error trying to connect"))
-    {
-        let mut cause = status.source();
-        while let Some(err) = cause {
-            if let Some(err) = err.downcast_ref::<std::io::Error>() {
-                return transport_io_err(err);
-            }
-            cause = err.source();
+    // Cases:
+    // - transport error: <inner messages>: connection reset
+    // - transport error: <inner messages>: broken pipe
+    // - error trying to connect: tcp connect error: Connection reset by peer (os error 104)
+    // - error reading a body from connection: connection reset
+    let mut cause = status.source();
+    while let Some(err) = cause {
+        if let Some(err) = err.downcast_ref::<std::io::Error>() {
+            return transport_io_err(err);
         }
+        cause = err.source();
     }
     false
+}
+
+pub fn from_source_or_details(status: tonic::Status) -> Error {
+    use engula_api::server::v1;
+    use prost::Message;
+
+    if !status.details().is_empty() {
+        if let Ok(err) = v1::Error::decode(status.details()) {
+            return err.into();
+        }
+    }
+
+    from_source(status)
+}
+
+pub fn from_source(status: tonic::Status) -> Error {
+    if retryable_rpc_err(&status) {
+        Error::Connect(status)
+    } else if transport_err(&status) {
+        Error::Transport(status)
+    } else {
+        Error::Rpc(status)
+    }
 }
