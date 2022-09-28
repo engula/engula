@@ -283,14 +283,7 @@ impl GroupClient {
                 self.access_node_id = None;
                 Ok(())
             }
-            Error::EpochNotMatch(group_desc) => {
-                // If the exact epoch is required, don't retry if epoch isn't matched.
-                if !opt.accurate_epoch {
-                    self.apply_epoch_not_match_status(group_desc, opt)
-                } else {
-                    Err(Error::EpochNotMatch(group_desc))
-                }
-            }
+            Error::EpochNotMatch(group_desc) => self.apply_epoch_not_match_status(group_desc, opt),
             e => {
                 warn!(
                     "group {} issue rpc to {}: epoch {} with unknown error {e:?}",
@@ -335,6 +328,11 @@ impl GroupClient {
         group_desc: GroupDesc,
         opt: &InvokeOpt<'_>,
     ) -> Result<()> {
+        // If the exact epoch is required, don't retry if epoch isn't matched.
+        if opt.accurate_epoch {
+            return Err(Error::EpochNotMatch(group_desc));
+        }
+
         if group_desc.epoch <= self.epoch {
             panic!(
                 "group {} receive EpochNotMatch, but local epoch {} is not less than remote: {:?}",
