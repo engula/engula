@@ -135,9 +135,7 @@ fn main() -> Result<()> {
     cmd.run()
 }
 
-fn load_config(
-    cmd: &StartCommand,
-) -> std::result::Result<engula_server::Config, config::ConfigError> {
+fn load_config(cmd: &StartCommand) -> Result<engula_server::Config, config::ConfigError> {
     use config::{Config, Environment, File};
 
     let mut builder = Config::builder()

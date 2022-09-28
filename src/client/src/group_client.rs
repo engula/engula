@@ -121,7 +121,7 @@ impl GroupClient {
     async fn invoke<F, O, V>(&mut self, op: F) -> Result<V>
     where
         F: Fn(InvokeContext, NodeClient) -> O,
-        O: Future<Output = std::result::Result<V, tonic::Status>>,
+        O: Future<Output = Result<V, tonic::Status>>,
     {
         self.invoke_with_opt(op, InvokeOpt::default()).await
     }
@@ -129,7 +129,7 @@ impl GroupClient {
     async fn invoke_with_opt<F, O, V>(&mut self, op: F, opt: InvokeOpt<'_>) -> Result<V>
     where
         F: Fn(InvokeContext, NodeClient) -> O,
-        O: Future<Output = std::result::Result<V, tonic::Status>>,
+        O: Future<Output = Result<V, tonic::Status>>,
     {
         // Initial lazy connection
         if self.epoch == 0 {
@@ -397,7 +397,7 @@ impl GroupClient {
         self.invoke_with_opt(op, opt).await
     }
 
-    fn batch_response<T>(mut resps: Vec<T>) -> std::result::Result<T, Status> {
+    fn batch_response<T>(mut resps: Vec<T>) -> Result<T, Status> {
         if resps.is_empty() {
             Err(Status::internal(
                 "response of batch request is empty".to_owned(),
@@ -407,7 +407,7 @@ impl GroupClient {
         }
     }
 
-    fn group_response(resp: GroupResponse) -> std::result::Result<Response, Status> {
+    fn group_response(resp: GroupResponse) -> Result<Response, Status> {
         use prost::Message;
 
         if let Some(resp) = resp.response.and_then(|resp| resp.response) {

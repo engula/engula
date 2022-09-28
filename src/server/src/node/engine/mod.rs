@@ -24,8 +24,9 @@ pub use self::{
     },
     state::StateEngine,
 };
+use crate::Result;
 
-type Result<T> = std::result::Result<T, rocksdb::Error>;
+type DbResult<T> = Result<T, rocksdb::Error>;
 
 pub struct RawDb {
     pub options: rocksdb::Options,
@@ -39,17 +40,17 @@ impl RawDb {
     }
 
     #[inline]
-    pub fn create_cf<N: AsRef<str>>(&self, name: N) -> Result<()> {
+    pub fn create_cf<N: AsRef<str>>(&self, name: N) -> DbResult<()> {
         self.db.create_cf(name, &self.options)
     }
 
     #[inline]
-    pub fn drop_cf(&self, name: &str) -> Result<()> {
+    pub fn drop_cf(&self, name: &str) -> DbResult<()> {
         self.db.drop_cf(name)
     }
 
     #[inline]
-    pub fn flush_cf(&self, cf: &impl rocksdb::AsColumnFamilyRef) -> Result<()> {
+    pub fn flush_cf(&self, cf: &impl rocksdb::AsColumnFamilyRef) -> DbResult<()> {
         self.db.flush_cf(cf)
     }
 
@@ -58,7 +59,7 @@ impl RawDb {
         &self,
         batch: rocksdb::WriteBatch,
         writeopts: &rocksdb::WriteOptions,
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         self.db.write_opt(batch, writeopts)
     }
 
@@ -67,7 +68,7 @@ impl RawDb {
         &self,
         cf: &impl rocksdb::AsColumnFamilyRef,
         key: K,
-    ) -> Result<Option<rocksdb::DBPinnableSlice>> {
+    ) -> DbResult<Option<rocksdb::DBPinnableSlice>> {
         self.db.get_pinned_cf(cf, key)
     }
 
@@ -77,7 +78,7 @@ impl RawDb {
         cf: &impl rocksdb::AsColumnFamilyRef,
         key: K,
         readopts: &rocksdb::ReadOptions,
-    ) -> Result<Option<rocksdb::DBPinnableSlice>> {
+    ) -> DbResult<Option<rocksdb::DBPinnableSlice>> {
         self.db.get_pinned_cf_opt(cf, key, readopts)
     }
 
@@ -105,7 +106,7 @@ impl RawDb {
         &self,
         opts: &rocksdb::IngestExternalFileOptions,
         paths: Vec<P>,
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         self.db.ingest_external_file_opts(opts, paths)
     }
 
@@ -115,7 +116,7 @@ impl RawDb {
         cf: &impl rocksdb::AsColumnFamilyRef,
         opts: &rocksdb::IngestExternalFileOptions,
         paths: Vec<P>,
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         self.db.ingest_external_file_cf_opts(cf, opts, paths)
     }
 }

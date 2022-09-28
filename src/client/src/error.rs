@@ -16,7 +16,7 @@ use std::error::Error as StdError;
 
 use engula_api::server::v1::{GroupDesc, ReplicaDesc, RootDesc};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type AppResult<T> = std::result::Result<T, AppError>;
 
 #[derive(thiserror::Error, Debug)]

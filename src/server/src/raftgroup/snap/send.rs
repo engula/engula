@@ -29,7 +29,7 @@ use crate::{
     Error, Result,
 };
 
-type SnapResult = std::result::Result<SnapshotChunk, tonic::Status>;
+type SnapResult = Result<SnapshotChunk, tonic::Status>;
 
 pub struct SnapshotChunkStream {
     info: SnapshotGuard,

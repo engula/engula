@@ -141,7 +141,7 @@ impl Client {
     async fn invoke<F, O, V>(&self, op: F) -> Result<V>
     where
         F: Fn(root_client::RootClient<Channel>) -> O,
-        O: Future<Output = std::result::Result<V, Status>>,
+        O: Future<Output = Result<V, Status>>,
     {
         let mut interval = 1;
         let mut save_core = false;
@@ -509,13 +509,10 @@ fn extract_root_descriptor(status: &tonic::Status) -> Option<(RootDesc, u64, Opt
     None
 }
 
-async fn invoke<F, O, V>(
-    client: root_client::RootClient<Channel>,
-    op: &F,
-) -> std::result::Result<V, RootError>
+async fn invoke<F, O, V>(client: root_client::RootClient<Channel>, op: &F) -> Result<V, RootError>
 where
     F: Fn(root_client::RootClient<Channel>) -> O,
-    O: Future<Output = std::result::Result<V, Status>>,
+    O: Future<Output = Result<V, Status>>,
 {
     match op(client).await {
         Ok(res) => Ok(res),

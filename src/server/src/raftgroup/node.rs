@@ -214,7 +214,7 @@ where
     }
 
     #[inline]
-    pub fn step(&mut self, msg: Message) -> std::result::Result<(), raft::Error> {
+    pub fn step(&mut self, msg: Message) -> Result<(), raft::Error> {
         if msg.get_msg_type() == MessageType::MsgSnapStatus {
             self.raw_node.report_snapshot(
                 msg.from,
