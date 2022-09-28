@@ -121,8 +121,12 @@ pub(crate) fn open_engine<P: AsRef<Path>>(cfg: &DbConfig, path: P) -> Result<Raw
     // List column families and open database with column families.
     match DB::list_cf(&options, &path) {
         Ok(cfs) => {
-            debug!("open local db with {} column families", cfs.len());
-            let db = DB::open_cf(&options, path, cfs)?;
+            info!("open local db with {} column families", cfs.len());
+            let db = DB::open_cf_with_opts(
+                &options,
+                path,
+                cfs.into_iter().map(|name| (name, options.clone())),
+            )?;
             Ok(RawDb { db, options })
         }
         Err(e) => {
