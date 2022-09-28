@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use engula_api::server::v1::{group_request_union::Request, group_response_union::Response, *};
 use engula_client::{MigrateClient, Router};
@@ -70,51 +70,54 @@ impl MigrateController {
         mut receiver: mpsc::UnboundedReceiver<MigrationState>,
         wait_group: WaitGroup,
     ) {
+        use crate::runtime::{current, TaskPriority};
+
         let info = replica.replica_info();
         let replica_id = info.replica_id;
         let group_id = info.group_id;
 
         let ctrl = self.clone();
-        self.spawn_group_task(group_id, async move {
-            let mut coord: Option<MigrationCoordinator> = None;
-            while let Some(state) = receiver.next().await {
+        current()
+            .spawn(Some(group_id), TaskPriority::High, async move {
+                let mut coord: Option<MigrationCoordinator> = None;
+                while let Some(state) = receiver.next().await {
+                    debug!(
+                        replica = replica_id,
+                        group = group_id,
+                        "on migration step: {:?}",
+                        MigrationStep::from_i32(state.step)
+                    );
+                    let desc = state.get_migration_desc();
+                    if coord.is_none() || coord.as_ref().unwrap().desc != *desc {
+                        let target_group_id = if desc.src_group_id == group_id {
+                            desc.dest_group_id
+                        } else {
+                            desc.src_group_id
+                        };
+                        let client = MigrateClient::new(
+                            target_group_id,
+                            ctrl.shared.provider.router.clone(),
+                            ctrl.shared.provider.conn_manager.clone(),
+                        );
+                        coord = Some(MigrationCoordinator {
+                            cfg: ctrl.shared.cfg.clone(),
+                            replica_id,
+                            group_id,
+                            replica: replica.clone(),
+                            client,
+                            desc: desc.clone(),
+                        });
+                    }
+                    coord.as_mut().unwrap().next_step(state).await;
+                }
                 debug!(
                     replica = replica_id,
                     group = group_id,
-                    "on migration step: {:?}",
-                    MigrationStep::from_i32(state.step)
+                    "migration state watcher is stopped",
                 );
-                let desc = state.get_migration_desc();
-                if coord.is_none() || coord.as_ref().unwrap().desc != *desc {
-                    let target_group_id = if desc.src_group_id == group_id {
-                        desc.dest_group_id
-                    } else {
-                        desc.src_group_id
-                    };
-                    let client = MigrateClient::new(
-                        target_group_id,
-                        ctrl.shared.provider.router.clone(),
-                        ctrl.shared.provider.conn_manager.clone(),
-                    );
-                    coord = Some(MigrationCoordinator {
-                        cfg: ctrl.shared.cfg.clone(),
-                        replica_id,
-                        group_id,
-                        replica: replica.clone(),
-                        client,
-                        desc: desc.clone(),
-                    });
-                }
-                coord.as_mut().unwrap().next_step(state).await;
-            }
-            debug!(
-                replica = replica_id,
-                group = group_id,
-                "migration state watcher is stopped",
-            );
-            drop(wait_group);
-        })
-        .await;
+                drop(wait_group);
+            })
+            .await;
     }
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
@@ -135,18 +138,6 @@ impl MigrateController {
         let resp = client.forward(&req).await?;
         let resp = resp.response.and_then(|resp| resp.response);
         Ok(resp.unwrap())
-    }
-
-    async fn spawn_group_task<F, T>(&self, group_id: u64, future: F)
-    where
-        F: Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
-        use crate::runtime::{current, TaskPriority};
-
-        let tag_owner = group_id.to_le_bytes();
-        let tag = Some(tag_owner.as_slice());
-        current().spawn(tag, TaskPriority::IoHigh, future);
     }
 }
 

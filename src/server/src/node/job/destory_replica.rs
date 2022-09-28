@@ -32,10 +32,9 @@ pub(crate) fn setup(
     provider: &Provider,
     raft_engine: Arc<raft_engine::Engine>,
 ) {
-    let tag = &group_id.to_le_bytes();
     let state_engine = provider.state_engine.clone();
     let raw_db = provider.raw_db.clone();
-    crate::runtime::current().spawn(Some(tag), TaskPriority::IoLow, async move {
+    crate::runtime::current().spawn(Some(group_id), TaskPriority::IoLow, async move {
         if let Err(err) =
             destory_replica(group_id, replica_id, state_engine, raw_db, raft_engine).await
         {
