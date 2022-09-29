@@ -296,7 +296,8 @@ impl StateMachine for GroupStateMachine {
     }
 
     fn apply(&mut self, index: u64, term: u64, entry: ApplyEntry) -> Result<()> {
-        trace!("apply entry index {} term {}", index, term);
+        let group_id = self.info.group_id;
+        trace!("group {group_id} apply entry index {index} term {term}",);
         match entry {
             ApplyEntry::Empty => {}
             ApplyEntry::ConfigChange { change_replicas } => {
