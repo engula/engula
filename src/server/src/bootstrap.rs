@@ -87,13 +87,12 @@ async fn bootstrap_services(
 ) -> Result<()> {
     use engula_api::v1::engula_server::EngulaServer;
     use tokio::net::TcpListener;
-    use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
 
-    use crate::service::admin::make_admin_service;
+    use crate::{runtime::TcpIncoming, service::admin::make_admin_service};
 
     let listener = TcpListener::bind(addr).await?;
-    let listener = TcpListenerStream::new(listener);
+    let incoming = TcpIncoming::from_listener(listener, true);
 
     let server = Server::builder()
         .accept_http1(true) // Support http1 for admin service.
@@ -102,7 +101,7 @@ async fn bootstrap_services(
         .add_service(RootServer::new(server.clone()))
         .add_service(make_admin_service(server.clone()))
         .add_optional_service(proxy_server.map(EngulaServer::new))
-        .serve_with_incoming(listener);
+        .serve_with_incoming(incoming);
 
     crate::runtime::select! {
         res = server => { res? }
