@@ -35,6 +35,8 @@ max_inflight_msgs = 10000
 max_inflight_requests = 102400
 max_size_per_msg = 67108864
 tick_interval_ms = 500
+max_io_batch_size = 65535
+enable_log_recycle = false
 
 [root]
 enable_group_balance = true
