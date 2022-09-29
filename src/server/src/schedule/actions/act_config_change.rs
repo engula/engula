@@ -18,6 +18,7 @@ use tracing::{info, warn};
 
 use super::{Action, ActionState};
 use crate::{
+    error::BusyReason,
     node::{replica::ExecCtx, Replica},
     schedule::{event_source::EventSource, provider::GroupProviders, scheduler::ScheduleContext},
 };
@@ -57,7 +58,7 @@ impl Action for AddLearners {
         action_state
     }
 
-    async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
+    async fn poll(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
         let replicas = self.providers.descriptor.replicas();
         let mut learners = self.learners.iter().map(|r| r.id).collect::<HashSet<_>>();
         for replica in &replicas {
@@ -66,6 +67,10 @@ impl Action for AddLearners {
             }
         }
         if learners.is_empty() {
+            let group_id = ctx.group_id;
+            let replica_id = ctx.replica_id;
+            info!("group {group_id} replica {replica_id} task {task_id} adding learners step done");
+
             ActionState::Done
         } else {
             self.providers.descriptor.watch(task_id);
@@ -96,7 +101,7 @@ impl Action for RemoveLearners {
         action_state
     }
 
-    async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
+    async fn poll(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
         let replicas = self.providers.descriptor.replicas();
 
         let learners = self.learners.iter().map(|r| r.id).collect::<HashSet<_>>();
@@ -106,6 +111,11 @@ impl Action for RemoveLearners {
                 return ActionState::Pending(None);
             }
         }
+
+        let group_id = ctx.group_id;
+        let replica_id = ctx.replica_id;
+        info!("group {group_id} replica {replica_id} task {task_id} removing learners step done");
+
         ActionState::Done
     }
 }
@@ -131,7 +141,7 @@ impl Action for ReplaceVoters {
         action_state
     }
 
-    async fn poll(&mut self, task_id: u64, _ctx: &mut ScheduleContext<'_>) -> ActionState {
+    async fn poll(&mut self, task_id: u64, ctx: &mut ScheduleContext<'_>) -> ActionState {
         let replicas = self.providers.descriptor.replicas();
 
         let mut incoming_voters = self
@@ -145,6 +155,12 @@ impl Action for ReplaceVoters {
             }
         }
         if incoming_voters.is_empty() {
+            let group_id = ctx.group_id;
+            let replica_id = ctx.replica_id;
+            info!(
+                "group {group_id} replica {replica_id} task {task_id} replacing voters step done"
+            );
+
             ActionState::Done
         } else {
             self.providers.descriptor.watch(task_id);
@@ -168,7 +184,7 @@ fn try_execute<'a>(
 
         let exec_ctx = ExecCtx::with_epoch(replica.epoch());
         match replica.try_execute(exec_ctx, request).await {
-            Err(Error::ServiceIsBusy(msg)) if msg == "try_take_acl_guard" => {
+            Err(Error::ServiceIsBusy(BusyReason::AclGuard | BusyReason::PendingConfigChange)) => {
                 ActionState::Pending(Some(Duration::from_millis(100)))
             }
             Err(e) => {

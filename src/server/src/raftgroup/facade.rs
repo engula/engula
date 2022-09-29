@@ -23,6 +23,7 @@ use super::{
     ReadPolicy, WorkerPerfContext,
 };
 use crate::{
+    error::BusyReason,
     record_latency,
     serverpb::v1::{EvalResult, RaftMessage},
     Result,
@@ -120,7 +121,9 @@ impl RaftNodeFacade {
     pub async fn monitor(&mut self) -> Result<Box<WorkerPerfContext>> {
         let (sender, receiver) = oneshot::channel();
         if self.send(Request::Monitor(sender)).is_err() {
-            return Err(crate::Error::ServiceIsBusy("raft"));
+            return Err(crate::Error::ServiceIsBusy(
+                BusyReason::RequestChannelFulled,
+            ));
         }
         Ok(receiver.await?)
     }
@@ -134,7 +137,7 @@ impl RaftNodeFacade {
 
         if self.request_sender.try_send(req).is_err() {
             // The target raft group is shutdown.
-            return Err(Error::ServiceIsBusy("raft"));
+            return Err(Error::ServiceIsBusy(BusyReason::RequestChannelFulled));
         }
 
         Ok(())

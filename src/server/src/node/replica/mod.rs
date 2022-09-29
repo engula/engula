@@ -34,6 +34,7 @@ pub use self::state::{LeaseState, LeaseStateObserver};
 use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
+    error::BusyReason,
     raftgroup::{
         perf_point_micros, write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy,
         WorkerPerfContext,
@@ -193,7 +194,7 @@ impl Replica {
 
         let _acl_guard = self
             .try_take_acl_guard(request)
-            .ok_or(Error::ServiceIsBusy("try_take_acl_guard"))?;
+            .ok_or(Error::ServiceIsBusy(BusyReason::AclGuard))?;
         self.check_request_early(&mut exec_ctx, request)?;
         self.evaluate_command(&exec_ctx, request).await
     }
@@ -408,7 +409,7 @@ impl Replica {
             Err(Error::EpochNotMatch(lease_state.descriptor.clone()))
         } else if lease_state.is_migrating() && matches!(req, Request::AcceptShard(_)) {
             // At the same time, there can only be one migration task.
-            Err(Error::ServiceIsBusy("migration"))
+            Err(Error::ServiceIsBusy(BusyReason::Migrating))
         } else {
             // If the current replica is the leader and has applied data in the current term,
             // it is expected that the input epoch should not be larger than the leaders.

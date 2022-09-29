@@ -29,7 +29,7 @@ use futures::{
 use raft::{prelude::*, SoftState, StateRole};
 use raft_engine::{Engine, LogBatch};
 use tokio::time::{interval, Interval, MissedTickBehavior};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use super::{
     applier::{Applier, ReplicaCache},
@@ -502,6 +502,10 @@ where
     }
 
     fn handle_conf_change(&mut self, change: ChangeReplicas, sender: oneshot::Sender<Result<()>>) {
+        info!(
+            "group {} replica {} handle conf change {change:?}",
+            self.group_id, self.desc.id
+        );
         let cc = super::encode_to_conf_change(change);
         self.raft_node.propose_conf_change(vec![], cc, sender);
     }
