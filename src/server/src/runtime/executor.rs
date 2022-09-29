@@ -51,10 +51,7 @@ pub struct ExecutorConfig {
 /// Dropping a [`JoinHandle`] will detach the task, meaning that there is no longer
 /// a handle to the task and no way to `join` on it. If you want cancel tasks when
 /// dropping a handle, use [`DispatchHandle`].
-#[derive(Debug)]
-pub struct JoinHandle<T> {
-    inner: tokio::task::JoinHandle<T>,
-}
+type JoinHandle<T> = tokio::task::JoinHandle<T>;
 
 /// A handle that awaits the result of a task.
 ///
@@ -136,8 +133,7 @@ impl Executor {
         // TODO(walter) support per thread task set.
         let _ = tag;
         take_spawn_metrics(priority);
-        let inner = self.handle.spawn(FutureWrapper::new(future));
-        JoinHandle { inner }
+        self.handle.spawn(FutureWrapper::new(future))
     }
 
     /// Dispatch a task.
@@ -178,20 +174,17 @@ impl Executor {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        let inner = self.handle.spawn_blocking(func);
-        JoinHandle { inner }
+        self.handle.spawn_blocking(func)
     }
-}
 
-impl<T> Future for JoinHandle<T> {
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.inner).poll(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Ok(v)) => Poll::Ready(v),
-            Poll::Ready(Err(e)) => panic!("{:?}", e),
-        }
+    #[inline]
+    pub fn dispatch_blocking<F, R>(&self, func: F) -> DispatchHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let inner = self.handle.spawn_blocking(func);
+        DispatchHandle { inner }
     }
 }
 
