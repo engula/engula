@@ -25,7 +25,7 @@ use engula_api::{
     },
     v1::*,
 };
-use tokio_stream::StreamExt;
+use futures::StreamExt;
 use tonic::Streaming;
 use tracing::{info, trace, warn};
 

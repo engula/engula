@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 mod executor;
+mod incoming;
 mod metrics;
 mod shutdown;
 
@@ -22,5 +23,6 @@ pub use tokio::{select, task::yield_now};
 
 pub use self::{
     executor::*,
+    incoming::TcpIncoming,
     shutdown::{Shutdown, ShutdownNotifier},
 };
