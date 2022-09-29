@@ -26,7 +26,7 @@ use super::{
     storage::Storage,
     RaftManager, SnapManager,
 };
-use crate::{Error, Result};
+use crate::{error::BusyReason, Error, Result};
 
 /// WriteTask records the metadata and entries to persist to disk.
 #[derive(Default)]
@@ -128,21 +128,15 @@ where
         context: Vec<u8>,
         sender: oneshot::Sender<Result<()>>,
     ) {
-        if self.raw_node.raft.state != StateRole::Leader {
-            sender
-                .send(Err(Error::NotLeader(
-                    self.group_id,
-                    self.raw_node.raft.term,
-                    None,
-                )))
-                .unwrap_or_default();
+        if let Err(err) = self.check_proposal_early(false) {
+            sender.send(Err(err)).unwrap_or_default();
             return;
         }
 
         if let Err(err) = self.raw_node.propose(context, data) {
             if matches!(err, raft::Error::ProposalDropped) {
                 sender
-                    .send(Err(Error::ServiceIsBusy("proposal dropped")))
+                    .send(Err(Error::ServiceIsBusy(BusyReason::ProposalDropped)))
                     .unwrap_or_default();
             } else {
                 sender.send(Err(err.into())).unwrap_or_default();
@@ -161,21 +155,15 @@ where
         cc: impl ConfChangeI,
         sender: oneshot::Sender<Result<()>>,
     ) {
-        if self.raw_node.raft.state != StateRole::Leader {
-            sender
-                .send(Err(Error::NotLeader(
-                    self.group_id,
-                    self.raw_node.raft.term,
-                    None,
-                )))
-                .unwrap_or_default();
+        if let Err(err) = self.check_proposal_early(true) {
+            sender.send(Err(err)).unwrap_or_default();
             return;
         }
 
         if let Err(err) = self.raw_node.propose_conf_change(context, cc) {
             if matches!(err, raft::Error::ProposalDropped) {
                 sender
-                    .send(Err(Error::ServiceIsBusy("proposal dropped")))
+                    .send(Err(Error::ServiceIsBusy(BusyReason::ProposalDropped)))
                     .unwrap_or_default();
             } else {
                 sender.send(Err(err.into())).unwrap_or_default();
@@ -186,6 +174,23 @@ where
         let index = self.raw_node.raft.raft_log.last_index();
         let term = self.raw_node.raft.term;
         self.applier.delegate_proposal_context(index, term, sender);
+    }
+
+    pub fn check_proposal_early(&self, check_config_change: bool) -> Result<()> {
+        // See `raft-rs/src/raft.rs`:`step_leader` for details.
+        if self.raw_node.raft.state != StateRole::Leader {
+            Err(Error::NotLeader(
+                self.group_id,
+                self.raw_node.raft.term,
+                None,
+            ))
+        } else if self.raw_node.raft.lead_transferee.is_some() {
+            Err(Error::ServiceIsBusy(BusyReason::Transfering))
+        } else if check_config_change && self.has_pending_config_change() {
+            Err(Error::ServiceIsBusy(BusyReason::PendingConfigChange))
+        } else {
+            Ok(())
+        }
     }
 
     #[inline]
@@ -376,7 +381,8 @@ where
 
         if !ready.committed_entries().is_empty() {
             trace!(
-                "apply committed entries {}",
+                "{} apply committed entries {}",
+                self.group_id,
                 ready.committed_entries().len()
             );
             let replica_cache = template.mut_replica_cache();
@@ -415,6 +421,27 @@ where
         }
 
         Some(write_task)
+    }
+
+    /// Check for pending config changes.
+    ///
+    /// The underlying raft-rs will convert the proposal to a normal entry if there is an ongoing
+    /// config change. We check before propose to avoid it.
+    fn has_pending_config_change(&self) -> bool {
+        // Possible unapplied conf change.
+        if self.raw_node.raft.has_pending_conf() {
+            return true;
+        }
+
+        // Must transition out of joint config first.
+        let prs = self.raw_node.raft.prs();
+        let conf_state = prs.conf().to_conf_state();
+        if !conf_state.voters_outgoing.is_empty() {
+            // It equals to already joint.
+            return true;
+        }
+
+        false
     }
 }
 

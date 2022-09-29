@@ -69,8 +69,8 @@ pub enum Error {
     #[error("group {0} not ready")]
     GroupNotReady(u64),
 
-    #[error("service {0} is busy")]
-    ServiceIsBusy(&'static str),
+    #[error("service is busy: {0}")]
+    ServiceIsBusy(BusyReason),
 
     #[error("forward request to dest group")]
     Forward(crate::node::migrate::ForwardCtx),
@@ -96,6 +96,30 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[derive(Debug)]
+pub enum BusyReason {
+    Transfering,
+    Migrating,
+    AclGuard,
+    PendingConfigChange,
+    RequestChannelFulled,
+    ProposalDropped,
+}
+
+impl std::fmt::Display for BusyReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reason = match self {
+            BusyReason::AclGuard => "take acl guard",
+            BusyReason::Migrating => "in shard migrating",
+            BusyReason::PendingConfigChange => "has pending config change",
+            BusyReason::Transfering => "leader transfering",
+            BusyReason::RequestChannelFulled => "request channel fulled",
+            BusyReason::ProposalDropped => "proposal dropped by raft",
+        };
+        f.write_str(reason)
+    }
+}
 
 impl From<Error> for tonic::Status {
     fn from(e: Error) -> Self {
