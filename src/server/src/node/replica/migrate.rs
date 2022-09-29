@@ -182,7 +182,7 @@ impl Replica {
         Ok(())
     }
 
-    fn check_migrating_request_early(&self, shard_id: u64) -> Result<()> {
+    pub fn check_migrating_request_early(&self, shard_id: u64) -> Result<()> {
         let lease_state = self.lease_state.lock().unwrap();
         if !lease_state.is_ready_for_serving() {
             Err(Error::NotLeader(

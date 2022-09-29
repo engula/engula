@@ -446,6 +446,7 @@ impl Node {
                 return Err(Error::GroupNotFound(request.group_id));
             }
         };
+        replica.check_migrating_request_early(request.shard_id)?;
         Ok(ShardChunkStream::new(
             request.shard_id,
             self.cfg.shard_chunk_size,

@@ -15,6 +15,7 @@
 use std::{
     collections::HashMap,
     future::Future,
+    pin::Pin,
     task::Poll,
     time::{Duration, Instant},
 };
@@ -23,7 +24,7 @@ use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     shard,
 };
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use tonic::{Code, Status};
 use tracing::{debug, trace, warn};
 
@@ -33,10 +34,7 @@ use crate::{
 };
 
 pub struct RetryableShardChunkStreaming {
-    shard_id: u64,
-    last_key: Vec<u8>,
-    client: GroupClient,
-    streaming: tonic::Streaming<ShardChunk>,
+    inner: Pin<Box<dyn futures::Stream<Item = Result<ShardChunk>> + Send + 'static>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -653,12 +651,8 @@ impl GroupClient {
         last_key: Vec<u8>,
     ) -> Result<RetryableShardChunkStreaming> {
         let streaming = self.pull(shard_id, &last_key).await?;
-        let retryable_streaming = RetryableShardChunkStreaming {
-            shard_id,
-            last_key,
-            client: self,
-            streaming,
-        };
+        let retryable_streaming =
+            RetryableShardChunkStreaming::new(shard_id, last_key, self, streaming);
         Ok(retryable_streaming)
     }
 
@@ -685,30 +679,56 @@ impl GroupClient {
 }
 
 impl RetryableShardChunkStreaming {
-    async fn next(&mut self) -> Option<Result<ShardChunk>> {
+    pub fn new(
+        shard_id: u64,
+        last_key: Vec<u8>,
+        client: GroupClient,
+        streaming: tonic::Streaming<ShardChunk>,
+    ) -> Self {
+        let inner = retryable_chunk_stream(shard_id, last_key, client, streaming);
+        Self {
+            inner: Box::pin(inner),
+        }
+    }
+}
+
+fn retryable_chunk_stream(
+    shard_id: u64,
+    mut last_key: Vec<u8>,
+    mut client: GroupClient,
+    mut streaming: tonic::Streaming<ShardChunk>,
+) -> impl futures::Stream<Item = Result<ShardChunk>> {
+    async_stream::try_stream! {
         loop {
-            let item = match self.streaming.next().await {
-                None => return None,
+            let item = match streaming.next().await {
+                None => break,
                 Some(item) => item,
             };
             match item {
                 Ok(item) => {
                     debug_assert!(!item.data.is_empty());
-                    self.last_key = item.data.last().unwrap().key.clone();
-                    return Some(Ok(item));
+                    last_key = item.data.last().unwrap().key.clone();
+                    yield item;
                 }
                 Err(status) => {
-                    if let Err(e) = self.client.apply_status(status, &InvokeOpt::default()) {
-                        return Some(Err(e));
+                    if let Err(e) = client.apply_status(status, &InvokeOpt::default()) {
+                        warn!("shard {shard_id} fetch shard meet unretryable error: {e:?}");
+                        Err(e)?;
+                        unreachable!();
                     }
                 }
             }
 
             // retry, by recreate new stream.
-            match self.client.pull(self.shard_id, &self.last_key).await {
-                Ok(streaming) => self.streaming = streaming,
-                Err(e) => return Some(Err(e)),
+            match client.pull(shard_id, &last_key).await {
+                Ok(new_stream) => streaming = new_stream,
+                Err(e) => {
+                    warn!("shard {shard_id} fetch shard recreate steam meet error: {e:?}");
+                    Err(e)?;
+                    unreachable!();
+                },
             }
+            debug!("recreated shard {shard_id} fetch shard stream");
         }
     }
 }
@@ -720,9 +740,8 @@ impl futures::Stream for RetryableShardChunkStreaming {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let future = self.get_mut().next();
-        futures::pin_mut!(future);
-        future.poll_unpin(cx)
+        let me = self.get_mut();
+        Pin::new(&mut me.inner).poll_next(cx)
     }
 }
 
