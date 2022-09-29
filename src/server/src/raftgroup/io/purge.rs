@@ -23,7 +23,7 @@ pub async fn start_purging_expired_files(engine: Arc<raft_engine::Engine>) {
             crate::runtime::time::sleep(Duration::from_secs(10)).await;
             let cloned_engine = engine.clone();
             match current()
-                .spawn_blocking(move || cloned_engine.purge_expired_files())
+                .dispatch_blocking(move || cloned_engine.purge_expired_files())
                 .await
             {
                 Err(e) => {
