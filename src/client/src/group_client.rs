@@ -700,35 +700,34 @@ fn retryable_chunk_stream(
 ) -> impl futures::Stream<Item = Result<ShardChunk>> {
     async_stream::try_stream! {
         loop {
-            let item = match streaming.next().await {
+            match streaming.next().await {
                 None => break,
-                Some(item) => item,
-            };
-            match item {
-                Ok(item) => {
+                Some(Ok(item)) => {
                     debug_assert!(!item.data.is_empty());
                     last_key = item.data.last().unwrap().key.clone();
                     yield item;
                 }
-                Err(status) => {
+                Some(Err(status)) => {
                     if let Err(e) = client.apply_status(status, &InvokeOpt::default()) {
                         warn!("shard {shard_id} fetch shard meet unretryable error: {e:?}");
+                        // TODO(walter) we can replace it with `Result::inspect_err` once `result_option_inspect` is stabled.
                         Err(e)?;
                         unreachable!();
                     }
+
+                    // retry, by recreate new stream.
+                    GROUP_CLIENT_RETRY_TOTAL.inc();
+                    match client.pull(shard_id, &last_key).await {
+                        Ok(new_stream) => streaming = new_stream,
+                        Err(e) => {
+                            warn!("shard {shard_id} fetch shard recreate steam meet error: {e:?}");
+                            Err(e)?;
+                            unreachable!();
+                        },
+                    }
+                    debug!("recreated shard {shard_id} fetch shard stream");
                 }
             }
-
-            // retry, by recreate new stream.
-            match client.pull(shard_id, &last_key).await {
-                Ok(new_stream) => streaming = new_stream,
-                Err(e) => {
-                    warn!("shard {shard_id} fetch shard recreate steam meet error: {e:?}");
-                    Err(e)?;
-                    unreachable!();
-                },
-            }
-            debug!("recreated shard {shard_id} fetch shard stream");
         }
     }
 }

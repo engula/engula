@@ -45,6 +45,11 @@ lazy_static! {
         exponential_buckets(0.00005, 1.8, 26).unwrap(),
     )
     .unwrap();
+    pub static ref NODE_INGEST_CHUNK_TOTAL: IntCounter = register_int_counter!(
+        "node_ingest_chunk_total",
+        "The total of ingest chunks of node"
+    )
+    .unwrap();
 }
 
 pub fn take_destory_replica_metrics() -> &'static Histogram {

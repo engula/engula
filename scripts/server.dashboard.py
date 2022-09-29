@@ -355,6 +355,7 @@ def node_job_panels():
     return row_panels(
         "Node - Jobs",
         simple_total("pull shard qps", "node_pull_shard_total"),
+        simple_total("ingest chunk qps", "node_ingest_chunk_total"),
         simple_duration_seconds("pull shard duration",
                                 "node_pull_shard_duration_seconds"),
         simple_total("report qps", "node_report_total"),

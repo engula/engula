@@ -23,7 +23,7 @@ use futures::StreamExt;
 use tracing::warn;
 
 use crate::{
-    node::{metrics::take_pull_shard_metrics, Replica},
+    node::{metrics::*, Replica},
     record_latency, Result,
 };
 
@@ -38,6 +38,7 @@ pub async fn pull_shard(
     let mut streaming = client.retryable_pull(shard_id, last_migrated_key).await?;
     while let Some(shard_chunk) = streaming.next().await {
         let shard_chunk = shard_chunk?;
+        NODE_INGEST_CHUNK_TOTAL.inc();
         replica.ingest(shard_id, shard_chunk, false).await?;
     }
     Ok(())
