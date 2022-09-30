@@ -27,13 +27,17 @@ bash scripts/bootstrap.sh setup
 3. Verify
 
 ```sh
-cargo run -- shell <<EOF
+cargo run -- shell
+```
+
+Then types:
+
+```
 config create-if-missing true
 config database db-name
 config collection collection
 put foo bar
 get baz
-EOF
 ```
 
 ## Contributing
