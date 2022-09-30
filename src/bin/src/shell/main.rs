@@ -23,9 +23,10 @@ type ParseResult<T = Request> = std::result::Result<T, String>;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Parser)]
-#[clap(name = "engula", version, author, about)]
+#[clap(about = "Start engula shell")]
 pub struct Command {
-    #[clap(long)]
+    /// Sets the address of the target cluster to operate
+    #[clap(long, default_value = "0.0.0.0:21805")]
     addrs: Vec<String>,
 }
 

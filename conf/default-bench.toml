@@ -1,0 +1,73 @@
+
+# Limit the number of threads used.
+# Default: 1
+num_threads = 1
+
+# Set the address of the target cluster to test.
+# Default: 0.0.0.0:21805
+addrs = [ '0.0.0.0:21805' ]
+
+# Set the name of testing database.
+# Default: db
+database = 'db'
+
+# Set the name of testing collection.
+# Default: table
+collection = 'table'
+
+# Set the num of shards of the testing collection. (Currently only hash sharding is supported)
+# Default: 64
+num_shards = 64
+
+# Set whether to create new collection, if no such collection exists.
+# Default: true
+create_if_missing = true
+
+# Set the num of operations to perform.
+# Default: 100_000
+operation = 100000
+
+[worker]
+
+# Set the num of workers to issue parallel requests.
+# Default: 1
+num_worker = 1
+
+# Set the start intervals of between worker.
+# Default: None
+
+# Eg: set start intervals to 1 secs.
+#
+# [worker.start_intervals]
+# secs = 1
+# nanos = 0
+
+[key]
+
+# Set the prefix of generated keys.
+# Default: user_
+prefx = "user_"
+
+# Set the length of leading zeros.
+# Default: 10
+leading = 10
+
+[data]
+
+# Set the limit of keys to genarate.
+# Default: 10000
+limited = 10000
+
+# Set the percent of read operations to perform.
+# Default: 0.5
+read = 0.5
+
+# Set the perent of write operations to perfrom.
+# Default: 0.5
+write = 0.5
+
+# Set the range of length of generated values.
+# Default [10, 11)
+[data.value]
+start = 10
+end = 11

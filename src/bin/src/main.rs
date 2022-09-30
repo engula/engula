@@ -61,24 +61,34 @@ impl SubCommand {
 #[derive(Parser)]
 #[clap(about = "Start engula server")]
 struct StartCommand {
-    #[clap(
-        long,
-        help = "Try to bootstrap a cluster if it not initialized, otherwise join a cluster"
-    )]
+    /// Try to bootstrap a cluster if it not initialized, otherwise join a cluster
+    #[clap(long)]
     init: bool,
-    #[clap(long)]
+
+    /// Sets the address of the target cluster to which this node will join. It only takes effect
+    /// when `--init` is not set
+    #[clap(long, value_name = "ADDR")]
     join: Option<Vec<String>>,
-    #[clap(long)]
+
+    /// Sets a custom config file
+    #[clap(long, value_name = "FILE")]
     conf: Option<String>,
+
+    /// Sets the address to listen, default is '127.0.0.1:2180'
     #[clap(long)]
     addr: Option<String>,
-    #[clap(long)]
+
+    /// Sets the path to store data
+    #[clap(long, value_name = "DIR")]
     db: Option<String>,
-    #[clap(long)]
+
+    /// Limit the number of cores is allowed to use, default is the number of machine cpus
+    #[clap(long, value_name = "LIMIT")]
     cpu_nums: Option<u32>,
 
-    #[clap(long, help = "dump config as toml file and exit")]
-    dump_config: Option<String>,
+    /// Dump config as toml file and exit
+    #[clap(long, value_name = "FILE")]
+    dump: Option<String>,
 }
 
 impl StartCommand {
@@ -92,7 +102,7 @@ impl StartCommand {
             }
         };
 
-        if let Some(filename) = self.dump_config {
+        if let Some(filename) = self.dump {
             let contents = toml::to_string(&config).expect("Config is serializable");
             std::fs::write(filename, contents)?;
             return Ok(());
