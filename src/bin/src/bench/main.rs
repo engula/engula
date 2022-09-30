@@ -31,9 +31,10 @@ struct Context {
 }
 
 #[derive(Parser)]
-#[clap(name = "engula", version, author, about)]
+#[clap(about = "Start benchmark testing")]
 pub struct Command {
-    #[clap(long)]
+    /// Sets a custom config file
+    #[clap(long, value_name = "FILE")]
     conf: Option<String>,
 }
 
