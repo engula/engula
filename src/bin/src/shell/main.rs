@@ -26,7 +26,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 #[clap(about = "Start engula shell")]
 pub struct Command {
     /// Sets the address of the target cluster to operate
-    #[clap(long)]
+    #[clap(long, default_value = "0.0.0.0:21805")]
     addrs: Vec<String>,
 }
 

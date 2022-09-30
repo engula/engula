@@ -28,8 +28,9 @@ bash scripts/bootstrap.sh setup
 
 ```sh
 cargo run -- shell <<EOF
-config db db-name
-config coll collection
+config create-if-missing true
+config database db-name
+config collection collection
 put foo bar
 get baz
 EOF
