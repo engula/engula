@@ -24,7 +24,7 @@ BASE_DIR=$(pwd)/cluster_test
 BINARY_DIR=$(pwd)/target/${MODE}/
 
 # The number of servers of this clusters.
-NUM_SERVERS=1
+NUM_SERVERS=3
 
 # The first port of servers in cluster.
 BASE_PORT=21805
@@ -150,7 +150,7 @@ function setup_cluster() {
         --cpu-nums 2 \
         --addr "127.0.0.1:${BASE_PORT}" \
         --init \
-        --dump-config ${BASE_DIR}/config/1.toml
+        --dump ${BASE_DIR}/config/1.toml
 
     for id in $(seq 2 ${NUM_SERVERS}); do
         local servers="$(join_list)"
@@ -160,7 +160,7 @@ function setup_cluster() {
             --cpu-nums 2 \
             --addr "127.0.0.1:$(server_port ${id})" \
             ${servers} \
-            --dump-config ${BASE_DIR}/config/${id}.toml
+            --dump ${BASE_DIR}/config/${id}.toml
     done
 }
 
