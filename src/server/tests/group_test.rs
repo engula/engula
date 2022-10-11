@@ -71,6 +71,7 @@ fn add_replica() {
 
         // 1. create replica firstly
         c.create_replica(1, new_replica_id, root_group).await;
+        c.assert_group_leader(group_id).await;
 
         info!("try add replica {new_replica_id} into group {group_id}");
 
