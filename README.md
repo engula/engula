@@ -8,7 +8,16 @@
 [twitter-badge]: https://img.shields.io/twitter/follow/engulaio?style=flat-square&logo=twitter&color=brightgreen
 [twitter-url]: https://twitter.com/intent/follow?screen_name=engulaio
 
-Engula is a distributed key-value store.
+Engula is a distributed key-value store, used as a cache, database, and storage engine.
+
+## Architecture
+
+![topology][topology]
+
+See [design doc][design-doc] for more details.
+
+[topology]: ./docs/img/topology.drawio.svg
+[design-doc]: ./docs/design.md
 
 ## Quick start
 
@@ -30,15 +39,7 @@ bash scripts/bootstrap.sh setup
 cargo run -- shell
 ```
 
-Then types:
-
-```
-config create-if-missing true
-config database db-name
-config collection collection
-put foo bar
-get baz
-```
+Run and enjoy it.
 
 ## Contributing
 
@@ -46,4 +47,4 @@ Thanks for your help in improving the project! We have a [contributing guide](CO
 
 ## More information
 
-Design documentation is still being written. For informal discussions, please go to the [forum](https://github.com/engula/engula/discussions).
+For informal discussions, please go to the [forum](https://github.com/engula/engula/discussions).
