@@ -33,7 +33,7 @@ use tracing::{info, warn};
 use super::store::RootStore;
 use crate::{
     constants::*,
-    node::{engine::SnapshotMode, GroupEngine},
+    engine::{GroupEngine, SnapshotMode},
     serverpb::v1::BackgroundJob,
     Error, Provider, Result,
 };
@@ -300,7 +300,7 @@ impl Schema {
         Ok(nodes)
     }
 
-    pub async fn list_node_raw(engine: GroupEngine) -> Result<Vec<NodeDesc>> {
+    pub(crate) async fn list_node_raw(engine: GroupEngine) -> Result<Vec<NodeDesc>> {
         let shard_id = Self::system_shard_id(SYSTEM_NODE_COLLECTION_ID); // System collection only have one shard.
         let mut snapshot = match engine.snapshot(shard_id, SnapshotMode::Prefix { key: &[] }) {
             Ok(snapshot) => snapshot,

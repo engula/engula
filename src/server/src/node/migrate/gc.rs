@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::{
-    node::{engine::SnapshotMode, GroupEngine, Replica},
+    engine::{GroupEngine, SnapshotMode},
+    node::Replica,
     NodeConfig, Result,
 };
 
-pub async fn remove_shard(
+pub(crate) async fn remove_shard(
     cfg: &NodeConfig,
     replica: &Replica,
     group_engine: GroupEngine,

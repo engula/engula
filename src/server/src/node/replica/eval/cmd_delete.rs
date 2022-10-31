@@ -1,5 +1,3 @@
-use engula_api::server::v1::ShardDeleteRequest;
-
 // Copyright 2022 The Engula Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,17 +11,17 @@ use engula_api::server::v1::ShardDeleteRequest;
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+use engula_api::server::v1::ShardDeleteRequest;
+
 use crate::{
-    node::{
-        engine::{GroupEngine, SnapshotMode, WriteBatch},
-        migrate::ForwardCtx,
-        replica::ExecCtx,
-    },
+    engine::{GroupEngine, SnapshotMode, WriteBatch},
+    node::{migrate::ForwardCtx, replica::ExecCtx},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };
 
-pub async fn delete(
+pub(crate) async fn delete(
     exec_ctx: &ExecCtx,
     group_engine: &GroupEngine,
     req: &ShardDeleteRequest,

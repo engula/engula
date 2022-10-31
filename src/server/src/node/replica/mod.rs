@@ -31,9 +31,9 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 pub use self::state::{LeaseState, LeaseStateObserver};
-use super::engine::GroupEngine;
 pub use crate::raftgroup::RaftNodeFacade as RaftSender;
 use crate::{
+    engine::GroupEngine,
     error::BusyReason,
     raftgroup::{
         perf_point_micros, write_initial_state, RaftManager, RaftNodeFacade, ReadPolicy,
@@ -133,7 +133,7 @@ impl Replica {
     }
 
     /// Open the existed replica of raft group.
-    pub fn new(
+    pub(crate) fn new(
         info: Arc<ReplicaInfo>,
         lease_state: Arc<Mutex<LeaseState>>,
         raft_node: RaftNodeFacade,
@@ -257,7 +257,7 @@ impl Replica {
     }
 
     #[inline]
-    pub fn group_engine(&self) -> GroupEngine {
+    pub(crate) fn group_engine(&self) -> GroupEngine {
         self.group_engine.clone()
     }
 

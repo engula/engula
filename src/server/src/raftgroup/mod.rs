@@ -22,7 +22,7 @@ pub mod snap;
 mod storage;
 mod worker;
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use engula_api::server::v1::*;
 use raft::prelude::{
@@ -122,14 +122,12 @@ pub struct RaftManager {
 impl RaftManager {
     pub(crate) async fn open(
         cfg: RaftConfig,
-        log_path: &Path,
         engine: Arc<raft_engine::Engine>,
+        snap_mgr: SnapManager,
         transport_mgr: TransportManager,
     ) -> Result<Self> {
-        let snap_dir = log_path.join("snap");
         start_purging_expired_files(engine.clone()).await;
         let log_writer = LogWriter::new(cfg.max_io_batch_size, engine.clone());
-        let snap_mgr = SnapManager::recovery(snap_dir).await?;
         Ok(RaftManager {
             cfg,
             engine,

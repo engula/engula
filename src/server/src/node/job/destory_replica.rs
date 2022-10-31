@@ -17,7 +17,8 @@ use std::sync::Arc;
 use tracing::error;
 
 use crate::{
-    node::{engine::RawDb, metrics::*, GroupEngine, StateEngine},
+    engine::{Engines, GroupEngine, RawDb, StateEngine},
+    node::metrics::*,
     raftgroup::destory_storage,
     record_latency,
     runtime::TaskPriority,
@@ -26,16 +27,16 @@ use crate::{
 };
 
 /// Clean a group engine and save the replica state to `ReplicaLocalState::Tombstone`.
-pub(crate) fn setup(
-    group_id: u64,
-    replica_id: u64,
-    state_engine: StateEngine,
-    raw_db: Arc<RawDb>,
-    raft_engine: Arc<raft_engine::Engine>,
-) {
+pub(crate) fn setup(group_id: u64, replica_id: u64, engines: Engines) {
     crate::runtime::current().spawn(Some(group_id), TaskPriority::IoLow, async move {
-        if let Err(err) =
-            destory_replica(group_id, replica_id, state_engine, raw_db, raft_engine).await
+        if let Err(err) = destory_replica(
+            group_id,
+            replica_id,
+            engines.state(),
+            engines.db(),
+            engines.log(),
+        )
+        .await
         {
             error!("destory group engine: {}, group {}", err, group_id);
         }

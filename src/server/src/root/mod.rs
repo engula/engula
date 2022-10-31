@@ -1321,6 +1321,7 @@ mod root_test {
     use crate::{
         bootstrap::bootstrap_cluster,
         constants::{INITIAL_EPOCH, ROOT_GROUP_ID},
+        engine::Engines,
         node::Node,
         root::Root,
         runtime::ExecutorOwner,
@@ -1330,11 +1331,10 @@ mod root_test {
     async fn create_root_and_node(config: &Config, node_ident: &NodeIdent) -> (Root, Node) {
         use crate::bootstrap::build_provider;
 
-        let (provider, state_engine) = build_provider(config).await.unwrap();
+        let engines = Engines::open(&config.root_dir, &config.db).unwrap();
+        let provider = build_provider(config, engines.state()).await.unwrap();
         let root = Root::new(provider.clone(), node_ident, config.clone());
-        let node = Node::new(config.clone(), provider, state_engine)
-            .await
-            .unwrap();
+        let node = Node::new(config.clone(), engines, provider).await.unwrap();
         (root, node)
     }
 

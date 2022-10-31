@@ -15,16 +15,13 @@
 use engula_api::server::v1::ShardPutRequest;
 
 use crate::{
-    node::{
-        engine::{GroupEngine, WriteBatch},
-        migrate::ForwardCtx,
-        replica::ExecCtx,
-    },
+    engine::{GroupEngine, WriteBatch},
+    node::{migrate::ForwardCtx, replica::ExecCtx},
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };
 
-pub async fn put(
+pub(crate) async fn put(
     exec_ctx: &ExecCtx,
     group_engine: &GroupEngine,
     req: &ShardPutRequest,

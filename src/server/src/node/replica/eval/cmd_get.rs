@@ -15,12 +15,13 @@
 use engula_api::server::v1::*;
 
 use crate::{
-    node::{engine::GroupEngine, migrate::ForwardCtx, replica::ExecCtx},
+    engine::GroupEngine,
+    node::{migrate::ForwardCtx, replica::ExecCtx},
     Error, Result,
 };
 
 /// Get the value of the specified key.
-pub async fn get(
+pub(crate) async fn get(
     exec_ctx: &ExecCtx,
     engine: &GroupEngine,
     req: &ShardGetRequest,
