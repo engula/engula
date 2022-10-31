@@ -23,7 +23,7 @@ use tracing::{info, trace, warn};
 
 use super::{HeartbeatTask, Root, Schema};
 use crate::{
-    bootstrap::ROOT_GROUP_ID,
+    constants::ROOT_GROUP_ID,
     root::{metrics, schema::ReplicaNodes},
     Result,
 };

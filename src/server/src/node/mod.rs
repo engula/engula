@@ -42,7 +42,7 @@ pub use self::{
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
 use crate::{
-    bootstrap::ROOT_GROUP_ID,
+    constants::ROOT_GROUP_ID,
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
     raftgroup::{snap::RecycleSnapMode, RaftManager, RaftNodeFacade, TransportManager},
     runtime::sync::WaitGroup,
@@ -106,6 +106,7 @@ where
 
     raft_mgr: RaftManager,
     migrate_ctrl: MigrateController,
+    state_engine: StateEngine,
 
     /// Node related metadata, including serving replicas, root desc.
     node_state: Arc<Mutex<NodeState>>,
@@ -115,12 +116,22 @@ where
 }
 
 impl Node {
-    pub(crate) async fn new(cfg: Config, provider: Arc<Provider>) -> Result<Self> {
+    pub(crate) async fn new(
+        cfg: Config,
+        provider: Arc<Provider>,
+        state_engine: StateEngine,
+    ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
         let trans_mgr =
             TransportManager::build(provider.address_resolver.clone(), raft_route_table.clone())
                 .await;
-        let raft_mgr = RaftManager::open(cfg.raft.clone(), &provider.log_path, trans_mgr).await?;
+        let raft_mgr = RaftManager::open(
+            cfg.raft.clone(),
+            &provider.log_path,
+            provider.raft_engine.clone(),
+            trans_mgr,
+        )
+        .await?;
         let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
         Ok(Node {
             cfg: cfg.node,
@@ -129,6 +140,7 @@ impl Node {
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
             migrate_ctrl,
+            state_engine,
             node_state: Arc::new(Mutex::new(NodeState::default())),
             replica_mutation: Arc::default(),
         })
@@ -148,14 +160,13 @@ impl Node {
         node_state.channel = Some(setup_report_state(self.provider.as_ref()));
 
         let node_id = node_ident.node_id;
-        let it = self.provider.state_engine.iterate_replica_states().await;
-        for entry in it {
-            let (group_id, replica_id, state) = entry?;
+        for (group_id, replica_id, state) in self.state_engine.replica_states().await? {
             if state == ReplicaLocalState::Terminated {
                 setup_destory_replica(
                     group_id,
                     replica_id,
-                    self.provider.as_ref(),
+                    self.state_engine.clone(),
+                    self.provider.raw_db.clone(),
                     self.raft_mgr.engine(),
                 );
             }
@@ -211,8 +222,7 @@ impl Node {
         // state. In this way, even if the node is restarted before the group is
         // successfully created, a replica can be recreated by retrying.
         Replica::create(replica_id, &group, &self.raft_mgr).await?;
-        self.provider
-            .state_engine
+        self.state_engine
             .save_replica_state(group_id, replica_id, ReplicaLocalState::Initial)
             .await?;
 
@@ -292,8 +302,7 @@ impl Node {
         wait_group.wait().await;
 
         // This replica is shutdowned, we need to update and persisted states.
-        self.provider
-            .state_engine
+        self.state_engine
             .save_replica_state(group_id, replica_id, ReplicaLocalState::Terminated)
             .await?;
 
@@ -305,7 +314,8 @@ impl Node {
         self::job::setup_destory_replica(
             group_id,
             replica_id,
-            self.provider.as_ref(),
+            self.state_engine.clone(),
+            self.provider.raw_db.clone(),
             self.raft_mgr.engine(),
         );
 
@@ -388,8 +398,7 @@ impl Node {
         // normal state.
         if matches!(local_state, ReplicaLocalState::Initial) {
             info.as_normal_state();
-            self.provider
-                .state_engine
+            self.state_engine
                 .save_replica_state(group_id, replica_id, ReplicaLocalState::Normal)
                 .await?;
         }
@@ -533,7 +542,7 @@ impl Node {
 
     #[inline]
     pub fn state_engine(&self) -> &StateEngine {
-        &self.provider.state_engine
+        &self.state_engine
     }
 
     #[inline]
@@ -769,7 +778,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::{bootstrap::INITIAL_EPOCH, runtime::ExecutorOwner};
+    use crate::{constants::INITIAL_EPOCH, runtime::ExecutorOwner};
 
     async fn create_node(root_dir: PathBuf) -> Node {
         use crate::bootstrap::build_provider;
@@ -779,16 +788,17 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = build_provider(&config).await.unwrap();
+        let (provider, state_engine) = build_provider(&config).await.unwrap();
 
-        Node::new(config, provider).await.unwrap()
+        Node::new(config, provider, state_engine).await.unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {
         node.state_engine()
-            .iterate_replica_states()
+            .replica_states()
             .await
-            .map(|e| e.unwrap())
+            .unwrap()
+            .into_iter()
             .filter(|(_, id, _)| *id == replica_id)
             .map(|(_, _, state)| state)
             .next()
@@ -1087,8 +1097,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            node.provider
-                .state_engine
+            node.state_engine
                 .save_replica_state(group_id, replica_id, ReplicaLocalState::Terminated)
                 .await
                 .unwrap();

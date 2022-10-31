@@ -32,11 +32,8 @@ use tracing::{info, warn};
 
 use super::store::RootStore;
 use crate::{
-    bootstrap::*,
-    node::{
-        engine::{SnapshotMode, LOCAL_COLLECTION_ID},
-        GroupEngine,
-    },
+    constants::*,
+    node::{engine::SnapshotMode, GroupEngine},
     serverpb::v1::BackgroundJob,
     Error, Provider, Result,
 };

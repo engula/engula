@@ -22,6 +22,7 @@
 
 mod bootstrap;
 mod config;
+mod constants;
 mod discovery;
 mod error;
 mod root;
@@ -38,7 +39,7 @@ use std::{path::PathBuf, sync::Arc};
 use engula_client::{ConnManager, RootClient, Router};
 use tonic::async_trait;
 
-use crate::node::{engine::RawDb, resolver::AddressResolver, StateEngine};
+use crate::node::{engine::RawDb, resolver::AddressResolver};
 pub use crate::{
     bootstrap::run,
     config::*,
@@ -61,7 +62,7 @@ pub(crate) struct Provider {
     pub root_client: RootClient,
     pub router: Router,
     pub raw_db: Arc<RawDb>,
-    pub state_engine: StateEngine,
+    pub raft_engine: Arc<raft_engine::Engine>,
 }
 
 #[cfg(test)]

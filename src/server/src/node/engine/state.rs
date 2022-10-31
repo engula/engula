@@ -15,12 +15,8 @@
 use std::sync::Arc;
 
 use engula_api::server::v1::*;
-use prost::Message;
 
-use super::RawDb;
-use crate::{serverpb::v1::*, Result};
-
-const STATE_CF_NAME: &str = "state";
+use crate::{constants::STATE_REPLICA_ID, serverpb::v1::*, Result};
 
 /// A structure supports saving and loading local states.
 ///
@@ -36,83 +32,48 @@ pub struct StateEngine
 where
     Self: Send + Sync,
 {
-    raw_db: Arc<RawDb>,
-}
-
-pub struct ReplicaStateIterator<'a> {
-    inner: rocksdb::DBIteratorWithThreadMode<'a, rocksdb::DB>,
+    raw: Arc<raft_engine::Engine>,
 }
 
 impl StateEngine {
-    pub fn new(raw_db: Arc<RawDb>) -> Result<Self> {
-        if raw_db.cf_handle(STATE_CF_NAME).is_none() {
-            raw_db.create_cf(STATE_CF_NAME)?;
-        }
-        Ok(StateEngine { raw_db })
+    pub fn new(raw: Arc<raft_engine::Engine>) -> Self {
+        StateEngine { raw }
     }
 
     /// Read node ident from engine. `None` is returned if no such ident exists.
     pub async fn read_ident(&self) -> Result<Option<NodeIdent>> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
-        match self.raw_db.get_pinned_cf(&cf_handle, keys::node_ident())? {
-            Some(value) => {
-                let ident = NodeIdent::decode(value.as_ref()).expect("valid node ident format");
-                Ok(Some(ident))
-            }
-            None => Ok(None),
-        }
+        Ok(self
+            .raw
+            .get_message::<NodeIdent>(STATE_REPLICA_ID, keys::node_ident())?)
     }
 
     /// Save node ident, return appropriate error if ident already exists.
     pub async fn save_ident(&self, ident: &NodeIdent) -> Result<()> {
-        use rocksdb::{WriteBatch, WriteOptions};
+        use raft_engine::LogBatch;
 
-        // FIXME(walter) check existence.
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
-
-        let mut opts = WriteOptions::default();
-        opts.set_sync(true);
-        let mut wb = WriteBatch::default();
-        wb.put_cf(&cf_handle, keys::node_ident(), ident.encode_to_vec());
-        self.raw_db.write_opt(wb, &opts)?;
-
+        let mut lb = LogBatch::default();
+        lb.put_message(STATE_REPLICA_ID, keys::node_ident().to_owned(), ident)
+            .expect("NodeIdent is Serializable");
+        self.raw.write(&mut lb, false)?;
         Ok(())
     }
 
     /// Save root desc.
     pub async fn save_root_desc(&self, root_desc: RootDesc) -> Result<()> {
-        use rocksdb::{WriteBatch, WriteOptions};
+        use raft_engine::LogBatch;
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
-
-        let mut opts = WriteOptions::default();
-        opts.set_sync(true);
-        let mut wb = WriteBatch::default();
-        wb.put_cf(&cf_handle, keys::root_desc(), root_desc.encode_to_vec());
-        self.raw_db.write_opt(wb, &opts)?;
-
+        let mut lb = LogBatch::default();
+        lb.put_message(STATE_REPLICA_ID, keys::root_desc().to_owned(), &root_desc)
+            .expect("RootDesc is Serializable");
+        self.raw.write(&mut lb, false)?;
         Ok(())
     }
 
     /// Load root desc. `None` is returned if there no any root node records exists.
     pub async fn load_root_desc(&self) -> Result<Option<RootDesc>> {
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
-        match self.raw_db.get_pinned_cf(&cf_handle, keys::root_desc())? {
-            Some(value) => Ok(Some(RootDesc::decode(value.as_ref())?)),
-            None => Ok(None),
-        }
+        Ok(self
+            .raw
+            .get_message::<RootDesc>(STATE_REPLICA_ID, keys::root_desc())?)
     }
 
     /// Save replica state.
@@ -122,69 +83,43 @@ impl StateEngine {
         replica_id: u64,
         state: ReplicaLocalState,
     ) -> Result<()> {
-        use rocksdb::{WriteBatch, WriteOptions};
+        use raft_engine::LogBatch;
 
         let replica_meta = ReplicaMeta {
             group_id,
             replica_id,
             state: state.into(),
         };
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
 
-        let mut opts = WriteOptions::default();
-        opts.set_sync(true);
-        let mut wb = WriteBatch::default();
+        let mut lb = LogBatch::default();
         let state_key = keys::replica_state(replica_id);
-        wb.put_cf(
-            &cf_handle,
-            state_key.as_slice(),
-            replica_meta.encode_to_vec(),
-        );
-        self.raw_db.write_opt(wb, &opts)?;
-
+        lb.put_message(STATE_REPLICA_ID, state_key.to_vec(), &replica_meta)
+            .expect("RootDesc is Serializable");
+        self.raw.write(&mut lb, false)?;
         Ok(())
     }
 
-    /// Iterate group states.
-    pub async fn iterate_replica_states(&self) -> ReplicaStateIterator<'_> {
-        use rocksdb::{Direction, IteratorMode};
+    /// Fetch all replica states.
+    pub async fn replica_states(&self) -> Result<Vec<(u64, u64, ReplicaLocalState)>> {
+        let mut replica_states = Vec::default();
+        let start_key = keys::replica_state_prefix();
+        let end_key = keys::replica_state_end();
+        self.raw.scan_messages(
+            STATE_REPLICA_ID,
+            Some(start_key),
+            Some(end_key),
+            false,
+            |_, replica_meta: ReplicaMeta| {
+                let replica_id = replica_meta.replica_id;
+                let group_id = replica_meta.group_id;
+                let local_state = ReplicaLocalState::from_i32(replica_meta.state)
+                    .expect("invalid ReplicaLocalState value");
+                replica_states.push((group_id, replica_id, local_state));
+                true
+            },
+        )?;
 
-        let cf_handle = self
-            .raw_db
-            .cf_handle(STATE_CF_NAME)
-            .expect("state column family");
-        let mode = IteratorMode::From(keys::replica_state_prefix(), Direction::Forward);
-        let it = self.raw_db.iterator_cf(&cf_handle, mode);
-        ReplicaStateIterator { inner: it }
-    }
-}
-
-impl<'a> Iterator for ReplicaStateIterator<'a> {
-    /// (group id, replica id, replica state)
-    type Item = Result<(u64, u64, ReplicaLocalState)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.next()? {
-            Ok((key, value)) => {
-                if !key.starts_with(keys::replica_state_end()) {
-                    let replica_id = keys::parse_replica_id(&key).expect("valid replica state key");
-                    let replica_meta =
-                        ReplicaMeta::decode(value.as_ref()).expect("valid ReplicaMeta format");
-                    Some(Ok((
-                        replica_meta.group_id,
-                        replica_id,
-                        ReplicaLocalState::from_i32(replica_meta.state)
-                            .expect("valid ReplicaLocalState value"),
-                    )))
-                } else {
-                    None
-                }
-            }
-            Err(err) => Some(Err(err.into())),
-        }
+        Ok(replica_states)
     }
 }
 
@@ -215,17 +150,5 @@ mod keys {
         buf[..1].copy_from_slice(REPLICA_STATE_PREFIX);
         buf[1..].copy_from_slice(&replica_id.to_le_bytes());
         buf
-    }
-
-    /// Parse replica id from replica state key. `None` is returned if the prefix or length does not
-    /// matched.
-    pub fn parse_replica_id(key: &[u8]) -> Option<u64> {
-        if key.len() == 9 && key.starts_with(REPLICA_STATE_PREFIX) {
-            let mut buf = [0; 8];
-            buf.copy_from_slice(&key[1..]);
-            Some(u64::from_le_bytes(buf))
-        } else {
-            None
-        }
     }
 }

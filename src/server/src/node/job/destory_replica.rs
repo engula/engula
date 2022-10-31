@@ -22,18 +22,17 @@ use crate::{
     record_latency,
     runtime::TaskPriority,
     serverpb::v1::ReplicaLocalState,
-    Error, Provider, Result,
+    Error, Result,
 };
 
 /// Clean a group engine and save the replica state to `ReplicaLocalState::Tombstone`.
 pub(crate) fn setup(
     group_id: u64,
     replica_id: u64,
-    provider: &Provider,
+    state_engine: StateEngine,
+    raw_db: Arc<RawDb>,
     raft_engine: Arc<raft_engine::Engine>,
 ) {
-    let state_engine = provider.state_engine.clone();
-    let raw_db = provider.raw_db.clone();
     crate::runtime::current().spawn(Some(group_id), TaskPriority::IoLow, async move {
         if let Err(err) =
             destory_replica(group_id, replica_id, state_engine, raw_db, raft_engine).await
@@ -82,7 +81,6 @@ mod tests {
         let raw_db = Arc::new(open_engine_with_default_config(&db_path).unwrap());
         let group_id = 1;
         let replica_id = 1;
-        let state_engine = StateEngine::new(raw_db.clone()).unwrap();
 
         let executor_owner = ExecutorOwner::new(1);
 
@@ -96,6 +94,7 @@ mod tests {
             ..Default::default()
         };
         let engine = Arc::new(Engine::open(engine_cfg).unwrap());
+        let state_engine = StateEngine::new(engine.clone());
         executor_owner.executor().block_on(async {
             destory_replica(group_id, replica_id, state_engine, raw_db, engine)
                 .await

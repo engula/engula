@@ -22,7 +22,7 @@ use self::{
     policy_shard_cnt::ShardCountPolicy, source::NodeFilter,
 };
 use super::{metrics, OngoingStats, RootShared};
-use crate::{bootstrap::REPLICA_PER_GROUP, Result};
+use crate::{constants::REPLICA_PER_GROUP, Result};
 
 #[cfg(test)]
 mod sim_test;

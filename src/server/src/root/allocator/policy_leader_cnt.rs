@@ -18,7 +18,7 @@ use engula_api::server::v1::{NodeDesc, RaftRole, ReplicaDesc, ReplicaRole};
 use tracing::debug;
 
 use super::{source::NodeFilter, AllocSource, BalanceStatus, LeaderAction, TransferLeader};
-use crate::{bootstrap::ROOT_GROUP_ID, Result};
+use crate::{constants::ROOT_GROUP_ID, Result};
 
 pub struct LeaderCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,

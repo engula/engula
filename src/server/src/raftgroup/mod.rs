@@ -123,19 +123,10 @@ impl RaftManager {
     pub(crate) async fn open(
         cfg: RaftConfig,
         log_path: &Path,
+        engine: Arc<raft_engine::Engine>,
         transport_mgr: TransportManager,
     ) -> Result<Self> {
-        use raft_engine::{Config, Engine};
-        let engine_dir = log_path.join("engine");
         let snap_dir = log_path.join("snap");
-        create_dir_all_if_not_exists(&engine_dir)?;
-        create_dir_all_if_not_exists(&snap_dir)?;
-        let engine_cfg = Config {
-            dir: engine_dir.to_str().unwrap().to_owned(),
-            enable_log_recycle: cfg.enable_log_recycle,
-            ..Default::default()
-        };
-        let engine = Arc::new(Engine::open(engine_cfg)?);
         start_purging_expired_files(engine.clone()).await;
         let log_writer = LogWriter::new(cfg.max_io_batch_size, engine.clone());
         let snap_mgr = SnapManager::recovery(snap_dir).await?;
@@ -258,13 +249,4 @@ pub fn conf_state_from_group_descriptor(desc: &GroupDesc) -> ConfState {
         cs.voters_outgoing.clear();
     }
     cs
-}
-
-fn create_dir_all_if_not_exists<P: AsRef<Path>>(dir: &P) -> Result<()> {
-    use std::io::ErrorKind;
-    match std::fs::create_dir_all(dir.as_ref()) {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
-        Err(err) => Err(err.into()),
-    }
 }

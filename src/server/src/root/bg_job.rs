@@ -27,7 +27,7 @@ use tracing::{error, info, warn};
 
 use super::{allocator::*, HeartbeatQueue, HeartbeatTask, RootShared, Schema};
 use crate::{
-    bootstrap::INITIAL_EPOCH,
+    constants::INITIAL_EPOCH,
     root::metrics,
     serverpb::v1::{background_job::Job, *},
     Result,

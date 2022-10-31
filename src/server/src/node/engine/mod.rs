@@ -20,7 +20,6 @@ use std::{path::Path, sync::Arc};
 pub use self::{
     group::{
         EngineConfig, GroupEngine, RawIterator, Snapshot, SnapshotMode, WriteBatch, WriteStates,
-        LOCAL_COLLECTION_ID,
     },
     state::StateEngine,
 };
