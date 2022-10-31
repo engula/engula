@@ -1,6 +1,6 @@
 [package]
 name = "engula-client"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "Apache-2.0"
 homepage = "https://engula.io"
@@ -8,7 +8,7 @@ repository = "https://github.com/engula/engula"
 description = "The Engula API."
 
 [dependencies]
-engula-api = { version = "0.4", path = "../api" }
+engula-api = { version = "0.5", path = "../api" }
 
 async-stream = "0.3.3"
 crc32fast = "1.3.2"
