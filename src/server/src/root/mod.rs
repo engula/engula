@@ -48,7 +48,7 @@ use self::{
     schema::ReplicaNodes, store::RootStore,
 };
 use crate::{
-    bootstrap::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
+    constants::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{self, TaskPriority},
     serverpb::v1::{background_job::Job, reconcile_task, *},
@@ -1319,7 +1319,8 @@ mod root_test {
 
     use super::Config;
     use crate::{
-        bootstrap::{bootstrap_cluster, INITIAL_EPOCH, ROOT_GROUP_ID},
+        bootstrap::bootstrap_cluster,
+        constants::{INITIAL_EPOCH, ROOT_GROUP_ID},
         node::Node,
         root::Root,
         runtime::ExecutorOwner,
@@ -1329,9 +1330,11 @@ mod root_test {
     async fn create_root_and_node(config: &Config, node_ident: &NodeIdent) -> (Root, Node) {
         use crate::bootstrap::build_provider;
 
-        let provider = build_provider(config).await.unwrap();
+        let (provider, state_engine) = build_provider(config).await.unwrap();
         let root = Root::new(provider.clone(), node_ident, config.clone());
-        let node = Node::new(config.clone(), provider).await.unwrap();
+        let node = Node::new(config.clone(), provider, state_engine)
+            .await
+            .unwrap();
         (root, node)
     }
 

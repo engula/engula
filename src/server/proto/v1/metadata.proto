@@ -39,13 +39,29 @@ message NodeIdent {
   uint64 node_id = 2;
 }
 
+/// This indicates the state of metadata of a group replica.
 enum ReplicaLocalState {
+  /// The key metadata of an replica are created(recoverable by restart), but
+  /// the otheres metadata are still in creating.
   INITIAL = 0;
+
+  /// The replica has been demaged and is in the process of recovery, and once
+  /// recovered, the replica will return to `Normal` state.
   PENDING = 1;
+
+  /// The replica is ready for serving requests.
   NORMAL = 2;
-  /// The service and memory states are shutdown and cleans, but disk data still
-  /// exists.
+
+  /// The replica needs to be deleted, at now it has stopped serving and
+  /// cleaned up the in-memory state, but there is still dirty data on disk that
+  /// needs to be cleaned up.
   TERMINATED = 3;
+
+  /// The replica has been removed.
+  ///
+  /// In a replication group, the replica data cannot be rolled back. In other
+  /// words, a replica cannot be created multiple times on the same node, so it
+  /// is necessary to record the replicas that this node has served.
   TOMBSTONE = 4;
 }
 

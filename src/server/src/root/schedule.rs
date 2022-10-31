@@ -22,7 +22,7 @@ use tracing::{error, info, warn};
 
 use super::{allocator::*, metrics, *};
 use crate::{
-    bootstrap::ROOT_GROUP_ID,
+    constants::ROOT_GROUP_ID,
     serverpb::v1::{reconcile_task::Task, *},
     Result,
 };

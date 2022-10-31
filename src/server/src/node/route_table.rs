@@ -19,7 +19,7 @@ use std::{
 };
 
 use super::Replica;
-use crate::{bootstrap::ROOT_GROUP_ID, raftgroup::RaftNodeFacade};
+use crate::{constants::ROOT_GROUP_ID, raftgroup::RaftNodeFacade};
 
 /// A structure support replica route queries.
 #[derive(Clone)]

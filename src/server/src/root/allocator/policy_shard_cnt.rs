@@ -18,7 +18,7 @@ use engula_api::server::v1::{GroupDesc, ShardDesc};
 use tracing::debug;
 
 use super::{AllocSource, ReallocateShard, ShardAction};
-use crate::{bootstrap::ROOT_GROUP_ID, root::allocator::BalanceStatus, Result};
+use crate::{constants::ROOT_GROUP_ID, root::allocator::BalanceStatus, Result};
 
 pub struct ShardCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,

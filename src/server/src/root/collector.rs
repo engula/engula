@@ -21,7 +21,7 @@ use engula_api::server::v1::NodeStatus;
 use prometheus::{core::Collector, *};
 use prometheus_static_metric::make_static_metric;
 
-use crate::{bootstrap::ROOT_GROUP_ID, Server};
+use crate::{constants::ROOT_GROUP_ID, Server};
 
 make_static_metric! {
     struct NodeTotal: IntGauge {

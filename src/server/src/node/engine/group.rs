@@ -27,10 +27,11 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use super::RawDb;
-use crate::{bootstrap::INITIAL_EPOCH, serverpb::v1::*, Error, Result};
-
-/// The collection id of local states, which allows commit without replicating.
-pub const LOCAL_COLLECTION_ID: u64 = 0;
+use crate::{
+    constants::{INITIAL_EPOCH, LOCAL_COLLECTION_ID},
+    serverpb::v1::*,
+    Error, Result,
+};
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct EngineConfig {

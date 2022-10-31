@@ -19,6 +19,7 @@ use engula_client::{ConnManager, RootClient, Router};
 use tracing::{debug, info, warn};
 
 use crate::{
+    constants::*,
     discovery::RootDiscovery,
     node::{
         engine::{RawDb, StateEngine},
@@ -32,26 +33,11 @@ use crate::{
     Config, DbConfig, Error, Provider, Result, Server,
 };
 
-pub const REPLICA_PER_GROUP: usize = 3;
-
-pub const ROOT_GROUP_ID: u64 = 0;
-pub const INIT_USER_GROUP_ID: u64 = ROOT_GROUP_ID + 1;
-pub const FIRST_REPLICA_ID: u64 = 1;
-pub const INIT_USER_REPLICA_ID: u64 = FIRST_REPLICA_ID + 1;
-pub const FIRST_NODE_ID: u64 = 0;
-pub const INITIAL_EPOCH: u64 = 0;
-pub const INITIAL_JOB_ID: u64 = 0;
-
-lazy_static::lazy_static! {
-    pub static ref SHARD_MIN: Vec<u8> = vec![];
-    pub static ref SHARD_MAX: Vec<u8> = vec![];
-}
-
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     executor.block_on(async {
-        let provider = build_provider(&config).await?;
-        let node = Node::new(config.clone(), provider.clone()).await?;
+        let (provider, state_engine) = build_provider(&config).await?;
+        let node = Node::new(config.clone(), provider.clone(), state_engine).await?;
 
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
@@ -294,17 +280,19 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn build_provider(config: &Config) -> Result<Arc<Provider>> {
+pub(crate) async fn build_provider(config: &Config) -> Result<(Arc<Provider>, StateEngine)> {
     let db_path = config.root_dir.join("db");
     let log_path = config.root_dir.join("log");
     let raw_db = Arc::new(open_engine(&config.db, &db_path)?);
+    let raft_engine = open_raft_engine(&log_path)?;
+    let state_engine = StateEngine::new(raft_engine.clone());
 
     let root_list = if config.init {
         vec![config.addr.clone()]
     } else {
         config.join_list.clone()
     };
-    let state_engine = StateEngine::new(raw_db.clone())?;
+
     let discovery = Arc::new(RootDiscovery::new(root_list, state_engine.clone()));
     let conn_manager = ConnManager::new();
     let root_client = RootClient::new(discovery, conn_manager.clone());
@@ -318,9 +306,33 @@ pub(crate) async fn build_provider(config: &Config) -> Result<Arc<Provider>> {
         router,
         address_resolver,
         raw_db,
-        state_engine,
+        raft_engine,
     });
-    Ok(provider)
+    Ok((provider, state_engine))
+}
+
+fn open_raft_engine(log_path: &Path) -> Result<Arc<raft_engine::Engine>> {
+    use raft_engine::{Config, Engine};
+    let engine_dir = log_path.join("engine");
+    let snap_dir = log_path.join("snap");
+    create_dir_all_if_not_exists(&engine_dir)?;
+    create_dir_all_if_not_exists(&snap_dir)?;
+    let engine_cfg = Config {
+        dir: engine_dir.to_str().unwrap().to_owned(),
+        enable_log_recycle: false,
+        ..Default::default()
+    };
+    let raft_engine = Arc::new(Engine::open(engine_cfg)?);
+    Ok(raft_engine)
+}
+
+fn create_dir_all_if_not_exists<P: AsRef<Path>>(dir: &P) -> Result<()> {
+    use std::io::ErrorKind;
+    match std::fs::create_dir_all(dir.as_ref()) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
+        Err(err) => Err(err.into()),
+    }
 }
 
 #[cfg(test)]

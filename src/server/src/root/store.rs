@@ -22,7 +22,7 @@ use engula_api::{
     v1::{DeleteRequest, GetRequest, PutRequest},
 };
 
-use crate::{bootstrap::ROOT_GROUP_ID, node::replica::Replica, Error, Result};
+use crate::{constants::ROOT_GROUP_ID, node::replica::Replica, Error, Result};
 
 pub struct RootStore {
     replica: Arc<Replica>,

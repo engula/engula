@@ -24,7 +24,7 @@ use engula_api::server::v1::*;
 
 use super::*;
 use crate::{
-    bootstrap::REPLICA_PER_GROUP, root::allocator::source::NodeFilter, runtime::ExecutorOwner,
+    constants::REPLICA_PER_GROUP, root::allocator::source::NodeFilter, runtime::ExecutorOwner,
 };
 
 #[test]

@@ -21,7 +21,7 @@ use std::{
 use engula_api::server::v1::{NodeDesc, ReplicaDesc};
 
 use super::{source::NodeFilter, *};
-use crate::{bootstrap::ROOT_GROUP_ID, root::OngoingStats, Result};
+use crate::{constants::ROOT_GROUP_ID, root::OngoingStats, Result};
 
 pub struct ReplicaCountPolicy<T: AllocSource> {
     alloc_source: Arc<T>,
