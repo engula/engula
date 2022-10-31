@@ -32,7 +32,6 @@ use engula_api::{
         DatabaseDesc,
     },
 };
-use engula_client::NodeClient;
 use tokio::time::Instant;
 use tokio_util::time::delay_queue;
 use tracing::{error, info, trace, warn};
@@ -52,7 +51,8 @@ use crate::{
     node::{Node, Replica, ReplicaRouteTable},
     runtime::{self, TaskPriority},
     serverpb::v1::{background_job::Job, reconcile_task, *},
-    Config, Error, Provider, Result,
+    transport::TransportManager,
+    Config, Error, Result,
 };
 
 #[derive(Clone)]
@@ -68,7 +68,7 @@ pub struct Root {
 }
 
 pub struct RootShared {
-    provider: Arc<Provider>,
+    transport_manager: TransportManager,
     node_ident: NodeIdent,
     local_addr: String,
     cfg_cpu_nums: u32,
@@ -90,12 +90,16 @@ struct RootCore {
 }
 
 impl Root {
-    pub(crate) fn new(provider: Arc<Provider>, node_ident: &NodeIdent, cfg: Config) -> Self {
+    pub(crate) fn new(
+        transport_manager: TransportManager,
+        node_ident: &NodeIdent,
+        cfg: Config,
+    ) -> Self {
         let local_addr = cfg.addr.clone();
         let cfg_cpu_nums = cfg.cpu_nums;
         let ongoing_stats = Arc::new(OngoingStats::default());
         let shared = Arc::new(RootShared {
-            provider,
+            transport_manager,
             local_addr,
             cfg_cpu_nums,
             core: Mutex::new(None),
@@ -610,11 +614,6 @@ impl Root {
                 .collect::<Vec<_>>(),
             balanced,
         })
-    }
-
-    async fn get_node_client(&self, addr: String) -> Result<NodeClient> {
-        let client = self.shared.provider.conn_manager.get_node_client(addr)?;
-        Ok(client)
     }
 }
 
@@ -1326,15 +1325,21 @@ mod root_test {
         root::Root,
         runtime::ExecutorOwner,
         serverpb::v1::NodeIdent,
+        transport::TransportManager,
     };
 
     async fn create_root_and_node(config: &Config, node_ident: &NodeIdent) -> (Root, Node) {
-        use crate::bootstrap::build_provider;
-
         let engines = Engines::open(&config.root_dir, &config.db).unwrap();
-        let provider = build_provider(config, engines.state()).await.unwrap();
-        let root = Root::new(provider.clone(), node_ident, config.clone());
-        let node = Node::new(config.clone(), engines, provider).await.unwrap();
+        let root_list = if config.init {
+            vec![config.addr.clone()]
+        } else {
+            config.join_list.clone()
+        };
+        let transport_manager = TransportManager::new(root_list, engines.state()).await;
+        let root = Root::new(transport_manager.clone(), node_ident, config.clone());
+        let node = Node::new(config.clone(), engines, transport_manager)
+            .await
+            .unwrap();
         (root, node)
     }
 

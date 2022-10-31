@@ -100,7 +100,7 @@ impl PromoteGroup {
             leader_id: ctx.replica_id,
             num_required: num_required as u64,
         };
-        match ctx.provider.root_client.alloc_replica(req).await {
+        match ctx.transport_manager.root_client().alloc_replica(req).await {
             Ok(resp) => Some(resp.replicas),
             Err(
                 e @ (engula_client::Error::ResourceExhausted(_)

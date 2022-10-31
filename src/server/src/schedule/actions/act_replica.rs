@@ -18,7 +18,9 @@ use engula_api::server::v1::*;
 use tracing::{debug, info, warn};
 
 use super::{Action, ActionState};
-use crate::{root::RemoteStore, schedule::scheduler::ScheduleContext, Provider, Result};
+use crate::{
+    root::RemoteStore, schedule::scheduler::ScheduleContext, transport::TransportManager, Result,
+};
 
 pub(crate) struct CreateReplicas {
     pub replicas: Vec<ReplicaDesc>,
@@ -49,10 +51,9 @@ impl CreateReplicas {
         &self,
         group_id: u64,
         r: &ReplicaDesc,
-        provider: &Provider,
+        transport_manager: &TransportManager,
     ) -> Result<(), engula_client::Error> {
-        let addr = provider.router.find_node_addr(r.node_id)?;
-        let client = provider.conn_manager.get_node_client(addr)?;
+        let client = transport_manager.find_node_client(r.node_id)?;
         let desc = GroupDesc {
             id: group_id,
             ..Default::default()
@@ -70,7 +71,7 @@ impl Action for CreateReplicas {
 
         while let Some(r) = self.replicas.last() {
             match self
-                .create_replica(group_id, r, ctx.provider.as_ref())
+                .create_replica(group_id, r, ctx.transport_manager)
                 .await
             {
                 Ok(()) => {
@@ -112,10 +113,9 @@ impl RemoveReplica {
         &self,
         r: &ReplicaDesc,
         group: GroupDesc,
-        provider: &Provider,
+        transport_manager: &TransportManager,
     ) -> Result<(), engula_client::Error> {
-        let addr = provider.router.find_node_addr(r.node_id)?;
-        let client = provider.conn_manager.get_node_client(addr)?;
+        let client = transport_manager.find_node_client(r.node_id)?;
         client.remove_replica(r.id, group.clone()).await?;
         Ok(())
     }
@@ -128,7 +128,7 @@ impl Action for RemoveReplica {
         let replica_id = ctx.replica_id;
         let replica = &self.replica;
         match self
-            .remove_replica(replica, self.group.clone(), ctx.provider.as_ref())
+            .remove_replica(replica, self.group.clone(), ctx.transport_manager)
             .await
         {
             Ok(()) => {
@@ -163,7 +163,7 @@ impl Action for ClearReplicaState {
         let replica_id = ctx.replica_id;
         let target_id = self.target_id;
 
-        let root_store = RemoteStore::new(ctx.provider.clone());
+        let root_store = RemoteStore::new(ctx.transport_manager.clone());
         if let Err(e) = root_store.clear_replica_state(group_id, target_id).await {
             warn!("group {group_id} replica {replica_id} task {task_id} abort clearing replica {target_id} state: {e}");
             ActionState::Aborted

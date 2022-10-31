@@ -15,46 +15,52 @@
 use std::{sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
-use engula_client::{ConnManager, RootClient, Router};
+use engula_client::RootClient;
 use tracing::{debug, info, warn};
 
 use crate::{
     constants::*,
-    discovery::RootDiscovery,
     engine::{Engines, StateEngine},
-    node::{resolver::AddressResolver, Node},
+    node::Node,
     root::{Root, Schema},
     runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent},
     service::ProxyServer,
-    Config, Error, Provider, Result, Server,
+    transport::TransportManager,
+    Config, Error, Result, Server,
 };
 
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     executor.block_on(async {
         let engines = Engines::open(&config.root_dir, &config.db)?;
-        let provider = build_provider(&config, engines.state()).await?;
-        let node = Node::new(config.clone(), engines, provider.clone()).await?;
 
-        let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
+        let root_list = if config.init {
+            vec![config.addr.clone()]
+        } else {
+            config.join_list.clone()
+        };
+        let transport_manager = TransportManager::new(root_list, engines.state()).await;
+        let address_resolver = transport_manager.address_resolver();
+        let node = Node::new(config.clone(), engines, transport_manager.clone()).await?;
+
+        let ident =
+            bootstrap_or_join_cluster(&config, &node, transport_manager.root_client()).await?;
         node.bootstrap(&ident).await?;
-        let root = Root::new(provider.clone(), &ident, config.clone());
+        let root = Root::new(transport_manager.clone(), &ident, config.clone());
         let initial_node_descs = root.bootstrap(&node).await?;
-        provider
-            .address_resolver
-            .set_initial_nodes(initial_node_descs);
+        address_resolver.set_initial_nodes(initial_node_descs);
 
         info!("node {} starts serving requests", ident.node_id);
 
         let server = Server {
             node: Arc::new(node),
             root,
-            address_resolver: provider.address_resolver.clone(),
+            address_resolver,
         };
 
         let proxy_server = if config.enable_proxy_service {
-            Some(ProxyServer::new(provider.as_ref()))
+            Some(ProxyServer::new(&transport_manager))
         } else {
             None
         };
@@ -247,30 +253,6 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     node.update_root(root_desc).await?;
 
     Ok(())
-}
-
-pub(crate) async fn build_provider(
-    config: &Config,
-    state_engine: StateEngine,
-) -> Result<Arc<Provider>> {
-    let root_list = if config.init {
-        vec![config.addr.clone()]
-    } else {
-        config.join_list.clone()
-    };
-
-    let discovery = Arc::new(RootDiscovery::new(root_list, state_engine.clone()));
-    let conn_manager = ConnManager::new();
-    let root_client = RootClient::new(discovery, conn_manager.clone());
-    let router = Router::new(root_client.clone()).await;
-    let address_resolver = Arc::new(AddressResolver::new(router.clone()));
-    let provider = Arc::new(Provider {
-        conn_manager,
-        root_client,
-        router,
-        address_resolver,
-    });
-    Ok(provider)
 }
 
 #[cfg(test)]

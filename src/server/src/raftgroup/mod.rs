@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 pub use self::{
     facade::RaftNodeFacade,
     fsm::{ApplyEntry, SnapshotBuilder, StateMachine},
-    io::{retrive_snapshot, AddressResolver, TransportManager},
+    io::{retrive_snapshot, AddressResolver, ChannelManager},
     monitor::*,
     snap::SnapManager,
     storage::{destory as destory_storage, write_initial_state},
@@ -115,7 +115,7 @@ pub struct RaftManager {
     pub cfg: RaftConfig,
     engine: Arc<raft_engine::Engine>,
     log_writer: LogWriter,
-    transport_mgr: TransportManager,
+    transport_mgr: ChannelManager,
     snap_mgr: SnapManager,
 }
 
@@ -124,7 +124,7 @@ impl RaftManager {
         cfg: RaftConfig,
         engine: Arc<raft_engine::Engine>,
         snap_mgr: SnapManager,
-        transport_mgr: TransportManager,
+        transport_mgr: ChannelManager,
     ) -> Result<Self> {
         start_purging_expired_files(engine.clone()).await;
         let log_writer = LogWriter::new(cfg.max_io_batch_size, engine.clone());

@@ -43,7 +43,7 @@ impl Task for WatchReplicaStates {
 
     async fn poll(&mut self, ctx: &mut ScheduleContext<'_>) -> TaskState {
         let group_id = ctx.group_id;
-        let root_store = RemoteStore::new(ctx.provider.clone());
+        let root_store = RemoteStore::new(ctx.transport_manager.clone());
         match root_store.list_replica_state(group_id).await {
             Ok(states) => {
                 trace!("group {group_id} list replica states: {:?}", states);

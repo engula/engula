@@ -19,7 +19,6 @@ use std::{
 };
 
 use engula_api::server::v1::{GroupDesc, ReplicaDesc, ReplicaRole, RootDesc, ShardDesc};
-use engula_client::GroupClient;
 use futures::future::poll_fn;
 use prometheus::HistogramTimer;
 use tokio::time::Instant;
@@ -569,11 +568,11 @@ impl Jobs {
 
 impl Jobs {
     async fn try_create_shard(&self, group_id: u64, desc: &ShardDesc) -> Result<()> {
-        let mut group_client = GroupClient::lazy(
-            group_id,
-            self.core.root_shared.provider.router.clone(),
-            self.core.root_shared.provider.conn_manager.clone(),
-        );
+        let mut group_client = self
+            .core
+            .root_shared
+            .transport_manager
+            .lazy_group_client(group_id);
         group_client.create_shard(desc).await?;
         Ok(())
     }
@@ -587,8 +586,7 @@ impl Jobs {
         let client = self
             .core
             .root_shared
-            .provider
-            .conn_manager
+            .transport_manager
             .get_node_client(addr.to_owned())?;
         client.create_replica(replica_id.to_owned(), group).await?;
         Ok(())
@@ -607,8 +605,7 @@ impl Jobs {
         let client = self
             .core
             .root_shared
-            .provider
-            .conn_manager
+            .transport_manager
             .get_node_client(target_node.addr.to_owned())?;
         client
             .remove_replica(

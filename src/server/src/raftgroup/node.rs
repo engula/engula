@@ -538,7 +538,7 @@ mod tests {
     use super::*;
     use crate::{
         node::RaftRouteTable,
-        raftgroup::{io::LogWriter, write_initial_state, AddressResolver, TransportManager},
+        raftgroup::{io::LogWriter, write_initial_state, AddressResolver, ChannelManager},
         runtime::ExecutorOwner,
         serverpb::v1::{ApplyState, EvalResult, SnapshotMeta},
         RaftConfig,
@@ -893,7 +893,7 @@ mod tests {
             let snap_dir = dir.path().join("snap");
             let snap_mgr = SnapManager::new(snap_dir.clone());
             let resolver = Arc::new(MockedAddressResolver {});
-            let transport_mgr = TransportManager::build(resolver, RaftRouteTable::new()).await;
+            let transport_mgr = ChannelManager::build(resolver, RaftRouteTable::new()).await;
             let log_writer = LogWriter::new(64 << 10, engine.clone());
             let raft_mgr = RaftManager {
                 cfg: RaftConfig::default(),

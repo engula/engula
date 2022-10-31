@@ -25,7 +25,6 @@ use engula_api::{
     },
     v1::{collection_desc, CollectionDesc, DatabaseDesc, PutRequest},
 };
-use engula_client::ShardClient;
 use futures::lock::Mutex;
 use prost::Message;
 use tracing::{info, warn};
@@ -35,7 +34,8 @@ use crate::{
     constants::*,
     engine::{GroupEngine, SnapshotMode},
     serverpb::v1::BackgroundJob,
-    Error, Provider, Result,
+    transport::TransportManager,
+    Error, Result,
 };
 
 const SYSTEM_DATABASE_NAME: &str = "__system__";
@@ -979,24 +979,21 @@ impl Schema {
 
 #[derive(Clone)]
 pub struct RemoteStore {
-    provider: Arc<Provider>,
+    transport_manager: TransportManager,
 }
 
 impl RemoteStore {
-    pub(crate) fn new(provider: Arc<Provider>) -> Self {
-        RemoteStore { provider }
+    pub(crate) fn new(transport_manager: TransportManager) -> Self {
+        RemoteStore { transport_manager }
     }
 
     pub async fn list_replica_state(&self, group_id: u64) -> Result<Vec<ReplicaState>> {
         let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
         let prefix = group_key(group_id);
 
-        let client = ShardClient::new(
-            ROOT_GROUP_ID,
-            shard_id,
-            self.provider.router.clone(),
-            self.provider.conn_manager.clone(),
-        );
+        let client = self
+            .transport_manager
+            .build_shard_client(ROOT_GROUP_ID, shard_id);
         let values = client.prefix_list(&prefix).await?;
         let mut states = vec![];
         for value in values {
@@ -1010,12 +1007,9 @@ impl RemoteStore {
     pub async fn clear_replica_state(&self, group_id: u64, replica_id: u64) -> Result<()> {
         let shard_id = Schema::system_shard_id(SYSTEM_REPLICA_STATE_COLLECTION_ID);
         let key = replica_key(group_id, replica_id);
-        let client = ShardClient::new(
-            ROOT_GROUP_ID,
-            shard_id,
-            self.provider.router.clone(),
-            self.provider.conn_manager.clone(),
-        );
+        let client = self
+            .transport_manager
+            .build_shard_client(ROOT_GROUP_ID, shard_id);
         client.delete(&key).await?;
         Ok(())
     }
