@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{path::Path, sync::Arc, time::Duration, vec};
+use std::{sync::Arc, time::Duration, vec};
 
 use engula_api::server::v1::{node_server::NodeServer, root_server::RootServer, *};
 use engula_client::{ConnManager, RootClient, Router};
@@ -21,23 +21,21 @@ use tracing::{debug, info, warn};
 use crate::{
     constants::*,
     discovery::RootDiscovery,
-    node::{
-        engine::{RawDb, StateEngine},
-        resolver::AddressResolver,
-        Node,
-    },
+    engine::{Engines, StateEngine},
+    node::{resolver::AddressResolver, Node},
     root::{Root, Schema},
     runtime::{Executor, Shutdown},
     serverpb::v1::{raft_server::RaftServer, NodeIdent},
     service::ProxyServer,
-    Config, DbConfig, Error, Provider, Result, Server,
+    Config, Error, Provider, Result, Server,
 };
 
 /// The main entrance of engula server.
 pub fn run(config: Config, executor: Executor, shutdown: Shutdown) -> Result<()> {
     executor.block_on(async {
-        let (provider, state_engine) = build_provider(&config).await?;
-        let node = Node::new(config.clone(), provider.clone(), state_engine).await?;
+        let engines = Engines::open(&config.root_dir, &config.db)?;
+        let provider = build_provider(&config, engines.state()).await?;
+        let node = Node::new(config.clone(), engines, provider.clone()).await?;
 
         let ident = bootstrap_or_join_cluster(&config, &node, &provider.root_client).await?;
         node.bootstrap(&ident).await?;
@@ -95,35 +93,6 @@ async fn bootstrap_services(
     };
 
     Ok(())
-}
-
-pub(crate) fn open_engine<P: AsRef<Path>>(cfg: &DbConfig, path: P) -> Result<RawDb> {
-    use rocksdb::DB;
-
-    std::fs::create_dir_all(&path)?;
-    let options = cfg.to_options();
-
-    // List column families and open database with column families.
-    match DB::list_cf(&options, &path) {
-        Ok(cfs) => {
-            info!("open local db with {} column families", cfs.len());
-            let db = DB::open_cf_with_opts(
-                &options,
-                path,
-                cfs.into_iter().map(|name| (name, options.clone())),
-            )?;
-            Ok(RawDb { db, options })
-        }
-        Err(e) => {
-            if e.as_ref().ends_with("CURRENT: No such file or directory") {
-                info!("create new local db");
-                let db = DB::open(&options, &path)?;
-                Ok(RawDb { db, options })
-            } else {
-                Err(e.into())
-            }
-        }
-    }
 }
 
 async fn bootstrap_or_join_cluster(
@@ -280,13 +249,10 @@ async fn write_initial_cluster_data(node: &Node, addr: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn build_provider(config: &Config) -> Result<(Arc<Provider>, StateEngine)> {
-    let db_path = config.root_dir.join("db");
-    let log_path = config.root_dir.join("log");
-    let raw_db = Arc::new(open_engine(&config.db, &db_path)?);
-    let raft_engine = open_raft_engine(&log_path)?;
-    let state_engine = StateEngine::new(raft_engine.clone());
-
+pub(crate) async fn build_provider(
+    config: &Config,
+    state_engine: StateEngine,
+) -> Result<Arc<Provider>> {
     let root_list = if config.init {
         vec![config.addr.clone()]
     } else {
@@ -299,43 +265,17 @@ pub(crate) async fn build_provider(config: &Config) -> Result<(Arc<Provider>, St
     let router = Router::new(root_client.clone()).await;
     let address_resolver = Arc::new(AddressResolver::new(router.clone()));
     let provider = Arc::new(Provider {
-        log_path,
-        db_path,
         conn_manager,
         root_client,
         router,
         address_resolver,
-        raw_db,
-        raft_engine,
     });
-    Ok((provider, state_engine))
-}
-
-fn open_raft_engine(log_path: &Path) -> Result<Arc<raft_engine::Engine>> {
-    use raft_engine::{Config, Engine};
-    let engine_dir = log_path.join("engine");
-    let snap_dir = log_path.join("snap");
-    create_dir_all_if_not_exists(&engine_dir)?;
-    create_dir_all_if_not_exists(&snap_dir)?;
-    let engine_cfg = Config {
-        dir: engine_dir.to_str().unwrap().to_owned(),
-        enable_log_recycle: false,
-        ..Default::default()
-    };
-    let raft_engine = Arc::new(Engine::open(engine_cfg)?);
-    Ok(raft_engine)
-}
-
-fn create_dir_all_if_not_exists<P: AsRef<Path>>(dir: &P) -> Result<()> {
-    use std::io::ErrorKind;
-    match std::fs::create_dir_all(dir.as_ref()) {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
-        Err(err) => Err(err.into()),
-    }
+    Ok(provider)
 }
 
 #[cfg(test)]
-pub(crate) fn open_engine_with_default_config<P: AsRef<Path>>(path: P) -> Result<RawDb> {
-    open_engine(&DbConfig::default(), path)
+pub(crate) fn open_engine_with_default_config<P: AsRef<std::path::Path>>(
+    path: P,
+) -> Result<crate::engine::RawDb> {
+    crate::engine::open_engine(&crate::DbConfig::default(), path)
 }

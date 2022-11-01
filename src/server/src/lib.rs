@@ -24,6 +24,7 @@ mod bootstrap;
 mod config;
 mod constants;
 mod discovery;
+mod engine;
 mod error;
 mod root;
 mod schedule;
@@ -34,12 +35,12 @@ pub mod raftgroup;
 pub mod runtime;
 pub mod serverpb;
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use engula_client::{ConnManager, RootClient, Router};
 use tonic::async_trait;
 
-use crate::node::{engine::RawDb, resolver::AddressResolver};
+use crate::node::resolver::AddressResolver;
 pub use crate::{
     bootstrap::run,
     config::*,
@@ -52,17 +53,10 @@ pub use crate::{
 };
 
 pub(crate) struct Provider {
-    pub log_path: PathBuf,
-
-    #[allow(unused)]
-    pub db_path: PathBuf,
-
     pub address_resolver: Arc<AddressResolver>,
     pub conn_manager: ConnManager,
     pub root_client: RootClient,
     pub router: Router,
-    pub raw_db: Arc<RawDb>,
-    pub raft_engine: Arc<raft_engine::Engine>,
 }
 
 #[cfg(test)]

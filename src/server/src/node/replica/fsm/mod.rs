@@ -24,7 +24,7 @@ use tracing::{info, trace, warn};
 
 use super::{ReplicaConfig, ReplicaInfo};
 use crate::{
-    node::engine::{GroupEngine, WriteBatch, WriteStates},
+    engine::{GroupEngine, WriteBatch, WriteStates},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
     serverpb::v1::*,
     Result,
@@ -72,7 +72,7 @@ where
 }
 
 impl GroupStateMachine {
-    pub fn new(
+    pub(crate) fn new(
         cfg: ReplicaConfig,
         info: Arc<ReplicaInfo>,
         group_engine: GroupEngine,

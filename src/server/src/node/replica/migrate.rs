@@ -17,7 +17,7 @@ use tracing::{debug, info};
 
 use super::{LeaseState, Replica, ReplicaInfo};
 use crate::{
-    node::engine::{SnapshotMode, WriteBatch},
+    engine::{SnapshotMode, WriteBatch},
     serverpb::v1::*,
     Error, Result,
 };

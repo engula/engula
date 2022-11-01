@@ -14,12 +14,13 @@
 use engula_api::server::v1::BatchWriteRequest;
 
 use crate::{
-    node::{engine::WriteBatch, replica::ExecCtx, GroupEngine},
+    engine::{GroupEngine, WriteBatch},
+    node::replica::ExecCtx,
     serverpb::v1::{EvalResult, WriteBatchRep},
     Error, Result,
 };
 
-pub async fn batch_write(
+pub(crate) async fn batch_write(
     exec_ctx: &ExecCtx,
     group_engine: &GroupEngine,
     req: &BatchWriteRequest,

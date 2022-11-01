@@ -22,7 +22,7 @@ mod cmd_put;
 
 use engula_api::server::v1::ShardDesc;
 
-pub use self::{
+pub(crate) use self::{
     cmd_accept_shard::accept_shard, cmd_batch_write::batch_write, cmd_delete::delete, cmd_get::get,
     cmd_move_replicas::move_replicas, cmd_prefix_list::prefix_list, cmd_put::put,
 };

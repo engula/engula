@@ -15,12 +15,12 @@
 use engula_api::server::v1::{ShardPrefixListRequest, ShardPrefixListResponse};
 
 use crate::{
-    node::engine::{GroupEngine, SnapshotMode},
+    engine::{GroupEngine, SnapshotMode},
     Result,
 };
 
 /// List the key-value pairs of the specified key prefix.
-pub async fn prefix_list(
+pub(crate) async fn prefix_list(
     engine: &GroupEngine,
     req: &ShardPrefixListRequest,
 ) -> Result<ShardPrefixListResponse> {

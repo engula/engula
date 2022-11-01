@@ -14,7 +14,7 @@
 
 use engula_client::ServiceDiscovery;
 
-use crate::node::StateEngine;
+use crate::engine::StateEngine;
 
 pub struct RootDiscovery {
     initial_nodes: Vec<String>,

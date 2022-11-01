@@ -60,7 +60,7 @@ pub struct WriteBatch {
 /// different collections in the same group needs to persist on disk at the same time, to guarantee
 /// the accuracy of applied index.
 #[derive(Clone)]
-pub struct GroupEngine
+pub(crate) struct GroupEngine
 where
     Self: Send,
 {
@@ -78,7 +78,7 @@ struct GroupEngineCore {
 }
 
 /// Traverse the data of the group engine, but don't care about the data format.
-pub struct RawIterator<'a> {
+pub(crate) struct RawIterator<'a> {
     apply_state: ApplyState,
     descriptor: GroupDesc,
     db_iter: rocksdb::DBIterator<'a>,
@@ -102,14 +102,14 @@ enum SnapshotRange {
     },
 }
 
-pub struct Snapshot<'a> {
+pub(crate) struct Snapshot<'a> {
     collection_id: u64,
     range: Option<SnapshotRange>,
 
     core: RefCell<SnapshotCore<'a>>,
 }
 
-pub struct SnapshotCore<'a> {
+pub(crate) struct SnapshotCore<'a> {
     expect_slot: Option<u32>,
     db_iter: rocksdb::DBIterator<'a>,
     current_key: Option<Vec<u8>>,
@@ -118,16 +118,16 @@ pub struct SnapshotCore<'a> {
 
 /// Traverse the data of a shard in the group engine, analyze and return the data (including
 /// tombstone).
-pub struct UserDataIterator<'a, 'b> {
+pub(crate) struct UserDataIterator<'a, 'b> {
     snapshot: &'b Snapshot<'a>,
 }
 
 /// Traverse multi-version of a single key.
-pub struct MvccIterator<'a, 'b> {
+pub(crate) struct MvccIterator<'a, 'b> {
     snapshot: &'b Snapshot<'a>,
 }
 
-pub struct MvccEntry {
+pub(crate) struct MvccEntry {
     key: Box<[u8]>,
     slot: Option<u32>,
     user_key: Vec<u8>,
@@ -135,7 +135,7 @@ pub struct MvccEntry {
 }
 
 #[derive(Debug)]
-pub enum SnapshotMode<'a> {
+pub(crate) enum SnapshotMode<'a> {
     Start { start_key: Option<&'a [u8]> },
     Key { key: &'a [u8] },
     Prefix { key: &'a [u8] },
@@ -153,7 +153,7 @@ struct SlowIoGuard {
 
 impl GroupEngine {
     /// Create a new instance of group engine.
-    pub async fn create(
+    pub(crate) async fn create(
         cfg: &EngineConfig,
         raw_db: Arc<RawDb>,
         group_id: u64,
@@ -200,7 +200,7 @@ impl GroupEngine {
     }
 
     /// Open the exists instance of group engine.
-    pub async fn open(
+    pub(crate) async fn open(
         cfg: &EngineConfig,
         raw_db: Arc<RawDb>,
         group_id: u64,
@@ -237,7 +237,7 @@ impl GroupEngine {
     }
 
     /// Destory a group engine.
-    pub async fn destory(group_id: u64, replica_id: u64, raw_db: Arc<RawDb>) -> Result<()> {
+    pub(crate) async fn destory(group_id: u64, replica_id: u64, raw_db: Arc<RawDb>) -> Result<()> {
         let name = Self::cf_name(group_id, replica_id);
         raw_db.drop_cf(&name)?;
         info!("destory column family {}", name);
@@ -692,11 +692,6 @@ impl MvccEntry {
     }
 
     #[inline]
-    pub fn raw_key(&self) -> &[u8] {
-        &self.key
-    }
-
-    #[inline]
     pub fn slot(&self) -> Option<u32> {
         self.slot
     }
@@ -725,10 +720,12 @@ impl MvccEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_tombstone(&self) -> bool {
         self.value[0] == values::TOMBSTONE
     }
 
+    #[allow(dead_code)]
     pub fn is_data(&self) -> bool {
         self.value[0] == values::DATA
     }

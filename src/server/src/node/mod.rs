@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod engine;
 mod job;
 mod metrics;
+
 pub mod migrate;
 pub mod replica;
 pub mod resolver;
@@ -31,20 +31,21 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use self::{
-    engine::{EngineConfig, RawDb},
     job::StateChannel,
     migrate::{MigrateController, ShardChunkStream},
     replica::ReplicaConfig,
 };
 pub use self::{
-    engine::{GroupEngine, StateEngine},
     replica::Replica,
     route_table::{RaftRouteTable, ReplicaRouteTable},
 };
 use crate::{
     constants::ROOT_GROUP_ID,
+    engine::{EngineConfig, Engines, GroupEngine, RawDb, StateEngine},
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{snap::RecycleSnapMode, RaftManager, RaftNodeFacade, TransportManager},
+    raftgroup::{
+        snap::RecycleSnapMode, RaftManager, RaftNodeFacade, SnapManager, TransportManager,
+    },
     runtime::sync::WaitGroup,
     schedule::MoveReplicasProvider,
     serverpb::v1::*,
@@ -106,6 +107,7 @@ where
 
     raft_mgr: RaftManager,
     migrate_ctrl: MigrateController,
+    engines: Engines,
     state_engine: StateEngine,
 
     /// Node related metadata, including serving replicas, root desc.
@@ -118,21 +120,19 @@ where
 impl Node {
     pub(crate) async fn new(
         cfg: Config,
+        engines: Engines,
         provider: Arc<Provider>,
-        state_engine: StateEngine,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
         let trans_mgr =
             TransportManager::build(provider.address_resolver.clone(), raft_route_table.clone())
                 .await;
-        let raft_mgr = RaftManager::open(
-            cfg.raft.clone(),
-            &provider.log_path,
-            provider.raft_engine.clone(),
-            trans_mgr,
-        )
-        .await?;
+        let snap_dir = engines.snap_dir();
+        let snap_mgr = SnapManager::recovery(snap_dir).await?;
+        let raft_mgr =
+            RaftManager::open(cfg.raft.clone(), engines.log(), snap_mgr, trans_mgr).await?;
         let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
+        let state_engine = engines.state();
         Ok(Node {
             cfg: cfg.node,
             provider,
@@ -140,6 +140,7 @@ impl Node {
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
             migrate_ctrl,
+            engines,
             state_engine,
             node_state: Arc::new(Mutex::new(NodeState::default())),
             replica_mutation: Arc::default(),
@@ -162,13 +163,7 @@ impl Node {
         let node_id = node_ident.node_id;
         for (group_id, replica_id, state) in self.state_engine.replica_states().await? {
             if state == ReplicaLocalState::Terminated {
-                setup_destory_replica(
-                    group_id,
-                    replica_id,
-                    self.state_engine.clone(),
-                    self.provider.raw_db.clone(),
-                    self.raft_mgr.engine(),
-                );
+                setup_destory_replica(group_id, replica_id, self.engines.clone());
             }
             if matches!(
                 state,
@@ -311,13 +306,7 @@ impl Node {
             .recycle_snapshots(replica_id, RecycleSnapMode::All);
 
         // Clean group engine data in asynchronously.
-        self::job::setup_destory_replica(
-            group_id,
-            replica_id,
-            self.state_engine.clone(),
-            self.provider.raw_db.clone(),
-            self.raft_mgr.engine(),
-        );
+        self::job::setup_destory_replica(group_id, replica_id, self.engines.clone());
 
         info!("group {group_id} remove replica {replica_id} success");
 
@@ -336,7 +325,7 @@ impl Node {
 
         let group_engine = open_group_engine(
             &self.cfg.engine,
-            self.provider.raw_db.clone(),
+            self.engines.db(),
             group_id,
             desc.id,
             local_state,
@@ -788,9 +777,10 @@ mod tests {
             ..Default::default()
         };
 
-        let (provider, state_engine) = build_provider(&config).await.unwrap();
+        let engines = Engines::open(&config.root_dir, &config.db).unwrap();
+        let provider = build_provider(&config, engines.state()).await.unwrap();
 
-        Node::new(config, provider, state_engine).await.unwrap()
+        Node::new(config, engines, provider).await.unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {

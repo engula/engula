@@ -17,7 +17,8 @@ use engula_api::server::v1::GroupDesc;
 use tracing::{debug, error, info};
 
 use crate::{
-    node::{engine::RawIterator, replica::ReplicaConfig, GroupEngine},
+    engine::{GroupEngine, RawIterator},
+    node::replica::ReplicaConfig,
     raftgroup::SnapshotBuilder,
     serverpb::v1::ApplyState,
     Error, Result,
@@ -29,7 +30,7 @@ pub struct GroupSnapshotBuilder {
 }
 
 impl GroupSnapshotBuilder {
-    pub fn new(cfg: ReplicaConfig, engine: GroupEngine) -> Self {
+    pub(crate) fn new(cfg: ReplicaConfig, engine: GroupEngine) -> Self {
         GroupSnapshotBuilder { cfg, engine }
     }
 }
@@ -96,7 +97,7 @@ async fn write_partial_to_file(
     }
 }
 
-pub fn apply_snapshot(engine: &GroupEngine, replica_id: u64, snap_dir: &Path) -> Result<()> {
+pub(crate) fn apply_snapshot(engine: &GroupEngine, replica_id: u64, snap_dir: &Path) -> Result<()> {
     if !snap_dir.is_dir() {
         error!(
             "replica {replica_id} apply snapshot {}: snap dir is not a directory",
@@ -169,10 +170,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        node::{
-            engine::{EngineConfig, WriteBatch, WriteStates},
-            GroupEngine,
-        },
+        engine::{EngineConfig, GroupEngine, WriteBatch, WriteStates},
         runtime::ExecutorOwner,
     };
 

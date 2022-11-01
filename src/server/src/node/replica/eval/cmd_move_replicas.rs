@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::{node::replica::ExecCtx, schedule::MoveReplicasProvider, Result};
 
-pub async fn move_replicas(
+pub(crate) async fn move_replicas(
     ctx: &ExecCtx,
     provider: &MoveReplicasProvider,
     req: &MoveReplicasRequest,
