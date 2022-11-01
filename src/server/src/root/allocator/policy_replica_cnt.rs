@@ -190,7 +190,7 @@ impl<T: AllocSource> ReplicaCountPolicy<T> {
     fn node_balance_state(replica_num: f64, mean: f64) -> BalanceStatus {
         const THRESHOLD_FRACTION: f64 = 0.05;
         const MIN_RANGE_DELTA: f64 = 2.0;
-        let delta = f64::max(mean as f64 * THRESHOLD_FRACTION, MIN_RANGE_DELTA);
+        let delta = f64::max(mean * THRESHOLD_FRACTION, MIN_RANGE_DELTA);
         if replica_num > mean + delta {
             return BalanceStatus::Overfull;
         }

@@ -16,7 +16,6 @@
 #![feature(drain_filter)]
 #![feature(linked_list_cursors)]
 #![feature(fs_try_exists)]
-#![feature(let_else)]
 #![feature(type_name_of_val)]
 #![feature(const_type_name)]
 

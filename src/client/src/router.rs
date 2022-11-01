@@ -78,7 +78,7 @@ impl Router {
         {
             // TODO: it's temp hash impl..
             let crc = crc32fast::hash(key);
-            let slot = crc % (slots as u32);
+            let slot = crc % slots;
 
             let state = self.state.lock().unwrap();
 

@@ -196,7 +196,7 @@ impl GroupClient {
 
         self.leader_state = group.leader_state;
         self.epoch = group.epoch;
-        self.replicas = group.replicas.into_iter().map(|(_, v)| v).collect();
+        self.replicas = group.replicas.into_values().collect();
         if let Some(node_id) = leader_node_id {
             trace!(
                 "group client refresh group {} state with leader node id {}",

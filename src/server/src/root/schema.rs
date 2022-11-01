@@ -459,7 +459,7 @@ impl Schema {
                 }
             }
         }
-        Ok(states.into_iter().map(|(_, v)| v).collect())
+        Ok(states.into_values().collect())
     }
 
     pub async fn get_root_desc(&self) -> Result<RootDesc> {
@@ -481,7 +481,7 @@ impl Schema {
         }
         Ok(RootDesc {
             epoch: group_desc.epoch,
-            root_nodes: nodes.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+            root_nodes: nodes.into_values().collect::<Vec<_>>(),
         })
     }
 
