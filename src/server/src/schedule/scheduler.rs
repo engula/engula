@@ -29,10 +29,7 @@ use super::{
     tasks::{GroupLockTable, GENERATED_TASK_ID},
     ScheduleStateObserver,
 };
-use crate::{
-    node::{replica::ReplicaConfig, Replica},
-    transport::TransportManager,
-};
+use crate::{node::Replica, transport::TransportManager, ReplicaConfig};
 
 #[derive(Clone)]
 pub struct EventWaker {

@@ -19,7 +19,7 @@ use tracing::debug;
 
 use super::ScheduleStateObserver;
 use crate::{
-    node::{replica::ReplicaConfig, Replica},
+    node::Replica,
     runtime::{sync::WaitGroup, TaskPriority},
     schedule::{
         event_source::EventSource,
@@ -28,6 +28,7 @@ use crate::{
         task::Task,
     },
     transport::TransportManager,
+    ReplicaConfig,
 };
 
 pub(crate) fn setup_scheduler(

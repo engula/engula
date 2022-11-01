@@ -26,13 +26,11 @@ use std::{
 
 use engula_api::server::v1::*;
 use futures::{channel::mpsc, lock::Mutex};
-use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use self::{
     job::StateChannel,
     migrate::{MigrateController, ShardChunkStream},
-    replica::ReplicaConfig,
 };
 pub use self::{
     replica::Replica,
@@ -40,34 +38,15 @@ pub use self::{
 };
 use crate::{
     constants::ROOT_GROUP_ID,
-    engine::{EngineConfig, Engines, GroupEngine, RawDb, StateEngine},
+    engine::{Engines, GroupEngine, RawDb, StateEngine},
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
     raftgroup::{snap::RecycleSnapMode, ChannelManager, RaftManager, RaftNodeFacade, SnapManager},
     runtime::sync::WaitGroup,
     schedule::MoveReplicasProvider,
     serverpb::v1::*,
     transport::TransportManager,
-    Config, Error, Result,
+    Config, EngineConfig, Error, NodeConfig, Result,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeConfig {
-    /// The limit bytes of each shard chunk during migration.
-    ///
-    /// Default: 64KB.
-    pub shard_chunk_size: usize,
-
-    /// The limit number of keys for gc shard after migration.
-    ///
-    /// Default: 256.
-    pub shard_gc_keys: usize,
-
-    #[serde(default)]
-    pub replica: ReplicaConfig,
-
-    #[serde(default)]
-    pub engine: EngineConfig,
-}
 
 struct ReplicaContext {
     #[allow(dead_code)]
@@ -686,17 +665,6 @@ impl NodeState {
     #[inline]
     fn is_bootstrapped(&self) -> bool {
         self.ident.is_some()
-    }
-}
-
-impl Default for NodeConfig {
-    fn default() -> Self {
-        NodeConfig {
-            shard_chunk_size: 64 * 1024 * 1024,
-            shard_gc_keys: 256,
-            replica: ReplicaConfig::default(),
-            engine: EngineConfig::default(),
-        }
     }
 }
 

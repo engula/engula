@@ -23,7 +23,7 @@ use std::{
 use tracing::info;
 
 pub(crate) use self::{
-    group::{EngineConfig, GroupEngine, RawIterator, SnapshotMode, WriteBatch, WriteStates},
+    group::{GroupEngine, RawIterator, SnapshotMode, WriteBatch, WriteStates},
     state::StateEngine,
 };
 use crate::{DbConfig, Result};

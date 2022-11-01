@@ -28,7 +28,6 @@ use engula_api::server::v1::*;
 use raft::prelude::{
     ConfChangeSingle, ConfChangeTransition, ConfChangeType, ConfChangeV2, ConfState,
 };
-use serde::{Deserialize, Serialize};
 
 pub use self::{
     facade::RaftNodeFacade,
@@ -43,60 +42,8 @@ use self::{io::LogWriter, worker::RaftWorker};
 use crate::{
     raftgroup::io::start_purging_expired_files,
     runtime::{sync::WaitGroup, TaskPriority},
-    Result,
+    RaftConfig, Result,
 };
-
-#[derive(Clone, Debug, Default)]
-pub struct RaftTestingKnobs {
-    pub force_new_peer_receiving_snapshot: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RaftConfig {
-    /// The intervals of tick, in millis.
-    ///
-    /// Default: 500ms.
-    pub tick_interval_ms: u64,
-
-    /// The size of inflights requests.
-    ///
-    /// Default: 102400
-    pub max_inflight_requests: usize,
-
-    /// Before a follower begin election, it must wait a randomly election ticks and does not
-    /// receives any messages from leader.
-    ///
-    /// Default: 3.
-    pub election_tick: usize,
-
-    /// Limit the entries batched in an append message(in size). 0 means one entry per message.
-    ///
-    /// Default: 64KB
-    pub max_size_per_msg: u64,
-
-    /// Limit the total bytes per io batch requests.
-    ///
-    /// Default: 64KB
-    pub max_io_batch_size: u64,
-
-    /// Limit the number of inflights messages which send to one peer.
-    ///
-    /// Default: 10K
-    pub max_inflight_msgs: usize,
-
-    /// Log slow io requests if it exceeds the specified threshold.
-    ///
-    /// Default: disabled
-    pub engine_slow_io_threshold_ms: Option<u64>,
-
-    /// Enable recycle log files to reduce allocating overhead?
-    ///
-    /// Default: false
-    pub enable_log_recycle: bool,
-
-    #[serde(skip)]
-    pub testing_knobs: RaftTestingKnobs,
-}
 
 /// `ReadPolicy` is used to control `RaftNodeFacade::read` behavior.
 #[derive(Debug, Clone, Copy)]
@@ -171,22 +118,6 @@ impl RaftManager {
             drop(wait_group);
         });
         Ok(facade)
-    }
-}
-
-impl Default for RaftConfig {
-    fn default() -> Self {
-        RaftConfig {
-            tick_interval_ms: 500,
-            max_inflight_requests: 102400,
-            election_tick: 3,
-            max_size_per_msg: 64 << 10,
-            max_io_batch_size: 64 << 10,
-            max_inflight_msgs: 10 * 1000,
-            engine_slow_io_threshold_ms: None,
-            enable_log_recycle: false,
-            testing_knobs: RaftTestingKnobs::default(),
-        }
     }
 }
 

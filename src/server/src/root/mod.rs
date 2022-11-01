@@ -37,14 +37,13 @@ use tokio_util::time::delay_queue;
 use tracing::{error, info, trace, warn};
 
 pub(crate) use self::schema::*;
-pub use self::{
-    allocator::RootConfig,
-    collector::RootCollector,
-    watch::{WatchHub, Watcher, WatcherInitializer},
-};
 use self::{
     allocator::SysAllocSource, bg_job::Jobs, diagnosis::Metadata, schedule::ReconcileScheduler,
     schema::ReplicaNodes, store::RootStore,
+};
+pub use self::{
+    collector::RootCollector,
+    watch::{WatchHub, Watcher, WatcherInitializer},
 };
 use crate::{
     constants::{ROOT_GROUP_ID, SHARD_MAX, SHARD_MIN},
@@ -52,7 +51,7 @@ use crate::{
     runtime::{self, TaskPriority},
     serverpb::v1::{background_job::Job, reconcile_task, *},
     transport::TransportManager,
-    Config, Error, Result,
+    Config, Error, Result, RootConfig,
 };
 
 #[derive(Clone)]

@@ -22,12 +22,12 @@ use engula_api::server::v1::{
 };
 use tracing::{info, trace, warn};
 
-use super::{ReplicaConfig, ReplicaInfo};
+use super::ReplicaInfo;
 use crate::{
     engine::{GroupEngine, WriteBatch, WriteStates},
     raftgroup::{ApplyEntry, SnapshotBuilder, StateMachine},
     serverpb::v1::*,
-    Result,
+    ReplicaConfig, Result,
 };
 
 const SHARD_UPDATE_DELTA: u64 = 1 << 32;
