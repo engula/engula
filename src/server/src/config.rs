@@ -214,5 +214,7 @@ fn adaptive_block_cache_size() -> usize {
 
 fn adaptive_max_background_jobs() -> i32 {
     use std::cmp::{max, min};
+
+    #[allow(clippy::manual_clamp)]
     max(min(num_cpus::get() as i32, 8), 2)
 }

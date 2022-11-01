@@ -730,7 +730,7 @@ impl Root {
                     let mut ps = Vec::with_capacity(hash_partition.slots as usize);
                     for id in 0..hash_partition.slots {
                         ps.push(shard_desc::Partition::Hash(shard_desc::HashPartition {
-                            slot_id: id as u32,
+                            slot_id: id,
                             slots: hash_partition.slots.to_owned(),
                         }));
                     }

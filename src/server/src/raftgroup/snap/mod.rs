@@ -283,7 +283,7 @@ impl SnapManager {
 
 impl ReplicaSnapManager {
     fn new(replica_id: u64, root_dir: PathBuf) -> Self {
-        let base_dir = root_dir.join(&format!("{}", replica_id));
+        let base_dir = root_dir.join(format!("{replica_id}"));
         ReplicaSnapManager {
             base_dir,
             next_snapshot_index: 0,
@@ -543,7 +543,7 @@ mod tests {
             assert!(snap.is_some());
             let snap = snap.unwrap();
             let data = snap.base_dir.join(SNAP_DATA);
-            let received_content = std::fs::read_to_string(&data).unwrap();
+            let received_content = std::fs::read_to_string(data).unwrap();
             assert_eq!(received_content.as_bytes(), content.as_slice());
         });
     }
@@ -591,9 +591,9 @@ mod tests {
             let data = snap.base_dir.join(SNAP_DATA);
             let file_1 = data.join("1");
             let file_2 = data.join("2");
-            let received_content = std::fs::read_to_string(&file_1).unwrap();
+            let received_content = std::fs::read_to_string(file_1).unwrap();
             assert_eq!(received_content.as_bytes(), content_1.as_slice());
-            let received_content = std::fs::read_to_string(&file_2).unwrap();
+            let received_content = std::fs::read_to_string(file_2).unwrap();
             assert_eq!(received_content.as_bytes(), content_2.as_slice());
         });
     }

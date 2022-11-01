@@ -79,7 +79,7 @@ mod tests {
         let tmp_dir = TempDir::new("destory_replica_ignore_not_existed_column_families").unwrap();
         let db_path = tmp_dir.path().join("db");
         let log_path = tmp_dir.path().join("log");
-        let raw_db = Arc::new(open_engine_with_default_config(&db_path).unwrap());
+        let raw_db = Arc::new(open_engine_with_default_config(db_path).unwrap());
         let group_id = 1;
         let replica_id = 1;
 

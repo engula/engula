@@ -610,7 +610,7 @@ mod tests {
             group_desc: Some(GroupDesc::default()),
             ..Default::default()
         };
-        std::fs::write(&data, meta.encode_to_vec()).unwrap();
+        std::fs::write(data, meta.encode_to_vec()).unwrap();
         snap_mgr.install(replica_id, &snap_dir, &meta);
         snap_dir
     }
