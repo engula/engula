@@ -34,7 +34,7 @@ use tracing::{debug, info, warn};
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
-    io::{Channel, LogWriter, ChannelManager},
+    io::{Channel, ChannelManager, LogWriter},
     metrics::*,
     monitor::WorkerPerfContext,
     node::RaftNode,
