@@ -27,20 +27,20 @@ use crate::{
         scheduler::Scheduler,
         task::Task,
     },
-    Provider,
+    transport::TransportManager,
 };
 
 pub(crate) fn setup_scheduler(
     cfg: ReplicaConfig,
-    provider: Arc<Provider>,
     replica: Arc<Replica>,
+    transport_manager: TransportManager,
     move_replicas_provider: Arc<MoveReplicasProvider>,
     schedule_state_observer: Arc<dyn ScheduleStateObserver>,
     wait_group: WaitGroup,
 ) {
     let group_providers = Arc::new(GroupProviders::new(
         replica.clone(),
-        provider.router.clone(),
+        transport_manager.router().clone(),
         move_replicas_provider,
     ));
 
@@ -49,7 +49,7 @@ pub(crate) fn setup_scheduler(
         scheduler_main(
             cfg,
             replica,
-            provider,
+            transport_manager,
             group_providers,
             schedule_state_observer,
         )
@@ -61,7 +61,7 @@ pub(crate) fn setup_scheduler(
 async fn scheduler_main(
     cfg: ReplicaConfig,
     replica: Arc<Replica>,
-    provider: Arc<Provider>,
+    transport_manager: TransportManager,
     group_providers: Arc<GroupProviders>,
     schedule_state_observer: Arc<dyn ScheduleStateObserver>,
 ) {
@@ -80,7 +80,7 @@ async fn scheduler_main(
         let mut scheduler = Scheduler::new(
             cfg.clone(),
             replica.clone(),
-            provider.clone(),
+            transport_manager.clone(),
             providers,
             schedule_state_observer.clone(),
         );

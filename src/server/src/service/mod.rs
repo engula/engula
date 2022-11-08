@@ -23,9 +23,9 @@ use std::{sync::Arc, time::Duration};
 use engula_client::{ClientOptions, EngulaClient};
 
 use crate::{
-    node::{resolver::AddressResolver, Node},
+    node::Node,
     root::Root,
-    Provider,
+    transport::{AddressResolver, TransportManager},
 };
 
 #[derive(Clone)]
@@ -37,22 +37,17 @@ pub struct Server {
 
 #[derive(Clone)]
 pub struct ProxyServer {
-    pub client: engula_client::EngulaClient,
+    pub client: EngulaClient,
 }
 
 impl ProxyServer {
-    pub(crate) fn new(provider: &Provider) -> Self {
+    pub(crate) fn new(transport_manager: &TransportManager) -> Self {
         let opts = ClientOptions {
             connect_timeout: Some(Duration::from_millis(250)),
             timeout: None,
         };
         ProxyServer {
-            client: EngulaClient::build(
-                opts,
-                provider.router.clone(),
-                provider.root_client.clone(),
-                provider.conn_manager.clone(),
-            ),
+            client: transport_manager.build_client(opts),
         }
     }
 }

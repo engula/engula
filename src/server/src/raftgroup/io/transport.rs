@@ -48,7 +48,7 @@ pub trait AddressResolver: Send + Sync {
 /// the name lookup are finished by internal machenism.
 #[derive(Clone)]
 pub struct Channel {
-    transport_mgr: TransportManager,
+    transport_mgr: ChannelManager,
     sender: Option<mpsc::UnboundedSender<RaftMessage>>,
 }
 
@@ -56,7 +56,7 @@ pub struct Channel {
 ///
 /// A transport is recycled by manager, if it exceeds the idle intervals.
 #[derive(Clone)]
-pub struct TransportManager
+pub struct ChannelManager
 where
     Self: Send + Sync,
 {
@@ -66,7 +66,7 @@ where
 }
 
 impl Channel {
-    pub fn new(mgr: TransportManager) -> Self {
+    pub fn new(mgr: ChannelManager) -> Self {
         Channel {
             transport_mgr: mgr,
             sender: None,
@@ -98,10 +98,10 @@ impl Channel {
     }
 }
 
-impl TransportManager {
+impl ChannelManager {
     pub async fn build(resolver: Arc<dyn AddressResolver>, route_table: RaftRouteTable) -> Self {
         let (sender, receiver) = mpsc::unbounded();
-        let mgr = TransportManager {
+        let mgr = ChannelManager {
             resolver,
             sender,
             route_table,
@@ -170,7 +170,7 @@ impl StreamingTask {
 }
 
 pub async fn retrive_snapshot(
-    trans_mgr: &TransportManager,
+    trans_mgr: &ChannelManager,
     target_replica: ReplicaDesc,
     snapshot_id: Vec<u8>,
 ) -> Result<impl futures::Stream<Item = Result<SnapshotChunk, tonic::Status>>> {

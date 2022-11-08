@@ -34,7 +34,7 @@ use tracing::{debug, info, warn};
 use super::{
     applier::{Applier, ReplicaCache},
     fsm::StateMachine,
-    io::{Channel, LogWriter, TransportManager},
+    io::{Channel, ChannelManager, LogWriter},
     metrics::*,
     monitor::WorkerPerfContext,
     node::RaftNode,
@@ -126,7 +126,7 @@ struct AdvanceImpl<'a> {
     replica_id: u64,
     desc: ReplicaDesc,
     channels: &'a mut HashMap<u64, Channel>,
-    trans_mgr: &'a TransportManager,
+    trans_mgr: &'a ChannelManager,
     snap_mgr: &'a SnapManager,
     observer: &'a mut Box<dyn StateObserver>,
     replica_cache: &'a mut ReplicaCache,
@@ -194,7 +194,7 @@ where
     raft_node: RaftNode<M>,
 
     channels: HashMap<u64, Channel>,
-    trans_mgr: TransportManager,
+    trans_mgr: ChannelManager,
     snap_mgr: SnapManager,
     engine: Arc<Engine>,
     observer: Box<dyn StateObserver>,

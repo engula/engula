@@ -26,7 +26,7 @@ use tracing::{debug, error, info};
 
 use super::SnapManager;
 use crate::{
-    raftgroup::{metrics::*, retrive_snapshot, worker::Request, TransportManager},
+    raftgroup::{metrics::*, retrive_snapshot, worker::Request, ChannelManager},
     record_latency,
     runtime::TaskPriority,
     serverpb::v1::{snapshot_chunk, SnapshotChunk, SnapshotFile, SnapshotMeta},
@@ -166,7 +166,7 @@ pub fn dispatch_downloading_snap_task(
     replica_id: u64,
     mut sender: mpsc::Sender<Request>,
     snap_mgr: SnapManager,
-    tran_mgr: TransportManager,
+    tran_mgr: ChannelManager,
     from_replica: ReplicaDesc,
     mut msg: Message,
 ) {
@@ -189,7 +189,7 @@ pub fn dispatch_downloading_snap_task(
 /// Download snapshot from target and returns the local snapshot id.
 async fn download_snap(
     replica_id: u64,
-    tran_mgr: TransportManager,
+    tran_mgr: ChannelManager,
     snap_mgr: SnapManager,
     from_replica: ReplicaDesc,
     msg: &Message,

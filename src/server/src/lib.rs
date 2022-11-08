@@ -22,24 +22,20 @@
 mod bootstrap;
 mod config;
 mod constants;
-mod discovery;
 mod engine;
 mod error;
 mod root;
 mod schedule;
 mod service;
+mod transport;
 
 pub mod node;
 pub mod raftgroup;
 pub mod runtime;
 pub mod serverpb;
 
-use std::sync::Arc;
+pub(crate) use tonic::async_trait;
 
-use engula_client::{ConnManager, RootClient, Router};
-use tonic::async_trait;
-
-use crate::node::resolver::AddressResolver;
 pub use crate::{
     bootstrap::run,
     config::*,
@@ -50,13 +46,6 @@ pub use crate::{
     runtime::ExecutorConfig,
     service::Server,
 };
-
-pub(crate) struct Provider {
-    pub address_resolver: Arc<AddressResolver>,
-    pub conn_manager: ConnManager,
-    pub root_client: RootClient,
-    pub router: Router,
-}
 
 #[cfg(test)]
 mod tests {

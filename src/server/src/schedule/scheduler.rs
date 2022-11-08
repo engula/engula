@@ -31,7 +31,7 @@ use super::{
 };
 use crate::{
     node::{replica::ReplicaConfig, Replica},
-    Provider,
+    transport::TransportManager,
 };
 
 #[derive(Clone)]
@@ -70,7 +70,7 @@ pub struct ScheduleContext<'a> {
     pub current_term: u64,
     pub execution_time: Duration,
     pub replica: Arc<Replica>,
-    pub(crate) provider: Arc<Provider>,
+    pub(crate) transport_manager: &'a TransportManager,
     pub cfg: &'a ReplicaConfig,
     pub group_lock_table: &'a mut GroupLockTable,
     next_task_id: &'a mut u64,
@@ -85,7 +85,7 @@ where
     replica_id: u64,
     cfg: ReplicaConfig,
     replica: Arc<Replica>,
-    provider: Arc<Provider>,
+    transport_manager: TransportManager,
     schedule_state_observer: Arc<dyn ScheduleStateObserver>,
 
     event_waiter: EventWaiter,
@@ -108,7 +108,7 @@ impl Scheduler {
     pub(crate) fn new(
         cfg: ReplicaConfig,
         replica: Arc<Replica>,
-        provider: Arc<Provider>,
+        transport_manager: TransportManager,
         event_sources: Vec<Arc<dyn EventSource>>,
         schedule_state_observer: Arc<dyn ScheduleStateObserver>,
     ) -> Self {
@@ -123,7 +123,7 @@ impl Scheduler {
             group_id,
             replica_id,
             replica,
-            provider,
+            transport_manager,
             schedule_state_observer,
             cfg,
 
@@ -171,7 +171,7 @@ impl Scheduler {
                     group_id: self.group_id,
                     replica_id: self.replica_id,
                     replica: self.replica.clone(),
-                    provider: self.provider.clone(),
+                    transport_manager: &self.transport_manager,
                     current_term,
                     execution_time: Instant::now().duration_since(job.advanced_at),
                     next_task_id: &mut self.next_task_id,

@@ -17,7 +17,6 @@ mod metrics;
 
 pub mod migrate;
 pub mod replica;
-pub mod resolver;
 pub mod route_table;
 
 use std::{
@@ -43,13 +42,12 @@ use crate::{
     constants::ROOT_GROUP_ID,
     engine::{EngineConfig, Engines, GroupEngine, RawDb, StateEngine},
     node::replica::{fsm::GroupStateMachine, ExecCtx, LeaseState, LeaseStateObserver, ReplicaInfo},
-    raftgroup::{
-        snap::RecycleSnapMode, RaftManager, RaftNodeFacade, SnapManager, TransportManager,
-    },
+    raftgroup::{snap::RecycleSnapMode, ChannelManager, RaftManager, RaftNodeFacade, SnapManager},
     runtime::sync::WaitGroup,
     schedule::MoveReplicasProvider,
     serverpb::v1::*,
-    Config, Error, Provider, Result,
+    transport::TransportManager,
+    Config, Error, Result,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -101,12 +99,12 @@ where
     Self: Send + Sync,
 {
     cfg: NodeConfig,
-    provider: Arc<Provider>,
     raft_route_table: RaftRouteTable,
     replica_route_table: ReplicaRouteTable,
 
     raft_mgr: RaftManager,
     migrate_ctrl: MigrateController,
+    transport_manager: TransportManager,
     engines: Engines,
     state_engine: StateEngine,
 
@@ -121,21 +119,23 @@ impl Node {
     pub(crate) async fn new(
         cfg: Config,
         engines: Engines,
-        provider: Arc<Provider>,
+        transport_manager: TransportManager,
     ) -> Result<Self> {
         let raft_route_table = RaftRouteTable::new();
-        let trans_mgr =
-            TransportManager::build(provider.address_resolver.clone(), raft_route_table.clone())
-                .await;
+        let trans_mgr = ChannelManager::build(
+            transport_manager.address_resolver(),
+            raft_route_table.clone(),
+        )
+        .await;
         let snap_dir = engines.snap_dir();
         let snap_mgr = SnapManager::recovery(snap_dir).await?;
         let raft_mgr =
             RaftManager::open(cfg.raft.clone(), engines.log(), snap_mgr, trans_mgr).await?;
-        let migrate_ctrl = MigrateController::new(cfg.node.clone(), provider.clone());
+        let migrate_ctrl = MigrateController::new(cfg.node.clone(), transport_manager.clone());
         let state_engine = engines.state();
         Ok(Node {
             cfg: cfg.node,
-            provider,
+            transport_manager,
             raft_route_table,
             replica_route_table: ReplicaRouteTable::new(),
             raft_mgr,
@@ -158,7 +158,7 @@ impl Node {
         );
 
         node_state.ident = Some(node_ident.to_owned());
-        node_state.channel = Some(setup_report_state(self.provider.as_ref()));
+        node_state.channel = Some(setup_report_state(&self.transport_manager));
 
         let node_id = node_ident.node_id;
         for (group_id, replica_id, state) in self.state_engine.replica_states().await? {
@@ -376,8 +376,8 @@ impl Node {
 
         setup_scheduler(
             self.cfg.replica.clone(),
-            self.provider.clone(),
             replica.clone(),
+            self.transport_manager.clone(),
             move_replicas_provider,
             schedule_state_observer,
             wait_group.clone(),
@@ -770,17 +770,14 @@ mod tests {
     use crate::{constants::INITIAL_EPOCH, runtime::ExecutorOwner};
 
     async fn create_node(root_dir: PathBuf) -> Node {
-        use crate::bootstrap::build_provider;
-
         let config = Config {
             root_dir,
             ..Default::default()
         };
 
         let engines = Engines::open(&config.root_dir, &config.db).unwrap();
-        let provider = build_provider(&config, engines.state()).await.unwrap();
-
-        Node::new(config, engines, provider).await.unwrap()
+        let transport_manager = TransportManager::new(vec![], engines.state()).await;
+        Node::new(config, engines, transport_manager).await.unwrap()
     }
 
     async fn replica_state(node: Node, replica_id: u64) -> Option<ReplicaLocalState> {

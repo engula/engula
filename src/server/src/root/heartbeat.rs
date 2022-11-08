@@ -82,7 +82,10 @@ impl Root {
             for n in &nodes {
                 trace!(node = n.id, target = ?n.addr, "attempt send heartbeat");
                 let piggybacks = piggybacks.to_owned();
-                let client = self.get_node_client(n.addr.to_owned()).await?;
+                let client = self
+                    .shared
+                    .transport_manager
+                    .get_node_client(n.addr.to_owned())?;
                 let handle = crate::runtime::current().dispatch(
                     None,
                     crate::runtime::TaskPriority::Low,

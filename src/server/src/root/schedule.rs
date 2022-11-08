@@ -15,7 +15,6 @@
 use std::{collections::LinkedList, sync::Arc};
 
 use engula_api::server::v1::*;
-use engula_client::GroupClient;
 use prometheus::HistogramTimer;
 use tokio::{sync::Mutex, time::Instant};
 use tracing::{error, info, warn};
@@ -660,11 +659,7 @@ impl ScheduleContext {
         incoming_replica: ReplicaDesc,
         outgoing_replica: ReplicaDesc,
     ) -> Result<ScheduleState> {
-        let mut group_client = GroupClient::lazy(
-            group,
-            self.shared.provider.router.clone(),
-            self.shared.provider.conn_manager.clone(),
-        );
+        let mut group_client = self.shared.transport_manager.lazy_group_client(group);
         let current_state = group_client
             .move_replicas(vec![incoming_replica], vec![outgoing_replica])
             .await?;
@@ -672,11 +667,7 @@ impl ScheduleContext {
     }
 
     async fn try_transfer_leader(&self, group: u64, target_replica: u64) -> Result<()> {
-        let mut group_client = GroupClient::lazy(
-            group,
-            self.shared.provider.router.clone(),
-            self.shared.provider.conn_manager.clone(),
-        );
+        let mut group_client = self.shared.transport_manager.lazy_group_client(group);
         group_client.transfer_leader(target_replica).await?;
         Ok(())
     }
@@ -692,11 +683,10 @@ impl ScheduleContext {
             crate::Error::AbortScheduleTask("migrate shard has be moved out"),
         )?;
 
-        let mut group_client = GroupClient::lazy(
-            target_group,
-            self.shared.provider.router.clone(),
-            self.shared.provider.conn_manager.clone(),
-        );
+        let mut group_client = self
+            .shared
+            .transport_manager
+            .lazy_group_client(target_group);
         group_client
             .accept_shard(src_group.id, src_group.epoch, shard_desc)
             .await?;
@@ -723,7 +713,7 @@ impl ScheduleContext {
     }
 
     fn find_leader_node(&self, group: u64) -> Result<Option<u64>> {
-        let group_router = self.shared.provider.router.find_group(group)?;
+        let group_router = self.shared.transport_manager.find_group(group)?;
         if group_router.leader_state.is_none() {
             return Ok(None);
         }

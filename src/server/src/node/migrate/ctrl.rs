@@ -20,7 +20,8 @@ use futures::{channel::mpsc, StreamExt};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    node::Replica, runtime::sync::WaitGroup, serverpb::v1::*, NodeConfig, Provider, Result,
+    node::Replica, runtime::sync::WaitGroup, serverpb::v1::*, transport::TransportManager,
+    NodeConfig, Result,
 };
 
 #[derive(Debug)]
@@ -49,18 +50,21 @@ pub struct MigrateController {
 
 struct MigrateControllerShared {
     cfg: NodeConfig,
-    provider: Arc<Provider>,
+    transport_manager: TransportManager,
 }
 
 impl MigrateController {
-    pub(crate) fn new(cfg: NodeConfig, provider: Arc<Provider>) -> Self {
+    pub(crate) fn new(cfg: NodeConfig, transport_manager: TransportManager) -> Self {
         MigrateController {
-            shared: Arc::new(MigrateControllerShared { cfg, provider }),
+            shared: Arc::new(MigrateControllerShared {
+                cfg,
+                transport_manager,
+            }),
         }
     }
 
     pub fn router(&self) -> Router {
-        self.shared.provider.router.clone()
+        self.shared.transport_manager.router().clone()
     }
 
     /// Watch migration state and do the corresponding step.
@@ -93,11 +97,10 @@ impl MigrateController {
                     } else {
                         desc.src_group_id
                     };
-                    let client = MigrateClient::new(
-                        target_group_id,
-                        ctrl.shared.provider.router.clone(),
-                        ctrl.shared.provider.conn_manager.clone(),
-                    );
+                    let client = ctrl
+                        .shared
+                        .transport_manager
+                        .build_migrate_client(target_group_id);
                     coord = Some(MigrationCoordinator {
                         cfg: ctrl.shared.cfg.clone(),
                         replica_id,
@@ -120,11 +123,7 @@ impl MigrateController {
 
     pub async fn forward(&self, forward_ctx: ForwardCtx, request: &Request) -> Result<Response> {
         let group_id = forward_ctx.dest_group_id;
-        let mut client = MigrateClient::new(
-            group_id,
-            self.shared.provider.router.clone(),
-            self.shared.provider.conn_manager.clone(),
-        );
+        let mut client = self.shared.transport_manager.build_migrate_client(group_id);
         let req = ForwardRequest {
             shard_id: forward_ctx.shard_id,
             group_id,

@@ -21,17 +21,20 @@ use engula_client::RootClient;
 use futures::{channel::mpsc, StreamExt};
 use tracing::warn;
 
-use crate::{node::metrics::take_report_metrics, record_latency, runtime::TaskPriority, Provider};
+use crate::{
+    node::metrics::take_report_metrics, record_latency, runtime::TaskPriority,
+    transport::TransportManager,
+};
 
 #[derive(Clone)]
 pub struct StateChannel {
     sender: mpsc::UnboundedSender<GroupUpdates>,
 }
 
-pub(crate) fn setup(provider: &Provider) -> StateChannel {
+pub(crate) fn setup(transport_manager: &TransportManager) -> StateChannel {
     let (sender, receiver) = mpsc::unbounded();
 
-    let client = provider.root_client.clone();
+    let client = transport_manager.root_client().clone();
     crate::runtime::current().spawn(None, TaskPriority::IoHigh, async move {
         report_state_worker(receiver, client).await;
     });
