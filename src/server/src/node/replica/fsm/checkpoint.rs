@@ -18,10 +18,9 @@ use tracing::{debug, error, info};
 
 use crate::{
     engine::{GroupEngine, RawIterator},
-    node::replica::ReplicaConfig,
     raftgroup::SnapshotBuilder,
     serverpb::v1::ApplyState,
-    Error, Result,
+    Error, ReplicaConfig, Result,
 };
 
 pub struct GroupSnapshotBuilder {
@@ -170,8 +169,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        engine::{EngineConfig, GroupEngine, WriteBatch, WriteStates},
+        engine::{GroupEngine, WriteBatch, WriteStates},
         runtime::ExecutorOwner,
+        EngineConfig,
     };
 
     async fn create_engine(dir: &Path, group_id: u64, shard_id: u64) -> GroupEngine {

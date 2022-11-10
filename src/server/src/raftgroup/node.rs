@@ -98,20 +98,7 @@ where
         .await?;
         try_reset_storage_state(replica_id, &mgr.snap_mgr, &mgr.engine, &mut storage).await?;
 
-        let config = Config {
-            id: replica_id,
-            election_tick: cfg.election_tick,
-            heartbeat_tick: 1,
-            applied,
-            pre_vote: true,
-            batch_append: true,
-            check_quorum: true,
-            max_size_per_msg: cfg.max_size_per_msg,
-            max_inflight_msgs: cfg.max_inflight_msgs,
-            max_committed_size_per_ready: cfg.max_io_batch_size,
-            read_only_option: ReadOnlyOption::Safe,
-            ..Default::default()
-        };
+        let config = cfg.to_raft_config(replica_id, applied);
         Ok(RaftNode {
             group_id,
             lease_read_requests: Vec::default(),

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use rocksdb::DBCompressionType;
 use serde::{Deserialize, Serialize};
 
-use crate::{ExecutorConfig, NodeConfig, RaftConfig, RootConfig};
+use crate::constants::REPLICA_PER_GROUP;
 
 #[derive(Default, Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
@@ -48,6 +48,51 @@ pub struct Config {
 
     #[serde(default)]
     pub db: DbConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NodeConfig {
+    /// The limit bytes of each shard chunk during migration.
+    ///
+    /// Default: 64KB.
+    pub shard_chunk_size: usize,
+
+    /// The limit number of keys for gc shard after migration.
+    ///
+    /// Default: 256.
+    pub shard_gc_keys: usize,
+
+    #[serde(default)]
+    pub replica: ReplicaConfig,
+
+    #[serde(default)]
+    pub engine: EngineConfig,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ReplicaTestingKnobs {
+    pub disable_scheduler_orphan_replica_detecting_intervals: bool,
+    pub disable_scheduler_durable_task: bool,
+    pub disable_scheduler_remove_orphan_replica_task: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReplicaConfig {
+    /// The limit size of each snapshot files.
+    ///
+    /// Default: 64MB.
+    pub snap_file_size: u64,
+
+    #[serde(skip)]
+    pub testing_knobs: ReplicaTestingKnobs,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct EngineConfig {
+    /// Log slow io requests if it exceeds the specified threshold.
+    ///
+    /// Default: disabled
+    pub engine_slow_io_threshold_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,6 +137,98 @@ pub struct DbConfig {
     pub rate_limiter_bytes_per_sec: i64,
     pub rate_limiter_refill_period: i64,
     pub rate_limiter_auto_tuned: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RaftTestingKnobs {
+    pub force_new_peer_receiving_snapshot: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RaftConfig {
+    /// The intervals of tick, in millis.
+    ///
+    /// Default: 500ms.
+    pub tick_interval_ms: u64,
+
+    /// The size of inflights requests.
+    ///
+    /// Default: 102400
+    pub max_inflight_requests: usize,
+
+    /// Before a follower begin election, it must wait a randomly election ticks and does not
+    /// receives any messages from leader.
+    ///
+    /// Default: 3.
+    pub election_tick: usize,
+
+    /// Limit the entries batched in an append message(in size). 0 means one entry per message.
+    ///
+    /// Default: 64KB
+    pub max_size_per_msg: u64,
+
+    /// Limit the total bytes per io batch requests.
+    ///
+    /// Default: 64KB
+    pub max_io_batch_size: u64,
+
+    /// Limit the number of inflights messages which send to one peer.
+    ///
+    /// Default: 10K
+    pub max_inflight_msgs: usize,
+
+    /// Log slow io requests if it exceeds the specified threshold.
+    ///
+    /// Default: disabled
+    pub engine_slow_io_threshold_ms: Option<u64>,
+
+    /// Enable recycle log files to reduce allocating overhead?
+    ///
+    /// Default: false
+    pub enable_log_recycle: bool,
+
+    #[serde(skip)]
+    pub testing_knobs: RaftTestingKnobs,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RootConfig {
+    pub replicas_per_group: usize,
+    pub enable_group_balance: bool,
+    pub enable_replica_balance: bool,
+    pub enable_shard_balance: bool,
+    pub enable_leader_balance: bool,
+    pub liveness_threshold_sec: u64,
+    pub heartbeat_timeout_sec: u64,
+    pub schedule_interval_sec: u64,
+    pub max_create_group_retry_before_rollback: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ExecutorConfig {
+    pub event_interval: Option<u32>,
+    pub global_event_interval: Option<u32>,
+    pub max_blocking_threads: Option<usize>,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        NodeConfig {
+            shard_chunk_size: 64 * 1024 * 1024,
+            shard_gc_keys: 256,
+            replica: ReplicaConfig::default(),
+            engine: EngineConfig::default(),
+        }
+    }
+}
+
+impl Default for ReplicaConfig {
+    fn default() -> Self {
+        ReplicaConfig {
+            snap_file_size: 64 * 1024 * 1024 * 1024,
+            testing_knobs: ReplicaTestingKnobs::default(),
+        }
+    }
 }
 
 impl DbConfig {
@@ -198,6 +335,63 @@ impl Default for DbConfig {
             rate_limiter_bytes_per_sec: 10 << 30,
             rate_limiter_refill_period: 100_000,
             rate_limiter_auto_tuned: true,
+        }
+    }
+}
+
+impl RaftConfig {
+    pub(crate) fn to_raft_config(&self, replica_id: u64, applied: u64) -> raft::Config {
+        raft::Config {
+            id: replica_id,
+            election_tick: self.election_tick,
+            heartbeat_tick: 1,
+            applied,
+            pre_vote: true,
+            batch_append: true,
+            check_quorum: true,
+            max_size_per_msg: self.max_size_per_msg,
+            max_inflight_msgs: self.max_inflight_msgs,
+            max_committed_size_per_ready: self.max_io_batch_size,
+            read_only_option: raft::ReadOnlyOption::Safe,
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for RaftConfig {
+    fn default() -> Self {
+        RaftConfig {
+            tick_interval_ms: 500,
+            max_inflight_requests: 102400,
+            election_tick: 3,
+            max_size_per_msg: 64 << 10,
+            max_io_batch_size: 64 << 10,
+            max_inflight_msgs: 10 * 1000,
+            engine_slow_io_threshold_ms: None,
+            enable_log_recycle: false,
+            testing_knobs: RaftTestingKnobs::default(),
+        }
+    }
+}
+
+impl RootConfig {
+    pub fn heartbeat_interval(&self) -> Duration {
+        Duration::from_secs(self.liveness_threshold_sec - self.heartbeat_timeout_sec)
+    }
+}
+
+impl Default for RootConfig {
+    fn default() -> Self {
+        Self {
+            replicas_per_group: REPLICA_PER_GROUP,
+            enable_group_balance: true,
+            enable_replica_balance: true,
+            enable_shard_balance: true,
+            enable_leader_balance: true,
+            liveness_threshold_sec: 30,
+            heartbeat_timeout_sec: 4,
+            schedule_interval_sec: 3,
+            max_create_group_retry_before_rollback: 10,
         }
     }
 }

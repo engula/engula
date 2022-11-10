@@ -27,7 +27,7 @@ use engula_api::{
     server::v1::{group_request_union::Request, group_response_union::Response, *},
     v1::{DeleteResponse, GetResponse, PutResponse},
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::info;
 
 pub use self::state::{LeaseState, LeaseStateObserver};
@@ -49,24 +49,6 @@ pub struct ReplicaPerfContext {
     pub raft: Box<WorkerPerfContext>,
     pub take_acl_guard: u64,
     pub propose: u64,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ReplicaTestingKnobs {
-    pub disable_scheduler_orphan_replica_detecting_intervals: bool,
-    pub disable_scheduler_durable_task: bool,
-    pub disable_scheduler_remove_orphan_replica_task: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ReplicaConfig {
-    /// The limit size of each snapshot files.
-    ///
-    /// Default: 64MB.
-    pub snap_file_size: u64,
-
-    #[serde(skip)]
-    pub testing_knobs: ReplicaTestingKnobs,
 }
 
 pub struct ReplicaInfo {
@@ -515,15 +497,6 @@ impl ExecCtx {
             .and_then(|m| m.shard_desc.as_ref())
             .map(|d| d.id == shard_id)
             .unwrap_or_default()
-    }
-}
-
-impl Default for ReplicaConfig {
-    fn default() -> Self {
-        ReplicaConfig {
-            snap_file_size: 64 * 1024 * 1024 * 1024,
-            testing_knobs: ReplicaTestingKnobs::default(),
-        }
     }
 }
 

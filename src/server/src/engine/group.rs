@@ -23,23 +23,14 @@ use std::{
 
 use engula_api::{server::v1::*, shard};
 use prost::Message;
-use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use super::RawDb;
 use crate::{
     constants::{INITIAL_EPOCH, LOCAL_COLLECTION_ID},
     serverpb::v1::*,
-    Error, Result,
+    EngineConfig, Error, Result,
 };
-
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
-pub struct EngineConfig {
-    /// Log slow io requests if it exceeds the specified threshold.
-    ///
-    /// Default: disabled
-    pub engine_slow_io_threshold_ms: Option<u64>,
-}
 
 #[derive(Default)]
 pub struct WriteStates {

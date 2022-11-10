@@ -20,9 +20,9 @@ use std::{
 };
 
 use pin_project::pin_project;
-use serde::{Deserialize, Serialize};
 
 use super::metrics::*;
+use crate::ExecutorConfig;
 
 #[derive(Debug)]
 pub enum TaskPriority {
@@ -37,13 +37,6 @@ pub enum TaskPriority {
 enum TaskState {
     First(Instant),
     Polled(Duration),
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ExecutorConfig {
-    pub event_interval: Option<u32>,
-    pub global_event_interval: Option<u32>,
-    pub max_blocking_threads: Option<usize>,
 }
 
 /// A handle that awaits the result of a task.

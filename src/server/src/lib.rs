@@ -40,10 +40,7 @@ pub use crate::{
     bootstrap::run,
     config::*,
     error::{Error, Result},
-    node::NodeConfig,
-    raftgroup::RaftConfig,
-    root::{diagnosis, RootConfig},
-    runtime::ExecutorConfig,
+    root::diagnosis,
     service::Server,
 };
 
