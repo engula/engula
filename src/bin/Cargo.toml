@@ -1,30 +1,31 @@
 [package]
 name = "engula"
-version = "0.5.0"
-edition = "2021"
-license = "Apache-2.0"
-homepage = "https://engula.io"
-repository = "https://github.com/engula/engula"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 keywords = ["database"]
 categories = ["database", "data-structures"]
 description = "A distributed key-value store."
 default-run = "engula"
 
 [dependencies]
-engula-client = { path = "../client", version = "0.5.0" }
-engula-server = { path = "../server", version = "0.5.0" }
+engula-client = { path = "../client", version = "0.5" }
+engula-server = { path = "../server", version = "0.5" }
 
-clap = { version = "3.2.20", features = ["derive"] }
-config = { version = "0.13.2", features = ["toml"] }
-lazy_static = "1.4.0"
-num_cpus = "1.13.1"
-rand = { version = "0.8.5", features = ["small_rng"] }
-rustyline = "10.0.0"
-serde = { version = "1.0.144", features = ["derive"] }
-paste = "1.0"
-prometheus = "0.13.2"
-tokio = { version = "1.21.0", features = ["full"] }
-toml = { version = "0.5" }
-tracing = "0.1"
+lazy_static.workspace = true
+num_cpus.workspace = true
+rand = { workspace = true, features = ["small_rng"] }
+rustyline.workspace = true
+serde.workspace = true
+paste.workspace = true
+prometheus.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+clap = { version = "3.2", features = ["derive"] }
+config = { version = "0.13", features = ["toml"] }
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
-atty = "0.2.14"
+atty = "0.2"
