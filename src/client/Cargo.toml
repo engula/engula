@@ -1,31 +1,31 @@
 [package]
 name = "engula-client"
-version = "0.5.0"
-edition = "2021"
-license = "Apache-2.0"
-homepage = "https://engula.io"
-repository = "https://github.com/engula/engula"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 description = "The Engula API."
 
 [dependencies]
 engula-api = { version = "0.5", path = "../api" }
 
-async-stream = "0.3.3"
-crc32fast = "1.3.2"
-derivative = "2.2.0"
-futures = "0.3.24"
-lazy_static = "1.4.0"
-paste = "1.0"
-prometheus = { version = "0.13.2", features = ["process"] }
-prometheus-static-metric = "0.5.1"
-prost = "0.11.0"
-thiserror = "1.0.34"
-tokio = { version = "1.21.0", features = ["full"] }
-tokio-stream = { version = "0.1.9", features = ["net"] }
-tonic = "0.8.1"
-tracing = "0.1"
+async-stream.workspace = true
+crc32fast.workspace = true
+derivative.workspace = true
+futures.workspace = true
+lazy_static.workspace = true
+paste.workspace = true
+prometheus = { workspace = true, features = ["process"] }
+prometheus-static-metric.workspace = true
+prost.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-ctor = "0.1.23"
-socket2 = "0.4.7"
+ctor = "0.1"
+socket2 = "0.4"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
